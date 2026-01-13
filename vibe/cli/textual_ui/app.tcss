@@ -54,7 +54,19 @@ Screen {
     height: auto;
     width: 100%;
     background: $background;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    max-height: 100vh;
+    scrollbar-visibility: hidden;
 }
+
+#bottom-app-container > * {
+    overflow: hidden;
+    max-height: 100%;
+}
+
+
 
 #bottom-bar {
     height: auto;
@@ -912,4 +924,70 @@ ContextProgress {
     padding: 0;
     margin: 0;
     color: $foreground;
+}
+
+/* History Finder Styles */
+HistoryFinderApp {
+    height: auto;
+    max-height: 20;
+    width: 100%;
+    max-width: 100%;
+    background: $background;
+    border: round $foreground-muted;
+    padding: 0 1;
+    margin: 0 0 0 0;
+    overflow-y: hidden;
+    layout: vertical;
+    scrollbar-visibility: hidden;
+}
+
+#history-list {
+    height: auto;
+    max-height: 15;
+    width: 100%;
+    background: $surface;
+    border: solid $foreground-muted;
+    padding: 0;
+    overflow-y: auto;
+    scrollbar-visibility: visible;
+}
+
+#history-list ListItem {
+    padding: 0 1;
+    border-bottom: solid $foreground-muted;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+}
+
+#history-list Static {
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
+}
+
+#history-list ListItem:focus {
+    background: $primary;
+    color: $text;
+}
+
+#search-input {
+    width: 100%;
+    margin-bottom: 1;
+    background: $surface;
+    border: solid $foreground-muted;
+}
+
+#title {
+    text-align: center;
+    text-style: bold;
+    color: $primary;
+    margin-bottom: 1;
+}
+
+#instructions {
+    text-align: center;
+    color: $foreground-muted;
+    margin-top: 0;
+    margin-bottom: 0;
 }

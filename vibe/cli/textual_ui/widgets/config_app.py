@@ -38,6 +38,7 @@ class ConfigApp(Container):
         Binding("down", "move_down", "Down", show=False),
         Binding("space", "toggle_setting", "Toggle", show=False),
         Binding("enter", "cycle", "Next", show=False),
+        Binding("escape", "close", "Close", show=False),
     ]
 
     class SettingChanged(Message):

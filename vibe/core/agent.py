@@ -784,6 +784,7 @@ class Agent:
             )
 
             last_user_message = None
+            previous_summary_message = None
             for msg in reversed(self.messages):
                 if msg.role == Role.user:
                     # Skip summary messages (they contain "Last request from user was:")
@@ -793,12 +794,16 @@ class Agent:
                     else:
                         # If this is a summary message, extract the original user message from it
                         # The format is: "summary_content\n\nLast request from user was: original_message"
-                        if "Last request from user was:" in msg.content:
-                            parts = msg.content.split("Last request from user was:")
-                            if len(parts) > 1:
-                                # Extract the original message (everything after "Last request from user was:")
-                                last_user_message = parts[1].strip()
-                                break
+                        parts = msg.content.split("Last request from user was:")
+                        if len(parts) > 1:
+                            previous_summary_message = parts[0].strip()
+                            previous_summary_parts = previous_summary_message.split("Last session's summary:")
+                            if len(previous_summary_parts) > 1:
+                                previous_summary_message = previous_summary_parts[0].replace("The first session's summary:", "", 1)
+
+                            # Extract the original message (everything after "Last request from user was:")
+                            last_user_message = parts[1].strip()
+                            break
 
             summary_request = UtilityPrompt.COMPACT.read()
             self.messages.append(LLMMessage(role=Role.user, content=summary_request))
@@ -815,6 +820,9 @@ class Agent:
                 summary_content += (
                     f"\n\nLast request from user was: {last_user_message}"
                 )
+
+            if previous_summary_message:
+                summary_content = "The first session's summary:\n\n" + previous_summary_message + "\n\nLast session's summary:\n\n" + summary_content
 
             system_message = self.messages[0]
             summary_message = LLMMessage(role=Role.user, content=summary_content)
