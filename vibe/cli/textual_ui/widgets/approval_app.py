@@ -26,8 +26,9 @@ class ApprovalApp(Container):
         Binding("1", "select_1", "Yes", show=False),
         Binding("y", "select_1", "Yes", show=False),
         Binding("2", "select_2", "Always Tool Session", show=False),
-        Binding("3", "select_3", "No", show=False),
-        Binding("n", "select_3", "No", show=False),
+        Binding("3", "select_3", "Auto Approve Mode", show=False),
+        Binding("4", "select_4", "No", show=False),
+        Binding("n", "select_4", "No", show=False),
     ]
 
     class ApprovalGranted(Message):
@@ -44,6 +45,12 @@ class ApprovalApp(Container):
             self.tool_name = tool_name
             self.tool_args = tool_args
             self.save_permanently = save_permanently
+
+    class ApprovalGrantedAutoApprove(Message):
+        def __init__(self, tool_name: str, tool_args: BaseModel) -> None:
+            super().__init__()
+            self.tool_name = tool_name
+            self.tool_args = tool_args
 
     class ApprovalRejected(Message):
         def __init__(self, tool_name: str, tool_args: BaseModel) -> None:
@@ -80,7 +87,7 @@ class ApprovalApp(Container):
 
             yield NoMarkupStatic("")
 
-            for _ in range(3):
+            for _ in range(4):
                 widget = NoMarkupStatic("", classes="approval-option")
                 self.option_widgets.append(widget)
                 yield widget
@@ -109,6 +116,7 @@ class ApprovalApp(Container):
         options = [
             ("Yes", "yes"),
             (f"Yes and always allow {self.tool_name} for this session", "yes"),
+            ("Auto Approve Mode (YOLO)", "yes"),
             ("No and tell the agent what to do instead", "no"),
         ]
 
@@ -141,11 +149,11 @@ class ApprovalApp(Container):
                     widget.add_class("approval-option-no")
 
     def action_move_up(self) -> None:
-        self.selected_option = (self.selected_option - 1) % 3
+        self.selected_option = (self.selected_option - 1) % 4
         self._update_options()
 
     def action_move_down(self) -> None:
-        self.selected_option = (self.selected_option + 1) % 3
+        self.selected_option = (self.selected_option + 1) % 4
         self._update_options()
 
     def action_select(self) -> None:
@@ -163,9 +171,13 @@ class ApprovalApp(Container):
         self.selected_option = 2
         self._handle_selection(2)
 
+    def action_select_4(self) -> None:
+        self.selected_option = 3
+        self._handle_selection(3)
+
     def action_reject(self) -> None:
-        self.selected_option = 2
-        self._handle_selection(2)
+        self.selected_option = 3
+        self._handle_selection(3)
 
     def _handle_selection(self, option: int) -> None:
         match option:
@@ -184,6 +196,13 @@ class ApprovalApp(Container):
                     )
                 )
             case 2:
+                # Auto Approve Mode - switch to AUTO_APPROVE mode and approve this tool
+                self.post_message(
+                    self.ApprovalGrantedAutoApprove(
+                        tool_name=self.tool_name, tool_args=self.tool_args
+                    )
+                )
+            case 3:
                 self.post_message(
                     self.ApprovalRejected(
                         tool_name=self.tool_name, tool_args=self.tool_args

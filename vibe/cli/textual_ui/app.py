@@ -293,6 +293,18 @@ class VibeApp(App):  # noqa: PLR0904
 
         await self._switch_to_input_app()
 
+    async def on_approval_app_approval_granted_auto_approve(
+        self, message: ApprovalApp.ApprovalGrantedAutoApprove
+    ) -> None:
+        # Switch to AUTO_APPROVE mode
+        self._switch_mode(AgentMode.AUTO_APPROVE)
+
+        # Approve the current tool call
+        if self._pending_approval and not self._pending_approval.done():
+            self._pending_approval.set_result((ApprovalResponse.YES, None))
+
+        await self._switch_to_input_app()
+
     async def on_approval_app_approval_rejected(
         self, message: ApprovalApp.ApprovalRejected
     ) -> None:
