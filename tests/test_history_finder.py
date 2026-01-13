@@ -3,6 +3,7 @@
 import json
 import tempfile
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -215,6 +216,94 @@ class TestFuzzyMatching:
         result = fuzzy_match("pto", "python")
         assert result.matched
         assert result.score > 0
+
+
+class TestHistoryFinderKeybindings:
+    """Test the keybindings for the history finder."""
+
+    def test_focus_search_action(self, tmp_path: Path) -> None:
+        """Test the focus_search action."""
+        history_file = tmp_path / "history.jsonl"
+        history_file.touch()
+        
+        history_manager = HistoryManager(history_file)
+        app = HistoryFinderApp(history_manager)
+        
+        # Create mock widgets
+        search_widget = Mock()
+        list_widget = Mock()
+        
+        # Set up the mock widgets
+        app._search_input = search_widget
+        app._list_view = list_widget
+        
+        # Test focus_search action
+        app.action_focus_search()
+        # The action should call focus on the search input
+        search_widget.focus.assert_called_once()
+        list_widget.focus.assert_not_called()
+        
+    def test_focus_list_action(self, tmp_path: Path) -> None:
+        """Test the focus_list action."""
+        history_file = tmp_path / "history.jsonl"
+        history_file.touch()
+        
+        history_manager = HistoryManager(history_file)
+        app = HistoryFinderApp(history_manager)
+        
+        # Create mock widgets
+        search_widget = Mock()
+        list_widget = Mock()
+        
+        # Set up the mock widgets
+        app._search_input = search_widget
+        app._list_view = list_widget
+        
+        # Test focus_list action
+        app.action_focus_list()
+        # The action should call focus on the list view
+        list_widget.focus.assert_called_once()
+        search_widget.focus.assert_not_called()
+        
+    def test_toggle_focus_action(self, tmp_path: Path) -> None:
+        """Test the toggle_focus action."""
+        history_file = tmp_path / "history.jsonl"
+        history_file.touch()
+        
+        history_manager = HistoryManager(history_file)
+        app = HistoryFinderApp(history_manager)
+        
+        # Create mock widgets
+        search_widget = Mock()
+        list_widget = Mock()
+        
+        # Set up the mock widgets
+        app._search_input = search_widget
+        app._list_view = list_widget
+        
+        # Initially, search has focus
+        search_widget.has_focus = True
+        list_widget.has_focus = False
+        
+        # First toggle should focus the list
+        app.action_toggle_focus()
+        list_widget.focus.assert_called_once()
+        search_widget.focus.assert_not_called()
+        
+        # For second test, create new mocks
+        search_widget2 = Mock()
+        list_widget2 = Mock()
+        app._search_input = search_widget2
+        app._list_view = list_widget2
+        
+        # Now list has focus
+        search_widget2.has_focus = False
+        list_widget2.has_focus = True
+        
+        # Second toggle should focus the search
+        app.action_toggle_focus()
+        search_widget2.focus.assert_called_once()
+        list_widget2.focus.assert_not_called()
 
 
 @pytest.fixture

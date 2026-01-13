@@ -13,10 +13,90 @@
 # - Write code in a declarative and minimalist style that clearly expresses its intent.
 # - Additional best practices including f-string formatting, comprehensions, context managers, and overall PEP 8 compliance.
 
-description: "Modern Python 3.12+ best practices and style guidelines for coding."
 files: "**/*.py"
 
 guidelines:
+  - title: "Codebase Management"
+    description: >
+      Keep codebase clean, minimal, and logically structured.
+      - Organize proactively: Create new directories, move/split files as needed
+      - Update outdated documents to match implementations
+      - Leave campground cleaner than you found it
+
+  - title: "Temporary Files"
+    description: >
+      Create temporal files/logs only for testing/debugging.
+      - ALWAYS remove all task-specific documents, tests, and implementations before finishing
+      - No summary/report files unless explicitly requested
+
+  - title: "Path Usage"
+    description: >
+      Use relative paths for portability unless absolute paths are explicitly necessary.
+      - Consider cross-platform deployment on other machines
+
+  - title: "File Operations"
+    description: >
+      Always use `read_file`/`write_file`/`grep` tools before resorting to `bash`.
+      - Prefer dedicated tools over generic shell commands
+
+  - title: "Bash Commands"
+    description: >
+      Always specify `timeout` parameter when using `bash` tool.
+      - Set timeout in both the command itself AND the timeout parameter
+      - Example: `bash({"command": "sleep 10", "timeout": 15})`
+
+  - title: "Background Processes"
+    description: >
+      Always use `nohup` to launch servers in background.
+      - Clean up processes after use
+
+  - title: "Terminal UI Testing"
+    description: >
+      Always use `terminalcp_terminalcp` tool for manual terminal UI testing.
+      - STRICTLY AVOID assuming that UI testing can be completed solely by creating or modifying UI test scripts.
+      - Follow user instructions precisely when `terminalcp` tool is specified
+
+  - title: "Professional Standards"
+    description: >
+      Act as a professional software architect & developer.
+      - Provide fully implemented, tested, working code
+      - Follow best practices at all times
+
+  - title: "Web Research"
+    description: >
+      Always perform external web research when stuck on bugs.
+      - Use `fetch_fetch` and `web_search_search` tools for online research
+      - Don't assume knowledge - verify with current sources
+
+  - title: "Git Safety"
+    description: >
+      Use extreme caution with `git` commands to avoid losing changes.
+      - NEVER use `git reset --hard` or `git checkout <filename>` lightly
+      - These commands are extremely dangerous - only use when absolutely necessary
+      - Always make backups before destructive operations
+      - Prefer `git stash --all` over destructive commands
+
+  - title: "Todo Tool"
+    description: >
+      Always use `todo` tool to manage tasks.
+      - Start by reading existing todo list before beginning work
+      - Consider that todos from previous sessions may remain
+      - Update todo status appropriately:
+        * pending → in_progress when starting
+        * in_progress → completed when finished
+        * in_progress → pending when blocked
+      - Create specific, actionable items
+      - Break complex tasks into manageable steps
+      - Remove irrelevant tasks entirely (don't just mark cancelled)
+
+  - title: "User Instructions"
+    description: >
+      Read each user word in instructions carefully.
+      - Prioritize user instructions over existing codebase
+      - If instructions are unclear, ask with FOUR numbered options
+      - Follow user requirements precisely, even if they differ from best practices
+      - Confirm understanding before proceeding with ambiguous requests
+
   - title: "Match-Case Syntax"
     description: >
       Prefer using the match-case construct over traditional if/elif/else chains when pattern matching
@@ -124,7 +204,7 @@ guidelines:
 
   - title: "Use uv for All Commands"
     description: >
-      We use uv to manage our python environment. You should nevery try to run a bare python commands.
+      We use uv to manage our python environment. You should never try to run a bare python commands.
       Always run commands using `uv` instead of invoking `python` or `pip` directly.
       For example, use `uv add package` and `uv run script.py` rather than `pip install package` or `python script.py`.
       This practice helps avoid environment drift and leverages modern Python packaging best practices.

@@ -32,6 +32,9 @@ class HistoryFinderApp(Container):
         Binding("down", "move_down", "Down", show=False),
         Binding("escape", "close", "Close", show=False),
         Binding("enter", "select", "Select", show=False),
+        Binding("ctrl+f", "focus_search", "Focus Search", show=False),
+        Binding("ctrl+l", "focus_list", "Focus List", show=False),
+        Binding("tab", "toggle_focus", "Toggle Focus", show=False),
     ]
 
     class HistorySelected(Message):
@@ -66,7 +69,7 @@ class HistoryFinderApp(Container):
         self._list_view = ListView(id="history-list")
         yield self._list_view
         
-        yield Static("Press Enter to select, Esc to close", id="instructions")
+        yield Static("Press Enter to select, Esc to close | Ctrl+F to focus search, Ctrl+L to focus list, Tab to toggle", id="instructions")
 
     def on_mount(self) -> None:
         if self._search_input:
@@ -78,21 +81,17 @@ class HistoryFinderApp(Container):
         """Load history entries directly from the HistoryManager."""
         if not self.history_manager:
             # If no history manager, create an empty list
-            print("DEBUG: No history manager provided")
             self._entries = []
             return
 
         # Get entries from the HistoryManager (already filtered and processed)
         entries = []
-        print(f"DEBUG: Loading history from manager with {len(self.history_manager._entries)} entries")
         for entry in self.history_manager._entries:
             if entry and not entry.startswith("/"):
                 entries.append(HistoryEntry(entry))
-                print(f"DEBUG: Added entry: {entry[:50]}...")
         
         # Limit to most recent 50 entries to avoid overwhelming the user
         self._entries = entries[-50:]
-        print(f"DEBUG: Loaded {len(self._entries)} history entries")
 
     def _filter_entries(self, search_text: str) -> None:
         """Filter history entries based on fuzzy search."""
@@ -145,25 +144,37 @@ class HistoryFinderApp(Container):
 
     def action_select(self) -> None:
         """Select the currently highlighted entry."""
-        print("DEBUG: action_select called")  # Debug
         if self._list_view:
             index = self._list_view.index
-            print(f"DEBUG: index={index}, filtered_entries={len(self._filtered_entries)}")  # Debug
             if 0 <= index < len(self._filtered_entries):
                 selected_entry = self._filtered_entries[index]
-                print(f"DEBUG: About to post HistorySelected message")  # Debug
                 self.post_message(self.HistorySelected(selected_entry.text))
-                print(f"DEBUG: About to post HistoryClosed message")  # Debug
                 self.post_message(self.HistoryClosed())
-                print(f"DEBUG: Messages posted: {selected_entry.text[:50]}...")  # Debug
-            else:
-                print(f"DEBUG: Index {index} is out of range")  # Debug
-        else:
-            print("DEBUG: _list_view is None")  # Debug
 
     def action_close(self) -> None:
         """Close the history finder."""
         self.post_message(self.HistoryClosed())
+
+    def action_focus_search(self) -> None:
+        """Focus the search input."""
+        if self._search_input:
+            self._search_input.focus()
+
+    def action_focus_list(self) -> None:
+        """Focus the list view."""
+        if self._list_view:
+            self._list_view.focus()
+
+    def action_toggle_focus(self) -> None:
+        """Toggle focus between search input and list view."""
+        if not self._search_input or not self._list_view:
+            return
+            
+        # Check which widget currently has focus
+        if self._search_input.has_focus:
+            self._list_view.focus()
+        else:
+            self._search_input.focus()
 
     def focus(self) -> None:
         """Focus the list view for better navigation."""
@@ -174,7 +185,5 @@ class HistoryFinderApp(Container):
 
     def on_key(self, event: events.Key) -> None:
         """Handle key events."""
-        print(f"DEBUG: Key event received: {event.key}")  # Debug
         if event.key == "enter":
-            print("DEBUG: Enter key pressed")  # Debug
             self.action_select()
