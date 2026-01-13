@@ -51,8 +51,8 @@ class HistoryFinderApp(Container):
         self._search_input: Input | None = None
         self._list_view: ListView | None = None
         self._load_history_from_manager()
-        # Initialize filtered entries with all entries
-        self._filtered_entries = self._entries.copy()
+        # Initialize filtered entries with all entries (latest first for empty search)
+        self._filtered_entries = self._entries[::-1]
 
     def compose(self) -> ComposeResult:
         yield Static("History Finder", id="title")
@@ -97,7 +97,8 @@ class HistoryFinderApp(Container):
     def _filter_entries(self, search_text: str) -> None:
         """Filter history entries based on fuzzy search."""
         if not search_text:
-            self._filtered_entries = self._entries
+            # When search is empty, show latest entries first (reverse order)
+            self._filtered_entries = self._entries[::-1]
             return
 
         search_lower = search_text.lower()
