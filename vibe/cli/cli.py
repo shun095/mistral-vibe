@@ -74,9 +74,9 @@ def bootstrap_config_files() -> None:
 
 def load_session(
     args: argparse.Namespace, config: VibeConfig
-) -> list[LLMMessage] | None:
+) -> tuple[list[LLMMessage] | None, dict[str, Any] | None]:
     if not args.continue_session and not args.resume:
-        return None
+        return None, None
 
     if not config.session_logging.enabled:
         rprint(
@@ -136,7 +136,7 @@ def run_cli(args: argparse.Namespace) -> None:
         if args.enabled_tools:
             config.enabled_tools = args.enabled_tools
 
-        loaded_messages = load_session(args, config)
+        loaded_messages, session_metadata = load_session(args, config)
 
         stdin_prompt = get_prompt_from_stdin()
         if args.prompt is not None:

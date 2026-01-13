@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 from vibe.core.agent_loop import AgentLoop
 from vibe.core.agents.models import BuiltinAgentName
 from vibe.core.config import VibeConfig
 from vibe.core.output_formatters import create_formatter
+from vibe.core.tools.builtins.todo import TodoItem, TodoState
 from vibe.core.types import AssistantEvent, LLMMessage, OutputFormat, Role
 from vibe.core.utils import ConversationLimitException, logger
 
@@ -49,3 +51,25 @@ def run_programmatic(
         return formatter.finalize()
 
     return asyncio.run(_async_run())
+
+
+async def _restore_tool_states(agent: Agent, tool_states: dict[str, Any]) -> None:
+    """Restore tool states from session metadata."""
+    for tool_name, state_data in tool_states.items():
+        try:
+            tool_instance = agent.tool_manager.get(tool_name)
+            if hasattr(tool_instance, 'state'):
+                # Handle todo tool state specifically
+                if tool_name == "todo" and isinstance(state_data, dict):
+                    todos_data = state_data.get("todos", [])
+                    todos = [TodoItem.model_validate(todo_data) for todo_data in todos_data]
+                    tool_instance.state = TodoState(todos=todos)
+                    logger.info(f"Restored {len(todos)} todos for tool: {tool_name}")
+                else:
+                    # For other tools, try to restore state using model_validate
+                    state_class = type(tool_instance.state)
+                    restored_state = state_class.model_validate(state_data)
+                    tool_instance.state = restored_state
+                    logger.info(f"Restored state for tool: {tool_name}")
+        except Exception as e:
+            logger.warning(f"Failed to restore state for tool {tool_name}: {e}")
