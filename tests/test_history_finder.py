@@ -21,12 +21,11 @@ class TestHistoryEntry:
         assert entry.display_text == "Short text"
         assert entry.text == "Short text"
 
-    def test_long_text_truncation(self) -> None:
-        """Test that long text is properly truncated."""
+    def test_long_text_no_truncation(self) -> None:
+        """Test that long text is not truncated."""
         long_text = "A" * 150  # 150 characters
         entry = HistoryEntry(long_text)
-        assert len(entry.display_text) <= 100
-        assert entry.display_text.endswith("...")
+        assert entry.display_text == long_text
         assert entry.text == long_text  # Original should be preserved
 
     def test_exact_length_text(self) -> None:

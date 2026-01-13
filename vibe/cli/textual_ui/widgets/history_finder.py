@@ -20,7 +20,7 @@ class HistoryEntry:
     def __init__(self, text: str, timestamp: str | None = None) -> None:
         self.text = text
         self.timestamp = timestamp
-        self.display_text = text if len(text) <= 100 else text[:97] + "..."
+        self.display_text = text
 
 
 class HistoryFinderApp(Container):
