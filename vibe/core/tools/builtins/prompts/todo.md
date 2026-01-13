@@ -4,6 +4,8 @@ Use the `todo` tool to manage a simple task list. This tool helps you track task
 
 - **Reading:** Use `action: "read"` to view the current todo list
 - **Writing:** Use `action: "write"` with the complete `todos` list to update. You must provide the ENTIRE list - this replaces everything.
+- **Saving:** Use `action: "save"` with `session_file` parameter to save the current todo list to a file
+- **Restoring:** Use `action: "restore"` with `session_file` parameter to load a todo list from a file
 
 ## Todo Structure
 Each todo item has:
@@ -189,11 +191,29 @@ Each todo item has:
 }
 ```
 
+**Example 6: Saving todos to a session file**
+```json
+{
+  "action": "save",
+  "session_file": "~/.vibe/todos/my_project_todos.json"
+}
+```
+
+**Example 7: Restoring todos from a session file**
+```json
+{
+  "action": "restore",
+  "session_file": "~/.vibe/todos/my_project_todos.json"
+}
+```
+
 ## Common Scenarios
 
 **Multi-file refactoring:** Create todos for each file that needs updating
 **Performance optimization:** List specific bottlenecks as individual tasks
 **Bug fixing:** Track reproduction, diagnosis, fix, and verification as separate tasks
 **Feature implementation:** Break down into UI, logic, tests, and documentation tasks
+
+**Session management:** Use save/restore to persist todo lists between sessions
 
 Remember: When writing, you must include ALL todos you want to keep. Any todo not in the list will be removed. Be proactive with task management to demonstrate thoroughness and ensure all requirements are completed successfully.
