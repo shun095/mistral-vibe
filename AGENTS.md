@@ -1,215 +1,123 @@
-# python312.rule
-# Rule for enforcing modern Python 3.12+ best practices.
-# Applies to all Python files (*.py) in the project.
-#
-# Guidelines covered:
-# - Use match-case syntax instead of if/elif/else for pattern matching.
-# - Use the walrus operator (:=) when it simplifies assignments and tests.
-# - Favor a "never nester" approach by avoiding deep nesting with early returns or guard clauses.
-# - Employ modern type hints using built-in generics (list, dict) and the union pipe (|) operator,
-#   rather than deprecated types from the typing module (e.g., Optional, Union, Dict, List).
-# - Ensure code adheres to strong static typing practices compatible with static analyzers like pyright.
-# - Favor pathlib.Path methods for file system operations over older os.path functions.
-# - Write code in a declarative and minimalist style that clearly expresses its intent.
-# - Additional best practices including f-string formatting, comprehensions, context managers, and overall PEP 8 compliance.
 
-files: "**/*.py"
+---
 
-guidelines:
-  - title: "Codebase Management"
-    description: >
-      Keep codebase clean, minimal, and logically structured.
-      - Organize proactively: Create new directories, move/split files as needed
-      - Update outdated documents to match implementations
-      - Leave campground cleaner than you found it
+# Guidelines to execute tasks.
 
-  - title: "Temporary Files"
-    description: >
-      Create temporal files/logs only for testing/debugging.
-      - ALWAYS remove all task-specific documents, tests, and implementations before finishing
-      - No summary/report files unless explicitly requested
+Following are guidelines you MUST follow during executing tasks.
+**Read all guidelines carefully. All instructions are mandatory. Violation constitutes failure.**
 
-  - title: "Path Usage"
-    description: >
-      Use relative paths for portability unless absolute paths are explicitly necessary.
-      - Consider cross-platform deployment on other machines
+## Python 3.12+ Best Practices
 
-  - title: "File Operations"
-    description: >
-      Always use `read_file`/`write_file`/`grep` tools before resorting to `bash`.
-      - Prefer dedicated tools over generic shell commands
+**Applies to:** All Python files (`**/*.py`)
 
-  - title: "Bash Commands"
-    description: >
-      Always specify `timeout` parameter when using `bash` tool.
-      - Set timeout in both the command itself AND the timeout parameter
-      - Example: `bash({"command": "sleep 10", "timeout": 15})`
+### Code Style
+- Use `match-case` for pattern matching
+- Use walrus operator (`:=`) when appropriate
+- Avoid deep nesting with early returns/guard clauses
+- Use modern type hints: `list`, `dict`, `int | None` (not `Optional`, `Union`, `Dict`, `List`)
+- Ensure strong static typing (pyright compatible)
+- Use `pathlib.Path` for file operations
+- Write declarative, minimalist code
+- Follow PEP 8 and modern Python idioms
 
-  - title: "Background Processes"
-    description: >
-      Always use `nohup` to launch servers in background.
-      - Clean up processes after use
+### Type System
+- Use modern generics and pipe operator for unions
+- Avoid deprecated typing constructs
+- Write explicit, robust type annotations
+- Ensure pyright compatibility
 
-  - title: "Terminal UI Testing"
-    description: >
-      Always use `terminalcp_terminalcp` tool for manual terminal UI testing.
-      - STRICTLY AVOID assuming that UI testing can be completed solely by creating or modifying UI test scripts.
-      - Follow user instructions precisely when `terminalcp` tool is specified
+### Pydantic
+- Prefer Pydantic v2 native validation
+- Use `model_validate`, `field_validator`, `from_attributes`
+- Avoid manual `getattr`/`hasattr` flows
+- Do not narrow field types in subclasses for discriminated unions
+- Use sibling classes with shared mixins
+- Compose with `Annotated[Union[...], Field(discriminator='...')]`
 
-  - title: "Professional Standards"
-    description: >
-      Act as a professional software architect & developer.
-      - Provide fully implemented, tested, working code
-      - Follow best practices at all times
+### Enums
+- Use `StrEnum`, `IntEnum`, `IntFlag` appropriately
+- Use `auto()` for value assignment
+- Use UPPERCASE for members
 
-  - title: "Web Research"
-    description: >
-      Always perform external web research when stuck on bugs.
-      - Use `fetch_fetch` and `web_search_search` tools for online research
-      - Don't assume knowledge - verify with current sources
+### Exceptions
+- Document only exceptions explicitly raised
+- Include all exceptions from explicit `raise` statements
+- Avoid documenting obvious built-in exceptions
 
-  - title: "Git Safety"
-    description: >
-      Use extreme caution with `git` commands to avoid losing changes.
-      - NEVER use `git reset --hard` or `git checkout <filename>` lightly
-      - These commands are extremely dangerous - only use when absolutely necessary
-      - Always make backups before destructive operations
-      - Prefer `git stash --all` over destructive commands
+### Code Quality
+- Fix types/lint warnings at source
+- Use `typing.cast` when control flow guarantees type
+- Extract helpers for clearer boundaries
+- No inline ignores (`# type: ignore[...]` or `# noqa[...]`)
 
-  - title: "Todo Tool"
-    description: >
-      Always use `todo` tool to manage tasks.
-      - Start by reading existing todo list before beginning work
-      - Consider that todos from previous sessions may remain
-      - Update todo status appropriately:
-        * pending → in_progress when starting
-        * in_progress → completed when finished
-        * in_progress → pending when blocked
-      - Create specific, actionable items
-      - Break complex tasks into manageable steps
-      - Remove irrelevant tasks entirely (don't just mark cancelled)
+## Tool Usage
 
-  - title: "User Instructions"
-    description: >
-      Read each user word in instructions carefully.
-      - Prioritize user instructions over existing codebase
-      - If instructions are unclear, ask with FOUR numbered options
-      - Follow user requirements precisely, even if they differ from best practices
-      - Confirm understanding before proceeding with ambiguous requests
+### File Operations
+- Use `read_file`, `write_file`, `grep` tools
+- Prefer dedicated tools over `bash`
 
-  - title: "Match-Case Syntax"
-    description: >
-      Prefer using the match-case construct over traditional if/elif/else chains when pattern matching
-      is applicable. This leads to clearer, more concise, and more maintainable code.
+### Bash Commands
+- Always specify `timeout` parameter
+- Example: `bash({"command": "sleep 10", "timeout": 15})`
 
-  - title: "Walrus Operator"
-    description: >
-      Utilize the walrus operator (:=) to streamline code where assignment and conditional testing can be combined.
-      Use it judiciously when it improves readability and reduces redundancy.
+### Background Processes
+- Use `nohup` to launch servers
+- Clean up processes after use
 
-  - title: "Never Nester"
-    description: >
-      Aim to keep code flat by avoiding deep nesting. Use early returns, guard clauses, and refactoring to
-      minimize nested structures, making your code more readable and maintainable.
+### Terminal UI Testing
+- Use `terminalcp_terminalcp` tool
+- Follow user instructions precisely
+- Launch with: `ENV1=... uv run vibe [options]`
 
-  - title: "Modern Type Hints"
-    description: >
-      Adopt modern type hinting by using built-in generics like list and dict, along with the pipe (|) operator
-      for union types (e.g., int | None). Avoid older, deprecated constructs such as Optional, Union, Dict, and List
-      from the typing module.
+### uv Commands
+- Use `uv` for all Python commands
+- Never use bare `python` or `pip`
+- Useful commands:
+  - `uv add/remove <package>`
+  - `uv sync`
+  - `uv run script.py`
+  - `uv run pytest`
 
-  - title: "Strong Static Typing"
-    description: >
-      Write code with explicit and robust type annotations that are fully compatible with static type checkers
-      like pyright. This ensures higher code reliability and easier maintenance.
+## Development Workflow
 
-  - title: "Pydantic-First Parsing"
-    description: >
-      Prefer Pydantic v2's native validation over ad-hoc parsing. Use `model_validate`,
-      `field_validator`, `from_attributes`, and field aliases to coerce external SDK/DTO objects.
-      Avoid manual `getattr`/`hasattr` flows and custom constructors like `from_sdk` unless they are
-      thin wrappers over `model_validate`. Keep normalization logic inside model validators so call sites
-      remain declarative and typed.
+### Codebase Management
+- Keep code clean, minimal, and logically structured
+- Organize proactively: create/move/split files as needed
+- Update outdated documents
+- Remove all task-specific files before finishing
 
-  - title: "Pathlib for File Operations"
-    description: >
-      Favor the use of pathlib.Path methods for file system operations. This approach offers a more
-      readable, object-oriented way to handle file paths and enhances cross-platform compatibility,
-      reducing reliance on legacy os.path functions.
+### Todo Tool
+- Use `todo` tool to manage tasks
+- Read existing todos before starting
+- Update status: pending → in_progress → completed
+- Create specific, actionable items
+- Remove irrelevant tasks
 
-  - title: "Declarative and Minimalist Code"
-    description: >
-      Write code that is declarative—clearly expressing its intentions rather than focusing on implementation details.
-      Strive to keep your code minimalist by removing unnecessary complexity and boilerplate. This approach improves
-      readability, maintainability, and aligns with modern Python practices.
+### User Instructions
+- Read instructions carefully
+- Prioritize user requirements over codebase
+- Ask with FOUR numbered options if unclear
+- Confirm understanding before proceeding
 
-  - title: "Additional Best Practices"
-    description: >
-      Embrace other modern Python idioms such as:
-      - Using f-strings for string formatting.
-      - Favoring comprehensions for building lists and dictionaries.
-      - Employing context managers (with statements) for resource management.
-      - Following PEP 8 guidelines to maintain overall code style consistency.
+### Web Research
+- Use `fetch_fetch` and `web_search_search` when stuck
+- Verify with current sources
 
-  - title: "Exception Documentation"
-    description: >
-      Document exceptions accurately and minimally in docstrings:
-      - Only document exceptions that are explicitly raised in the function implementation
-      - Remove Raises entries for exceptions that are not directly raised
-      - Include all possible exceptions from explicit raise statements
-      - For public APIs, document exceptions from called functions if they are allowed to propagate
-      - Avoid documenting built-in exceptions that are obvious (like TypeError from type hints)
-      This ensures documentation stays accurate and maintainable, avoiding the common pitfall
-      of listing every possible exception that could theoretically occur.
+## Safety Rules
 
-  - title: "Modern Enum Usage"
-    description: >
-      Leverage Python's enum module effectively following modern practices:
-      - Use StrEnum for string-based enums that need string comparison
-      - Use IntEnum/IntFlag for performance-critical integer-based enums
-      - Use auto() for automatic value assignment to maintain clean code
-      - Always use UPPERCASE for enum members to avoid name clashes
-      - Add methods to enums when behavior needs to be associated with values
-      - Use @property for computed attributes rather than storing values
-      - For type mixing, ensure mix-in types appear before Enum in base class sequence
-      - Consider Flag/IntFlag for bit field operations
-      - Use _generate_next_value_ for custom value generation
-      - Implement __bool__ when enum boolean evaluation should depend on value
-      This promotes type-safe constants, self-documenting code, and maintainable value sets.
+### Git Safety
+- NEVER use `git reset --hard` or `git checkout <filename>` lightly
+- Always make backups before destructive operations
+- Prefer `git stash --all`
 
-  - title: "No Inline Ignores"
-    description: >
-      Do not use inline suppressions like `# type: ignore[...]` or `# noqa[...]` in production code.
-      Instead, fix types and lint warnings at the source by:
-      - Refining signatures with generics (TypeVar), Protocols, or precise return types
-      - Guarding with `isinstance` checks before attribute access
-      - Using `typing.cast` when control flow guarantees the type
-      - Extracting small helpers to create clearer, typed boundaries
-      If a suppression is truly unavoidable at an external boundary, prefer a narrow, well-typed wrapper
-      over in-line ignores, and document the rationale in code comments.
+### Production Directories
+- NEVER modify/delete files in `~/.vibe`
+- Only add new files
 
-  - title: "Pydantic Discriminated Unions"
-    description: >
-      When modeling variants with a discriminated union (e.g., on a `transport` field), do not narrow a
-      field type in a subclass (e.g., overriding `transport: Literal['http']` with `Literal['streamable-http']`).
-      This violates Liskov substitution and triggers type checker errors due to invariance of class attributes.
-      Prefer sibling classes plus a shared mixin for common fields and helpers, and compose the union with
-      `Annotated[Union[...], Field(discriminator='transport')]`.
-      Example pattern:
-      - Create a base with shared non-discriminator fields (e.g., `_MCPBase`).
-      - Create a mixin with protocol-specific fields/methods (e.g., `_MCPHttpFields`), without a `transport`.
-      - Define sibling final classes per variant (e.g., `MCPHttp`, `MCPStreamableHttp`, `MCPStdio`) that set
-        `transport: Literal[...]` once in each final class.
-      - Use `match` on the discriminator to narrow types at call sites.
+### Professional Standards
+- Provide fully implemented, tested, working code
+- Follow best practices at all times
 
-  - title: "Use uv for All Commands"
-    description: >
-      We use uv to manage our python environment. You should never try to run a bare python commands.
-      Always run commands using `uv` instead of invoking `python` or `pip` directly.
-      For example, use `uv add package` and `uv run script.py` rather than `pip install package` or `python script.py`.
-      This practice helps avoid environment drift and leverages modern Python packaging best practices.
-      Useful uv commands are:
-      - uv add/remove <package> to manage dependencies
-      - uv sync to install dependencies declared in pyproject.toml and uv.lock
-      - uv run script.py to run a script within the uv environment
-      - uv run pytest (or any other python tool) to run the tool within the uv environment
+---
+
+The end of guidlines.
