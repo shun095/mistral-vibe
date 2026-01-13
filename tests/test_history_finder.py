@@ -106,8 +106,12 @@ class TestHistoryFinderApp:
         app = HistoryFinderApp(history_manager)
         app._filter_entries("")
         
-        # Empty search should return all entries
+        # Empty search should return all entries in reverse order (latest first)
         assert len(app._filtered_entries) == len(test_entries)
+        # Check that entries are reversed (Rust should be first since it's the latest)
+        assert app._filtered_entries[0].text == "Rust"
+        assert app._filtered_entries[1].text == "JavaScript"
+        assert app._filtered_entries[2].text == "Python"
 
     def test_filter_entries_fuzzy_match(self, tmp_path: Path) -> None:
         """Test fuzzy matching functionality."""
