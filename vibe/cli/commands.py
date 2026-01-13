@@ -46,6 +46,11 @@ class CommandRegistry:
                 description="Compact conversation history by summarizing",
                 handler="_compact_history",
             ),
+            "history": Command(
+                aliases=frozenset(["/history"]),
+                description="Search and select from prompt history",
+                handler="_show_history_finder",
+            ),
             "exit": Command(
                 aliases=frozenset(["/exit"]),
                 description="Exit the application",

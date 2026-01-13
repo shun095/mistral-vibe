@@ -11,7 +11,7 @@ from typing import Any, ClassVar, assert_never, cast
 from pydantic import BaseModel
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
-from textual.containers import Horizontal, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.events import AppBlur, AppFocus, MouseUp
 from textual.widget import Widget
 from textual.widgets import Static
@@ -37,6 +37,7 @@ from vibe.cli.textual_ui.widgets.approval_app import ApprovalApp
 from vibe.cli.textual_ui.widgets.chat_input import ChatInputContainer
 from vibe.cli.textual_ui.widgets.compact import CompactMessage
 from vibe.cli.textual_ui.widgets.config_app import ConfigApp
+from vibe.cli.textual_ui.widgets.history_finder import HistoryFinderApp
 from vibe.cli.textual_ui.widgets.context_progress import ContextProgress, TokenState
 from vibe.cli.textual_ui.widgets.loading import LoadingWidget, paused_timer
 from vibe.cli.textual_ui.widgets.messages import (
@@ -98,6 +99,7 @@ class BottomApp(StrEnum):
 
     Approval = auto()
     Config = auto()
+    History = auto()
     Input = auto()
     Question = auto()
 
@@ -177,7 +179,7 @@ class VibeApp(App):  # noqa: PLR0904
 
         yield Static(id="todo-area")
 
-        with Static(id="bottom-app-container"):
+        with Vertical(id="bottom-app-container"):
             yield ChatInputContainer(
                 history_file=self.history_file,
                 command_registry=self.commands,
@@ -352,12 +354,48 @@ class VibeApp(App):  # noqa: PLR0904
         if message.changes:
             VibeConfig.save_updates(message.changes)
             await self._reload_config()
+            await self._switch_to_input_app()
         else:
+            await self._switch_to_input_app()
             await self._mount_and_scroll(
                 UserCommandMessage("Configuration closed (no changes saved).")
             )
 
+    async def _wait_for_input_container_ready(self, input_container: ChatInputContainer) -> None:
+        """Wait for the input container to be fully initialized with its body."""
+        max_attempts = 10
+        for _ in range(max_attempts):
+            if input_container._body is not None:
+                return
+            await asyncio.sleep(0.1)
+
+    async def on_history_finder_app_history_selected(
+        self, message: HistoryFinderApp.HistorySelected
+    ) -> None:
+        print(f"DEBUG: HistorySelected message received: {message.entry[:50]}...")  # Debug
+        print(f"DEBUG: Current bottom app before switch: {self._current_bottom_app}")  # Debug
         await self._switch_to_input_app()
+        print(f"DEBUG: Current bottom app after switch: {self._current_bottom_app}")  # Debug
+        input_container = self.query_one(ChatInputContainer)
+        # Wait for the input container to be fully initialized
+        await self._wait_for_input_container_ready(input_container)
+        input_container.value = message.entry
+        print(f"DEBUG: Set input value to: {message.entry[:50]}...")  # Debug
+        await self._mount_and_scroll(
+            UserCommandMessage(f"Selected from history: {message.entry[:50]}{'...' if len(message.entry) > 50 else ''}")
+        )
+
+    async def on_history_finder_app_history_closed(
+        self, message: HistoryFinderApp.HistoryClosed
+    ) -> None:
+        print("DEBUG: HistoryClosed message received")  # Debug
+        print(f"DEBUG: Current bottom app in HistoryClosed: {self._current_bottom_app}")  # Debug
+        # Check if we're already in input mode (meaning HistorySelected was processed first)
+        if self._current_bottom_app != BottomApp.Input:
+            print("DEBUG: Switching to input app from HistoryClosed")  # Debug
+            await self._switch_to_input_app()
+        else:
+            print("DEBUG: Already in input mode, skipping switch")  # Debug
 
     async def on_compact_message_completed(
         self, message: CompactMessage.Completed
@@ -658,6 +696,12 @@ class VibeApp(App):  # noqa: PLR0904
             return
         await self._switch_to_config_app()
 
+    async def _show_history_finder(self) -> None:
+        """Switch to the history finder app in the bottom panel."""
+        if self._current_bottom_app == BottomApp.History:
+            return
+        await self._switch_to_history_finder_app()
+
     async def _reload_config(self) -> None:
         try:
             base_config = VibeConfig.load()
@@ -825,6 +869,30 @@ class VibeApp(App):  # noqa: PLR0904
             ConfigApp(self.config, has_terminal_theme=self._terminal_theme is not None)
         )
 
+    async def _switch_to_history_finder_app(self) -> None:
+        bottom_container = self.query_one("#bottom-app-container")
+
+        try:
+            chat_input_container = self.query_one(ChatInputContainer)
+            # Get the HistoryManager from the chat input container
+            history_manager = chat_input_container._body.history if chat_input_container._body else None
+            print(f"DEBUG: Got history manager from chat input: {history_manager}")
+            if history_manager:
+                print(f"DEBUG: History manager has {len(history_manager._entries)} entries")
+            await chat_input_container.remove()
+        except Exception as e:
+            print(f"DEBUG: Exception getting history manager: {e}")
+            history_manager = None
+
+        if self._mode_indicator:
+            self._mode_indicator.display = False
+
+        history_finder_app = HistoryFinderApp(history_manager=history_manager)
+        await bottom_container.mount(history_finder_app)
+        self._current_bottom_app = BottomApp.History
+
+        self.call_after_refresh(history_finder_app.focus)
+
     async def _switch_to_approval_app(
         self, tool_name: str, tool_args: BaseModel
     ) -> None:
@@ -860,6 +928,8 @@ class VibeApp(App):  # noqa: PLR0904
                     self.query_one(ChatInputContainer).focus_input()
                 case BottomApp.Config:
                     self.query_one(ConfigApp).focus()
+                case BottomApp.History:
+                    self.query_one(HistoryFinderApp).focus()
                 case BottomApp.Approval:
                     self.query_one(ApprovalApp).focus()
                 case BottomApp.Question:
@@ -876,6 +946,15 @@ class VibeApp(App):  # noqa: PLR0904
             try:
                 config_app = self.query_one(ConfigApp)
                 config_app.action_close()
+            except Exception:
+                pass
+            self._last_escape_time = None
+            return
+
+        if self._current_bottom_app == BottomApp.History:
+            try:
+                history_finder = self.query_one(HistoryFinderApp)
+                history_finder.action_close()
             except Exception:
                 pass
             self._last_escape_time = None
