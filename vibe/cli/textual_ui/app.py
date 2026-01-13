@@ -103,6 +103,7 @@ class VibeApp(App):  # noqa: PLR0904
         enable_streaming: bool = False,
         initial_prompt: str | None = None,
         loaded_messages: list[LLMMessage] | None = None,
+        session_metadata: dict[str, Any] | None = None,
         version_update_notifier: VersionUpdateGateway | None = None,
         update_cache_repository: UpdateCacheRepository | None = None,
         current_version: str = CORE_VERSION,
@@ -144,6 +145,7 @@ class VibeApp(App):  # noqa: PLR0904
 
         self._initial_prompt = initial_prompt
         self._loaded_messages = loaded_messages
+        self._session_metadata = session_metadata
         self._agent_init_task: asyncio.Task | None = None
         # prevent a race condition where the agent initialization
         # completes exactly at the moment the user interrupts
@@ -289,6 +291,58 @@ class VibeApp(App):  # noqa: PLR0904
             await self._loading_widget.remove()
             self._loading_widget = None
         self._hide_todo_area()
+
+    async def _restore_tool_states(self, agent: Agent, tool_states: dict[str, Any]) -> None:
+        """Restore tool states from session metadata."""
+        from vibe.core.tools.builtins.todo import TodoItem, TodoState
+        
+        todos_restored = False
+        
+        for tool_name, state_data in tool_states.items():
+            try:
+                tool_instance = agent.tool_manager.get(tool_name)
+                if hasattr(tool_instance, 'state'):
+                    # Handle todo tool state specifically
+                    if tool_name == "todo" and isinstance(state_data, dict):
+                        todos_data = state_data.get("todos", [])
+                        todos = [TodoItem.model_validate(todo_data) for todo_data in todos_data]
+                        tool_instance.state = TodoState(todos=todos)
+                        logger.info(f"Restored {len(todos)} todos for tool: {tool_name}")
+                        if len(todos) > 0:
+                            todos_restored = True
+                    else:
+                        # For other tools, try to restore state using model_validate
+                        state_class = type(tool_instance.state)
+                        restored_state = state_class.model_validate(state_data)
+                        tool_instance.state = restored_state
+                        logger.info(f"Restored state for tool: {tool_name}")
+            except Exception as e:
+                logger.warning(f"Failed to restore state for tool {tool_name}: {e}")
+        
+        # Show todo area if todos were restored
+        if todos_restored:
+            self._show_todo_area()
+            # Trigger the todo display by calling the todo tool's read method
+            try:
+                from vibe.core.tools.builtins.todo import TodoArgs, TodoResult
+                todo_tool = agent.tool_manager.get("todo")
+                todo_args = TodoArgs(action="read")
+                result = await todo_tool.run(todo_args)
+                # Convert the result to a dictionary for proper serialization
+                if isinstance(result, TodoResult):
+                    result_dict = result.model_dump()
+                else:
+                    result_dict = result
+                # Manually handle the result to display it in the todo area
+                from vibe.core.agent import ToolResultEvent
+                event = ToolResultEvent(
+                    tool_name="todo",
+                    result=result_dict
+                )
+                # This will trigger the UI to display the todos
+                await self._handle_tool_result(event)
+            except Exception as e:
+                logger.warning(f"Failed to display restored todos: {e}")
 
     def _show_todo_area(self) -> None:
         try:
@@ -540,6 +594,17 @@ class VibeApp(App):  # noqa: PLR0904
                 logger.info(
                     "Loaded %d messages from previous session", len(non_system_messages)
                 )
+
+            # Restore tool states from session metadata
+            if self._session_metadata:
+                logger.info(f"Session metadata keys: {list(self._session_metadata.keys())}")
+                if "tool_states" in self._session_metadata:
+                    logger.info(f"Restoring tool states: {list(self._session_metadata['tool_states'].keys())}")
+                    await self._restore_tool_states(agent, self._session_metadata["tool_states"])
+                else:
+                    logger.info("No tool_states in session metadata")
+            else:
+                logger.info("No session metadata")
 
             self.agent = agent
         except asyncio.CancelledError:
@@ -1469,6 +1534,7 @@ def run_textual_ui(
     enable_streaming: bool = False,
     initial_prompt: str | None = None,
     loaded_messages: list[LLMMessage] | None = None,
+    session_metadata: dict[str, Any] | None = None,
 ) -> None:
     update_notifier = PyPIVersionUpdateGateway(project_name="mistral-vibe")
     update_cache_repository = FileSystemUpdateCacheRepository()
@@ -1478,6 +1544,7 @@ def run_textual_ui(
         enable_streaming=enable_streaming,
         initial_prompt=initial_prompt,
         loaded_messages=loaded_messages,
+        session_metadata=session_metadata,
         version_update_notifier=update_notifier,
         update_cache_repository=update_cache_repository,
     )

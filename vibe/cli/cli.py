@@ -86,9 +86,9 @@ def bootstrap_config_files() -> None:
 
 def load_session(
     args: argparse.Namespace, config: VibeConfig
-) -> list[LLMMessage] | None:
+) -> tuple[list[LLMMessage] | None, dict[str, Any] | None]:
     if not args.continue_session and not args.resume:
-        return None
+        return None, None
 
     if not config.session_logging.enabled:
         rprint(
@@ -118,8 +118,8 @@ def load_session(
             sys.exit(1)
 
     try:
-        loaded_messages, _ = InteractionLogger.load_session(session_to_load)
-        return loaded_messages
+        loaded_messages, metadata = InteractionLogger.load_session(session_to_load)
+        return loaded_messages, metadata
     except Exception as e:
         rprint(f"[red]Failed to load session: {e}[/]")
         sys.exit(1)
@@ -141,7 +141,7 @@ def run_cli(args: argparse.Namespace) -> None:
         if args.enabled_tools:
             config.enabled_tools = args.enabled_tools
 
-        loaded_messages = load_session(args, config)
+        loaded_messages, session_metadata = load_session(args, config)
 
         stdin_prompt = get_prompt_from_stdin()
         if args.prompt is not None:
@@ -163,6 +163,7 @@ def run_cli(args: argparse.Namespace) -> None:
                     max_price=args.max_price,
                     output_format=output_format,
                     previous_messages=loaded_messages,
+                    session_metadata=session_metadata,
                     mode=initial_mode,
                 )
                 if final_response:
@@ -181,6 +182,7 @@ def run_cli(args: argparse.Namespace) -> None:
                 enable_streaming=True,
                 initial_prompt=args.initial_prompt or stdin_prompt,
                 loaded_messages=loaded_messages,
+                session_metadata=session_metadata,
             )
 
     except (KeyboardInterrupt, EOFError):

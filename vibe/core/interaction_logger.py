@@ -140,6 +140,13 @@ class InteractionLogger:
             for tool_class in active_tools
         ]
 
+        # Collect tool states for persistence
+        tool_states = {}
+        for tool_name in tool_manager._instances:
+            tool_instance = tool_manager._instances[tool_name]
+            if hasattr(tool_instance, 'state'):
+                tool_states[tool_name] = tool_instance.state.model_dump()
+
         interaction_data = {
             "metadata": {
                 **self.session_metadata.model_dump(),
@@ -148,6 +155,7 @@ class InteractionLogger:
                 "total_messages": len(messages),
                 "tools_available": tools_available,
                 "agent_config": config.model_dump(mode="json"),
+                "tool_states": tool_states,
             },
             "messages": [m.model_dump(exclude_none=True) for m in messages],
         }
