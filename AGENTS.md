@@ -57,21 +57,21 @@ Following are guidelines you MUST follow during executing tasks.
 - Prefer dedicated tools over `bash`
 
 ### Bash Commands
-- Always specify `timeout` parameter
+- **CRITICAL**: Always specify `timeout` parameter
 - Example: `bash({"command": "sleep 10", "timeout": 15})`
 
 ### Background Processes
-- Use `nohup` to launch servers
+- **CRITICAL**: Use `nohup` to launch servers in background with stdout/stderr redirect for logs
 - Clean up processes after use
 
 ### Terminal UI Testing
-- Use `terminalcp_terminalcp` tool
-- Follow user instructions precisely
-- Launch with: `ENV1=... uv run vibe [options]`
+- **CRITICAL**: Strictly always verify UI using `terminalcp_terminalcp` tool after modifying code
+- **CRITICAL**: Launch the app with: `ENV1=... uv run vibe [options]`
+- **CRITICAL**: Environment variables must be specified can be gotten by `env | grep -e OPENAI -e MISTRAL` command
 
 ### uv Commands
-- Use `uv` for all Python commands
-- Never use bare `python` or `pip`
+- **CRITICAL**: Use `uv` for all Python commands
+- **CRITICAL**: Never use bare `python` or `pip`
 - Useful commands:
   - `uv add/remove <package>`
   - `uv sync`
@@ -87,8 +87,8 @@ Following are guidelines you MUST follow during executing tasks.
 - Remove all task-specific files before finishing
 
 ### Todo Tool
-- Use `todo` tool to manage tasks
-- Read existing todos before starting
+- **CRITICAL**: Always read existing todos before starting any tasks
+- Always use `todo` tool to manage tasks
 - Update status: pending → in_progress → completed
 - Create specific, actionable items
 - Remove irrelevant tasks
@@ -96,22 +96,21 @@ Following are guidelines you MUST follow during executing tasks.
 ### User Instructions
 - Read instructions carefully
 - Prioritize user requirements over codebase
-- Ask with FOUR numbered options if unclear
+- Ask user with FOUR numbered options if unclear
 - Confirm understanding before proceeding
 
 ### Web Research
-- Use `fetch_fetch` and `web_search_search` when stuck
-- Verify with current sources
+- **CRITICAL**: Always research latest information first using `fetch_fetch` and `web_search_search` to solve any error.
 
 ## Safety Rules
 
 ### Git Safety
-- NEVER use `git reset --hard` or `git checkout <filename>` lightly
-- Always make backups before destructive operations
+- **CRITICAL**: NEVER use `git reset --hard` or `git checkout <filename>` lightly
+- **CRITICAL**: Always make backups before destructive operations
 - Prefer `git stash --all`
 
 ### Production Directories
-- NEVER modify/delete files in `~/.vibe`
+- **CRITICAL**: NEVER modify/delete files in `~/.vibe`
 - Only add new files
 
 ### Professional Standards
