@@ -786,8 +786,19 @@ class Agent:
             last_user_message = None
             for msg in reversed(self.messages):
                 if msg.role == Role.user:
-                    last_user_message = msg.content
-                    break
+                    # Skip summary messages (they contain "Last request from user was:")
+                    if "Last request from user was:" not in msg.content:
+                        last_user_message = msg.content
+                        break
+                    else:
+                        # If this is a summary message, extract the original user message from it
+                        # The format is: "summary_content\n\nLast request from user was: original_message"
+                        if "Last request from user was:" in msg.content:
+                            parts = msg.content.split("Last request from user was:")
+                            if len(parts) > 1:
+                                # Extract the original message (everything after "Last request from user was:")
+                                last_user_message = parts[1].strip()
+                                break
 
             summary_request = UtilityPrompt.COMPACT.read()
             self.messages.append(LLMMessage(role=Role.user, content=summary_request))
