@@ -211,7 +211,13 @@ def create_mcp_http_proxy_tool_class(
 
         @classmethod
         def get_call_display(cls, event: ToolCallEvent) -> ToolCallDisplay:
-            return ToolCallDisplay(summary=f"{published_name}")
+            args_dict = event.args.model_dump() if hasattr(event.args, "model_dump") else {}
+            # Filter out None and empty string values
+            filtered_args = {k: v for k, v in args_dict.items() if v is not None and v != ""}
+            if not filtered_args:
+                return ToolCallDisplay(summary=f"{published_name}")
+            args_str = ", ".join(f"{k}={v!r}" for k, v in list(filtered_args.items())[:3])
+            return ToolCallDisplay(summary=f"{published_name}({args_str})")
 
         @classmethod
         def get_result_display(cls, event: ToolResultEvent) -> ToolResultDisplay:
@@ -337,7 +343,13 @@ def create_mcp_stdio_proxy_tool_class(
 
         @classmethod
         def get_call_display(cls, event: ToolCallEvent) -> ToolCallDisplay:
-            return ToolCallDisplay(summary=f"{published_name}")
+            args_dict = event.args.model_dump() if hasattr(event.args, "model_dump") else {}
+            # Filter out None and empty string values
+            filtered_args = {k: v for k, v in args_dict.items() if v is not None and v != ""}
+            if not filtered_args:
+                return ToolCallDisplay(summary=f"{published_name}")
+            args_str = ", ".join(f"{k}={v!r}" for k, v in list(filtered_args.items())[:3])
+            return ToolCallDisplay(summary=f"{published_name}({args_str})")
 
         @classmethod
         def get_result_display(cls, event: ToolResultEvent) -> ToolResultDisplay:
