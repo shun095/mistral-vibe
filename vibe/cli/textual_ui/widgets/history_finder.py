@@ -177,11 +177,11 @@ class HistoryFinderApp(Container):
             self._search_input.focus()
 
     def focus(self) -> None:
-        """Focus the list view for better navigation."""
-        if self._list_view:
-            self._list_view.focus()
-        elif self._search_input:
+        """Focus the search input for immediate typing."""
+        if self._search_input:
             self._search_input.focus()
+        elif self._list_view:
+            self._list_view.focus()
 
     def on_key(self, event: events.Key) -> None:
         """Handle key events."""

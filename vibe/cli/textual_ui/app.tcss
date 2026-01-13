@@ -1037,22 +1037,20 @@ ContextProgress {
 
 /* History Finder Styles */
 HistoryFinderApp {
-    height: auto;
-    max-height: 20;
+    height: 80vh;
     width: 100%;
     max-width: 100%;
     background: $background;
     border: round $foreground-muted;
     padding: 0 1;
     margin: 0 0 0 0;
-    overflow-y: hidden;
+    overflow-y: auto;
     layout: vertical;
-    scrollbar-visibility: hidden;
+    scrollbar-visibility: visible;
 }
 
 #history-list {
-    height: auto;
-    max-height: 15;
+    height: 1fr;
     width: 100%;
     background: $surface;
     border: solid $foreground-muted;
@@ -1063,7 +1061,6 @@ HistoryFinderApp {
 
 #history-list ListItem {
     padding: 0 1;
-    border-bottom: solid $foreground-muted;
     width: 100%;
     max-width: 100%;
     overflow-x: hidden;
