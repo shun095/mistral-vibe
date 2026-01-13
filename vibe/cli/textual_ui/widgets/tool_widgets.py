@@ -20,6 +20,7 @@ from vibe.core.tools.builtins.search_replace import (
 )
 from vibe.core.tools.builtins.todo import TodoArgs, TodoResult
 from vibe.core.tools.builtins.write_file import WriteFileArgs, WriteFileResult
+from vibe.core.tools.mcp import create_mcp_http_proxy_tool_class, create_mcp_stdio_proxy_tool_class
 
 
 def _truncate_lines(content: str, max_lines: int) -> str:
@@ -309,6 +310,34 @@ class GrepApprovalWidget(ToolApprovalWidget[GrepArgs]):
             )
 
 
+class MCPApprovalWidget(ToolApprovalWidget[BaseModel]):
+    """Approval widget for MCP tools that shows arguments in a formatted way."""
+
+    def compose(self) -> ComposeResult:
+        # Filter out None and empty string values
+        args_dict = self.args.model_dump() if hasattr(self.args, "model_dump") else {}
+        filtered_args = {k: v for k, v in args_dict.items() if v is not None and v != ""}
+        
+        if not filtered_args:
+            # No arguments to show, just show tool name
+            yield Static(
+                f"No arguments provided",
+                markup=False,
+                classes="approval-description",
+            )
+        else:
+            # Show arguments in a formatted way similar to get_call_display
+            args_str = ", ".join(f"{k}={v!r}" for k, v in list(filtered_args.items())[:10])
+            if len(filtered_args) > 10:
+                args_str += f", ... ({len(filtered_args) - 10} more)"
+            
+            yield Static(
+                f"Arguments: {args_str}",
+                markup=False,
+                classes="approval-description",
+            )
+
+
 class GrepResultWidget(ToolResultWidget[GrepResult]):
     def compose(self) -> ComposeResult:
         yield from self._header()
@@ -340,7 +369,31 @@ RESULT_WIDGETS: dict[str, type[ToolResultWidget]] = {
 }
 
 
+def _is_mcp_tool(tool_name: str) -> bool:
+    """Check if a tool name corresponds to an MCP tool."""
+    # MCP tools follow the pattern: {server}_{tool_name}
+    # They typically contain underscores and may have server prefixes
+    # Built-in tools like "read_file" should not be detected as MCP tools
+    
+    # List of known built-in tools that contain underscores
+    builtin_tools_with_underscores = {
+        "read_file", "write_file", "search_replace"
+    }
+    
+    if tool_name in builtin_tools_with_underscores:
+        return False
+    
+    # MCP tools typically have multiple underscores or server prefixes
+    # Pattern: server_name_tool_name or alias_tool_name
+    return "_" in tool_name and not tool_name.startswith("_")
+
+
 def get_approval_widget(tool_name: str, args: BaseModel) -> ToolApprovalWidget:
+    # Use MCP approval widget for MCP tools
+    if _is_mcp_tool(tool_name):
+        return MCPApprovalWidget(args)
+    
+    # Use specific widget for built-in tools
     widget_class = APPROVAL_WIDGETS.get(tool_name, ToolApprovalWidget)
     return widget_class(args)
 
