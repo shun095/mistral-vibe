@@ -18,6 +18,8 @@ from vibe.core.tools.base import (
     ToolError,
     ToolPermission,
 )
+from vibe.core.tools.ui import ToolCallDisplay, ToolResultDisplay, ToolUIData
+from vibe.core.types import ToolCallEvent, ToolResultEvent
 from vibe.core.utils import is_windows
 
 
@@ -196,7 +198,10 @@ class BashResult(BaseModel):
     returncode: int
 
 
-class Bash(BaseTool[BashArgs, BashResult, BashToolConfig, BaseToolState]):
+class Bash(
+    BaseTool[BashArgs, BashResult, BashToolConfig, BaseToolState],
+    ToolUIData[BashArgs, BashResult],
+):
     description: ClassVar[str] = "Run a one-off bash command and capture its output."
 
     def check_allowlist_denylist(self, args: BashArgs) -> ToolPermission | None:
@@ -317,3 +322,41 @@ class Bash(BaseTool[BashArgs, BashResult, BashToolConfig, BaseToolState]):
         finally:
             if proc is not None:
                 await _kill_process_tree(proc)
+
+    @classmethod
+    def get_call_display(cls, event: ToolCallEvent) -> ToolCallDisplay:
+        if not isinstance(event.args, BashArgs):
+            return ToolCallDisplay(summary="Invalid arguments")
+
+        args = event.args
+        # Replace literal \n with actual newlines for better readability
+        command_display = args.command.replace("\\n", "\n")
+
+        # Build summary with all parameters in the requested format
+        summary = f"Running Command: {command_display}"
+        if args.timeout is not None:
+            summary += f" (Timeout: {args.timeout}s)"
+
+        return ToolCallDisplay(
+            summary=summary,
+            content=args.command,
+        )
+
+    @classmethod
+    def get_result_display(cls, event: ToolResultEvent) -> ToolResultDisplay:
+        if event.error:
+            return ToolResultDisplay(success=False, message=event.error)
+
+        if event.skipped:
+            return ToolResultDisplay(
+                success=False, message=event.skip_reason or "Skipped"
+            )
+
+        if isinstance(event.result, BashResult):
+            return ToolResultDisplay(success=True, message="Command completed")
+
+        return ToolResultDisplay(success=True, message="Success")
+
+    @classmethod
+    def get_status_text(cls) -> str:
+        return "Running command"
