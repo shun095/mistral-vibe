@@ -165,6 +165,36 @@ class APIToolFormatHandler:
     def create_tool_response_message(
         self, tool_call: ResolvedToolCall, result_text: str
     ) -> LLMMessage:
+        # Special handling for read_image tool
+        # If result_text is empty or contains "Understood", create image message
+        # Otherwise, create standard tool response
+        if tool_call.tool_name == "read_image":
+            # Import here to avoid circular imports
+            from vibe.core.tools.builtins.read_image import ReadImageResult
+            
+            if isinstance(tool_call.validated_args, ReadImageResult):
+                # Check if this is for creating the image message (empty result_text)
+                # or for creating the tool response message (non-empty result_text)
+                if not result_text or result_text.strip() == "":
+                    # This case is no longer used - the agent creates the user message directly
+                    # with the actual result data (which includes base64-encoded data URLs)
+                    # Fall back to standard tool response format
+                    return LLMMessage(
+                        role=Role.tool,
+                        tool_call_id=tool_call.call_id,
+                        name=tool_call.tool_name,
+                        content="",
+                    )
+                else:
+                    # Create standard tool response message
+                    return LLMMessage(
+                        role=Role.tool,
+                        tool_call_id=tool_call.call_id,
+                        name=tool_call.tool_name,
+                        content=result_text,
+                    )
+        
+        # Standard tool response for other tools
         return LLMMessage(
             role=Role.tool,
             tool_call_id=tool_call.call_id,
@@ -175,6 +205,8 @@ class APIToolFormatHandler:
     def create_failed_tool_response_message(
         self, failed: FailedToolCall, error_content: str
     ) -> LLMMessage:
+        # For read_image tool, even failures should be sent as tool messages
+        # to maintain consistency in the conversation flow
         return LLMMessage(
             role=Role.tool,
             tool_call_id=failed.call_id,

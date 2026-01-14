@@ -310,7 +310,19 @@ class AgentLoop:
                     yield event
 
                 last_message = self.messages[-1]
-                should_break_loop = last_message.role != Role.tool
+                
+                # Special handling for read_image tool
+                # If the last message is a user message with image content from read_image,
+                # we should continue the conversation
+                if (last_message.role == Role.user and 
+                    isinstance(last_message.content, list) and
+                    any(item.get("type") == "image_url" for item in last_message.content if isinstance(item, dict))):
+                    # This is a user message with image content from read_image tool
+                    # Continue the conversation
+                    should_break_loop = False
+                else:
+                    # Standard logic: continue if last message is a tool message
+                    should_break_loop = last_message.role != Role.tool
 
                 self._flush_new_messages()
 
