@@ -269,7 +269,19 @@ class Agent:
                     yield event
 
                 last_message = self.messages[-1]
-                should_break_loop = last_message.role != Role.tool
+                
+                # Special handling for read_image tool
+                # If the last message is a user message with image content from read_image,
+                # we should continue the conversation
+                if (last_message.role == Role.user and 
+                    isinstance(last_message.content, list) and
+                    any(item.get("type") == "image_url" for item in last_message.content if isinstance(item, dict))):
+                    # This is a user message with image content from read_image tool
+                    # Continue the conversation
+                    should_break_loop = False
+                else:
+                    # Standard logic: continue if last message is a tool message
+                    should_break_loop = last_message.role != Role.tool
 
                 self._flush_new_messages()
 
@@ -446,25 +458,75 @@ class Agent:
                 result_model = await tool_instance.invoke(**tool_call.args_dict)
                 duration = time.perf_counter() - start_time
 
-                text = "\n".join(
-                    f"{k}: {v}" for k, v in result_model.model_dump().items()
-                )
+                # Special handling for read_image tool
+                if tool_call.tool_name == "read_image":
+                    # Yield ToolResultEvent first before adding messages
+                    yield ToolResultEvent(
+                        tool_name=tool_call.tool_name,
+                        tool_class=tool_call.tool_class,
+                        result=result_model,
+                        duration=duration,
+                        tool_call_id=tool_call_id,
+                    )
 
-                self.messages.append(
-                    LLMMessage.model_validate(
-                        self.format_handler.create_tool_response_message(
-                            tool_call, text
+                    # Add tool response message with specific format
+                    text = "Reading image succeeded. Please refer user's message below"
+                    self.messages.append(
+                        LLMMessage.model_validate(
+                            self.format_handler.create_tool_response_message(
+                                tool_call, text
+                            )
                         )
                     )
-                )
+                    
+                    # Add assistant "Understood" message
+                    self.messages.append(
+                        LLMMessage(
+                            role=Role.assistant,
+                            content="Understood.",
+                        )
+                    )
+                    
+                    # Add user message with image content
+                    # Text shows the original URL, image_url shows the processed data URL
+                    self.messages.append(
+                        LLMMessage.model_construct(
+                            role="user",
+                            content=[
+                                {
+                                    "type": "text",
+                                    "text": f"This is an image fetched from {tool_call.args_dict['image_url']}"
+                                },
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": result_model.image_url
+                                    }
+                                }
+                            ]
+                        )
+                    )
+                else:
+                    # Standard tool response for other tools
+                    text = "\n".join(
+                        f"{k}: {v}" for k, v in result_model.model_dump().items()
+                    )
 
-                yield ToolResultEvent(
-                    tool_name=tool_call.tool_name,
-                    tool_class=tool_call.tool_class,
-                    result=result_model,
-                    duration=duration,
-                    tool_call_id=tool_call_id,
-                )
+                    self.messages.append(
+                        LLMMessage.model_validate(
+                            self.format_handler.create_tool_response_message(
+                                tool_call, text
+                            )
+                        )
+                    )
+
+                    yield ToolResultEvent(
+                        tool_name=tool_call.tool_name,
+                        tool_class=tool_call.tool_class,
+                        result=result_model,
+                        duration=duration,
+                        tool_call_id=tool_call_id,
+                    )
 
                 self.stats.tool_calls_succeeded += 1
 
