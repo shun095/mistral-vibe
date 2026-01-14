@@ -112,6 +112,7 @@ class VibeApp(App):  # noqa: PLR0904
         Binding("ctrl+c", "clear_quit", "Quit", show=False),
         Binding("ctrl+d", "force_quit", "Quit", show=False, priority=True),
         Binding("escape", "interrupt", "Interrupt", show=False, priority=True),
+        Binding("ctrl+r", "show_history", "History", show=False),
         Binding("ctrl+o", "toggle_tool", "Toggle Tool", show=False),
         Binding("ctrl+t", "toggle_todo", "Toggle Todo", show=False),
         Binding("shift+tab", "cycle_mode", "Cycle Mode", show=False, priority=True),
@@ -1084,6 +1085,9 @@ class VibeApp(App):  # noqa: PLR0904
         for result in self.query(ToolResultMessage):
             if result.tool_name == "todo":
                 await result.set_collapsed(self._todos_collapsed)
+
+    async def action_show_history(self) -> None:
+        await self._show_history_finder()
 
     def action_cycle_mode(self) -> None:
         if self._current_bottom_app != BottomApp.Input:

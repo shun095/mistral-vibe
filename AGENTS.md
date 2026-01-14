@@ -1,4 +1,4 @@
-# AI Agent Guidelines for Mistral Vibe
+# AI Agent Guidelines for Mistral Vibe (IMPORTANT: YOU MUST ALWAYS STRICTLY ADHERE TO THIS GUIDELINES)
 
 **Last Updated**: 2024-06-10
 **Version**: 2.0
