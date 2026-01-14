@@ -135,7 +135,9 @@ class ToolResultWidget[TResult: BaseModel](Static):
 
 class BashApprovalWidget(ToolApprovalWidget[BashArgs]):
     def compose(self) -> ComposeResult:
-        yield Markdown(f"```bash\n{self.args.command}\n```")
+        # Replace escape sequences with actual characters for better readability
+        display_command = self.args.command.replace("\\n", "\n").replace("\\t", "\t").replace("\\r", "\r")
+        yield Markdown(f"```bash\n{display_command}\n```")
 
 
 class BashResultWidget(ToolResultWidget[BashResult]):

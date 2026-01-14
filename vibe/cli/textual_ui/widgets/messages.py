@@ -238,7 +238,8 @@ class BashOutputMessage(Static):
     def __init__(self, command: str, cwd: str, output: str, exit_code: int) -> None:
         super().__init__()
         self.add_class("bash-output-message")
-        self._command = command
+        # Replace escape sequences with actual characters for better readability
+        self._command = command.replace("\\n", "\n").replace("\\t", "\t").replace("\\r", "\r")
         self._cwd = cwd
         self._output = output
         self._exit_code = exit_code
