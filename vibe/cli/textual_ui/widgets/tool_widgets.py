@@ -5,7 +5,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 from textual.app import ComposeResult
-from textual.containers import Vertical
+from textual.containers import Vertical, VerticalScroll
 from textual.widgets import Markdown, Static
 
 from vibe.cli.textual_ui.widgets.no_markup_static import NoMarkupStatic
@@ -181,7 +181,8 @@ class WriteFileResultWidget(ToolResultWidget[WriteFileResult]):
         if self.result.content:
             yield NoMarkupStatic("")
             ext = Path(self.result.path).suffix.lstrip(".") or "text"
-            yield Markdown(f"```{ext}\n{_truncate_lines(self.result.content, 10)}\n```")
+            with VerticalScroll(classes="tool-result-scroll"):
+                yield Markdown(f"```{ext}\n{self.result.content}\n```")
 
 
 class SearchReplaceApprovalWidget(ToolApprovalWidget[SearchReplaceArgs]):
@@ -297,7 +298,8 @@ class ReadFileResultWidget(ToolResultWidget[ReadFileResult]):
         if self.result and self.result.content:
             yield NoMarkupStatic("")
             ext = Path(self.result.path).suffix.lstrip(".") or "text"
-            yield Markdown(f"```{ext}\n{_truncate_lines(self.result.content, 10)}\n```")
+            with VerticalScroll(classes="tool-result-scroll"):
+                yield Markdown(f"```{ext}\n{self.result.content}\n```")
 
 
 class GrepApprovalWidget(ToolApprovalWidget[GrepArgs]):
