@@ -138,7 +138,7 @@ def is_dangerous_directory(path: Path | str = ".") -> tuple[bool, str]:
 LOG_DIR.path.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="%(asctime)s %(levelname)s %(message)s",
     handlers=[logging.FileHandler(LOG_FILE.path, "a", "utf-8")],
 )

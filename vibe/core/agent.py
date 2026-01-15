@@ -62,6 +62,7 @@ from vibe.core.utils import (
     get_user_agent,
     get_user_cancellation_message,
     is_user_cancellation_event,
+    logger,
 )
 
 
@@ -455,8 +456,10 @@ class Agent:
 
             try:
                 start_time = time.perf_counter()
+                logger.info(f"Starting tool execution: {tool_call.tool_name}")
                 result_model = await tool_instance.invoke(**tool_call.args_dict)
                 duration = time.perf_counter() - start_time
+                logger.info(f"Completed tool execution: {tool_call.tool_name}")
 
                 # Special handling for read_image tool
                 if tool_call.tool_name == "read_image":
@@ -531,6 +534,7 @@ class Agent:
                 self.stats.tool_calls_succeeded += 1
 
             except asyncio.CancelledError:
+                logger.info(f"Tool {tool_call.tool_name} cancelled by user")
                 cancel = str(
                     get_user_cancellation_message(CancellationReason.TOOL_INTERRUPTED)
                 )
