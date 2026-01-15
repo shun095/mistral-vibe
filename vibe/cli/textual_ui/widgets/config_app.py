@@ -165,5 +165,16 @@ class ConfigApp(Container):
     def action_close(self) -> None:
         self.post_message(self.ConfigClosed(changes=self.changes.copy()))
 
-    def on_blur(self, event: events.Blur) -> None:
-        self.call_after_refresh(self.focus)
+
+
+    def on_key(self, event: events.Key) -> None:
+        """Handle key events to prevent propagation when needed."""
+        if event.key == "enter":
+            # Prevent the Enter key from propagating to parent widgets
+            # This ensures that pressing Enter only toggles settings,
+            # not submit chat input
+            event.prevent_default()
+            event.stop()
+            # Call the cycle action to ensure the setting is toggled
+            self.action_cycle()
+            return

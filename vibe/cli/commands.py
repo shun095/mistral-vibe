@@ -92,6 +92,7 @@ class CommandRegistry:
             "- `Ctrl+R` Open history finder",
             "- `Ctrl+O` Toggle tool output view",
             "- `Ctrl+T` Toggle todo view",
+            "- `Ctrl+G` Open config settings",
             "- `Shift+Tab` Toggle auto-approve mode",
             "",
             "### Special Features",
