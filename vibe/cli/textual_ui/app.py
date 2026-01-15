@@ -115,6 +115,7 @@ class VibeApp(App):  # noqa: PLR0904
         Binding("ctrl+r", "show_history", "History", show=False),
         Binding("ctrl+o", "toggle_tool", "Toggle Tool", show=False),
         Binding("ctrl+t", "toggle_todo", "Toggle Todo", show=False),
+        Binding("ctrl+g", "show_config", "Config", show=False),
         Binding("shift+tab", "cycle_mode", "Cycle Mode", show=False, priority=True),
         Binding("pageup", "scroll_chat_up", "Scroll Up", show=False, priority=True),
         Binding(
@@ -150,6 +151,7 @@ class VibeApp(App):  # noqa: PLR0904
         self._chat_input_container: ChatInputContainer | None = None
         self._agent_indicator: AgentIndicator | None = None
         self._current_bottom_app: BottomApp = BottomApp.Input
+        self._saved_input_content: str = ""
 
         self.history_file = HISTORY_FILE.path
 
@@ -194,6 +196,7 @@ class VibeApp(App):  # noqa: PLR0904
         with Horizontal(id="bottom-bar"):
             yield PathDisplay(self.config.displayed_workdir or Path.cwd())
             yield NoMarkupStatic(id="spacer")
+            yield ModelIndicator()
             yield ContextProgress()
 
     async def on_mount(self) -> None:
@@ -429,10 +432,10 @@ class VibeApp(App):  # noqa: PLR0904
             )
 
     async def _wait_for_input_container_ready(self, input_container: ChatInputContainer) -> None:
-        """Wait for the input container to be fully initialized with its body."""
-        max_attempts = 10
+        """Wait for the input container to be fully initialized with its body and input widget."""
+        max_attempts = 20
         for _ in range(max_attempts):
-            if input_container._body is not None:
+            if input_container._body is not None and input_container._body.input_widget is not None:
                 return
             await asyncio.sleep(0.1)
 
@@ -716,29 +719,52 @@ class VibeApp(App):  # noqa: PLR0904
         if not self._agent_running or self._interrupt_requested:
             return
 
-        self._interrupt_requested = True
+        # Only set interrupt_requested if it's not already set
+        if not self._interrupt_requested:
+            logger.info("Setting _interrupt_requested = True")
+            self._interrupt_requested = True
 
         if self._agent_task and not self._agent_task.done():
+            logger.info("Interrupt agent: Cancelling agent task")
+            logger.info(f"Cancelling agent task: {self._agent_task}")
             self._agent_task.cancel()
-            try:
-                await self._agent_task
-            except asyncio.CancelledError:
-                pass
+            # Don't wait for the agent task to complete - just cancel it and let it complete in the background
+            # This prevents the interruption worker from blocking
+            logger.info("Interrupt agent: Agent task cancellation initiated (not waiting for completion)")
 
+        # Stop any current tool calls and compaction
         if self.event_handler:
+            logger.info("Interrupt agent: Stopping current tool call and compact")
+            logger.info(f"Event handler: {self.event_handler}")
+            logger.info(f"Current tool call: {self.event_handler.current_tool_call}")
+            logger.info(f"Current compact: {self.event_handler.current_compact}")
             self.event_handler.stop_current_tool_call()
             self.event_handler.stop_current_compact()
 
+        # Clean up UI state
+        logger.info("Cleaning up UI state")
         self._agent_running = False
-        loading_area = self.query_one("#loading-area-content")
-        await loading_area.remove_children()
-        self._loading_widget = None
+        try:
+            loading_area = self.query_one("#loading-area-content")
+            logger.info(f"Found loading area: {loading_area}")
+            await loading_area.remove_children()
+            self._loading_widget = None
+            logger.info("Loading area children removed")
+        except Exception as e:
+            logger.error(f"Error cleaning up loading area: {e}")
+            pass
         self._hide_todo_area()
 
         await self._finalize_current_streaming_message()
-        await self._mount_and_scroll(InterruptMessage())
+        
+        # Only show the interrupt message if it's not already showing
+        if not any(isinstance(child, InterruptMessage) for child in self.query("*")):
+            await self._mount_and_scroll(InterruptMessage())
 
+        logger.info("Interrupt agent: Interruption completed")
+        logger.info("Setting _interrupt_requested = False")
         self._interrupt_requested = False
+        logger.info("=== _INTERRUPT_AGENT COMPLETED ===")
 
     async def _show_help(self) -> None:
         help_text = self.commands.get_help_text()
@@ -774,6 +800,10 @@ class VibeApp(App):  # noqa: PLR0904
             base_config = VibeConfig.load()
 
             await self.agent_loop.reload_with_initial_messages(base_config=base_config)
+
+            # Refresh the model indicator if the active model changed
+            if self._model_indicator:
+                self._model_indicator.refresh_display()
 
             await self._mount_and_scroll(UserCommandMessage("Configuration reloaded."))
         except Exception as e:
@@ -1008,30 +1038,43 @@ class VibeApp(App):  # noqa: PLR0904
 
     def action_interrupt(self) -> None:
         current_time = time.monotonic()
+        logger.info(f"=== ACTION_INTERRUPT CALLED ===")
+        logger.info(f"Agent running: {self._agent_running}")
+        logger.info(f"Agent task: {self._agent_task}")
+        logger.info(f"Agent task done: {self._agent_task.done() if self._agent_task else 'No task'}")
+        logger.info(f"Agent init task: {self._agent_init_task}")
+        logger.info(f"Agent init task done: {self._agent_init_task.done() if self._agent_init_task else 'No init task'}")
+        logger.info(f"Interrupt requested: {self._interrupt_requested}")
 
         if self._current_bottom_app == BottomApp.Config:
+            logger.info("Interrupt: Closing config app")
             try:
                 config_app = self.query_one(ConfigApp)
                 config_app.action_close()
-            except Exception:
+            except Exception as e:
+                logger.error(f"Error closing config app: {e}")
                 pass
             self._last_escape_time = None
             return
 
         if self._current_bottom_app == BottomApp.History:
+            logger.info("Interrupt: Closing history finder")
             try:
                 history_finder = self.query_one(HistoryFinderApp)
                 history_finder.action_close()
-            except Exception:
+            except Exception as e:
+                logger.error(f"Error closing history finder: {e}")
                 pass
             self._last_escape_time = None
             return
 
         if self._current_bottom_app == BottomApp.Approval:
+            logger.info("Interrupt: Rejecting approval")
             try:
                 approval_app = self.query_one(ApprovalApp)
                 approval_app.action_reject()
-            except Exception:
+            except Exception as e:
+                logger.error(f"Error rejecting approval: {e}")
                 pass
             self._last_escape_time = None
             return
@@ -1056,7 +1099,8 @@ class VibeApp(App):  # noqa: PLR0904
                     input_widget.value = ""
                     self._last_escape_time = None
                     return
-            except Exception:
+            except Exception as e:
+                logger.error(f"Error clearing input: {e}")
                 pass
 
         if self._agent_running:
@@ -1088,6 +1132,9 @@ class VibeApp(App):  # noqa: PLR0904
 
     async def action_show_history(self) -> None:
         await self._show_history_finder()
+
+    async def action_show_config(self) -> None:
+        await self._show_config()
 
     def action_cycle_mode(self) -> None:
         if self._current_bottom_app != BottomApp.Input:

@@ -1032,6 +1032,15 @@ AgentIndicator {
     }
 }
 
+ModelIndicator {
+    width: auto;
+    height: auto;
+    background: transparent;
+    padding: 0;
+    margin: 0;
+    color: $primary;
+}
+
 PathDisplay {
     width: auto;
     height: auto;
@@ -1046,7 +1055,7 @@ ContextProgress {
     height: auto;
     background: transparent;
     padding: 0;
-    margin: 0;
+    margin-left: 1;
     color: $foreground;
 }
 
