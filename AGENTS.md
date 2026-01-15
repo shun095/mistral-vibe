@@ -196,7 +196,8 @@ terminalcp_terminalcp({
 })
 ```
 
-**IMPORTANT**: You MUST always specify OPENAI_* and MISTRAL_* environment variables to launch `uv run vibe` command. You can get the variables by `env | grep -e OPENAI -e MISTRAL` command.
+**IMPORTANT**: `terminalcp` has different environment setup from `bash` tool. Therefore, you MUST always specify OPENAI_* and MISTRAL_* environment variables to launch `uv run vibe` command.  
+You can get the variables you must specify by `env | grep -e OPENAI -e MISTRAL` command.
 
 **Send input (Enter key):**
 ```python

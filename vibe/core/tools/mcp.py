@@ -3,12 +3,25 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from datetime import timedelta
 import hashlib
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
+
+# Import ExceptionGroup for handling TaskGroup errors
+try:
+    from typing import ExceptionGroup
+except ImportError:
+    # For Python < 3.11, try to import from exceptiongroup backport
+    try:
+        from exceptiongroup import ExceptionGroup
+    except ImportError:
+        # If neither is available, we'll handle it gracefully
+        ExceptionGroup = Exception  # type: ignore
 
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.client.streamable_http import streamablehttp_client
+from mcp.types import CancelledNotification, CancelledNotificationParams
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from vibe.core.tools.base import (
@@ -99,6 +112,64 @@ class _MCPResultIn(BaseModel):
             except Exception:
                 return None
         return v if isinstance(v, dict) else None
+
+
+class _CancellableClientSession:
+    """Wrapper around ClientSession that tracks request IDs for cancellation."""
+    
+    def __init__(self, session: ClientSession):
+        self._session = session
+        self._current_request_id: int | None = None
+        self._last_request_id: int | None = None  # Store the last request ID for cancellation
+    
+    async def initialize(self) -> None:
+        await self._session.initialize()
+    
+    async def call_tool(self, name: str, arguments: dict[str, Any] | None = None):
+        """Call a tool and track the request ID for potential cancellation."""
+        # We need to intercept the call to track the request ID
+        # Since we can't easily access the request ID from the public API,
+        # we'll use a workaround by temporarily patching the send_request method
+        original_send_request = self._session.send_request
+        
+        async def tracked_send_request(*args, **kwargs):
+            # Store the current request ID before making the request
+            request_id = self._session._request_id
+            self._current_request_id = request_id
+            try:
+                return await original_send_request(*args, **kwargs)
+            finally:
+                # Reset the request ID after the request is complete
+                self._current_request_id = None
+                # Store the request ID for potential cancellation
+                self._last_request_id = request_id
+        
+        # Temporarily replace send_request
+        self._session.send_request = tracked_send_request
+        try:
+            return await self._session.call_tool(name, arguments)
+        finally:
+            # Restore the original send_request
+            self._session.send_request = original_send_request
+    
+    async def send_cancellation_notification(self, reason: str = "User requested cancellation") -> None:
+        """Send a cancellation notification to the MCP server."""
+        # Use the last request ID if current request ID is not available
+        request_id = self._current_request_id or self._last_request_id
+        if request_id is not None:
+            notification = CancelledNotification(
+                params=CancelledNotificationParams(
+                    requestId=request_id,
+                    reason=reason
+                )
+            )
+            await self._session.send_notification(notification)
+            logger.info(f"Sent cancellation notification for request ID {request_id}")
+        else:
+            logger.warning("Cannot send cancellation notification: no active request ID")
+
+
+
 
 
 def _parse_call_result(server: str, tool: str, result_obj: Any) -> MCPToolResult:
@@ -206,7 +277,15 @@ def create_mcp_http_proxy_tool_class(
                     startup_timeout_sec=self._startup_timeout_sec,
                     tool_timeout_sec=self._tool_timeout_sec,
                 )
+                logger.info(f"MCP HTTP tool {self._remote_name} completed successfully")
+                return result
+            except asyncio.CancelledError:
+                logger.info(f"MCP HTTP tool {self._remote_name} received CancelledError in tool.run()")
+                # Re-raise CancelledError to allow proper task cancellation
+                raise
             except Exception as exc:
+                logger.error(f"MCP HTTP tool {self._remote_name} failed: {exc}")
+                logger.debug(f"MCP HTTP tool {self._remote_name} failure details: {type(exc).__name__}: {exc}")
                 raise ToolError(f"MCP call failed: {exc}") from exc
 
         @classmethod
@@ -329,6 +408,7 @@ def create_mcp_stdio_proxy_tool_class(
         ) -> AsyncGenerator[ToolStreamEvent | MCPToolResult, None]:
             try:
                 payload = args.model_dump(exclude_none=True)
+                logger.info(f"MCP STDIO tool {self._remote_name} starting execution with payload: {payload}")
                 result = await call_tool_stdio(
                     self._stdio_command,
                     self._remote_name,
@@ -339,6 +419,8 @@ def create_mcp_stdio_proxy_tool_class(
                 )
                 yield result
             except Exception as exc:
+                logger.error(f"MCP STDIO tool {self._remote_name} failed: {exc}")
+                logger.debug(f"MCP STDIO tool {self._remote_name} failure details: {type(exc).__name__}: {exc}")
                 raise ToolError(f"MCP stdio call failed: {exc!r}") from exc
 
         @classmethod

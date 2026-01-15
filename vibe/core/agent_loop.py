@@ -70,6 +70,7 @@ from vibe.core.utils import (
     get_user_agent,
     get_user_cancellation_message,
     is_user_cancellation_event,
+    logger,
 )
 
 
@@ -511,6 +512,7 @@ class AgentLoop:
                         result_model = item
 
                 duration = time.perf_counter() - start_time
+                logger.info(f"Completed tool execution: {tool_call.tool_name}")
 
                 if result_model is None:
                     raise ToolError("Tool did not yield a result")
@@ -531,6 +533,7 @@ class AgentLoop:
                 self.stats.tool_calls_succeeded += 1
 
             except asyncio.CancelledError:
+                logger.info(f"Tool {tool_call.tool_name} cancelled by user")
                 cancel = str(
                     get_user_cancellation_message(CancellationReason.TOOL_INTERRUPTED)
                 )
