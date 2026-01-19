@@ -151,6 +151,13 @@ Vibe supports multiple ways to configure your API keys:
    export MISTRAL_API_KEY="your_mistral_api_key"
    ```
 
+   You can also configure logging:
+
+   ```bash
+   export VIBE_LOG_LEVEL="INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+   export VIBE_LOG_FILE="/path/to/custom.log"
+   ```
+
 3. **`.env` File**: Create a `.env` file in `~/.vibe/` and add your API keys:
 
    ```bash
