@@ -51,6 +51,11 @@ class CommandRegistry:
                 description="Search and select from prompt history",
                 handler="_show_history_finder",
             ),
+            "sessions": Command(
+                aliases=frozenset(["/sessions"]),
+                description="Browse and load saved sessions",
+                handler="_show_session_finder",
+            ),
             "exit": Command(
                 aliases=frozenset(["/exit"]),
                 description="Exit the application",

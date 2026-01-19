@@ -1,0 +1,16 @@
+{
+  "messages": [
+    {"role": "user", "content": "Hello, can you help me with something?"},
+    {"role": "assistant", "content": "Of course! I can help with many tasks. What do you need?"},
+    {"role": "user", "content": "Can you show me how to use tools?"},
+    {"role": "assistant", "content": "Let me demonstrate by using a tool.", "tool_calls": [{"name": "bash", "arguments": {"command": "ls -la"}}]},
+    {"role": "system", "content": "Tool call completed successfully"},
+    {"role": "assistant", "content": "As you can see, I can use tools to help you."}
+  ],
+  "metadata": {
+    "session_id": "test-session-abc123",
+    "start_time": "2024-01-01T12:00:00",
+    "end_time": "2024-01-01T12:05:00",
+    "message_count": 6
+  }
+}
