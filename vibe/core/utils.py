@@ -8,6 +8,7 @@ from fnmatch import fnmatch
 import functools
 import logging
 from pathlib import Path
+import os
 import re
 import sys
 from typing import Any
@@ -138,13 +139,41 @@ def is_dangerous_directory(path: Path | str = ".") -> tuple[bool, str]:
 
 LOG_DIR.path.mkdir(parents=True, exist_ok=True)
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s %(levelname)s %(message)s",
-    handlers=[logging.FileHandler(LOG_FILE.path, "a", "utf-8")],
-)
+# Configure logging from environment variables
+# VIBE_LOG_LEVEL: Set log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+# VIBE_LOG_FILE: Set custom log file path
+log_level_env = os.getenv("VIBE_LOG_LEVEL")
+log_file_env = os.getenv("VIBE_LOG_FILE")
 
+# Determine log level from environment or default to DEBUG
+if log_level_env:
+    log_level = getattr(logging, log_level_env.upper(), logging.DEBUG)
+else:
+    log_level = logging.DEBUG
+
+# Determine log file path from environment or use default
+if log_file_env:
+    log_file_path = Path(log_file_env)
+    log_file_path.parent.mkdir(parents=True, exist_ok=True)
+else:
+    log_file_path = LOG_FILE.path
+
+# Configure logging
+# Remove any existing handlers to avoid duplicate logs
 logger = logging.getLogger("vibe")
+logger.handlers.clear()
+
+# Create file handler
+file_handler = logging.FileHandler(log_file_path, "a", "utf-8")
+file_handler.setLevel(log_level)
+
+# Create formatter and add to handler
+formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+file_handler.setFormatter(formatter)
+
+# Add handler to logger
+logger.addHandler(file_handler)
+logger.setLevel(log_level)
 
 
 def get_user_agent(backend: Backend) -> str:
