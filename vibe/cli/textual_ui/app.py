@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 from enum import StrEnum, auto
 import subprocess
 import time
@@ -28,6 +29,7 @@ from vibe.cli.textual_ui.widgets.chat_input import ChatInputContainer
 from vibe.cli.textual_ui.widgets.compact import CompactMessage
 from vibe.cli.textual_ui.widgets.config_app import ConfigApp
 from vibe.cli.textual_ui.widgets.history_finder import HistoryFinderApp
+from vibe.cli.textual_ui.widgets.session_finder import SessionFinderApp
 from vibe.cli.textual_ui.widgets.context_progress import ContextProgress, TokenState
 from vibe.cli.textual_ui.widgets.loading import LoadingWidget
 from vibe.cli.textual_ui.widgets.messages import (
@@ -75,6 +77,7 @@ class BottomApp(StrEnum):
     Approval = auto()
     Config = auto()
     History = auto()
+    Session = auto()
     Input = auto()
 
 
@@ -433,6 +436,135 @@ class VibeApp(App):  # noqa: PLR0904
         else:
             print("DEBUG: Already in input mode, skipping switch")  # Debug
 
+    async def on_session_finder_app_session_selected(
+        self, message: SessionFinderApp.SessionSelected
+    ) -> None:
+        """Handle session selection from session finder."""
+        logger.info(f"Session selected: {message.session_path}")
+        logger.info(f"Session selected with {len(message.messages)} messages")
+        for i, msg in enumerate(message.messages):
+            logger.info(f"  Message {i}: role={msg.role}, content_length={len(msg.content or '')}")
+        
+        # Use the messages that were already loaded by the session finder
+        # These are already LLMMessage objects from InteractionLogger.load_session
+        await self._load_session(message.messages, message.metadata)
+        await self._switch_to_input_app()
+
+    async def on_session_finder_app_session_closed(
+        self, message: SessionFinderApp.SessionClosed
+    ) -> None:
+        """Handle session finder closure."""
+        # Check if we're already in input mode (meaning SessionSelected was processed first)
+        if self._current_bottom_app != BottomApp.Input:
+            await self._switch_to_input_app()
+
+    async def _save_current_conversation(self) -> None:
+        """Save the current conversation to a session file."""
+        if not self.agent:
+            logger.info("No agent available, cannot save conversation")
+            return
+
+        messages = self.agent.messages
+        if not messages:
+            logger.info("No messages to save")
+            return
+
+        # Generate a session ID based on timestamp
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        session_id = f"session_{timestamp}"
+        session_file = Path(self.config.session_logging.save_dir) / f"{session_id}.json"
+
+        # Prepare session data
+        session_data = {
+            "messages": [msg.model_dump(exclude_none=True) for msg in messages]
+        }
+
+        try:
+            import json
+            with open(session_file, "w", encoding="utf-8") as f:
+                json.dump(session_data, f, indent=2, ensure_ascii=False)
+            logger.info(f"Saved conversation to {session_file}")
+        except Exception as e:
+            logger.error(f"Failed to save conversation: {e}")
+
+    async def _load_session(self, messages: list[LLMMessage], metadata: dict[str, Any]) -> None:
+        """Load a session and replace the current conversation."""
+        if not self.agent:
+            logger.info("No agent available, cannot load session")
+            return
+
+        try:
+            # Save current conversation before loading new one
+            await self._save_current_conversation()
+
+            # Use the same approach as programmatic mode - extend agent messages
+            # with non-system messages from the loaded session
+            from vibe.core.types import Role
+            
+            # Filter out system messages from loaded session
+            non_system_messages = [
+                msg for msg in messages if not (msg.role == Role.system)
+            ]
+            
+            # Replace agent messages with loaded session messages
+            # Start with a fresh system message and extend with loaded messages
+            from vibe.core.system_prompt import get_universal_system_prompt
+            new_system_prompt = get_universal_system_prompt(
+                self.agent.tool_manager, self.config, self.agent.skill_manager
+            )
+            self.agent.messages = [LLMMessage(role=Role.system, content=new_system_prompt)]
+            self.agent.messages.extend(non_system_messages)
+
+            # Restore tool states from session metadata if available
+            if metadata and "tool_states" in metadata:
+                await self._restore_tool_states(metadata["tool_states"])
+
+            # Clear and rebuild the chat UI using the existing method
+            messages_area = self.query_one("#messages")
+            await messages_area.remove_children()
+            
+            # Use the existing _rebuild_history_from_messages method
+            # Store the messages temporarily and call the method
+            self._loaded_messages = messages
+            await self._rebuild_history_from_messages()
+            self._loaded_messages = []  # Clear after loading
+
+            # Scroll to top after loading all messages
+            chat = self.query_one("#chat", VerticalScroll)
+            logger.info(f"Found chat widget: {chat}")
+            chat.scroll_home(animate=False)
+
+        except Exception as e:
+            logger.error(f"Failed to load session: {e}")
+            await self._mount_and_scroll(
+                ErrorMessage(f"Failed to load session: {e}")
+            )
+
+    async def _restore_tool_states(self, tool_states: dict[str, Any]) -> None:
+        """Restore tool states from session metadata."""
+        try:
+            from vibe.core.tools.builtins.todo import TodoItem, TodoState
+            for tool_name, state_data in tool_states.items():
+                try:
+                    tool_instance = self.agent.tool_manager.get(tool_name)
+                    if hasattr(tool_instance, 'state'):
+                        # Handle todo tool state specifically
+                        if tool_name == "todo" and isinstance(state_data, dict):
+                            todos_data = state_data.get("todos", [])
+                            todos = [TodoItem.model_validate(todo_data) for todo_data in todos_data]
+                            tool_instance.state = TodoState(todos=todos)
+                            logger.info(f"Restored {len(todos)} todos for tool: {tool_name}")
+                        else:
+                            # For other tools, try to restore state using model_validate
+                            state_class = type(tool_instance.state)
+                            restored_state = state_class.model_validate(state_data)
+                            tool_instance.state = restored_state
+                            logger.info(f"Restored state for tool: {tool_name}")
+                except Exception as e:
+                    logger.warning(f"Failed to restore state for tool {tool_name}: {e}")
+        except Exception as e:
+            logger.error(f"Failed to restore tool states: {e}")
+
     async def on_compact_message_completed(
         self, message: CompactMessage.Completed
     ) -> None:
@@ -481,7 +613,8 @@ class VibeApp(App):  # noqa: PLR0904
             VibeConfig.save_updates(updates)
 
     async def _handle_command(self, user_input: str) -> bool:
-        if command := self.commands.find_command(user_input):
+        command = self.commands.find_command(user_input)
+        if command:
             await self._mount_and_scroll(UserMessage(user_input))
             handler = getattr(self, command.handler)
             if asyncio.iscoroutinefunction(handler):
@@ -885,6 +1018,12 @@ class VibeApp(App):  # noqa: PLR0904
             return
         await self._switch_to_history_finder_app()
 
+    async def _show_session_finder(self) -> None:
+        """Switch to the session finder app in the bottom panel."""
+        if self._current_bottom_app == BottomApp.Session:
+            return
+        await self._switch_to_session_finder_app()
+
     async def _reload_config(self) -> None:
         try:
             new_config = VibeConfig.load(**self._current_agent_mode.config_overrides)
@@ -957,6 +1096,21 @@ class VibeApp(App):  # noqa: PLR0904
                     f"Failed to clear history: {e}", collapsed=self._tools_collapsed
                 )
             )
+
+
+
+    async def _save_current_conversation(self) -> None:
+        """Save current conversation to session file before loading new one."""
+        if not self.agent or not self.config.session_logging.enabled:
+            return
+
+        try:
+            await self.agent.interaction_logger.save_interaction(
+                self.agent.messages, self.agent.stats, self.config, self.agent.tool_manager
+            )
+        except Exception as e:
+            from vibe.core.utils import logger
+            logger.warning(f"Failed to save current conversation: {e}")
 
     async def _show_log_path(self) -> None:
         if self.agent is None:
@@ -1141,6 +1295,25 @@ class VibeApp(App):  # noqa: PLR0904
 
         self.call_after_refresh(history_finder_app.focus)
 
+    async def _switch_to_session_finder_app(self) -> None:
+        """Switch to the session finder app."""
+        bottom_container = self.query_one("#bottom-app-container")
+
+        try:
+            chat_input_container = self.query_one(ChatInputContainer)
+            await chat_input_container.remove()
+        except Exception:
+            pass
+
+        if self._mode_indicator:
+            self._mode_indicator.display = False
+
+        session_finder_app = SessionFinderApp(config=self.config)
+        await bottom_container.mount(session_finder_app)
+        self._current_bottom_app = BottomApp.Session
+
+        self.call_after_refresh(session_finder_app.focus)
+
     async def _switch_to_approval_app(
         self, tool_name: str, tool_args: BaseModel
     ) -> None:
@@ -1185,6 +1358,12 @@ class VibeApp(App):  # noqa: PLR0904
         try:
             history_finder_app = self.query_one("#history-finder")
             await history_finder_app.remove()
+        except Exception:
+            pass
+
+        try:
+            session_finder_app = self.query_one("#session-finder")
+            await session_finder_app.remove()
         except Exception:
             pass
 
