@@ -7,6 +7,7 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import Markdown, Static
 from textual.widgets._markdown import MarkdownStream
 
+from vibe.core.utils import logger
 from vibe.cli.textual_ui.widgets.no_markup_static import NoMarkupStatic
 from vibe.cli.textual_ui.widgets.spinner import SpinnerMixin, SpinnerType
 
@@ -91,7 +92,9 @@ class StreamingMessageBase(Static):
     async def write_initial_content(self) -> None:
         if self._content and self._should_write_content():
             stream = self._ensure_stream()
+            logger.info(f"Writing initial content to stream: {self._content[:50]}...")
             await stream.write(self._content)
+            logger.info("Stream write completed")
 
     async def stop_stream(self) -> None:
         if self._stream is None:
