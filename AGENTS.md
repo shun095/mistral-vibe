@@ -199,6 +199,16 @@ terminalcp_terminalcp({
 **IMPORTANT**: `terminalcp` has different environment setup from `bash` tool. Therefore, you MUST always specify OPENAI_* and MISTRAL_* environment variables to launch `uv run vibe` command.  
 You can get the variables you must specify by `env | grep -e OPENAI -e MISTRAL` command.
 
+You can also use VIBE_* environment variables for logging:
+- `VIBE_LOG_LEVEL`: Set log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+- `VIBE_LOG_FILE`: Set custom log file path (e.g., `./logs/vibe.log`)
+
+**Best Practice**: When debugging, redirect logs to the project directory:
+```bash
+OPENAI_BASE_URL=... OPENAI_API_KEY=... MISTRAL_API_KEY=... VIBE_LOG_FILE=./logs/vibe.log uv run vibe
+```
+This ensures logs are written to `./logs/` instead of `~/.vibe/`, making them easier to access during development.
+
 **Send input (Enter key):**
 ```python
 terminalcp_terminalcp({
@@ -274,8 +284,24 @@ terminalcp_terminalcp({
 ## 🐛 Debugging with Logs
 
 ### Where Logs Are
-- Location: `~/.vibe/vibe.log`
+- Default Location: `~/.vibe/vibe.log`
 - View: `tail -50 ~/.vibe/vibe.log` or `tail -f ~/.vibe/vibe.log`
+
+### Using terminalcp for Debugging
+When debugging with `terminalcp_terminalcp`, specify the log directory using environment variables:
+
+```python
+terminalcp_terminalcp({
+    "args": {
+        "action": "start",
+        "command": "cd /path/to/project && OPENAI_BASE_URL=... OPENAI_API_KEY=... MISTRAL_API_KEY=... VIBE_LOG_FILE=./logs/vibe.log uv run vibe",
+        "cwd": "/path/to/project",
+        "name": "debug-session"
+    }
+})
+```
+
+This ensures logs are written to the project directory (`./logs/`) instead of `~/.vibe/`, making them easier to access during development.
 
 ### How to Log
 ```python
