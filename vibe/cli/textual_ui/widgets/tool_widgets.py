@@ -21,7 +21,11 @@ from vibe.core.tools.builtins.search_replace import (
 )
 from vibe.core.tools.builtins.todo import TodoArgs, TodoResult
 from vibe.core.tools.builtins.write_file import WriteFileArgs, WriteFileResult
-from vibe.core.tools.mcp import create_mcp_http_proxy_tool_class, create_mcp_stdio_proxy_tool_class
+from vibe.core.tools.mcp import (
+    MCPToolResult,
+    create_mcp_http_proxy_tool_class,
+    create_mcp_stdio_proxy_tool_class,
+)
 
 
 def _truncate_lines(content: str, max_lines: int) -> str:
@@ -150,14 +154,14 @@ class BashResultWidget(ToolResultWidget[BashResult]):
         )
         if self.result.stdout:
             sep = "\n" if "\n" in self.result.stdout else " "
-            yield NoMarkupStatic(
-                f"stdout:{sep}{self.result.stdout}", classes="tool-result-detail"
-            )
+            yield NoMarkupStatic(f"stdout:{sep}", classes="tool-result-detail")
+            with VerticalScroll(classes="tool-result-scroll"):
+                yield NoMarkupStatic(self.result.stdout, classes="tool-result-detail")
         if self.result.stderr:
             sep = "\n" if "\n" in self.result.stderr else " "
-            yield NoMarkupStatic(
-                f"stderr:{sep}{self.result.stderr}", classes="tool-result-detail"
-            )
+            yield NoMarkupStatic(f"stderr:{sep}", classes="tool-result-detail")
+            with VerticalScroll(classes="tool-result-scroll"):
+                yield NoMarkupStatic(self.result.stderr, classes="tool-result-detail")
 
 
 class WriteFileApprovalWidget(ToolApprovalWidget[WriteFileArgs]):
@@ -343,6 +347,37 @@ class MCPApprovalWidget(ToolApprovalWidget[BaseModel]):
             )
 
 
+class MCPResultWidget(ToolResultWidget[MCPToolResult]):
+    """Result widget for MCP tools that displays results in a scrollable container."""
+
+    def compose(self) -> ComposeResult:
+        yield from self._header()
+        if self.collapsed or not self.result:
+            return
+        
+        yield NoMarkupStatic(
+            f"Server: {self.result.server}", classes="tool-result-detail"
+        )
+        yield NoMarkupStatic(
+            f"Tool: {self.result.tool}", classes="tool-result-detail"
+        )
+        yield NoMarkupStatic(
+            f"Status: {'Success' if self.result.ok else 'Failed'}", classes="tool-result-detail"
+        )
+        
+        if self.result.text:
+            yield NoMarkupStatic("", classes="tool-result-detail")
+            yield NoMarkupStatic("Text output:", classes="tool-result-detail")
+            with VerticalScroll(classes="tool-result-scroll"):
+                yield NoMarkupStatic(self.result.text, classes="tool-result-detail")
+        
+        if self.result.structured:
+            yield NoMarkupStatic("", classes="tool-result-detail")
+            yield NoMarkupStatic("Structured output:", classes="tool-result-detail")
+            with VerticalScroll(classes="tool-result-scroll"):
+                yield Markdown(f"```json\n{self.result.structured}\n```")
+
+
 class GrepResultWidget(ToolResultWidget[GrepResult]):
     def compose(self) -> ComposeResult:
         yield from self._header()
@@ -425,5 +460,10 @@ def get_result_widget(
     collapsed: bool = True,
     warnings: list[str] | None = None,
 ) -> ToolResultWidget:
+    # Use MCP result widget for MCP tools
+    if _is_mcp_tool(tool_name):
+        return MCPResultWidget(result, success, message, collapsed, warnings)
+    
+    # Use specific widget for built-in tools
     widget_class = RESULT_WIDGETS.get(tool_name, ToolResultWidget)
     return widget_class(result, success, message, collapsed, warnings)
