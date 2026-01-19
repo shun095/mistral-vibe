@@ -6,6 +6,7 @@ from textual import events
 from textual.binding import Binding
 from textual.message import Message
 from textual.widgets import TextArea
+from textual.widgets.text_area import Location
 
 from vibe.cli.autocompletion.base import CompletionResult
 from vibe.cli.textual_ui.external_editor import ExternalEditor
