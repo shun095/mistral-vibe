@@ -6,6 +6,7 @@ from textual import events
 from textual.binding import Binding
 from textual.message import Message
 from textual.widgets import TextArea
+from textual.widgets.text_area import Location
 
 from vibe.cli.autocompletion.base import CompletionResult
 from vibe.cli.textual_ui.widgets.chat_input.completion_manager import (
@@ -83,6 +84,32 @@ class ChatTextArea(TextArea):
 
     def action_insert_newline(self) -> None:
         self.insert("\n")
+
+    def _logical_line_start(self, smart_home: bool = False) -> Location:
+        # cursor_location は (logical_row, logical_col)
+        row, col = self.cursor_location
+        line = self.document.lines[row]
+        if smart_home:
+            first_non_ws = len(line) - len(line.lstrip(" \t"))
+            # smart_home: 行の先頭の非空白に行く（既にそこにいれば col=0）
+            return (row, 0) if col == first_non_ws else (row, first_non_ws)
+        else:
+            return (row, 0)
+
+    def _logical_line_end(self) -> Location:
+        row, _ = self.cursor_location
+        line = self.document.lines[row]
+        # 行末は論理行の長さ（改行文字は含まない）
+        return (row, len(line))
+
+    def action_cursor_line_start(self, select: bool = False) -> None:
+        loc = self._logical_line_start(smart_home=False)
+        self.move_cursor(loc, select=select)
+
+    def action_cursor_line_end(self, select: bool = False) -> None:
+        loc = self._logical_line_end()
+        self.move_cursor(loc, select=select)
+
 
     def on_text_area_changed(self, event: TextArea.Changed) -> None:
         if not self._navigating_history and self.text != self._last_text:
