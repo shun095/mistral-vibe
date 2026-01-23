@@ -37,9 +37,11 @@ from vibe.cli.textual_ui.terminal_theme import (
 from vibe.cli.textual_ui.widgets.agent_indicator import AgentIndicator
 from vibe.cli.textual_ui.widgets.approval_app import ApprovalApp
 from vibe.cli.textual_ui.widgets.chat_input import ChatInputContainer
+from vibe.cli.textual_ui.widgets.chat_input.body import ChatInputBody
 from vibe.cli.textual_ui.widgets.compact import CompactMessage
 from vibe.cli.textual_ui.widgets.config_app import ConfigApp
 from vibe.cli.textual_ui.widgets.history_finder import HistoryFinderApp
+from vibe.cli.textual_ui.widgets.session_finder import SessionFinderApp
 from vibe.cli.textual_ui.widgets.session_finder import SessionFinderApp
 from vibe.cli.textual_ui.widgets.context_progress import ContextProgress, TokenState
 from vibe.cli.textual_ui.widgets.loading import LoadingWidget, paused_timer
@@ -144,6 +146,7 @@ class VibeApp(App):  # noqa: PLR0904
         self._agent_running = False
         self._interrupt_requested = False
         self._agent_task: asyncio.Task | None = None
+        self._enhancement_task: asyncio.Task | None = None
 
         self._loading_widget: LoadingWidget | None = None
         self._pending_approval: asyncio.Future | None = None
@@ -172,6 +175,36 @@ class VibeApp(App):  # noqa: PLR0904
         self._auto_scroll = True
         self._last_escape_time: float | None = None
         self._terminal_theme = capture_terminal_theme()
+
+    def _post_prompt_enhancement_completed(self, success: bool) -> None:
+        """Post PromptEnhancementCompleted event to the chat input body widget.
+        
+        This method ensures the event is properly routed through the widget hierarchy
+        so that the ChatInputBody can forward it to the ChatInputContainer.
+        
+        Args:
+            success: Whether the enhancement completed successfully or was cancelled.
+        """
+        logger.info(f"App: _post_prompt_enhancement_completed called with success={success}")
+        logger.info(f"App: _chat_input_container={self._chat_input_container}")
+        if not self._chat_input_container:
+            logger.info("App: No chat_input_container found")
+            return
+        
+        try:
+            # Get the body widget to post the event
+            body_widget = self._chat_input_container.query_one(ChatInputBody)
+            logger.info(f"App: body_widget={body_widget}")
+            if body_widget:
+                # Post the event to the body widget, which will forward it to the container
+                logger.info(f"App: Posting PromptEnhancementCompleted(success={success}) to body")
+                body_widget.post_message(
+                    body_widget.PromptEnhancementCompleted(success=success)
+                )
+        except Exception as e:
+            logger.error(f"Error posting enhancement completed event: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
 
     @property
     def config(self) -> VibeConfig:
@@ -204,6 +237,9 @@ class VibeApp(App):  # noqa: PLR0904
             yield ContextProgress()
 
     async def on_mount(self) -> None:
+        from vibe.core.utils import logger
+        logger.info("App: on_mount called")
+        logger.info(f"App: Agent before mount: {self.agent}")
         if self._terminal_theme:
             self.register_theme(self._terminal_theme)
 
@@ -219,6 +255,10 @@ class VibeApp(App):  # noqa: PLR0904
             todo_area_callback=lambda: self.query_one("#todo-area"),
             get_tools_collapsed=lambda: self._tools_collapsed,
             get_todos_collapsed=lambda: self._todos_collapsed,
+            is_enhancement_mode=lambda: self._enhancement_mode,
+            replace_input_text=self._replace_input_with_enhanced_prompt,
+            reset_enhancement_mode=self._reset_enhancement_mode,
+            is_interrupted=lambda: self._interrupt_requested,
         )
 
         self._chat_input_container = self.query_one(ChatInputContainer)
@@ -528,6 +568,7 @@ Prompt you must enhance:
                 from vibe.core.agent import ToolResultEvent
                 event = ToolResultEvent(
                     tool_name="todo",
+                    tool_class=type(todo_tool),
                     result=result_dict
                 )
                 # This will trigger the UI to display the todos
@@ -677,13 +718,8 @@ Prompt you must enhance:
             ]
             
             # Replace agent messages with loaded session messages
-            # Start with a fresh system message and extend with loaded messages
-            from vibe.core.system_prompt import get_universal_system_prompt
-            new_system_prompt = get_universal_system_prompt(
-                self.agent.tool_manager, self.config, self.agent.skill_manager
-            )
-            self.agent.messages = [LLMMessage(role=Role.system, content=new_system_prompt)]
-            self.agent.messages.extend(non_system_messages)
+            # Use the Agent's load_session_messages method to handle this properly
+            await self.agent.load_session_messages(messages)
 
             # Restore tool states from session metadata if available
             if metadata and "tool_states" in metadata:
@@ -714,6 +750,9 @@ Prompt you must enhance:
         """Restore tool states from session metadata."""
         try:
             from vibe.core.tools.builtins.todo import TodoItem, TodoState
+            
+            todos_restored = False
+            
             for tool_name, state_data in tool_states.items():
                 try:
                     tool_instance = self.agent.tool_manager.get(tool_name)
@@ -724,6 +763,8 @@ Prompt you must enhance:
                             todos = [TodoItem.model_validate(todo_data) for todo_data in todos_data]
                             tool_instance.state = TodoState(todos=todos)
                             logger.info(f"Restored {len(todos)} todos for tool: {tool_name}")
+                            if len(todos) > 0:
+                                todos_restored = True
                         else:
                             # For other tools, try to restore state using model_validate
                             state_class = type(tool_instance.state)
@@ -734,6 +775,31 @@ Prompt you must enhance:
                     logger.warning(f"Failed to restore state for tool {tool_name}: {e}")
         except Exception as e:
             logger.error(f"Failed to restore tool states: {e}")
+        
+        # Show todo area if todos were restored
+        if todos_restored:
+            self._show_todo_area()
+            # Trigger the todo display by calling the todo tool's read method
+            try:
+                from vibe.core.tools.builtins.todo import TodoArgs, TodoResult
+                todo_tool = self.agent.tool_manager.get("todo")
+                todo_args = TodoArgs(action="read")
+                result = await todo_tool.run(todo_args)
+                # Convert the result to a dictionary for proper serialization
+                if isinstance(result, TodoResult):
+                    result_dict = result.model_dump()
+                else:
+                    result_dict = result
+                # Manually handle the result to display it in the todo area
+                from vibe.core.agent import ToolResultEvent
+                event = ToolResultEvent(
+                    tool_name="todo",
+                    result=result_dict
+                )
+                # This will trigger the UI to display the todos
+                await self._handle_tool_result(event)
+            except Exception as e:
+                logger.warning(f"Failed to display restored todos: {e}")
 
     async def on_compact_message_completed(
         self, message: CompactMessage.Completed
@@ -763,6 +829,18 @@ Prompt you must enhance:
     async def _handle_command(self, user_input: str) -> bool:
         command = self.commands.find_command(user_input)
         if command:
+            # Ensure agent is initialized before handling commands
+            if not self.agent and not self._agent_initializing:
+                await self._ensure_agent_init_task()
+                if not self.agent:
+                    await self._mount_and_scroll(
+                        ErrorMessage(
+                            "Agent is not ready yet. Please wait and try again.",
+                            collapsed=self._tools_collapsed,
+                        )
+                    )
+                    return True
+            
             await self._mount_and_scroll(UserMessage(user_input))
             handler = getattr(self, command.handler)
             if asyncio.iscoroutinefunction(handler):
@@ -1026,6 +1104,12 @@ Prompt you must enhance:
 
         await self._finalize_current_streaming_message()
         
+        # Remove pending state from any user messages
+        user_messages = list(self.query(UserMessage))
+        for user_message in user_messages:
+            if user_message.has_class("pending"):
+                await user_message.set_pending(False)
+        
         # Only show the interrupt message if it's not already showing
         if not any(isinstance(child, InterruptMessage) for child in self.query("*")):
             await self._mount_and_scroll(InterruptMessage())
@@ -1119,9 +1203,7 @@ Prompt you must enhance:
             return
 
         try:
-            await self.agent.interaction_logger.save_interaction(
-                self.agent.messages, self.agent.stats, self.config, self.agent.tool_manager
-            )
+            await self.agent.save_current_interaction()
         except Exception as e:
             from vibe.core.utils import logger
             logger.warning(f"Failed to save current conversation: {e}")
@@ -1282,6 +1364,8 @@ Prompt you must enhance:
 
     async def _switch_to_session_finder_app(self) -> None:
         """Switch to the session finder app."""
+        from vibe.core.utils import logger
+        logger.info("App._switch_to_session_finder_app() called")
         bottom_container = self.query_one("#bottom-app-container")
 
         try:
@@ -1298,6 +1382,7 @@ Prompt you must enhance:
         self._current_bottom_app = BottomApp.Session
 
         self.call_after_refresh(session_finder_app.focus)
+        logger.info("Session finder app mounted and focused")
 
     async def _switch_to_approval_app(
         self, tool_name: str, tool_args: BaseModel
@@ -1373,6 +1458,17 @@ Prompt you must enhance:
                 history_finder.action_close()
             except Exception as e:
                 logger.error(f"Error closing history finder: {e}")
+                pass
+            self._last_escape_time = None
+            return
+
+        if self._current_bottom_app == BottomApp.Session:
+            logger.info("Interrupt: Closing session finder")
+            try:
+                session_finder = self.query_one(SessionFinderApp)
+                session_finder.action_close()
+            except Exception as e:
+                logger.error(f"Error closing session finder: {e}")
                 pass
             self._last_escape_time = None
             return
