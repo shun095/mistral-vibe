@@ -134,5 +134,10 @@ async def test_ui_handles_non_utf8_stderr(vibe_app: VibeApp) -> None:
         await pilot.press("enter")
         message = await _wait_for_bash_output_message(vibe_app, pilot)
         output_widget = message.query_one(".bash-output", Static)
-        assert str(output_widget.render()) == "��"
+        # accept both with and without locale warning prefix
+        output = str(output_widget.render())
+        assert output in {
+            "��",
+            "bash: warning: setlocale: LC_ALL: cannot change locale (en_US.UTF-8)\n��"
+        }
         assert_no_command_error(vibe_app)

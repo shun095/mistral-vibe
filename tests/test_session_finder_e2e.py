@@ -132,10 +132,10 @@ async def test_session_loading_with_many_messages() -> None:
         # Verify that the messages can be accessed
         session = session_finder._sessions[0]
         assert len(session.messages) == 60
-        assert session.messages[0]["role"] == "user"
-        assert session.messages[0]["content"] == "User message 0"
-        assert session.messages[1]["role"] == "assistant"
-        assert session.messages[1]["content"] == "Assistant response 1"
+        assert session.messages[0].role == "user"
+        assert session.messages[0].content == "User message 0"
+        assert session.messages[1].role == "assistant"
+        assert session.messages[1].content == "Assistant response 1"
 
 
 if __name__ == "__main__":

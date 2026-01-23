@@ -118,6 +118,8 @@ async def test_can_interrupt_pending_message_during_initialization(
 
         await pilot.press("escape")
         await press_task
+        # Wait a bit for the interruption worker to complete
+        await asyncio.sleep(0.2)
         assert not user_message.has_class("pending")
         assert vibe_app.query(InterruptMessage)
         assert vibe_app.agent is None
