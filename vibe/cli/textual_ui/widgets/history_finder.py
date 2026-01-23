@@ -123,8 +123,15 @@ class HistoryFinderApp(Container):
             self._list_view.append(ListItem(Static("(No matching history entries)")))
             return
 
-        for entry in self._filtered_entries:
-            self._list_view.append(ListItem(Static(entry.display_text)))
+        for i, entry in enumerate(self._filtered_entries):
+            # Add cursor indicator for the first item (default selection)
+            cursor_indicator = "> " if i == 0 else "  "
+            display_text = f"{cursor_indicator}{entry.display_text}"
+            
+            list_item = ListItem(Static(display_text))
+            list_item.index_in_list = i  # Store the index for cursor updates
+            list_item.entry = entry  # Store entry reference for cursor updates
+            self._list_view.append(list_item)
 
     def on_input_changed(self, event: Input.Changed) -> None:
         """Handle search input changes."""
@@ -132,15 +139,37 @@ class HistoryFinderApp(Container):
             self._filter_entries(event.value)
             self._update_list()
 
+    def _update_cursor_indicators(self) -> None:
+        """Update cursor indicators to show which item is selected."""
+        if not self._list_view:
+            return
+        
+        current_index = self._list_view.index
+        if current_index is None:
+            return
+            
+        # Update all list items to show the correct cursor indicator
+        for i, child in enumerate(self._list_view.children):
+            if hasattr(child, 'children') and len(child.children) > 0:
+                static_widget = child.children[0]
+                if hasattr(static_widget, 'update'):
+                    cursor_indicator = "> " if i == current_index else "  "
+                    entry = getattr(child, 'entry', None)
+                    if entry:
+                        display_text = f"{cursor_indicator}{entry.display_text}"
+                        static_widget.update(display_text)
+
     def action_move_up(self) -> None:
         """Move selection up in the list."""
         if self._list_view:
             self._list_view.action_cursor_up()
+            self._update_cursor_indicators()
 
     def action_move_down(self) -> None:
         """Move selection down in the list."""
         if self._list_view:
             self._list_view.action_cursor_down()
+            self._update_cursor_indicators()
 
     def action_select(self) -> None:
         """Select the currently highlighted entry."""

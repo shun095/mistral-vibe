@@ -148,6 +148,20 @@ class SpinnerMixin:
         if self._status_text_widget and self.COMPLETED_TEXT:
             self._status_text_widget.update(self.COMPLETED_TEXT)
 
+    def reset_spinner(self) -> None:
+        """Reset the spinner state for reuse."""
+        self._is_spinning = False
+        if self._spinner_timer:
+            self._spinner_timer.stop()
+            self._spinner_timer = None
+        if self._indicator_widget:
+            # Clear any previous indicator (✓ or ✕)
+            self._indicator_widget.update("")
+            self._indicator_widget.remove_class("success")
+            self._indicator_widget.remove_class("error")
+        # Reset spinner position
+        self._spinner.reset()
+
     def on_unmount(self) -> None:
         if self._spinner_timer:
             self._spinner_timer.stop()
