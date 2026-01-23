@@ -8,10 +8,13 @@ from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Container
 from textual.message import Message
+from textual.screen import ModalScreen
 from textual.widgets import Input, ListItem, ListView, Static
 from textual import events
+from textual.reactive import reactive
 
 from vibe.core.utils import logger
+
 
 if TYPE_CHECKING:
     from vibe.core.config import VibeConfig
@@ -39,8 +42,9 @@ class SessionEntry:
             # Remove hash if present (everything after second underscore)
             if "_" in timestamp_str:
                 parts = timestamp_str.split("_")
-                if len(parts) >= 3:
-                    timestamp_str = "_".join(parts[:3])
+                if len(parts) >= 2:
+                    # Take only the first 2 parts (date and time)
+                    timestamp_str = "_".join(parts[:2])
             return datetime.strptime(timestamp_str, "%Y-%m-%d_%H-%M-%S")
         except (ValueError, AttributeError):
             return None
@@ -73,10 +77,25 @@ class SessionEntry:
         content = first_message.content or ""
         return content[:max_length] + "..." if len(content) > max_length else content
 
+    def get_user_message_preview(self, max_length: int = 100) -> str:
+        """Get a preview of the first user message."""
+        if not self.messages:
+            return "(No messages)"
+        
+        # Find the first user message
+        for message in self.messages:
+            if message.role == "user":
+                content = message.content or ""
+                return content[:max_length] + "..." if len(content) > max_length else content
+        
+        # If no user message found, return a placeholder
+        return "(No user messages)"
+
     def get_display_text(self) -> str:
         """Get formatted display text for the session list."""
         timestamp_str = self.timestamp.strftime("%Y-%m-%d %H:%M:%S") if self.timestamp else "Unknown time"
-        return f"[{timestamp_str}] {self.session_id} ({self.message_count} messages)"
+        user_preview = self.get_user_message_preview(max_length=50)
+        return f"[{timestamp_str}] {self.session_id} ({self.message_count} messages) - {user_preview}"
 
 
 class SessionFinderApp(Container):
@@ -108,12 +127,13 @@ class SessionFinderApp(Container):
         self._filtered_sessions: list[SessionEntry] = []
         self._search_input: Input | None = None
         self._list_view: ListView | None = None
+        logger.info("SessionFinderApp __init__ called")
 
     def compose(self) -> ComposeResult:
         """Compose the session finder UI."""
         logger.info("SessionFinderApp compose called")
         yield Static("Session Finder", id="title")
-        self._search_input = Input(placeholder="Search sessions...", id="search-input")
+        self._search_input = self._create_search_input()
         yield self._search_input
 
         self._list_view = ListView(id="session-list")
@@ -141,28 +161,26 @@ class SessionFinderApp(Container):
             # so that the next Enter key will select a session
             self.call_after_refresh(self._focus_list_view)
 
+
+
+    def _create_search_input(self) -> Input:
+        """Create the search input widget."""
+        return Input(placeholder="Search sessions...", id="search-input")
+
+
+
     async def on_mount(self) -> None:
         """Load sessions and set up the UI on mount."""
-        logger.info("SessionFinderApp on_mount called")
         await self._load_sessions()
-        logger.info(f"After _load_sessions: {len(self._sessions)} sessions loaded")
-        
-        logger.info(f"Search input: {self._search_input}")
-        logger.info(f"List view: {self._list_view}")
         
         if self._search_input:
-            logger.info("Focusing search input")
             self._search_input.focus()
-        else:
-            logger.warning("No search input found")
         
         # Use call_after_refresh to ensure the list view is properly mounted
         self.call_after_refresh(self._update_list_after_mount)
         
-        # Focus the list view after the UI is fully mounted
-        self.call_after_refresh(self._focus_list_view)
-        
-        logger.info(f"Loaded {len(self._sessions)} sessions total, {len(self._filtered_sessions)} filtered")
+        # Focus the search input after the UI is fully mounted
+        self.call_after_refresh(self._ensure_search_input_focused)
 
     async def _update_list_after_mount(self) -> None:
         """Update the list after the widget is fully mounted."""
@@ -180,14 +198,6 @@ class SessionFinderApp(Container):
                 logger.warning("No list view found in DOM")
         except Exception as e:
             logger.error(f"Error querying list view: {e}")
-
-    def on_input_changed(self, event: Input.Changed) -> None:
-        """Handle search input changes."""
-        logger.info(f"Search input changed: {event.input.id} = {event.input.value}")
-        if event.input.id == "search-input":
-            search_text = event.input.value
-            logger.info(f"Filtering sessions with: '{search_text}'")
-            self._filter_sessions(search_text)
 
     async def _load_sessions(self) -> None:
         """Load saved sessions from the sessions directory."""
@@ -234,7 +244,7 @@ class SessionFinderApp(Container):
             self._filtered_sessions = [
                 s for s in self._sessions
                 if search_lower in s.session_id.lower()
-                or search_lower in s.get_preview().lower()
+                or search_lower in s.get_user_message_preview().lower()
             ]
             logger.info(f"Filtered to {len(self._filtered_sessions)} sessions")
         self.call_after_refresh(self._update_list)
@@ -342,13 +352,22 @@ class SessionFinderApp(Container):
                         display_text = f"{cursor_indicator}{session.get_display_text()}"
                         static_widget.update(display_text)
 
+    def _ensure_search_input_focused(self) -> None:
+        """Ensure the search input has focus after UI is mounted."""
+        if self._search_input:
+            self._search_input.focus()
+
     def _focus_list_view(self) -> None:
-        """Focus the list view after the UI is fully mounted."""
+        """Focus the list view."""
         if self._list_view:
             self._list_view.focus()
-            # Ensure the cursor is at the first item
-            if self._list_view.index is None and len(self._filtered_sessions) > 0:
-                self._list_view.index = 0
+
+    def focus(self) -> None:
+        """Focus the search input for immediate typing."""
+        if self._search_input:
+            self._search_input.focus()
+        elif self._list_view:
+            self._list_view.focus()
 
     def action_move_up(self) -> None:
         """Move selection up in the session list."""
@@ -384,4 +403,27 @@ class SessionFinderApp(Container):
 
     def action_close(self) -> None:
         """Close the session finder."""
+        logger.info("SessionFinderApp.action_close() called")
         self.post_message(self.SessionClosed())
+
+    def on_key(self, event: events.Key) -> None:
+        """Handle key events."""
+        logger.info(f"SessionFinderApp.on_key() called with key: {event.key}")
+        
+        # Handle arrow keys to transfer focus from search input to list view
+        if event.key in ("up", "down") and self._search_input and self._search_input.has_focus:
+            logger.info(f"Arrow key pressed in search input, transferring focus to list view")
+            # Prevent the default action to avoid double handling
+            event.prevent_default()
+            # Focus the list view - the bindings will handle cursor movement
+            self.call_after_refresh(self._focus_list_view)
+        elif event.key == "enter":
+            # When Enter is pressed in search input, focus the list view
+            # so that the next Enter key will select a session
+            if self._search_input and self._search_input.has_focus:
+                logger.info("Enter pressed in search input, focusing list view")
+                self.call_after_refresh(self._focus_list_view)
+            else:
+                # If list view has focus, select the current session
+                logger.info("Enter pressed in list view, selecting session")
+                self.action_select()
