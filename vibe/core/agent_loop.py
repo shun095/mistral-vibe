@@ -118,8 +118,13 @@ class AgentLoop:
         self.skill_manager = SkillManager(lambda: self.config)
         self.format_handler = APIToolFormatHandler()
 
+        from vibe.core.utils import logger
+        logger.info(f"Agent: __init__ called")
+        logger.info(f"Agent: Creating backend_factory")
         self.backend_factory = lambda: backend or self._select_backend()
+        logger.info(f"Agent: Creating backend")
         self.backend = self.backend_factory()
+        logger.info(f"Agent: Backend created: {self.backend}")
 
         self.message_observer = message_observer
         self._last_observed_message_index: int = 0
@@ -159,6 +164,40 @@ class AgentLoop:
         )
         thread.start()
 
+    def _create_system_message(self) -> LLMMessage:
+        """Create a fresh system message for the agent."""
+        system_prompt = get_universal_system_prompt(
+            self.tool_manager, self.config, self.skill_manager
+        )
+        return LLMMessage(role=Role.system, content=system_prompt)
+
+    def get_system_prompt_content(self) -> str:
+        """Get the content of the system prompt message."""
+        if hasattr(self, 'messages') and self.messages and len(self.messages) > 0:
+            first_msg = self.messages[0]
+            if first_msg.role == Role.system:
+                return first_msg.content
+        return ""
+
+    async def load_session_messages(self, messages: list[LLMMessage]) -> None:
+        """Load session messages into the agent, replacing current conversation."""
+        # Filter out system messages from loaded session
+        non_system_messages = [
+            msg for msg in messages if not (msg.role == Role.system)
+        ]
+
+        # Replace with fresh system message and extend with loaded messages
+        self.messages = [self._create_system_message()]
+        self.messages.extend(non_system_messages)
+
+    async def save_current_interaction(self) -> str | None:
+        """Save the current interaction to the logger."""
+        if not self.interaction_logger.enabled:
+            return None
+        return await self.interaction_logger.save_interaction(
+            self.messages, self.stats, self.config, self.tool_manager
+        )
+
     @property
     def agent_profile(self) -> AgentProfile:
         return self.agent_manager.active_profile
@@ -186,10 +225,19 @@ class AgentLoop:
         self.tool_manager.invalidate_tool(tool_name)
 
     def _select_backend(self) -> BackendLike:
+        from vibe.core.utils import logger
+        logger.info(f"Agent: _select_backend called")
+        logger.info(f"Agent: BACKEND_FACTORY: {BACKEND_FACTORY}")
+        logger.info(f"Agent: BACKEND_FACTORY type: {type(BACKEND_FACTORY)}")
         active_model = self.config.get_active_model()
+        logger.info(f"Agent: active_model: {active_model}")
         provider = self.config.get_provider_for_model(active_model)
+        logger.info(f"Agent: provider: {provider}")
         timeout = self.config.api_timeout
-        return BACKEND_FACTORY[provider.backend](provider=provider, timeout=timeout)
+        logger.info(f"Agent: Creating backend with provider.backend={provider.backend}")
+        backend = BACKEND_FACTORY[provider.backend](provider=provider, timeout=timeout)
+        logger.info(f"Agent: Created backend: {backend}")
+        return backend
 
     def add_message(self, message: LLMMessage) -> None:
         self.messages.append(message)
