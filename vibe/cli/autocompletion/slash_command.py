@@ -43,7 +43,8 @@ class SlashCommandController:
                 self._suggestions, self._selected_index
             )
         else:
-            self.reset()
+            self._suggestions.clear()
+            self._view.clear_completion_suggestions()
 
     def on_key(
         self, event: events.Key, text: str, cursor_index: int
