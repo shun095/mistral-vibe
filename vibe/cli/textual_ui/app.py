@@ -15,6 +15,7 @@ from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.events import AppBlur, AppFocus, MouseUp
 from textual.widget import Widget
+from textual.worker import Worker
 from textual.widgets import Static
 
 from vibe import __version__ as CORE_VERSION

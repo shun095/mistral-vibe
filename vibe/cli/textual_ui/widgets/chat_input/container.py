@@ -35,6 +35,16 @@ class ChatInputContainer(Vertical):
             self.value = value
             super().__init__()
 
+    class PromptEnhancementRequested(Message):
+        def __init__(self, original_text: str) -> None:
+            self.original_text = original_text
+            super().__init__()
+
+    class PromptEnhancementCompleted(Message):
+        def __init__(self, success: bool = True) -> None:
+            self.success = success
+            super().__init__()
+
     def __init__(
         self,
         history_file: Path | None = None,
@@ -69,6 +79,11 @@ class ChatInputContainer(Vertical):
     def compose(self) -> ComposeResult:
         self._completion_popup = CompletionPopup()
         yield self._completion_popup
+
+        # Enhancement loading widget (initially hidden, placed above input container)
+        self._enhancement_loading_widget = LoadingWidget(status="Enhancing prompt...")
+        self._enhancement_loading_widget.add_class("enhancement-loading-hidden")
+        yield self._enhancement_loading_widget
 
         border_class = SAFETY_BORDER_CLASSES.get(self._safety, "")
         with Vertical(id=self.ID_INPUT_BOX, classes=border_class):

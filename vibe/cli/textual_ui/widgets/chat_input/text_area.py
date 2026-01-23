@@ -57,6 +57,13 @@ class ChatTextArea(TextArea):
             self.mode = mode
             super().__init__()
 
+    class PromptEnhancementRequested(Message):
+        """Message sent when user requests prompt enhancement via Ctrl+Y."""
+
+        def __init__(self, original_text: str) -> None:
+            self.original_text = original_text
+            super().__init__()
+
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._input_mode: InputMode = self.DEFAULT_MODE
@@ -221,6 +228,19 @@ class ChatTextArea(TextArea):
             self._set_mode(event.character)
             event.prevent_default()
             event.stop()
+            return
+
+        if event.key == "ctrl+y":
+            # Handle Ctrl+Y for prompt enhancement
+            self.action_enhance_prompt()
+            event.prevent_default()
+            event.stop()
+            return
+
+        # Handle backspace character
+        # Note: event.control may be None even when Ctrl is pressed in some terminals
+        if event.character == "\x08":
+            # Backspace still works as backspace, not prompt enhancement
             return
 
         if event.key == "backspace" and self._should_reset_mode_on_backspace():
