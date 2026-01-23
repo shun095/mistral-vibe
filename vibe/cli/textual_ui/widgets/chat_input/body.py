@@ -20,6 +20,16 @@ class ChatInputBody(Widget):
             self.value = value
             super().__init__()
 
+    class PromptEnhancementRequested(Message):
+        def __init__(self, original_text: str) -> None:
+            self.original_text = original_text
+            super().__init__()
+
+    class PromptEnhancementCompleted(Message):
+        def __init__(self, success: bool = True) -> None:
+            self.success = success
+            super().__init__()
+
     def __init__(self, history_file: Path | None = None, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.input_widget: ChatTextArea | None = None
@@ -164,6 +174,35 @@ class ChatInputBody(Widget):
             self._notify_completion_reset()
 
             self.post_message(self.Submitted(value))
+
+    def on_chat_text_area_prompt_enhancement_requested(
+        self, event: ChatTextArea.PromptEnhancementRequested
+    ) -> None:
+        """Handle prompt enhancement request from Ctrl+Y keybind."""
+        event.stop()
+        if not self.input_widget:
+            return
+
+        original_text = event.original_text.strip()
+        if original_text:
+            # Post a message to notify the app about the enhancement request
+            self.post_message(self.PromptEnhancementRequested(original_text))
+
+    def on_prompt_enhancement_completed(self, event: PromptEnhancementCompleted | Any) -> None:
+        """Handle prompt enhancement completion.
+        
+        Forward the event to the parent container so it can handle the loading widget.
+        
+        Args:
+            event: Can be either ChatInputBody.PromptEnhancementCompleted or 
+                   ChatInputContainer.PromptEnhancementCompleted.
+        """
+        from typing import Any
+        from vibe.core.utils import logger
+        logger.info(f"Body: on_prompt_enhancement_completed called with event={event}")
+        # Forward the event to the parent (ChatInputContainer)
+        logger.info(f"Body: Forwarding event to parent")
+        self.post_message_to_parent(event)
 
     @property
     def value(self) -> str:

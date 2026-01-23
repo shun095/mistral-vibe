@@ -16,7 +16,7 @@ from vibe.core.types import (
     ToolCallEvent,
     ToolResultEvent,
 )
-from vibe.core.utils import TaggedText
+from vibe.core.utils import TaggedText, logger
 
 if TYPE_CHECKING:
     from vibe.cli.textual_ui.widgets.loading import LoadingWidget
@@ -30,6 +30,10 @@ class EventHandler:
         todo_area_callback: Callable,
         get_tools_collapsed: Callable[[], bool],
         get_todos_collapsed: Callable[[], bool],
+        is_enhancement_mode: Callable[[], bool] | None = None,
+        replace_input_text: Callable[[str], None] | None = None,
+        reset_enhancement_mode: Callable[[], None] | None = None,
+        is_interrupted: Callable[[], bool] | None = None,
     ) -> None:
         self.mount_callback = mount_callback
         self.scroll_callback = scroll_callback
@@ -38,6 +42,10 @@ class EventHandler:
         self.get_todos_collapsed = get_todos_collapsed
         self.current_tool_call: ToolCallMessage | None = None
         self.current_compact: CompactMessage | None = None
+        self.is_enhancement_mode = is_enhancement_mode
+        self.replace_input_text = replace_input_text
+        self.reset_enhancement_mode = reset_enhancement_mode
+        self.is_interrupted = is_interrupted
 
     async def handle_event(
         self,
@@ -45,6 +53,12 @@ class EventHandler:
         loading_active: bool = False,
         loading_widget: LoadingWidget | None = None,
     ) -> ToolCallMessage | None:
+        # Check if we should ignore tool result events due to interruption
+        if isinstance(event, ToolResultEvent) and self.is_interrupted and self.is_interrupted():
+            # Ignore tool result events if interruption has been requested
+            logger.info(f"Ignoring tool result event for {event.tool_name} due to interruption")
+            return None
+            
         match event:
             case ToolCallEvent():
                 return await self._handle_tool_call(event, loading_widget)
@@ -120,7 +134,16 @@ class EventHandler:
         self.current_tool_call = None
 
     async def _handle_assistant_message(self, event: AssistantEvent) -> None:
-        await self.mount_callback(AssistantMessage(event.content))
+        # Check if we're in enhancement mode
+        if self.is_enhancement_mode and self.is_enhancement_mode():
+            # Replace the input text with the enhanced prompt
+            if self.replace_input_text:
+                self.replace_input_text(event.content)
+            # Reset enhancement mode
+            if hasattr(self, 'reset_enhancement_mode') and self.reset_enhancement_mode:
+                self.reset_enhancement_mode()
+        else:
+            await self.mount_callback(AssistantMessage(event.content))
 
     async def _handle_reasoning_message(self, event: ReasoningEvent) -> None:
         tools_collapsed = self.get_tools_collapsed()
@@ -145,7 +168,9 @@ class EventHandler:
 
     def stop_current_tool_call(self) -> None:
         if self.current_tool_call:
-            self.current_tool_call.stop_spinning()
+            # Ensure the spinner is stopped and widget is updated
+            # even if there's a race condition
+            self.current_tool_call.stop_spinning(success=False)
             self.current_tool_call = None
 
     def stop_current_compact(self) -> None:

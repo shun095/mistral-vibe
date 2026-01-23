@@ -16,6 +16,7 @@ from vibe.cli.textual_ui.widgets.chat_input.completion_manager import (
 )
 from vibe.cli.textual_ui.widgets.chat_input.completion_popup import CompletionPopup
 from vibe.cli.textual_ui.widgets.chat_input.text_area import ChatTextArea
+from vibe.cli.textual_ui.widgets.loading import LoadingWidget
 from vibe.core.autocompletion.completers import CommandCompleter, PathCompleter
 from vibe.core.modes import ModeSafety
 
@@ -32,6 +33,16 @@ class ChatInputContainer(Vertical):
     class Submitted(Message):
         def __init__(self, value: str) -> None:
             self.value = value
+            super().__init__()
+
+    class PromptEnhancementRequested(Message):
+        def __init__(self, original_text: str) -> None:
+            self.original_text = original_text
+            super().__init__()
+
+    class PromptEnhancementCompleted(Message):
+        def __init__(self, success: bool = True) -> None:
+            self.success = success
             super().__init__()
 
     def __init__(
@@ -62,6 +73,11 @@ class ChatInputContainer(Vertical):
     def compose(self) -> ComposeResult:
         self._completion_popup = CompletionPopup()
         yield self._completion_popup
+
+        # Enhancement loading widget (initially hidden, placed above input container)
+        self._enhancement_loading_widget = LoadingWidget(status="Enhancing prompt...")
+        self._enhancement_loading_widget.add_class("enhancement-loading-hidden")
+        yield self._enhancement_loading_widget
 
         border_class = SAFETY_BORDER_CLASSES.get(self._safety, "")
         with Vertical(id=self.ID_INPUT_BOX, classes=border_class):
@@ -154,6 +170,68 @@ class ChatInputContainer(Vertical):
     def on_chat_input_body_submitted(self, event: ChatInputBody.Submitted) -> None:
         event.stop()
         self.post_message(self.Submitted(event.value))
+
+    def on_chat_input_body_prompt_enhancement_requested(
+        self, event: ChatInputBody.PromptEnhancementRequested
+    ) -> None:
+        """Handle prompt enhancement request from Ctrl+Y keybind."""
+        event.stop()
+        
+        # Show the enhancement loading widget
+        if self._enhancement_loading_widget:
+            # Reset spinner state before reuse
+            self._enhancement_loading_widget.reset_spinner()
+            self._enhancement_loading_widget.remove_class("enhancement-loading-hidden")
+            # Start the spinner timer if not already running
+            if not self._enhancement_loading_widget._spinner_timer:
+                self._enhancement_loading_widget.start_spinner_timer()
+        
+        self.post_message(self.PromptEnhancementRequested(event.original_text))
+
+    def on_chat_input_body_prompt_enhancement_completed(
+        self, event: ChatInputBody.PromptEnhancementCompleted
+    ) -> None:
+        """Handle prompt enhancement completion from body."""
+        event.stop()
+        
+        # Handle loading widget completion
+        if self._enhancement_loading_widget:
+            self._enhancement_loading_widget.stop_spinning(success=event.success)
+            # Hide the loading widget immediately after spinner stops
+            # This prevents animation persistence and provides better UX
+            self._hide_enhancement_loading_widget()
+        
+        self.post_message(self.PromptEnhancementCompleted(event.success))
+
+    def _hide_enhancement_loading_widget(self) -> None:
+        """Hide the enhancement loading widget."""
+        if self._enhancement_loading_widget:
+            self._enhancement_loading_widget.add_class("enhancement-loading-hidden")
+
+    def on_prompt_enhancement_completed(
+        self, event: ChatInputContainer.PromptEnhancementCompleted
+    ) -> None:
+        """Handle prompt enhancement completion.
+        
+        This handler is called when the enhancement is completed (either successfully or cancelled).
+        It ensures the loading widget is hidden and any necessary cleanup is performed.
+        """
+        from vibe.core.utils import logger
+        logger.info(f"Container: on_prompt_enhancement_completed called with event={event}, success={event.success}")
+        logger.info(f"Container: Loading widget before hide: {self._enhancement_loading_widget}")
+        
+        # Handle loading widget completion
+        if self._enhancement_loading_widget:
+            logger.info(f"Container: Stopping spinner with success={event.success}")
+            self._enhancement_loading_widget.stop_spinning(success=event.success)
+            # Hide the loading widget immediately after spinner stops
+            # This prevents animation persistence and provides better UX
+            self._hide_enhancement_loading_widget()
+        
+        # Also hide the loading widget directly
+        if self._enhancement_loading_widget:
+            logger.info(f"Container: Adding hidden class to loading widget")
+            self._enhancement_loading_widget.add_class("enhancement-loading-hidden")
 
     def set_safety(self, safety: ModeSafety) -> None:
         self._safety = safety

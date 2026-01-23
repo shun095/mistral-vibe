@@ -24,6 +24,13 @@ class ChatTextArea(TextArea):
             "New Line",
             show=False,
             priority=True,
+        ),
+        Binding(
+            "ctrl+y",
+            "enhance_prompt",
+            "Enhance Prompt",
+            show=True,
+            priority=True,
         )
     ]
 
@@ -55,6 +62,13 @@ class ChatTextArea(TextArea):
             self.mode = mode
             super().__init__()
 
+    class PromptEnhancementRequested(Message):
+        """Message sent when user requests prompt enhancement via Ctrl+Y."""
+
+        def __init__(self, original_text: str) -> None:
+            self.original_text = original_text
+            super().__init__()
+
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._input_mode: InputMode = self.DEFAULT_MODE
@@ -84,6 +98,12 @@ class ChatTextArea(TextArea):
 
     def action_insert_newline(self) -> None:
         self.insert("\n")
+
+    def action_enhance_prompt(self) -> None:
+        """Handle Ctrl+Y keybind to enhance the current prompt."""
+        current_text = self.get_full_text().strip()
+        if current_text:
+            self.post_message(self.PromptEnhancementRequested(current_text))
 
     def _logical_line_start(self, smart_home: bool = False) -> Location:
         # cursor_location は (logical_row, logical_col)
@@ -234,6 +254,19 @@ class ChatTextArea(TextArea):
             self._set_mode(event.character)
             event.prevent_default()
             event.stop()
+            return
+
+        if event.key == "ctrl+y":
+            # Handle Ctrl+Y for prompt enhancement
+            self.action_enhance_prompt()
+            event.prevent_default()
+            event.stop()
+            return
+
+        # Handle backspace character
+        # Note: event.control may be None even when Ctrl is pressed in some terminals
+        if event.character == "\x08":
+            # Backspace still works as backspace, not prompt enhancement
             return
 
         if event.key == "backspace" and self._should_reset_mode_on_backspace():

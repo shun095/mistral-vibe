@@ -13,6 +13,7 @@ from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.events import AppBlur, AppFocus, MouseUp
 from textual.widget import Widget
+from textual.worker import Worker
 from textual.widgets import Static
 
 from vibe import __version__ as CORE_VERSION
@@ -64,7 +65,7 @@ from vibe.core.config import VibeConfig
 from vibe.core.modes import AgentMode, next_mode
 from vibe.core.paths.config_paths import HISTORY_FILE
 from vibe.core.tools.base import BaseToolConfig, ToolPermission
-from vibe.core.types import ApprovalResponse, LLMMessage, Role
+from vibe.core.types import ApprovalResponse, LLMChunk, LLMMessage, Role
 from vibe.core.utils import (
     CancellationReason,
     get_user_cancellation_message,
