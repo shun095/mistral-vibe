@@ -523,6 +523,10 @@ StatusMessage {
     color: $foreground;
 }
 
+.enhancement-loading-hidden {
+    display: none;
+}
+
 .compact-message {
     width: 100%;
     height: auto;
