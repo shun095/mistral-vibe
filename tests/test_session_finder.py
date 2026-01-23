@@ -62,6 +62,36 @@ class TestSessionEntry:
         assert len(preview) <= 23  # 20 chars + "..."
         assert preview.endswith("...")
 
+    def test_get_user_message_preview(self, tmp_path: Path) -> None:
+        """Test getting a preview of the first user message."""
+        session_file = tmp_path / "session_2024-01-15_14-30-45.json"
+        messages = [
+            {"role": "system", "content": "System message"},
+            {"role": "user", "content": "This is a user message that should be previewed..."},
+            {"role": "assistant", "content": "Assistant response"},
+        ]
+        session_data = {"messages": messages}
+        session_file.write_text(json.dumps(session_data))
+
+        entry = SessionEntry("test_session_id", session_file)
+        preview = entry.get_user_message_preview(max_length=20)
+        assert "This is a user" in preview
+        assert len(preview) <= 23  # 20 chars + "..."
+
+    def test_get_user_message_preview_no_user_messages(self, tmp_path: Path) -> None:
+        """Test getting preview when there are no user messages."""
+        session_file = tmp_path / "session_2024-01-15_14-30-45.json"
+        messages = [
+            {"role": "system", "content": "System message"},
+            {"role": "assistant", "content": "Assistant response"},
+        ]
+        session_data = {"messages": messages}
+        session_file.write_text(json.dumps(session_data))
+
+        entry = SessionEntry("test_session_id", session_file)
+        preview = entry.get_user_message_preview()
+        assert preview == "(No user messages)"
+
     def test_get_display_text(self, tmp_path: Path) -> None:
         """Test getting formatted display text."""
         session_file = tmp_path / "session_2024-01-15_14-30-45.json"
@@ -77,6 +107,7 @@ class TestSessionEntry:
         assert "2024-01-15 14:30:45" in display_text
         assert "test_session_id" in display_text
         assert "(2 messages)" in display_text
+        assert "Hello" in display_text
 
 
 class TestSessionFinderApp:

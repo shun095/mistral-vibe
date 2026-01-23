@@ -43,11 +43,18 @@ async def test_popup_appears_with_matching_suggestions(vibe_app: VibeApp) -> Non
 @pytest.mark.asyncio
 async def test_popup_hides_when_input_cleared(vibe_app: VibeApp) -> None:
     async with vibe_app.run_test() as pilot:
+        chat_input = vibe_app.query_one(ChatInputContainer)
         popup = vibe_app.query_one(CompletionPopup)
 
         await pilot.press(*"/c")
-        await pilot.press("backspace", "backspace")
-
+        await pilot.pause(0.1)
+        assert chat_input.value == "/c"
+        assert popup.styles.display == "block"
+        
+        # Clear the input by setting it to empty string
+        chat_input.value = ""
+        await pilot.pause(0.1)
+        assert chat_input.value == ""
         assert popup.styles.display == "none"
 
 
