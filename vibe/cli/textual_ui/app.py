@@ -262,6 +262,141 @@ class VibeApp(App):  # noqa: PLR0904
 
         await self._handle_user_message(value)
 
+    async def on_chat_input_container_prompt_enhancement_requested(
+        self, event: ChatInputContainer.PromptEnhancementRequested
+    ) -> None:
+        """Handle prompt enhancement request from Ctrl+Y keybind."""
+        original_text = event.original_text.strip()
+        if not original_text:
+            return
+
+        from vibe.core.utils import logger
+        logger.info("=== PROMPT ENHANCEMENT REQUESTED ===")
+        logger.info(f"Original text: {original_text}")
+        logger.info(f"Agent running before enhancement: {self._agent_running}")
+
+        if self._agent_running:
+            logger.info("Interrupting agent before enhancement")
+            await self._interrupt_agent()
+
+        # Set enhancement mode to track that we're waiting for an enhanced prompt
+        self._enhancement_mode = True
+        self._original_prompt_for_enhancement = original_text
+        self._prompt_enhancement_in_progress = True
+        logger.info(f"Enhancement mode set: _enhancement_mode={self._enhancement_mode}, _prompt_enhancement_in_progress={self._prompt_enhancement_in_progress}")
+        
+        # Store the enhancement task for cancellation
+        self._enhancement_task = None
+
+        # Create the enhancement prompt using the template
+        enhancement_prompt = f"""Now, you must delegate following prompt instructions to another AI Agent which has same capability to you. As an professional prompt engineer, please generate an enhanced version of this prompt using best practices (reply with only the enhanced prompt - no conversation, explanations, lead-in, bullet points, placeholders, or surrounding quotes). Basically, you should include, background, purpose, requirements, criteria etc. in the enhanced prompt.
+
+Prompt you must enhance:
+{original_text}"""
+
+        # Send the enhancement request to the LLM WITHOUT adding to chat history
+        # Call the backend directly to ensure complete isolation from chat history
+        if self.agent and self.agent.backend:
+            from vibe.core.types import LLMMessage, Role
+            
+            # Get the system prompt from the agent's messages (first message should be system)
+            system_prompt = ""
+            if self.agent.messages and len(self.agent.messages) > 0:
+                first_msg = self.agent.messages[0]
+                if first_msg.role == Role.system:
+                    system_prompt = first_msg.content
+            
+            # Create isolated messages with just system prompt and user request
+            isolated_messages = [
+                LLMMessage(role=Role.system, content=system_prompt),
+                LLMMessage(role=Role.user, content=enhancement_prompt)
+            ]
+            
+            # Use the backend directly to avoid modifying agent's chat history
+            try:
+                logger.info(f"Enhancement: Backend type: {type(self.agent.backend)}")
+                logger.info(f"Enhancement: Backend: {self.agent.backend}")
+                logger.info(f"Enhancement: Backend has complete_streaming: {hasattr(self.agent.backend, 'complete_streaming')}")
+                async with self.agent.backend as backend:
+                    logger.info(f"Enhancement: Backend in context: {type(backend)}")
+                    logger.info(f"Enhancement: Backend in context has complete_streaming: {hasattr(backend, 'complete_streaming')}")
+                    # Get active model configuration
+                    active_model = self.agent.config.get_active_model()
+                    
+                    # Call the streaming enhancement method
+                    # This yields chunks as they arrive, keeping event loop responsive
+                    from vibe.core.utils import logger
+                    logger.info("Starting enhancement with streaming...")
+                    logger.info("About to create worker...")
+                    
+                    # Use run_worker to execute enhancement asynchronously
+                    # This keeps the event loop responsive for ESC/Ctrl+C
+                    worker = self.run_worker(
+                        self._run_enhancement_worker(backend, active_model, isolated_messages),
+                        name="prompt-enhancement",
+                        exclusive=False,
+                    )
+                    logger.info(f"Created worker: {worker}")
+                    
+                    # Store the worker for cancellation
+                    self._enhancement_task = worker
+                    logger.info(f"Stored enhancement task: {self._enhancement_task}")
+            except Exception as e:
+                # If enhancement fails, notify the chat input container
+                # Do NOT reset enhancementMode here as it may have been set by the caller
+                from vibe.core.utils import logger
+                logger.error(f"Prompt enhancement failed: {e}", exc_info=True)
+                import traceback
+                logger.error(f"Traceback: {''.join(traceback.format_exc())}")
+                
+                # Reset the enhancement task
+                self._enhancement_task = None
+                
+                # Notify the chat input container that enhancement failed
+                self._post_prompt_enhancement_completed(success=False)
+
+    def on_chat_input_container_prompt_enhancement_completed(
+        self, event: ChatInputContainer.PromptEnhancementCompleted
+    ) -> None:
+        """Handle prompt enhancement completion."""
+        # This handler is mainly for logging and cleanup
+        # The actual UI updates are handled in the chat input body
+        pass
+
+    def on_worker_state_changed(
+        self, event: "Worker.StateChanged"
+    ) -> None:
+        """Handle worker state changes.
+        
+        Specifically handles enhancement worker cancellation to ensure
+        the loading widget is hidden when enhancement is cancelled.
+        """
+        from textual.worker import WorkerState
+        
+        logger.info(f"Worker state changed: {event.worker.name} -> {event.state}")
+        logger.info(f"Handler called, _prompt_enhancement_in_progress={self._prompt_enhancement_in_progress}, _enhancement_mode={self._enhancement_mode}")
+        
+        # Check if this is the enhancement worker that was cancelled
+        if (
+            event.worker.name == "prompt-enhancement"
+            and event.state == WorkerState.CANCELLED
+            and self._prompt_enhancement_in_progress
+        ):
+            logger.info("Enhancement worker was cancelled, hiding loading widget")
+            
+            # Reset enhancement mode
+            self._enhancement_mode = False
+            self._original_prompt_for_enhancement = ""
+            self._prompt_enhancement_in_progress = False
+            self._enhancement_task = None
+            
+            # Reset interrupt flag to allow future enhancements
+            self._interrupt_requested = False
+            
+            # Notify the chat input container that enhancement was cancelled
+            logger.info("App: Posting PromptEnhancementCompleted(success=False) to body")
+            self._post_prompt_enhancement_completed(success=False)
+
     async def on_approval_app_approval_granted(
         self, message: ApprovalApp.ApprovalGranted
     ) -> None:
@@ -1471,6 +1606,50 @@ class VibeApp(App):  # noqa: PLR0904
             self._last_escape_time = None
             return
 
+        # Handle prompt enhancement cancellation
+        logger.info(f"Interrupt: _prompt_enhancement_in_progress={self._prompt_enhancement_in_progress}")
+        if self._prompt_enhancement_in_progress:
+            logger.info("Interrupt: Cancelling prompt enhancement")
+            
+            # Set interrupt flag to signal cancellation
+            self._interrupt_requested = True
+            
+            # Cancel the enhancement task if it's running
+            if self._enhancement_task:
+                logger.info(f"Cancelling enhancement task: {self._enhancement_task}")
+                self._enhancement_task.cancel()
+                self._enhancement_task = None
+            
+            # Reset enhancement state
+            self._prompt_enhancement_in_progress = False
+            self._enhancement_mode = False
+            self._original_prompt_for_enhancement = ""
+            self._enhancement_task = None
+            
+            # Reset interrupt flag to allow future enhancements
+            self._interrupt_requested = False
+            
+            # Hide the enhancement loading widget
+            try:
+                input_widget = self.query_one(ChatInputContainer)
+                logger.info(f"Interrupt: Found input widget: {input_widget}")
+                logger.info(f"Interrupt: Widget is mounted: {input_widget.is_mounted}")
+                logger.info(f"Interrupt: Widget type: {type(input_widget)}")
+                logger.info(f"Interrupt: Widget id: {input_widget.id if hasattr(input_widget, 'id') else 'no id'}")
+                if input_widget:
+                    # Notify the chat input container that enhancement was cancelled
+                    logger.info("Interrupt: Posting PromptEnhancementCompleted(success=False) to body")
+                    self._post_prompt_enhancement_completed(success=False)
+                    logger.info("Interrupt: Event posted successfully")
+            except Exception as e:
+                logger.error(f"Error handling enhancement cancellation: {e}")
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
+                pass
+            
+            self._last_escape_time = None
+            return
+
         if (
             self._current_bottom_app == BottomApp.Input
             and self._last_escape_time is not None
@@ -1578,6 +1757,36 @@ class VibeApp(App):  # noqa: PLR0904
                 )
 
     def action_clear_quit(self) -> None:
+        # Handle prompt enhancement cancellation
+        if self._prompt_enhancement_in_progress:
+            logger.info("Ctrl+C: Cancelling prompt enhancement")
+            
+            # Set interrupt flag to signal cancellation
+            self._interrupt_requested = True
+            
+            # Cancel the enhancement task if it's running
+            if self._enhancement_task:
+                logger.info(f"Cancelling enhancement task: {self._enhancement_task}")
+                self._enhancement_task.cancel()
+                self._enhancement_task = None
+            
+            # Reset enhancement state
+            self._prompt_enhancement_in_progress = False
+            self._enhancement_mode = False
+            self._original_prompt_for_enhancement = ""
+            
+            # Reset interrupt flag to allow future enhancements
+            self._interrupt_requested = False
+            
+            # Hide the enhancement loading widget
+            try:
+                # Notify the chat input container that enhancement was cancelled
+                self._post_prompt_enhancement_completed(success=False)
+            except Exception as e:
+                logger.error(f"Error handling enhancement cancellation: {e}")
+                pass
+            return
+
         input_widgets = self.query(ChatInputContainer)
         if input_widgets:
             input_widget = input_widgets.first()
@@ -1722,6 +1931,177 @@ class VibeApp(App):  # noqa: PLR0904
             chat.scroll_end(animate=False)
         except Exception:
             pass
+
+    async def _enhancement_with_interrupt_check(
+        self, backend: any, active_model: any, isolated_messages: list
+    ) -> any:
+        """Run enhancement with periodic interrupt checks.
+        
+        This method calls the backend.complete_streaming() method which yields
+        chunks asynchronously, allowing the event loop to remain responsive and
+        check for interruption requests at any time.
+        
+        Args:
+            backend: The backend instance
+            active_model: The active model configuration
+            isolated_messages: The messages to send for enhancement
+            
+        Returns:
+            The complete LLMChunk from the streaming response
+            
+        Raises:
+            asyncio.CancelledError: If interruption is requested
+        """
+        import asyncio
+        from vibe.core.utils import logger
+        
+        logger.info("=== ENHANCEMENT WITH INTERRUPT CHECK STARTED ===")
+        logger.info(f"Interrupt requested at start: {self._interrupt_requested}")
+        
+        # Use streaming API which is non-blocking and allows interruption
+        chunk_agg = LLMChunk(message=LLMMessage(role=Role.assistant))
+        chunk_count = 0
+        
+        try:
+            async for chunk in backend.complete_streaming(
+                model=active_model,
+                messages=isolated_messages,
+                temperature=active_model.temperature,
+                tools=[],  # No tools for enhancement
+                tool_choice="none",
+                extra_headers={
+                    "user-agent": "Mistral Vibe",
+                    "x-affinity": self.agent.session_id,
+                },
+                max_tokens=2000,  # Reasonable limit for prompt enhancement
+            ):
+                chunk_count += 1
+                logger.info(f"Enhancement: Received chunk {chunk_count}, interrupt_requested={self._interrupt_requested}")
+                
+                # Check for interruption before processing each chunk
+                if self._interrupt_requested:
+                    logger.info("Enhancement: Interruption requested, stopping stream")
+                    raise asyncio.CancelledError("User requested interruption")
+                
+                chunk_agg += chunk
+            
+            logger.info(f"Enhancement: Completed successfully with {chunk_count} chunks")
+            # Return the complete aggregated chunk
+            return chunk_agg
+            
+        except asyncio.CancelledError:
+            logger.info(f"Enhancement: Stream cancelled by user after {chunk_count} chunks")
+            raise
+
+    async def _run_enhancement_worker(
+        self, backend: any, active_model: any, isolated_messages: list
+    ) -> None:
+        """Worker method to run enhancement asynchronously using run_worker.
+        
+        This method handles the enhancement process and processes the result,
+        keeping the event loop responsive for ESC/Ctrl+C cancellation.
+        
+        Args:
+            backend: The backend instance
+            active_model: The active model configuration
+            isolated_messages: The messages to send for enhancement
+        """
+        from vibe.core.types import LLMChunk, LLMMessage, Role
+        from vibe.core.utils import logger
+        
+        logger.info("=== RUNNING ENHANCEMENT WORKER ===")
+        
+        chunk_agg = LLMChunk(message=LLMMessage(role=Role.assistant))
+        
+        try:
+            # Call the method that handles streaming with interrupt checks
+            chunk_agg = await self._enhancement_with_interrupt_check(
+                backend,
+                active_model,
+                isolated_messages,
+            )
+            
+            # Process the complete response
+            if chunk_agg.message:
+                # The response should be the enhanced prompt
+                enhanced_text = chunk_agg.message.content
+                
+                # Replace the input text with the enhanced prompt
+                if self._chat_input_container:
+                    self._replace_input_with_enhanced_prompt(enhanced_text)
+                
+                # Notify the chat input container that enhancement is complete
+                self._post_prompt_enhancement_completed(success=True)
+            
+            # Reset enhancement mode
+            self._enhancement_mode = False
+            self._original_prompt_for_enhancement = ""
+            self._prompt_enhancement_in_progress = False
+            self._enhancement_task = None
+            
+            # Reset interrupt flag to allow future enhancements
+            self._interrupt_requested = False
+            
+            logger.info("Enhancement completed successfully")
+            
+        except asyncio.CancelledError:
+            # Enhancement was cancelled by user (ESC or Ctrl+C)
+            logger.info("Enhancement was cancelled by user")
+            
+            # Reset enhancement mode
+            self._enhancement_mode = False
+            self._original_prompt_for_enhancement = ""
+            self._prompt_enhancement_in_progress = False
+            self._enhancement_task = None
+            
+            # Reset interrupt flag to allow future enhancements
+            self._interrupt_requested = False
+            
+            # Notify the chat input container that enhancement was cancelled
+            self._post_prompt_enhancement_completed(success=False)
+            
+            raise
+        
+        except Exception as e:
+            # If enhancement fails, notify the chat input container
+            logger.error(f"Prompt enhancement failed: {e}")
+            
+            # Reset the enhancement task
+            self._enhancement_task = None
+            
+            # Reset interrupt flag to allow future enhancements
+            self._interrupt_requested = False
+            
+            # Notify the chat input container that enhancement failed
+            self._post_prompt_enhancement_completed(success=False)
+
+    def _reset_enhancement_mode(self) -> None:
+        """Reset enhancement mode and related state."""
+        self._enhancement_mode = False
+        self._original_prompt_for_enhancement = ""
+
+
+
+    def _reset_enhancement_mode(self) -> None:
+        """Reset enhancement mode and related state."""
+        self._enhancement_mode = False
+        self._original_prompt_for_enhancement = ""
+
+    def _replace_input_with_enhanced_prompt(self, enhanced_text: str) -> None:
+        """Replace the input text with the enhanced prompt."""
+        if self._chat_input_container:
+            # Remove any leading mode characters if present
+            cleaned_text = enhanced_text
+            if cleaned_text.startswith(">"):
+                cleaned_text = cleaned_text[1:]
+            elif cleaned_text.startswith("!"):
+                cleaned_text = cleaned_text[1:]
+            elif cleaned_text.startswith("/"):
+                cleaned_text = cleaned_text[1:]
+            
+            self._chat_input_container.value = cleaned_text.strip()
+            if self._chat_input_container.input_widget:
+                self._chat_input_container.input_widget.focus()
 
     def _scroll_to_bottom_deferred(self) -> None:
         self.call_after_refresh(self._scroll_to_bottom)
