@@ -136,6 +136,9 @@ class LoadingWidget(SpinnerMixin, Static):
         return "".join(parts)
 
     def _update_animation(self) -> None:
+        if not self._is_spinning:
+            return
+            
         total_elements = 1 + len(self.status) + 1
 
         if self._indicator_widget:
