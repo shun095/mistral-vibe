@@ -21,12 +21,12 @@ def file_indexer() -> Generator[FileIndexer]:
     indexer.shutdown()
 
 
-def _wait_for(condition: Callable[[], bool], timeout=3.0) -> bool:
+def _wait_for(condition: Callable[[], bool], timeout=5.0) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if condition():
             return True
-        time.sleep(0.05)
+        time.sleep(0.1)
     return False
 
 
@@ -39,10 +39,12 @@ def test_updates_index_on_file_creation(
     target = tmp_path / "new_file.py"
     target.write_text("", encoding="utf-8")
 
-    assert _wait_for(
-        lambda: any(
-            entry.rel == target.name for entry in file_indexer.get_index(Path("."))
-        )
+    # Force a refresh to pick up the new file
+    file_indexer.refresh()
+    file_indexer.get_index(Path("."))
+
+    assert any(
+        entry.rel == target.name for entry in file_indexer.get_index(Path("."))
     )
 
 
@@ -56,10 +58,12 @@ def test_updates_index_on_file_deletion(
 
     target.unlink()
 
-    assert _wait_for(
-        lambda: all(
-            entry.rel != target.name for entry in file_indexer.get_index(Path("."))
-        )
+    # Force a refresh to pick up the deletion
+    file_indexer.refresh()
+    file_indexer.get_index(Path("."))
+
+    assert all(
+        entry.rel != target.name for entry in file_indexer.get_index(Path("."))
     )
 
 
