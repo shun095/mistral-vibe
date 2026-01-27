@@ -202,7 +202,8 @@ class ChatInputBody(Widget):
         logger.info(f"Body: on_prompt_enhancement_completed called with event={event}")
         # Forward the event to the parent (ChatInputContainer)
         logger.info(f"Body: Forwarding event to parent")
-        self.post_message_to_parent(event)
+        if self.parent:
+            self.parent.post_message(event)
 
     @property
     def value(self) -> str:

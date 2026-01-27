@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from textual.widgets import Static
 
 from vibe.core.config import VibeConfig
@@ -8,7 +10,7 @@ from vibe.core.config import VibeConfig
 class ModelIndicator(Static):
     """Displays the current active model with info-colored indicator."""
 
-    def __init__(self, **kwargs: any) -> None:
+    def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.can_focus = False
         self._config = VibeConfig.load()
