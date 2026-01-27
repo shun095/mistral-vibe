@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import difflib
 from pathlib import Path
+from typing import cast
 
 from pydantic import BaseModel
 from textual.app import ComposeResult
@@ -462,7 +463,9 @@ def get_result_widget(
 ) -> ToolResultWidget:
     # Use MCP result widget for MCP tools
     if _is_mcp_tool(tool_name):
-        return MCPResultWidget(result, success, message, collapsed, warnings)
+        return MCPResultWidget(
+            cast(MCPToolResult | None, result), success, message, collapsed, warnings
+        )
     
     # Use specific widget for built-in tools
     widget_class = RESULT_WIDGETS.get(tool_name, ToolResultWidget)
