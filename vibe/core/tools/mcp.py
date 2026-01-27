@@ -5,15 +5,15 @@ from datetime import timedelta
 import hashlib
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 # Import ExceptionGroup for handling TaskGroup errors
 try:
-    from typing import ExceptionGroup
+    from typing import ExceptionGroup  # type: ignore[import]
 except ImportError:
     # For Python < 3.11, try to import from exceptiongroup backport
     try:
-        from exceptiongroup import ExceptionGroup
+        from exceptiongroup import ExceptionGroup  # type: ignore[import]
     except ImportError:
         # If neither is available, we'll handle it gracefully
         ExceptionGroup = Exception  # type: ignore
@@ -21,7 +21,7 @@ except ImportError:
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.client.streamable_http import streamablehttp_client
-from mcp.types import CancelledNotification, CancelledNotificationParams
+from mcp.types import CancelledNotification, CancelledNotificationParams, ClientNotification
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from vibe.core.tools.base import (
@@ -163,7 +163,7 @@ class _CancellableClientSession:
                     reason=reason
                 )
             )
-            await self._session.send_notification(notification)
+            await self._session.send_notification(cast(ClientNotification, notification))
             logger.info(f"Sent cancellation notification for request ID {request_id}")
         else:
             logger.warning("Cannot send cancellation notification: no active request ID")

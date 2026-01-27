@@ -176,7 +176,7 @@ class AgentLoop:
         if hasattr(self, 'messages') and self.messages and len(self.messages) > 0:
             first_msg = self.messages[0]
             if first_msg.role == Role.system:
-                return first_msg.content
+                return first_msg.content or ""
         return ""
 
     async def load_session_messages(self, messages: list[LLMMessage]) -> None:
