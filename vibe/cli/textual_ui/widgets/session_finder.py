@@ -2,16 +2,25 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, Any
+from typing import TYPE_CHECKING, ClassVar, Any, Self
 
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Container
 from textual.message import Message
 from textual.screen import ModalScreen
-from textual.widgets import Input, ListItem, ListView, Static
+from textual.widgets import Input, ListView, ListItem, Static
 from textual import events
 from textual.reactive import reactive
+
+
+class SessionListItem(ListItem):
+    """Custom ListItem that stores additional data."""
+    
+    def __init__(self, *children: Static, **kwargs: Any) -> None:
+        super().__init__(*children, **kwargs)
+        self.session: SessionEntry | None = None
+        self.index_in_list: int | None = None
 
 from vibe.core.utils import logger
 
@@ -290,7 +299,7 @@ class SessionFinderApp(Container):
             cursor_indicator = "> " if i == 0 else "  "
             display_text = f"{cursor_indicator}{session.get_display_text()}"
             
-            list_item = ListItem(
+            list_item = SessionListItem(
                 Static(display_text, id=f"session-{session.session_id}")
             )
             list_item.session = session  # Store reference for selection
@@ -345,12 +354,13 @@ class SessionFinderApp(Container):
         for i, child in enumerate(self._list_view.children):
             if hasattr(child, 'children') and len(child.children) > 0:
                 static_widget = child.children[0]
+                # Check if it has the update method (Static widgets have this)
                 if hasattr(static_widget, 'update'):
                     cursor_indicator = "> " if i == current_index else "  "
                     session = getattr(child, 'session', None)
                     if session:
                         display_text = f"{cursor_indicator}{session.get_display_text()}"
-                        static_widget.update(display_text)
+                        static_widget.update(display_text)  # type: ignore[attr-defined]
 
     def _ensure_search_input_focused(self) -> None:
         """Ensure the search input has focus after UI is mounted."""
@@ -362,12 +372,13 @@ class SessionFinderApp(Container):
         if self._list_view:
             self._list_view.focus()
 
-    def focus(self) -> None:
+    def focus(self, scroll_visible: bool = True) -> Self:
         """Focus the search input for immediate typing."""
         if self._search_input:
-            self._search_input.focus()
+            self._search_input.focus(scroll_visible)
         elif self._list_view:
-            self._list_view.focus()
+            self._list_view.focus(scroll_visible)
+        return self
 
     def action_move_up(self) -> None:
         """Move selection up in the session list."""

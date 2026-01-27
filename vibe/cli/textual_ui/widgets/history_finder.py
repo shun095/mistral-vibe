@@ -6,14 +6,24 @@ from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Container
 from textual.message import Message
-from textual.widgets import Input, ListItem, ListView, Static
+from textual.widgets import Input, ListView, ListItem, Static
 from textual import events
+
+
+class HistoryListItem(ListItem):
+    """Custom ListItem that stores additional data."""
+    
+    def __init__(self, *children: Static, **kwargs: Any) -> None:
+        super().__init__(*children, **kwargs)
+        self.index_in_list: int | None = None
+        self.entry: HistoryEntry | None = None
 
 from vibe.cli.history_manager import HistoryManager
 from vibe.core.autocompletion.fuzzy import fuzzy_match
 
 if TYPE_CHECKING:
     from pathlib import Path
+    from textual.widget import Widget
 
 
 class HistoryEntry:
@@ -128,7 +138,7 @@ class HistoryFinderApp(Container):
             cursor_indicator = "> " if i == 0 else "  "
             display_text = f"{cursor_indicator}{entry.display_text}"
             
-            list_item = ListItem(Static(display_text))
+            list_item = HistoryListItem(Static(display_text))
             list_item.index_in_list = i  # Store the index for cursor updates
             list_item.entry = entry  # Store entry reference for cursor updates
             self._list_view.append(list_item)
@@ -152,12 +162,13 @@ class HistoryFinderApp(Container):
         for i, child in enumerate(self._list_view.children):
             if hasattr(child, 'children') and len(child.children) > 0:
                 static_widget = child.children[0]
+                # Check if it has the update method (Static widgets have this)
                 if hasattr(static_widget, 'update'):
                     cursor_indicator = "> " if i == current_index else "  "
                     entry = getattr(child, 'entry', None)
                     if entry:
                         display_text = f"{cursor_indicator}{entry.display_text}"
-                        static_widget.update(display_text)
+                        static_widget.update(display_text)  # type: ignore[attr-defined]
 
     def action_move_up(self) -> None:
         """Move selection up in the list."""
@@ -173,7 +184,7 @@ class HistoryFinderApp(Container):
 
     def action_select(self) -> None:
         """Select the currently highlighted entry."""
-        if self._list_view:
+        if self._list_view and self._list_view.index is not None:
             index = self._list_view.index
             if 0 <= index < len(self._filtered_entries):
                 selected_entry = self._filtered_entries[index]
@@ -205,12 +216,13 @@ class HistoryFinderApp(Container):
         else:
             self._search_input.focus()
 
-    def focus(self) -> None:
+    def focus(self, scroll_visible: bool = True) -> Widget:
         """Focus the search input for immediate typing."""
         if self._search_input:
-            self._search_input.focus()
+            self._search_input.focus(scroll_visible)
         elif self._list_view:
             self._list_view.focus()
+        return self
 
     def on_key(self, event: events.Key) -> None:
         """Handle key events."""
