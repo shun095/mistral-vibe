@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import StrEnum, auto
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, cast
 import json
 
 from pydantic import BaseModel, Field
@@ -123,7 +123,7 @@ class Todo(
     def _read_todos(self) -> TodoResult:
         return TodoResult(
             message=f"Retrieved {len(self.state.todos)} todos",
-            todos=[todo.model_dump() for todo in self.state.todos],
+            todos=cast(list[TodoItem], [todo.model_dump() for todo in self.state.todos]),
             total_count=len(self.state.todos),
         )
 
@@ -139,7 +139,7 @@ class Todo(
 
         return TodoResult(
             message=f"Updated {len(todos)} todos",
-            todos=[todo.model_dump() for todo in self.state.todos],
+            todos=cast(list[TodoItem], [todo.model_dump() for todo in self.state.todos]),
             total_count=len(self.state.todos),
         )
 
@@ -159,7 +159,7 @@ class Todo(
 
             return TodoResult(
                 message=f"Saved {len(self.state.todos)} todos to {filepath}",
-                todos=[todo.model_dump() for todo in self.state.todos],
+                todos=cast(list[TodoItem], [todo.model_dump() for todo in self.state.todos]),
                 total_count=len(self.state.todos),
             )
         except Exception as e:
@@ -193,7 +193,7 @@ class Todo(
 
             return TodoResult(
                 message=f"Restored {len(todos)} todos from {filepath}",
-                todos=[todo.model_dump() for todo in self.state.todos],
+                todos=cast(list[TodoItem], [todo.model_dump() for todo in self.state.todos]),
                 total_count=len(self.state.todos),
             )
         except Exception as e:

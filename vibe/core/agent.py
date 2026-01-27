@@ -161,7 +161,7 @@ class Agent:
         if hasattr(self, 'messages') and self.messages and len(self.messages) > 0:
             first_msg = self.messages[0]
             if first_msg.role == Role.system:
-                return first_msg.content
+                return first_msg.content or ""
         return ""
 
     async def load_session_messages(self, messages: list[LLMMessage]) -> None:
@@ -898,7 +898,7 @@ class Agent:
             last_user_message = None
             previous_summary_message = None
             for msg in reversed(self.messages):
-                if msg.role == Role.user:
+                if msg.role == Role.user and msg.content is not None:
                     # Skip summary messages (they contain "Last request from user was:")
                     if "Last request from user was:" not in msg.content:
                         last_user_message = msg.content
