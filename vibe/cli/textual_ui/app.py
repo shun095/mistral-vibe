@@ -146,7 +146,7 @@ class VibeApp(App):  # noqa: PLR0904
         self._agent_running = False
         self._interrupt_requested = False
         self._agent_task: asyncio.Task | None = None
-        self._enhancement_task: asyncio.Task | None = None
+        self._enhancement_task: Worker | None = None
 
         self._loading_widget: LoadingWidget | None = None
         self._pending_approval: asyncio.Future | None = None
@@ -161,6 +161,8 @@ class VibeApp(App):  # noqa: PLR0904
         self._saved_input_content: str = ""
 
         self.history_file = HISTORY_FILE.path
+        self._history_file = HISTORY_FILE.path
+        self._command_registry = self.commands
 
         self._tools_collapsed = True
         self._todos_collapsed = False
@@ -559,20 +561,36 @@ Prompt you must enhance:
                 todo_tool = agent.tool_manager.get("todo")
                 todo_args = TodoArgs(action="read")
                 result = await todo_tool.run(todo_args)
-                # Convert the result to a dictionary for proper serialization
+                # Convert the result to a BaseModel for proper typing
                 if isinstance(result, TodoResult):
-                    result_dict = result.model_dump()
+                    result_model = result
+                elif isinstance(result, dict):
+                    # Create a simple BaseModel wrapper for the dictionary
+                    from pydantic import BaseModel
+                    
+                    class DictResultWrapper(BaseModel):
+                        data: dict[str, Any]
+                    
+                    result_model = DictResultWrapper(data=result)
                 else:
-                    result_dict = result
+                    # For other types, create a simple wrapper
+                    from pydantic import BaseModel
+                    
+                    class ValueResultWrapper(BaseModel):
+                        result: str
+                    
+                    result_model = ValueResultWrapper(result=str(result))
                 # Manually handle the result to display it in the todo area
                 from vibe.core.agent import ToolResultEvent
                 event = ToolResultEvent(
                     tool_name="todo",
                     tool_class=type(todo_tool),
-                    result=result_dict
+                    result=result_model,
+                    tool_call_id=str(uuid4())
                 )
                 # This will trigger the UI to display the todos
-                await self._handle_tool_result(event)
+                if self.event_handler:
+                    await self.event_handler._handle_tool_result(event)
             except Exception as e:
                 logger.warning(f"Failed to display restored todos: {e}")
 
@@ -723,7 +741,7 @@ Prompt you must enhance:
 
             # Restore tool states from session metadata if available
             if metadata and "tool_states" in metadata:
-                await self._restore_tool_states(metadata["tool_states"])
+                await self._restore_tool_states(self.agent, metadata["tool_states"])
 
             # Clear and rebuild the chat UI using the existing method
             messages_area = self.query_one("#messages")
@@ -746,60 +764,7 @@ Prompt you must enhance:
                 ErrorMessage(f"Failed to load session: {e}")
             )
 
-    async def _restore_tool_states(self, tool_states: dict[str, Any]) -> None:
-        """Restore tool states from session metadata."""
-        try:
-            from vibe.core.tools.builtins.todo import TodoItem, TodoState
-            
-            todos_restored = False
-            
-            for tool_name, state_data in tool_states.items():
-                try:
-                    tool_instance = self.agent.tool_manager.get(tool_name)
-                    if hasattr(tool_instance, 'state'):
-                        # Handle todo tool state specifically
-                        if tool_name == "todo" and isinstance(state_data, dict):
-                            todos_data = state_data.get("todos", [])
-                            todos = [TodoItem.model_validate(todo_data) for todo_data in todos_data]
-                            tool_instance.state = TodoState(todos=todos)
-                            logger.info(f"Restored {len(todos)} todos for tool: {tool_name}")
-                            if len(todos) > 0:
-                                todos_restored = True
-                        else:
-                            # For other tools, try to restore state using model_validate
-                            state_class = type(tool_instance.state)
-                            restored_state = state_class.model_validate(state_data)
-                            tool_instance.state = restored_state
-                            logger.info(f"Restored state for tool: {tool_name}")
-                except Exception as e:
-                    logger.warning(f"Failed to restore state for tool {tool_name}: {e}")
-        except Exception as e:
-            logger.error(f"Failed to restore tool states: {e}")
-        
-        # Show todo area if todos were restored
-        if todos_restored:
-            self._show_todo_area()
-            # Trigger the todo display by calling the todo tool's read method
-            try:
-                from vibe.core.tools.builtins.todo import TodoArgs, TodoResult
-                todo_tool = self.agent.tool_manager.get("todo")
-                todo_args = TodoArgs(action="read")
-                result = await todo_tool.run(todo_args)
-                # Convert the result to a dictionary for proper serialization
-                if isinstance(result, TodoResult):
-                    result_dict = result.model_dump()
-                else:
-                    result_dict = result
-                # Manually handle the result to display it in the todo area
-                from vibe.core.agent import ToolResultEvent
-                event = ToolResultEvent(
-                    tool_name="todo",
-                    result=result_dict
-                )
-                # This will trigger the UI to display the todos
-                await self._handle_tool_result(event)
-            except Exception as e:
-                logger.warning(f"Failed to display restored todos: {e}")
+
 
     async def on_compact_message_completed(
         self, message: CompactMessage.Completed
@@ -831,7 +796,9 @@ Prompt you must enhance:
         if command:
             # Ensure agent is initialized before handling commands
             if not self.agent and not self._agent_initializing:
-                await self._ensure_agent_init_task()
+                init_task = self._ensure_agent_init_task()
+                if init_task:
+                    await init_task
                 if not self.agent:
                     await self._mount_and_scroll(
                         ErrorMessage(
@@ -1197,16 +1164,7 @@ Prompt you must enhance:
 
 
 
-    async def _save_current_conversation(self) -> None:
-        """Save current conversation to session file before loading new one."""
-        if not self.agent or not self.config.session_logging.enabled:
-            return
 
-        try:
-            await self.agent.save_current_interaction()
-        except Exception as e:
-            from vibe.core.utils import logger
-            logger.warning(f"Failed to save current conversation: {e}")
 
     async def _show_log_path(self) -> None:
         if not self.agent_loop.session_logger.enabled:
@@ -1790,8 +1748,8 @@ Prompt you must enhance:
             pass
 
     async def _enhancement_with_interrupt_check(
-        self, backend: any, active_model: any, isolated_messages: list
-    ) -> any:
+        self, backend: BackendLike, active_model: ModelConfig, isolated_messages: list[LLMMessage]
+    ) -> LLMChunk:
         """Run enhancement with periodic interrupt checks.
         
         This method calls the backend.complete_streaming() method which yields
@@ -1828,7 +1786,7 @@ Prompt you must enhance:
                 tool_choice="none",
                 extra_headers={
                     "user-agent": "Mistral Vibe",
-                    "x-affinity": self.agent.session_id,
+                    "x-affinity": self.agent.session_id if self.agent else "",
                 },
                 max_tokens=2000,  # Reasonable limit for prompt enhancement
             ):
@@ -1851,7 +1809,7 @@ Prompt you must enhance:
             raise
 
     async def _run_enhancement_worker(
-        self, backend: any, active_model: any, isolated_messages: list
+        self, backend: BackendLike, active_model: ModelConfig, isolated_messages: list[LLMMessage]
     ) -> None:
         """Worker method to run enhancement asynchronously using run_worker.
         
@@ -1884,7 +1842,7 @@ Prompt you must enhance:
                 enhanced_text = chunk_agg.message.content
                 
                 # Replace the input text with the enhanced prompt
-                if self._chat_input_container:
+                if self._chat_input_container and enhanced_text is not None:
                     self._replace_input_with_enhanced_prompt(enhanced_text)
                 
                 # Notify the chat input container that enhancement is complete
@@ -1939,10 +1897,6 @@ Prompt you must enhance:
 
 
 
-    def _reset_enhancement_mode(self) -> None:
-        """Reset enhancement mode and related state."""
-        self._enhancement_mode = False
-        self._original_prompt_for_enhancement = ""
 
     def _replace_input_with_enhanced_prompt(self, enhanced_text: str) -> None:
         """Replace the input text with the enhanced prompt."""
