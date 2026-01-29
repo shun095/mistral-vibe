@@ -1043,20 +1043,7 @@ class VibeApp(App):  # noqa: PLR0904
         await mark_version_as_seen(self._current_version, self._update_cache_repository)
 
     async def _maybe_show_plan_offer(self) -> None:
-        if self._plan_offer_shown:
-            return
-        action, plan_type = await self._resolve_plan_offer_action()
-        self.plan_type = plan_type
-        if action is PlanOfferAction.NONE:
-            return
-        url = ACTION_TO_URL[action]
-        match action:
-            case PlanOfferAction.UPGRADE:
-                text = f"Upgrade to [Pro]({url})"
-            case PlanOfferAction.SWITCH_TO_PRO_KEY:
-                text = f"Switch to your [Pro API key]({url})"
-        await self._mount_and_scroll(PlanOfferMessage(text))
-        self._plan_offer_shown = True
+        return
 
     async def _resolve_plan_offer_action(self) -> tuple[PlanOfferAction, PlanType]:
         try:
