@@ -35,6 +35,12 @@ class ChatInputContainer(Vertical):
             self.value = value
             super().__init__()
 
+    class PromptEnhancementRequested(Message):
+        """Message sent when user requests prompt enhancement."""
+        def __init__(self, original_text: str) -> None:
+            self.original_text = original_text
+            super().__init__()
+
     def __init__(
         self,
         history_file: Path | None = None,
@@ -161,6 +167,15 @@ class ChatInputContainer(Vertical):
     def on_chat_input_body_submitted(self, event: ChatInputBody.Submitted) -> None:
         event.stop()
         self.post_message(self.Submitted(event.value))
+
+    def on_chat_input_body_prompt_enhancement_requested(
+        self, event: ChatInputBody.PromptEnhancementRequested
+    ) -> None:
+        """Handle prompt enhancement request from body widget."""
+        event.stop()
+        original_text = event.original_text.strip()
+        if original_text:
+            self.post_message(self.PromptEnhancementRequested(original_text))
 
     def set_safety(self, safety: AgentSafety) -> None:
         self._safety = safety

@@ -26,7 +26,21 @@ class ChatTextArea(TextArea):
             priority=True,
         ),
         Binding("ctrl+g", "open_external_editor", "External Editor", show=False),
+        Binding(
+            "ctrl+y",
+            "enhance_prompt",
+            "Enhance Prompt",
+            show=True,
+            priority=True,
+        ),
     ]
+
+    class PromptEnhancementRequested(Message):
+        """Message sent when user requests prompt enhancement via Ctrl+Y."""
+
+        def __init__(self, original_text: str) -> None:
+            self.original_text = original_text
+            super().__init__()
 
     MODE_CHARACTERS: ClassVar[set[Literal["!", "/"]]] = {"!", "/"}
     DEFAULT_MODE: ClassVar[Literal[">"]] = ">"
@@ -96,6 +110,12 @@ class ChatTextArea(TextArea):
         if result is not None:
             self.clear()
             self.insert(result)
+
+    def action_enhance_prompt(self) -> None:
+        """Handle Ctrl+Y keybind to enhance the current prompt."""
+        current_text = self.get_full_text().strip()
+        if current_text:
+            self.post_message(self.PromptEnhancementRequested(current_text))
 
     def on_text_area_changed(self, event: TextArea.Changed) -> None:
         if not self._navigating_history and self.text != self._last_text:

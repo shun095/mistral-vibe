@@ -26,6 +26,7 @@ class UtilityPrompt(Prompt):
     COMPACT = auto()
     DANGEROUS_DIRECTORY = auto()
     PROJECT_CONTEXT = auto()
+    ENHANCEMENT = auto()
 
 
 __all__ = ["SystemPrompt", "UtilityPrompt"]
