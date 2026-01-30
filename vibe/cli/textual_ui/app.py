@@ -125,6 +125,8 @@ class VibeApp(App):  # noqa: PLR0904
         Binding(
             "pagedown", "scroll_chat_down", "Scroll Down", show=False, priority=True
         ),
+        Binding("home", "scroll_chat_home", "Scroll to Top", show=False, priority=True),
+        Binding("end", "scroll_chat_end", "Scroll to Bottom", show=False, priority=True),
     ]
 
     def __init__(
@@ -1113,6 +1115,22 @@ Enhanced prompt:"""
             chat.scroll_relative(y=5, animate=False)
             if self._is_scrolled_to_bottom(chat):
                 self._auto_scroll = True
+        except Exception:
+            pass
+
+    def action_scroll_chat_home(self) -> None:
+        try:
+            chat = self.query_one("#chat", VerticalScroll)
+            chat.scroll_home(animate=False)
+            self._auto_scroll = False
+        except Exception:
+            pass
+
+    def action_scroll_chat_end(self) -> None:
+        try:
+            chat = self.query_one("#chat", VerticalScroll)
+            chat.scroll_end(animate=False)
+            self._auto_scroll = True
         except Exception:
             pass
 
