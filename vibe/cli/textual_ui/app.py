@@ -206,6 +206,9 @@ class VibeApp(App):  # noqa: PLR0904
         self._interrupt_requested = False
         self._agent_task: asyncio.Task | None = None
 
+        self._enhancement_running = False
+        self._enhancement_task: asyncio.Task | None = None
+
         self._loading_widget: LoadingWidget | None = None
         self._pending_approval: asyncio.Future | None = None
         self._pending_question: asyncio.Future | None = None
@@ -354,6 +357,23 @@ class VibeApp(App):  # noqa: PLR0904
             return
 
         await self._handle_user_message(value)
+
+    async def on_chat_input_container_prompt_enhancement_requested(
+        self, event: ChatInputContainer.PromptEnhancementRequested
+    ) -> None:
+        """Handle prompt enhancement request from Ctrl+Y keybind."""
+        original_text = event.original_text.strip()
+        if not original_text:
+            return
+
+        # Cancel any existing enhancement task
+        if self._enhancement_task and not self._enhancement_task.done():
+            self._enhancement_task.cancel()
+
+        # Start the enhancement worker concurrently with agent loop
+        self._enhancement_task = asyncio.create_task(
+            self._enhance_prompt(original_text)
+        )
 
     async def on_approval_app_approval_granted(
         self, message: ApprovalApp.ApprovalGranted
@@ -800,6 +820,79 @@ class VibeApp(App):  # noqa: PLR0904
 
         self._interrupt_requested = False
 
+    async def _enhance_prompt(self, original_prompt: str) -> None:
+        """Enhance the user's prompt using the LLM."""
+        if self._enhancement_running:
+            return
+
+        self._enhancement_running = True
+
+        loading_area = self.query_one("#loading-area-content")
+        
+        # Remove existing loading widget if present (only one should be visible)
+        if self._loading_widget and self._loading_widget.parent:
+            await self._loading_widget.remove()
+
+        loading = LoadingWidget()
+        self._loading_widget = loading
+        await loading_area.mount(loading)
+        self._show_todo_area()
+
+        try:
+            # Load the enhancement prompt template
+            try:
+                from vibe.core.prompts import UtilityPrompt
+                enhancement_template = UtilityPrompt.ENHANCEMENT.read()
+            except Exception as e:
+                logger.warning(f"Failed to load enhancement template: {e}")
+                enhancement_template = """Enhance the following prompt to make it clearer and more specific:
+
+{original_prompt}
+
+Enhanced prompt:"""
+
+            # Create the enhancement prompt
+            prompt = enhancement_template.format(original_prompt=original_prompt)
+
+            # Use backend.complete_streaming directly for enhancement
+            # This runs concurrently with the agent loop
+            enhanced_text = ""
+            active_model = self.config.get_active_model()
+            async for chunk in self.agent_loop.backend.complete_streaming(
+                model=active_model,
+                messages=[LLMMessage(role=Role.user, content=prompt)],
+                temperature=0.2,
+                tools=None,
+                max_tokens=None,
+                tool_choice=None,
+                extra_headers=None,
+            ):
+                if chunk.message.content:
+                    enhanced_text += chunk.message.content
+
+            if enhanced_text.strip():
+                # Replace the original prompt with the enhanced version
+                input_widget = self.query_one(ChatInputContainer)
+                input_widget.value = enhanced_text
+
+        except asyncio.CancelledError:
+            if self._loading_widget and self._loading_widget.parent:
+                await self._loading_widget.remove()
+            raise
+        except Exception as e:
+            if self._loading_widget and self._loading_widget.parent:
+                await self._loading_widget.remove()
+            await self._mount_and_scroll(
+                ErrorMessage(str(e), collapsed=self._tools_collapsed)
+            )
+        finally:
+            self._enhancement_running = False
+            if self._loading_widget:
+                await self._loading_widget.remove()
+            self._loading_widget = None
+            self._enhancement_task = None
+            self._hide_todo_area()
+
     async def _show_help(self) -> None:
         help_text = self.commands.get_help_text()
         await self._mount_and_scroll(UserCommandMessage(help_text))
@@ -1083,6 +1176,9 @@ class VibeApp(App):  # noqa: PLR0904
 
         if self._agent_running:
             self.run_worker(self._interrupt_agent_loop(), exclusive=False)
+
+        if self._enhancement_running and self._enhancement_task:
+            self._enhancement_task.cancel()
 
         self._last_escape_time = current_time
         self._scroll_to_bottom()

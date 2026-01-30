@@ -20,6 +20,12 @@ class ChatInputBody(Widget):
             self.value = value
             super().__init__()
 
+    class PromptEnhancementRequested(Message):
+        """Message sent when user requests prompt enhancement."""
+        def __init__(self, original_text: str) -> None:
+            self.original_text = original_text
+            super().__init__()
+
     def __init__(
         self,
         history_file: Path | None = None,
@@ -174,6 +180,18 @@ class ChatInputBody(Widget):
             self._notify_completion_reset()
 
             self.post_message(self.Submitted(value))
+
+    def on_chat_text_area_prompt_enhancement_requested(
+        self, event: ChatTextArea.PromptEnhancementRequested
+    ) -> None:
+        """Handle prompt enhancement request from Ctrl+Y keybind."""
+        event.stop()
+        if not self.input_widget:
+            return
+
+        original_text = event.original_text.strip()
+        if original_text:
+            self.post_message(self.PromptEnhancementRequested(original_text))
 
     @property
     def value(self) -> str:
