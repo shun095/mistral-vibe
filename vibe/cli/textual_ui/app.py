@@ -183,9 +183,9 @@ class VibeApp(App):  # noqa: PLR0904
         Binding("ctrl+y", "copy_selection", "Copy", show=False, priority=True),
         Binding("ctrl+shift+c", "copy_selection", "Copy", show=False, priority=True),
         Binding("shift+tab", "cycle_mode", "Cycle Mode", show=False, priority=True),
-        Binding("shift+up", "scroll_chat_up", "Scroll Up", show=False, priority=True),
+        Binding("pageup", "scroll_chat_up", "Scroll Up", show=False, priority=True),
         Binding(
-            "shift+down", "scroll_chat_down", "Scroll Down", show=False, priority=True
+            "pagedown", "scroll_chat_down", "Scroll Down", show=False, priority=True
         ),
     ]
 
