@@ -133,3 +133,187 @@ guidelines:
       - uv sync to install dependencies declared in pyproject.toml and uv.lock
       - uv run script.py to run a script within the uv environment
       - uv run pytest (or any other python tool) to run the tool within the uv environment
+
+
+# AGENTS.md
+
+必ずこのガイドラインに従って作業してください。例外はありません。
+
+## 🛡️ Safety Rules
+
+### Git Safety
+- ❌ NEVER use `git reset --hard` or `git checkout <filename>` lightly
+- ✅ Always make backups before destructive operations
+- ✅ Prefer `git stash --all` for saving changes temporarily
+- ✅ Only stage/commit files related to the requested feature
+
+### Production Directories
+- ❌ NEVER modify/delete files in `~/.vibe`
+- ❌ NEVER write logs to `~/.vibe/vibe.log` during development/testing
+- ✅ Always use a dedicated log file in the project directory for testing
+- ✅ Only add new files to production directories
+
+### Task Specific and Non Future-Proof files
+- ❌ NEVER put specific documents and debug scripts in root directory.
+- ✅ Always use ./tmp/ directory for the files. You can put: documents of summary, report and plan etc. and debug scripts in the ./tmp/ directory.
+
+## Coding Requirements
+
+**Always follow existing coding style**
+- Investigate deeply and comprehensively to understand existing coding style of this repository before writing tests.
+  - You MUST understand and be strict about:
+    - Where to place the new codes and tests.
+    - How you can create mocks and stubs for the new tests.
+  - You MUST understand what kind of domains are exists in this repository, and directory structure.
+  - Do NOT write in your own way. Writing in your own way undermines the consistency of the code base and causes significant financial losses.
+  - This principal includes:
+    - Use FakeBackend if necessary
+    - Use pilot.press() for UI test if necessary
+    - Do NOT assert internal behavior like private field
+    - Do NOT place textual_ui things in acp directory. The opposite is also prohibited.
+
+**You MUST pass all pyright check**
+- You MUST solve all errors of `uv run pyright` command. You will maintain this codebase very long. The dirtiness of the code will make confused in the future.
+
+**Always write code that is highly cohesive and has low coupling**
+- Thoroughly read your existing code and make sure to reuse any logic that meets your purpose and can be reused. This is code that you will maintain for a long time. Write highly cohesive code now. Otherwise, you will run into issues with horizontal expansion in the future.
+
+## 🧪 Testing Requirements
+
+### Mandatory Standards
+
+#### **1. Unit Tests (MANDATORY FOR ALL CODE)**
+- All Python code changes MUST pass all existing pytest tests
+- Run `uv run pytest` before claiming completion
+- Fix any failing tests
+
+#### **2. UI Tests (MANDATORY FOR UI CHANGES)**
+- All UI changes MUST be tested with `terminalcp_terminalcp`
+
+**Why terminalcp_terminalcp is Required:**
+- Tests actual user interaction in a real terminal environment
+- Catches edge cases, timing issues, and real-world scenarios
+- Validates complex UI behavior (widget lifecycle, async operations, config loading)
+- Specifically designed for comprehensive UI testing
+
+**Custom test scripts are unacceptable** - they cannot reproduce real user interaction.
+
+### Writing Unit Tests
+
+**Minimize Mocking and Simulation**
+- Avoid unnecessary mocking or simulation in test code as much as possible
+- Use actual implementations rather than mocks whenever feasible
+- Mock or simulate ONLY for:
+  - External services (e.g., LLM backend servers, API endpoints)
+  - Production files that vary by environment (e.g., configuration files, history files, session files in `~/.vibe` directory)
+  - Components that have side effects or depend on external state
+
+**Rationale**
+- Actual implementations provide more realistic testing
+- Mocks can hide bugs and create false confidence
+- External services have environment-dependent behaviors that should be isolated
+- Production files contain environment-specific data that shouldn't be hardcoded in tests
+
+## Project Specific Tool Usage Guidelines
+
+### Essential Tools
+
+**CRITICAL**: Always use dedicated tools instead of `bash` when available. Use `bash` only for system information, git operations, and package management.
+
+**File Operations (PREFERRED OVER bash cat/head/tail):**
+- `read_file(path="file.py", offset=0, limit=100)` - Read files with line offsets
+- `write_file(path="file.py", content="...", overwrite=True)` - Create/overwrite files
+- `search_replace(file_path="file.py", content="<<<<<<< SEARCH\n...\n=======\n...\n>>>>>>> REPLACE")` - Search and replace
+- `grep(pattern="TODO", path="src/")` - Search for patterns (PREFERRED OVER bash grep)
+
+**Task Management:**
+- `todo({"action": "read"})` - Read current todo list
+- `todo({"action": "write", "todos": [...]})` - Create/update todo items
+
+**Web Research:**
+- `fetch_fetch({"url": "https://example.com", "max_length": 5000})` - Fetch web pages
+- `web_search_search({"query": "Python best practices", "max_results": 10})` - Search the web
+
+**System Operations (USE bash ONLY WHEN NECESSARY):**
+- `bash({"command": "pwd", "timeout": 5})` - System information (pwd, whoami, date)
+- `bash({"command": "git status", "timeout": 10})` - Git operations
+- `bash({"command": "ls -la", "timeout": 10})` - Directory listings
+- `bash({"command": "uv run pytest", "timeout": 60})` - Run tests (PREFER uv directly when possible)
+- **CRITICAL: ALWAYS specify timeout parameter** - Omitting the timeout parameter is strictly prohibited
+
+  **Timeout Requirements:**
+  - **REQUIRED**: All bash commands MUST include a timeout parameter
+  - **REASON**: Prevents hanging processes and ensures task completion
+  - **FORMAT**: `"timeout": <seconds>` where <seconds> is appropriate for the command
+  - **EXAMPLES**:
+    - Quick commands: `"timeout": 5` (pwd, whoami, date)
+    - Medium commands: `"timeout": 10` (git status, ls, grep)
+    - Long commands: `"timeout": 60` (pytest, build processes)
+    - Very long commands: `"timeout": 300` (installations, compilations)
+
+**MANDATORY RULE**: Never use `bash` without the `timeout` parameter. This is a strict requirement to prevent hanging processes.
+
+
+### terminalcp_terminalcp - Comprehensive Guide
+
+#### Overview
+`terminalcp_terminalcp` is the mandatory tool for testing terminal UI. It provides a virtual terminal environment to interact with your application.
+
+#### Basic Usage
+
+**Launch app:**
+```python
+terminalcp_terminalcp({
+    "args": {
+        "action": "start",
+        "command": "cd /path/to/project && OPENAI_BASE_URL=... OPENAI_API_KEY=... MISTRAL_API_KEY=... uv run vibe",
+        "cwd": "/path/to/project",
+        "name": "test-session"
+    }
+})
+```
+
+**IMPORTANT**: Always specify OPENAI_* and MISTRAL_* environment variables. Get them with:
+```bash
+env | grep -e OPENAI -e MISTRAL
+```
+
+**View UI output:**
+```python
+terminalcp_terminalcp({
+    "args": {
+        "action": "stdout",
+        "id": "test-session",
+        "lines": 50  # Number of lines to retrieve
+    }
+})
+```
+
+**Send input:**
+```python
+terminalcp_terminalcp({
+    "args": {
+        "action": "stdin",
+        "id": "test-session",
+        "data": "/sessions\r"  # \r = Enter
+    }
+})
+```
+
+**Stop process:**
+```python
+terminalcp_terminalcp({
+    "args": {
+        "action": "stop",
+        "id": "test-session"
+    }
+})
+```
+
+**Keyboard Input Examples:**
+- Enter: `"\r"` or `"\u000d"`
+- Tab: `"\t"` or `"\u0009"`
+- Escape: `"\u001b"`
+- Backspace: `"\u007f"`
+- Ctrl+C: `"\u0003"`
+- Arrow keys: Up=`"\u001b[A"`, Down=`"\u001b[B"`, Right=`"\u001b[C"`, Left=`"\u001b[D"`
