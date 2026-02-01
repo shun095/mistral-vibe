@@ -179,6 +179,11 @@ guidelines:
 - ❌ NEVER put specific documents and debug scripts in root directory.
 - ✅ Always use ./tmp/ directory for the files. You can put: documents of summary, report and plan etc. and debug scripts in the ./tmp/ directory.
 
+
+
+## Common Requirements
+- Keep codebase and documents simple, clean and logically structured.
+
 ## Coding Requirements
 
 **Always follow existing coding style**
