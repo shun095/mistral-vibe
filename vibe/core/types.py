@@ -156,10 +156,27 @@ class ToolCall(BaseModel):
     type: str = "function"
 
 
-def _content_before(v: Any) -> str:
+def _content_before(v: Any) -> str | list:
+    """Convert content to a format suitable for LLM messages.
+    
+    Handles:
+    - Strings: returned as-is
+    - Lists with text dicts: extracts text and joins with newlines
+    - Lists with image_url dicts: preserves the list format for API compatibility
+    """
     if isinstance(v, str):
         return v
     if isinstance(v, list):
+        # Check if this is a multi-part content with image_url
+        has_image_url = any(
+            isinstance(p, dict) and p.get("type") == "image_url"
+            for p in v
+        )
+        if has_image_url:
+            # Preserve the list format for multi-part content with images
+            return v
+        
+        # Handle simple lists of text dicts
         parts: list[str] = []
         for p in v:
             if isinstance(p, dict) and isinstance(p.get("text"), str):
@@ -170,7 +187,7 @@ def _content_before(v: Any) -> str:
     return str(v)
 
 
-Content = Annotated[str, BeforeValidator(_content_before)]
+Content = Annotated[str | list, BeforeValidator(_content_before)]
 
 
 class Role(StrEnum):
@@ -302,6 +319,12 @@ class BaseEvent(BaseModel, ABC):
 class UserMessageEvent(BaseEvent):
     content: str
     message_id: str
+
+
+class ContinueableUserMessageEvent(BaseEvent):
+    """Event for user messages that require the conversation to continue."""
+    content: str | list
+    message_id: str | None = None
 
 
 class AssistantEvent(BaseEvent):
