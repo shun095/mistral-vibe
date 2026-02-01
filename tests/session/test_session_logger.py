@@ -12,7 +12,7 @@ from vibe.core.agents.models import AgentProfile, AgentSafety
 from vibe.core.config import SessionLoggingConfig, VibeConfig
 from vibe.core.session.session_logger import SessionLogger
 from vibe.core.tools.manager import ToolManager
-from vibe.core.types import AgentStats, LLMMessage, Role, SessionMetadata
+from vibe.core.types import AgentStats, LLMMessage, Role, SessionMetadata, ToolCall
 
 
 @pytest.fixture
@@ -281,6 +281,96 @@ class TestSessionLoggerSaveInteraction:
             assert len(messages_data) == 2
             assert messages_data[0]["role"] == "user"
             assert messages_data[1]["role"] == "assistant"
+
+    @pytest.mark.asyncio
+    async def test_save_interaction_with_tool_calls(
+        self,
+        session_config: SessionLoggingConfig,
+        mock_vibe_config: VibeConfig,
+        mock_tool_manager: ToolManager,
+        mock_agent_profile: AgentProfile,
+    ) -> None:
+        """Test that save_interaction properly saves messages with tool_calls."""
+        session_id = "test-session-123"
+        logger = SessionLogger(session_config, session_id)
+
+        # Create messages with tool_calls including read_image
+        messages = [
+            LLMMessage(role=Role.system, content="System prompt"),
+            LLMMessage(
+                role=Role.user,
+                content="Can you analyze this image: https://example.com/image.jpg"
+            ),
+            LLMMessage(
+                role=Role.assistant,
+                content="Let me read that image for you.",
+                tool_calls=[ToolCall(id="call_1", index=0, type="function")],
+            ),
+            LLMMessage(
+                role=Role.tool,
+                tool_call_id="call_1",
+                name="read_image",
+                content="Reading image succeeded. Please refer user's message below",
+            ),
+            LLMMessage(role=Role.assistant, content="Understood."),
+            LLMMessage(
+                role=Role.user,
+                content="This is an image fetched from https://example.com/image.jpg",
+            ),
+            LLMMessage(
+                role=Role.assistant,
+                content="I can see the image. It shows a beautiful landscape.",
+            ),
+        ]
+
+        stats = AgentStats(
+            steps=1, session_prompt_tokens=10, session_completion_tokens=20
+        )
+
+        result = await logger.save_interaction(
+            messages=messages,
+            stats=stats,
+            base_config=mock_vibe_config,
+            tool_manager=mock_tool_manager,
+            agent_profile=mock_agent_profile,
+        )
+
+        # Verify the result
+        assert result is not None
+        assert str(logger.session_dir) in result
+
+        # Verify that files were created
+        assert logger.session_dir is not None
+        messages_file = logger.session_dir / "messages.jsonl"
+        metadata_file = logger.session_dir / "meta.json"
+
+        assert messages_file.exists()
+        assert metadata_file.exists()
+
+        # Verify that messages with tool_calls are saved correctly
+        with open(messages_file) as f:
+            lines = f.readlines()
+            messages_data = [json.loads(line) for line in lines]
+
+            # Should have 6 messages (excluding system prompt)
+            assert len(messages_data) == 6
+
+            # Verify tool_calls are preserved
+            assert messages_data[1]["role"] == "assistant"
+            assert messages_data[1]["tool_calls"] is not None
+            assert len(messages_data[1]["tool_calls"]) == 1
+
+            assert messages_data[2]["role"] == "tool"
+            assert messages_data[2]["tool_call_id"] == "call_1"
+            assert messages_data[2]["name"] == "read_image"
+
+            # Verify user message with image content
+            # Note: Content is converted to string by the Content validator
+            assert messages_data[4]["role"] == "user"
+            # The content should be a string representation of the list
+            assert isinstance(messages_data[4]["content"], str)
+            # The string should contain the image URL
+            assert "https://example.com/image.jpg" in messages_data[4]["content"]
 
     @pytest.mark.asyncio
     async def test_save_interaction_with_existing_messages(
