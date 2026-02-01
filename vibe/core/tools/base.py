@@ -13,24 +13,52 @@ import types
 from typing import (
     TYPE_CHECKING,
     Any,
+    Callable,
     ClassVar,
+    Protocol,
     Union,
     cast,
     get_args,
     get_origin,
     get_type_hints,
+    runtime_checkable,
 )
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from vibe.core.types import ToolStreamEvent
+from vibe.core.types import (
+    AssistantEvent,
+    ContinueableUserMessageEvent,
+    LLMMessage,
+    Role,
+    ToolStreamEvent,
+)
 
 if TYPE_CHECKING:
     from vibe.core.agents.manager import AgentManager
+    from vibe.core.llm.format import ResolvedToolCall
     from vibe.core.types import ApprovalCallback, UserInputCallback
 
 ARGS_COUNT = 4
 
+
+@runtime_checkable
+class SpecialToolBehavior(Protocol):
+    """Interface for tools that require special handling in the agent loop."""
+
+    @classmethod
+    def get_event_constructor(cls) -> "EventConstructor | None":
+        """Return event constructor for tools that need custom UI events."""
+        return None
+
+    @classmethod
+    def get_llm_message_constructor(cls) -> "LLMMessageConstructor | None":
+        """Return LLM message constructor for tools that need to add context to LLM."""
+        return None
+
+
+EventConstructor = Callable[..., list[AssistantEvent | ContinueableUserMessageEvent]] | None
+LLMMessageConstructor = Callable[..., LLMMessage | list[LLMMessage] | None] | None
 
 @dataclass
 class InvokeContext:

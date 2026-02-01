@@ -6,7 +6,7 @@ from enum import StrEnum, auto
 from http import HTTPStatus
 from threading import Thread
 import time
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 from uuid import uuid4
 
 from pydantic import BaseModel
@@ -39,9 +39,11 @@ from vibe.core.tools.base import (
     BaseTool,
     BaseToolConfig,
     InvokeContext,
+    SpecialToolBehavior,
     ToolError,
     ToolPermission,
     ToolPermissionError,
+    EventConstructor,
 )
 from vibe.core.tools.manager import ToolManager
 from vibe.core.types import (
@@ -53,6 +55,7 @@ from vibe.core.types import (
     BaseEvent,
     CompactEndEvent,
     CompactStartEvent,
+    ContinueableUserMessageEvent,
     LLMChunk,
     LLMMessage,
     LLMUsage,
@@ -394,14 +397,23 @@ class AgentLoop:
 
                 self.stats.steps += 1
                 user_cancelled = False
+                
+                # Track if we yielded a ContinueableUserMessageEvent (e.g., for image messages)
+                yielded_continueable_event = False
                 async for event in self._perform_llm_turn():
                     if is_user_cancellation_event(event):
                         user_cancelled = True
+                    # Check if this is a ContinueableUserMessageEvent (used for image messages)
+                    if isinstance(event, ContinueableUserMessageEvent):
+                        yielded_continueable_event = True
                     yield event
                     await self._flush_new_messages()
 
                 last_message = self.messages[-1]
-                should_break_loop = last_message.role != Role.tool
+                
+                # Special handling for tools that yield ContinueableUserMessageEvent
+                # If we just yielded a ContinueableUserMessageEvent, continue the conversation
+                should_break_loop = not yielded_continueable_event and last_message.role != Role.tool
 
                 if user_cancelled:
                     return
@@ -499,7 +511,7 @@ class AgentLoop:
 
     async def _handle_tool_calls(
         self, resolved: ResolvedMessage
-    ) -> AsyncGenerator[ToolCallEvent | ToolResultEvent | ToolStreamEvent]:
+    ) -> AsyncGenerator[ToolCallEvent | ToolResultEvent | ToolStreamEvent | ContinueableUserMessageEvent | AssistantEvent]:
         for failed in resolved.failed_calls:
             error_msg = f"<{TOOL_ERROR_TAG}>{failed.tool_name}: {failed.error}</{TOOL_ERROR_TAG}>"
 
@@ -585,11 +597,12 @@ class AgentLoop:
                 if result_model is None:
                     raise ToolError("Tool did not yield a result")
 
+                # Create tool response message (same for all tools)
                 text = "\n".join(
                     f"{k}: {v}" for k, v in result_model.model_dump().items()
                 )
                 self._append_tool_response(tool_call, text)
-
+                
                 yield ToolResultEvent(
                     tool_name=tool_call.tool_name,
                     tool_class=tool_call.tool_class,
@@ -597,6 +610,18 @@ class AgentLoop:
                     duration=duration,
                     tool_call_id=tool_call.call_id,
                 )
+                
+                # Check if tool implements SpecialToolBehavior for custom events
+                if isinstance(tool_instance, SpecialToolBehavior):
+                    event_constructor = tool_instance.get_event_constructor()
+                    if event_constructor:
+                        # Yield custom events (AssistantEvent, ContinueableUserMessageEvent, etc.)
+                        events = event_constructor(tool_call, result_model)
+                        for event in events:
+                            yield event
+                        
+                        # Add additional context to LLM messages (e.g., images)
+                        self._append_special_tool_response(tool_call, result_model)
 
                 self.stats.tool_calls_succeeded += 1
 
@@ -637,6 +662,25 @@ class AgentLoop:
                 self.format_handler.create_tool_response_message(tool_call, text)
             )
         )
+
+    def _append_special_tool_response(
+        self, tool_call: ResolvedToolCall, result_model: Any
+    ) -> None:
+        """
+        Append additional LLM messages for tools with special handling.
+        
+        This is called after yielding custom events and is used to add
+        context to the LLM that isn't part of the standard tool response.
+        For example, read_image adds the actual image to the conversation.
+        """
+        special_message = self.format_handler.create_special_tool_response_message(
+            tool_call, result_model
+        )
+        if special_message:
+            if isinstance(special_message, list):
+                self.messages.extend(special_message)
+            else:
+                self.messages.append(special_message)
 
     async def _chat(self, max_tokens: int | None = None) -> LLMChunk:
         active_model = self.config.get_active_model()
