@@ -54,6 +54,7 @@ class ReadImageToolConfig(BaseToolConfig):
 
 
 class ReadImageState(BaseToolState):
+    """State for read_image tool."""
     pass
 
 
