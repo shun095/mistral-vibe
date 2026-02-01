@@ -141,6 +141,28 @@ guidelines:
 
 ## 🛡️ Safety Rules
 
+### Follow User's Instructions Precisely
+- ❌ NEVER make any changes to code or git condition that users haven't mentioned.
+    - Example 1 - User: "analyze git status and create a commit for staged changes."
+        - ❌ NEVER change staging area.
+        - ❌ NEVER run `git add` or  `git reset`
+        - ✅ Use `git status` or `git diff --staged` to analyze the changes.
+        - ✅ Use `git commit` for creating a commit for currently staged changes.
+    - Example 2 - User: "Analyze the codebase and create a plan to refactor."
+        - ❌ NEVER execute the planned refactor until the user gives you permission. 
+        - ✅ Read codes and analyze codebase and create a planning document.
+    - Example 3 - User: "Run all tests"
+        - ❌ NEVER consider a task complete after only running some tests
+        - ❌ NEVER modify the code until the user gives you permission. 
+        - ✅ Run all tests with long timeout parameter for bash tool if necessary.
+        - ✅ You may create a new report file which doesn't affects existing code or git condition about the test result.
+    - Example 4 - User: "Only restore files you've modified for feature X"
+        - ❌ NEVER run `git reset --hard` or `git checkout` unrelated files which may be changed by the user for another work.
+        - ❌ NEVER modify any files you haven't modified.
+        - ❌ NEVER modify any files not related to feature X.
+        - ✅ Restore files you've modified **and** related to the feature X. Run `git checkout /path/to/related_files_to_your_work_for_X`
+- ✅ If there is any uncertainty about a task, you should ask the user before making any breaking changes.
+
 ### Git Safety
 - ❌ NEVER use `git reset --hard` or `git checkout <filename>` lightly
 - ✅ Always make backups before destructive operations
