@@ -161,6 +161,9 @@ guidelines:
         - ❌ NEVER modify any files you haven't modified.
         - ❌ NEVER modify any files not related to feature X.
         - ✅ Restore files you've modified **and** related to the feature X. Run `git checkout /path/to/related_files_to_your_work_for_X`
+    - Example 5 - User: "Please test this codebase"
+        - ❌ NEVER modify or fix any files to pass tests.
+        - ✅ Run command for test and create a report of the result.
 - ✅ If there is any uncertainty about a task, you should ask the user before making any breaking changes.
 
 ### Git Safety
