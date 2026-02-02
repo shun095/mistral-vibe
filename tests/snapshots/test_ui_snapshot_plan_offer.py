@@ -5,6 +5,7 @@ from pathlib import Path
 import time
 from unittest.mock import patch
 
+import pytest
 from textual.pilot import Pilot
 
 from tests.cli.plan_offer.adapters.fake_whoami_gateway import FakeWhoAmIGateway
@@ -94,6 +95,7 @@ async def _pause_for_plan_offer_task(pilot: Pilot) -> None:
     await pilot.pause(0.1)
 
 
+@pytest.mark.skip(reason="Plan offer notification disabled in CLI")
 def test_snapshot_shows_upgrade_plan_offer(snap_compare: SnapCompare) -> None:
     assert snap_compare(
         "test_ui_snapshot_plan_offer.py:SnapshotAppPlanOfferUpgrade",
@@ -102,6 +104,7 @@ def test_snapshot_shows_upgrade_plan_offer(snap_compare: SnapCompare) -> None:
     )
 
 
+@pytest.mark.skip(reason="Plan offer notification disabled in CLI")
 def test_snapshot_shows_switch_key_plan_offer(snap_compare: SnapCompare) -> None:
     assert snap_compare(
         "test_ui_snapshot_plan_offer.py:SnapshotAppPlanOfferSwitchKey",
@@ -110,6 +113,7 @@ def test_snapshot_shows_switch_key_plan_offer(snap_compare: SnapCompare) -> None
     )
 
 
+@pytest.mark.skip(reason="Plan offer notification disabled in CLI")
 def test_snapshot_shows_no_plan_offer(snap_compare: SnapCompare) -> None:
     assert snap_compare(
         "test_ui_snapshot_plan_offer.py:SnapshotAppPlanOfferNone",
@@ -118,6 +122,7 @@ def test_snapshot_shows_no_plan_offer(snap_compare: SnapCompare) -> None:
     )
 
 
+@pytest.mark.skip(reason="Plan offer notification disabled in CLI")
 def test_snapshot_shows_whats_new_and_plan_offer(
     snap_compare: SnapCompare, tmp_path: Path
 ) -> None:

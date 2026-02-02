@@ -20,6 +20,7 @@ def _make_app(gateway: FakeWhoAmIGateway, config: VibeConfig | None = None) -> V
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="Plan offer feature disabled in CLI")
 async def test_app_shows_upgrade_offer_in_plan_offer_message(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -42,6 +43,7 @@ async def test_app_shows_upgrade_offer_in_plan_offer_message(
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="Plan offer feature disabled in CLI")
 async def test_app_shows_switch_to_pro_key_offer_in_plan_offer_message(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
