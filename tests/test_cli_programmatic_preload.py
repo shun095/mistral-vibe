@@ -128,10 +128,11 @@ def test_run_programmatic_ignores_system_messages_in_previous(
         )
 
         roles = [r for r, _ in spy.emitted]
-        assert roles == [Role.system, Role.user, Role.user, Role.assistant]
+        assert roles == [Role.system, Role.user, Role.assistant, Role.user, Role.assistant]
         assert (
             spy.emitted[0][1] == "You are Vibe, a super useful programming assistant."
         )
         assert spy.emitted[1][1] == "Continue our previous discussion."
-        assert spy.emitted[2][1] == "Let's move on to practical examples."
-        assert spy.emitted[3][1] == "Understood."
+        assert spy.emitted[2][1] == "Understood."
+        assert spy.emitted[3][1] == "Let's move on to practical examples."
+        assert spy.emitted[4][1] == "Understood."
