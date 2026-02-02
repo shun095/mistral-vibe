@@ -776,7 +776,7 @@ class AgentLoop:
         if len(self.messages) < ACCEPTABLE_HISTORY_SIZE:
             return
         self._fill_missing_tool_responses()
-        self._ensure_assistant_after_tools()
+        self._ensure_assistant_after_tools_or_user()
 
     def _fill_missing_tool_responses(self) -> None:
         i = 1
@@ -820,13 +820,13 @@ class AgentLoop:
 
             i += 1
 
-    def _ensure_assistant_after_tools(self) -> None:
+    def _ensure_assistant_after_tools_or_user(self) -> None:
         MIN_MESSAGE_SIZE = 2
         if len(self.messages) < MIN_MESSAGE_SIZE:
             return
 
         last_msg = self.messages[-1]
-        if last_msg.role is Role.tool:
+        if last_msg.role is Role.tool or last_msg.role is Role.user:
             empty_assistant_msg = LLMMessage(role=Role.assistant, content="Understood.")
             self.messages.append(empty_assistant_msg)
 
