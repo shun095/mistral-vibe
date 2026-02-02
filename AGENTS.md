@@ -180,7 +180,9 @@ guidelines:
 
 ### Task Specific and Non Future-Proof files
 - ❌ NEVER put specific documents and debug scripts in root directory.
-- ✅ Always use ./tmp/ directory for the files. You can put: documents of summary, report and plan etc. and debug scripts in the ./tmp/ directory.
+- ✅ Always respond directly to the user instead of creating report files. You MUST avoid simple final response like `Task completed.`
+- ✅ Place files in ./tmp/ directory only when necessary. You may put: detailed documents of summary, report and plan etc. for references only when necessary.
+- ✅ Place temporal debug scripts in the ./tmp/ directory only when necessary.
 
 
 
