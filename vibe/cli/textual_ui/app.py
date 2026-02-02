@@ -71,7 +71,7 @@ from vibe.cli.update_notifier import (
 )
 from vibe.cli.update_notifier.update import do_update
 from vibe.core.agent_loop import AgentLoop
-from vibe.core.agents import AgentProfile
+from vibe.core.agents import AgentProfile, BuiltinAgentName
 from vibe.core.autocompletion.path_prompt_adapter import render_path_prompt
 from vibe.core.config import VibeConfig
 from vibe.core.paths.config_paths import HISTORY_FILE
@@ -316,6 +316,20 @@ class VibeApp(App):  # noqa: PLR0904
 
         if self._pending_approval and not self._pending_approval.done():
             self._pending_approval.set_result((ApprovalResponse.YES, None))
+
+        await self._switch_to_input_app()
+
+    async def on_approval_app_approval_enable_auto_approve(
+        self, message: ApprovalApp.ApprovalEnableAutoApprove
+    ) -> None:
+        # Approve the current tool
+        if self._pending_approval and not self._pending_approval.done():
+            self._pending_approval.set_result((ApprovalResponse.YES, None))
+
+        # Switch to auto-approve mode
+        if self.agent_loop:
+            await self.agent_loop.switch_agent(BuiltinAgentName.AUTO_APPROVE)
+            self._update_profile_widgets(self.agent_loop.agent_profile)
 
         await self._switch_to_input_app()
 
