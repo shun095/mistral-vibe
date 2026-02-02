@@ -180,7 +180,9 @@ guidelines:
 
 ### Task Specific and Non Future-Proof files
 - ❌ NEVER put specific documents and debug scripts in root directory.
-- ✅ Always respond directly to the user instead of creating report files. You MUST avoid simple final response like `Task completed.`
+- ❌ NEVER respond simple text like `Task completed.` as final response.
+- ❌ NEVER create summary using tools if not specified.
+- ✅ Always respond directly to the user instead of creating report files.
 - ✅ Place files in ./tmp/ directory only when necessary. You may put: detailed documents of summary, report and plan etc. for references only when necessary.
 - ✅ Place temporal debug scripts in the ./tmp/ directory only when necessary.
 
@@ -261,6 +263,9 @@ guidelines:
 **Task Management:**
 - `todo({"action": "read"})` - Read current todo list
 - `todo({"action": "write", "todos": [...]})` - Create/update todo items
+
+**Task Delegation:**
+- `task({"task": "Analyze the codebase and create a refactoring plan", "agent": "explore"})` - Delegate work to a subagent
 
 **Web Research:**
 - `fetch_fetch({"url": "https://example.com", "max_length": 5000})` - Fetch web pages
