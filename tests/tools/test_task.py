@@ -10,7 +10,7 @@ from vibe.core.agents.models import BUILTIN_AGENTS, AgentType
 from vibe.core.config import VibeConfig
 from vibe.core.tools.base import BaseToolState, InvokeContext, ToolError
 from vibe.core.tools.builtins.task import Task, TaskArgs, TaskResult, TaskToolConfig
-from vibe.core.types import AssistantEvent, LLMMessage, Role
+from vibe.core.types import AssistantEvent, LLMMessage, Role, ToolStreamEvent
 
 
 @pytest.fixture
@@ -94,8 +94,8 @@ class TestTaskToolExecution:
         ]
 
         async def mock_act(task: str):
-            yield AssistantEvent(content="Hello from subagent!")
-            yield AssistantEvent(content=" More content.")
+            yield AssistantEvent(content="Hello from subagent!\n\nThis is a comprehensive response with multiple lines.")
+            yield AssistantEvent(content="\nAdditional details and findings.")
 
         with patch("vibe.core.tools.builtins.task.AgentLoop") as mock_agent_loop_class:
             mock_agent_loop = MagicMock()
@@ -108,7 +108,7 @@ class TestTaskToolExecution:
             result = await collect_result(task_tool.run(args, ctx))
 
             assert isinstance(result, TaskResult)
-            assert result.response == "Hello from subagent! More content."
+            assert result.response == "Hello from subagent!\n\nThis is a comprehensive response with multiple lines.\nAdditional details and findings."
             assert result.turns_used == 2  # 2 assistant messages in mock_messages
             assert result.completed is True
 
@@ -162,3 +162,52 @@ class TestTaskToolExecution:
             assert isinstance(result, TaskResult)
             assert result.completed is False
             assert "Simulated error" in result.response
+
+    @pytest.mark.asyncio
+    async def test_retry_on_insufficient_response(
+        self, task_tool: Task, ctx: InvokeContext
+    ) -> None:
+        """Test that task tool retries when response is insufficient (single line)."""
+        mock_messages = [
+            LLMMessage(role=Role.system, content="system"),
+            LLMMessage(role=Role.assistant, content="Single line response"),
+        ]
+
+        attempt_count = 0
+
+        async def mock_act(task: str):
+            nonlocal attempt_count
+            attempt_count += 1
+            
+            # First attempt: single line (insufficient)
+            if attempt_count == 1:
+                yield AssistantEvent(content="Single line response")
+            # Second attempt: multi-line (sufficient)
+            elif attempt_count == 2:
+                yield AssistantEvent(content="Comprehensive response\n\nWith multiple lines")
+            # Third attempt: still insufficient
+            else:
+                yield AssistantEvent(content="Another single line")
+
+        with patch("vibe.core.tools.builtins.task.AgentLoop") as mock_agent_loop_class:
+            mock_agent_loop = MagicMock()
+            mock_agent_loop.act = mock_act
+            mock_agent_loop.messages = mock_messages
+            mock_agent_loop.set_approval_callback = MagicMock()
+            mock_agent_loop_class.return_value = mock_agent_loop
+
+            args = TaskArgs(task="analyze code", agent="explore")
+            
+            # Collect all events (not just the result)
+            events = []
+            async for event in task_tool.run(args, ctx):
+                events.append(event)
+                # Stop after getting ToolStreamEvent feedback
+                if len(events) == 1 and isinstance(event, ToolStreamEvent):
+                    break
+            
+            # Should have received feedback about insufficient response
+            assert len(events) == 1
+            assert isinstance(events[0], ToolStreamEvent)
+            assert "insufficient" in events[0].message.lower()
+            assert "brief" in events[0].message.lower()

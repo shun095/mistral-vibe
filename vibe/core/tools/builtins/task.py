@@ -47,6 +47,7 @@ class TaskResult(BaseModel):
 
 class TaskToolConfig(BaseToolConfig):
     permission: ToolPermission = ToolPermission.ASK
+    max_retries: int = 3  # Maximum retry attempts for insufficient responses
 
 
 class Task(
@@ -87,6 +88,44 @@ class Task(
     def get_status_text(cls) -> str:
         return "Running subagent"
 
+    def _is_response_complete(self, response: str) -> tuple[bool, str]:
+        """Check if response is complete (not a single line)."""
+        if not response or not response.strip():
+            return False, "Response is empty. Please provide a comprehensive summary."
+        
+        # Check if response is a single line
+        lines = response.strip().split('\n')
+        if len(lines) == 1:
+            return (
+                False,
+                "Response is too brief. Please provide a comprehensive summary "
+                "with multiple paragraphs or bullet points."
+            )
+        
+        return True, ""
+
+    def _get_task_instruction(
+        self, original_task: str, attempt: int, max_attempts: int
+    ) -> str:
+        """Get the task instruction for the subagent, with enhanced instructions for retries."""
+        if attempt == 0:
+            # First attempt - use original task
+            return original_task
+        
+        # Subsequent attempts - add guidance
+        return f"""
+{original_task}
+
+IMPORTANT: Your previous response was insufficient. Please provide a comprehensive summary with multiple paragraphs or bullet points. Include:
+- What you accomplished
+- Key findings or information discovered
+- Any relevant code snippets, file contents, or details
+- Recommendations or next steps if applicable
+- Clear, actionable information for the main agent
+
+This is attempt {attempt + 1} of {max_attempts}. Provide a complete multi-paragraph response.
+"""
+
     async def run(
         self, args: TaskArgs, ctx: InvokeContext | None = None
     ) -> AsyncGenerator[ToolStreamEvent | TaskResult, None]:
@@ -107,6 +146,7 @@ class Task(
                 f"This is a security constraint to prevent recursive spawning."
             )
 
+        # Create a single AgentLoop for the entire task
         base_config = VibeConfig.load(
             session_logging=SessionLoggingConfig(enabled=False)
         )
@@ -115,40 +155,80 @@ class Task(
         if ctx and ctx.approval_callback:
             subagent_loop.set_approval_callback(ctx.approval_callback)
 
-        accumulated_response: list[str] = []
-        completed = True
-        try:
-            async for event in subagent_loop.act(args.task):
-                if isinstance(event, AssistantEvent) and event.content:
-                    accumulated_response.append(event.content)
-                    if event.stopped_by_middleware:
-                        completed = False
-                elif isinstance(event, ToolResultEvent):
-                    if event.skipped:
-                        completed = False
-                    elif event.result and event.tool_class:
-                        adapter = ToolUIDataAdapter(event.tool_class)
-                        display = adapter.get_result_display(event)
-                        message = f"{event.tool_name}: {display.message}"
-                        yield ToolStreamEvent(
-                            tool_name=self.get_name(),
-                            message=message,
-                            tool_call_id=ctx.tool_call_id,
-                        )
-
-            turns_used = sum(
-                msg.role == Role.assistant for msg in subagent_loop.messages
+        attempt = 0
+        
+        # Main loop: continue until response is complete or max retries reached
+        while attempt < self.config.max_retries:
+            accumulated_response: list[str] = []
+            completed = True
+            
+            # Determine task instruction based on attempt
+            task_instruction = self._get_task_instruction(
+                args.task, attempt, self.config.max_retries
             )
+            
+            try:
+                # Run the agent loop for this attempt
+                async for event in subagent_loop.act(task_instruction):
+                    if isinstance(event, AssistantEvent) and event.content:
+                        accumulated_response.append(event.content)
+                        if event.stopped_by_middleware:
+                            completed = False
+                    elif isinstance(event, ToolResultEvent):
+                        if event.skipped:
+                            completed = False
+                        elif event.result and event.tool_class:
+                            adapter = ToolUIDataAdapter(event.tool_class)
+                            display = adapter.get_result_display(event)
+                            message = f"{event.tool_name}: {display.message}"
+                            yield ToolStreamEvent(
+                                tool_name=self.get_name(),
+                                message=message,
+                                tool_call_id=ctx.tool_call_id,
+                            )
+                
+                turns_used = sum(
+                    msg.role == Role.assistant for msg in subagent_loop.messages
+                )
 
-        except Exception as e:
-            completed = False
-            accumulated_response.append(f"\n[Subagent error: {e}]")
-            turns_used = sum(
-                msg.role == Role.assistant for msg in subagent_loop.messages
+            except Exception as e:
+                completed = False
+                accumulated_response.append(f"\n[Subagent error: {e}]")
+                turns_used = sum(
+                    msg.role == Role.assistant for msg in subagent_loop.messages
+                )
+            
+            # Get the concatenated response for validation
+            concatenated_response = "".join(accumulated_response) if accumulated_response else ""
+            
+            # Validate response quality using the concatenated response
+            is_complete, feedback = self._is_response_complete(concatenated_response)
+            
+            if is_complete:
+                # Success! Return the result
+                yield TaskResult(
+                    response="".join(accumulated_response),
+                    turns_used=turns_used,
+                    completed=completed,
+                )
+                return
+            
+            # Response was insufficient, prepare for retry
+            if attempt < self.config.max_retries - 1:
+                # Yield feedback to user (but NOT TaskResult!)
+                yield ToolStreamEvent(
+                    tool_name=self.get_name(),
+                    message=f"Subagent response was insufficient: {feedback}",
+                    tool_call_id=ctx.tool_call_id,
+                )
+                # Continue to next iteration of retry loop
+                attempt += 1
+                continue
+            
+            # Last attempt failed - return incomplete result
+            yield TaskResult(
+                response="".join(accumulated_response),
+                turns_used=turns_used,
+                completed=False,
             )
-
-        yield TaskResult(
-            response="".join(accumulated_response),
-            turns_used=turns_used,
-            completed=completed,
-        )
+            return
