@@ -884,7 +884,8 @@ Enhanced prompt:"""
                 extra_headers=None,
             ):
                 if chunk.message.content:
-                    enhanced_text += chunk.message.content
+                    content_str = chunk.message.content if isinstance(chunk.message.content, str) else str(chunk.message.content)
+                    enhanced_text += content_str
 
             if enhanced_text.strip():
                 # Replace the original prompt with the enhanced version
