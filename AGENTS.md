@@ -142,29 +142,30 @@ guidelines:
 ## 🛡️ Safety Rules
 
 ### Follow User's Instructions Precisely
-- ❌ NEVER make any changes to code or git condition that users haven't mentioned.
-    - Example 1 - User: "analyze git status and create a commit for staged changes."
-        - ❌ NEVER change staging area.
-        - ❌ NEVER run `git add` or  `git reset`
-        - ✅ Use `git status` or `git diff --staged` to analyze the changes.
-        - ✅ Use `git commit` for creating a commit for currently staged changes.
-    - Example 2 - User: "Analyze the codebase and create a plan to refactor."
-        - ❌ NEVER execute the planned refactor until the user gives you permission. 
-        - ✅ Read codes and analyze codebase and create a planning document.
-    - Example 3 - User: "Run all tests"
-        - ❌ NEVER consider a task complete after only running some tests
-        - ❌ NEVER modify the code until the user gives you permission. 
-        - ✅ Run all tests with long timeout parameter for bash tool if necessary.
-        - ✅ You may create a new report file which doesn't affects existing code or git condition about the test result.
-    - Example 4 - User: "Only restore files you've modified for feature X"
-        - ❌ NEVER run `git reset --hard` or `git checkout` unrelated files which may be changed by the user for another work.
-        - ❌ NEVER modify any files you haven't modified.
-        - ❌ NEVER modify any files not related to feature X.
-        - ✅ Restore files you've modified **and** related to the feature X. Run `git checkout /path/to/related_files_to_your_work_for_X`
-    - Example 5 - User: "Please test this codebase"
-        - ❌ NEVER modify or fix any files to pass tests.
-        - ✅ Run command for test and create a report of the result.
-- ✅ If there is any uncertainty about a task, you should ask the user before making any breaking changes.
+- ❌ **NEVER make any changes to code or git repository** unless explicitly instructed by the user.
+- ✅ If there is any uncertainty about a task, you MUST ask the user **before** making any significant changes.
+
+**Example 1 - User: "Analyze the git status and create a commit for staged changes."**
+- ❌ NEVER modify the staging area.
+- ❌ NEVER run `git add` or `git reset`. You MUST act as a reporter, not a developer
+- ✅ Use `git status` or `git diff --staged` to analyze changes.
+- ✅ Use `git commit` to create a commit for the currently staged changes.
+
+**Example 2 - User: "Analyze the codebase and create a plan to refactor."**
+- ❌ NEVER execute the planned refactor without the user's permission. You MUST act as a planner, not a developer
+- ✅ Read the code, analyze the codebase, and create a planning document.
+
+**Example 3 - User: "Run all tests."**
+- ❌ NEVER consider a task complete after running only some tests.
+- ❌ NEVER modify the code without the user's permission. You MUST act as a tester, not a developer.
+- ✅ Run all tests with a long timeout parameter if necessary using the bash tool.
+- ✅ You may create a new report file that does not affect existing code or git repository regarding test results.
+
+**Example 4 - User: "Restore files you've modified for feature X."**
+- ❌ NEVER run `git reset --hard` or `git checkout` on unrelated files that may have been changed by the user for other work.
+- ❌ NEVER modify any files you haven't changed.
+- ❌ NEVER modify any files not related to feature X. You are not the developer occupying this repository. Please do not remove others' changes.
+- ✅ Restore files you've modified **and** related to feature X. Run `git checkout /path/to/related_files_to_your_work_for_X`.
 
 ### Git Safety
 - ❌ NEVER use `git reset --hard` or `git checkout <filename>` lightly
@@ -186,7 +187,14 @@ guidelines:
 - ✅ Place files in ./tmp/ directory only when necessary. You may put: detailed documents of summary, report and plan etc. for references only when necessary.
 - ✅ Place temporal debug scripts in the ./tmp/ directory only when necessary.
 
-
+### Avoid file name based versioning
+- ❌ NEVER use file name based versioning
+    - ❌ *_v2
+    - ❌ *_comprehensive
+    - ❌ *_simple
+    - ❌ *_final
+    etc.
+- ✅ Back up the old file as ./tmp/*_v1.bak or something else before creating a new file with the same name to avoid file name-based versioning while keeping old files.
 
 ## Common Requirements
 - Keep codebase and documents simple, clean and logically structured.
