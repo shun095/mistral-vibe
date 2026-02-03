@@ -5,10 +5,10 @@ from textual.widgets import Static
 from vibe.core.agents import AgentProfile, AgentSafety, BuiltinAgentName
 
 AGENT_ICONS: dict[str, str] = {
-    BuiltinAgentName.DEFAULT: "⏵",
-    BuiltinAgentName.PLAN: "⏸",
-    BuiltinAgentName.ACCEPT_EDITS: "⏵⏵",
-    BuiltinAgentName.AUTO_APPROVE: "⏵⏵⏵",
+    BuiltinAgentName.DEFAULT: ">",
+    BuiltinAgentName.PLAN: "P",
+    BuiltinAgentName.ACCEPT_EDITS: ">>",
+    BuiltinAgentName.AUTO_APPROVE: ">>>",
 }
 
 SAFETY_CLASSES: dict[AgentSafety, str] = {
