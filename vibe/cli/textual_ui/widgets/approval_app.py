@@ -19,7 +19,7 @@ class ApprovalApp(Container):
     can_focus = True
     can_focus_children = False
 
-    BINDINGS: ClassVar[list[BindingType]] = [
+    BINDINGS: ClassVar[list[Binding]] = [  # type: ignore[assignment]
         Binding("up", "move_up", "Up", show=False),
         Binding("down", "move_down", "Down", show=False),
         Binding("enter", "select", "Select", show=False),

@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import pytest
+from collections.abc import AsyncGenerator
 
+from tests.mock.utils import mock_llm_chunk
 from tests.stubs.fake_backend import FakeBackend
 from vibe.cli.textual_ui.app import VibeApp
 from vibe.cli.textual_ui.widgets.chat_input.container import ChatInputContainer
 from vibe.core.agent_loop import AgentLoop
 from vibe.core.config import SessionLoggingConfig, VibeConfig
+from vibe.core.types import LLMChunk
 
 
 @pytest.fixture
@@ -29,12 +32,24 @@ async def test_enhancement_can_be_cancelled_with_escape_key(vibe_app: VibeApp):
     # Create a backend that will hang (never return)
     # This simulates an enhancement in progress
     class HangingBackend(FakeBackend):
-        async def complete_streaming(self, **kwargs):
+        async def complete_streaming(
+            self,
+            *,
+            model,
+            messages,
+            temperature,
+            tools,
+            tool_choice,
+            extra_headers,
+            max_tokens,
+        ) -> AsyncGenerator[LLMChunk]:
             # Never yield anything - just hang
             await asyncio.Future()  # This will never complete
+            yield mock_llm_chunk(content="")  # This will never be reached, but satisfies the type checker
+            # type: ignore[return-value]
     
     backend = HangingBackend()
-    vibe_app.agent_loop.backend = backend
+    vibe_app.agent_loop.backend = backend  # type: ignore[assignment]
     
     async with vibe_app.run_test() as pilot:
         # Wait for app to be ready
@@ -71,8 +86,9 @@ async def test_enhancement_can_be_cancelled_with_escape_key(vibe_app: VibeApp):
 async def test_enhancement_replaces_prompt(vibe_app: VibeApp):
     """Test that enhanced prompt replaces the original prompt."""
     # Use a fast backend that returns an enhanced prompt
+    from tests.mock.utils import mock_llm_chunk
     backend = FakeBackend([
-        {"role": "assistant", "content": "Enhanced: Write a Python function"},
+        mock_llm_chunk(content="Enhanced: Write a Python function"),
     ])
     
     async with vibe_app.run_test() as pilot:
@@ -103,8 +119,9 @@ async def test_empty_prompt_not_enhanced(vibe_app: VibeApp):
 @pytest.mark.asyncio
 async def test_enhancement_with_special_characters(vibe_app: VibeApp):
     """Test that prompts with special characters can be enhanced."""
+    from tests.mock.utils import mock_llm_chunk
     backend = FakeBackend([
-        {"role": "assistant", "content": "Enhanced: /search files"},
+        mock_llm_chunk(content="Enhanced: /search files"),
     ])
     
     async with vibe_app.run_test() as pilot:
