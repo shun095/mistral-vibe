@@ -72,16 +72,22 @@ class ToolManager:
     Discovers available tools from the provided search paths. Each Agent
     should have its own ToolManager instance.
     """
+    
+    # Class-level MCP cache shared across all instances
+    # This cache persists across ToolManager instance creations and mode switches
+    _mcp_cache: dict[str, dict[str, type[BaseTool]]] = {}
 
     def __init__(self, config_getter: Callable[[], VibeConfig]) -> None:
         self._config_getter = config_getter
         self._instances: dict[str, BaseTool] = {}
         self._search_paths: list[Path] = self._compute_search_paths(self._config)
 
-        self._available: dict[str, type[BaseTool]] = {
+        # Track tools before MCP integration for cache identification
+        self._tools_before_mcp = {
             cls.get_name(): cls for cls in self._iter_tool_classes(self._search_paths)
         }
-        self._integrate_mcp()
+        self._available = self._tools_before_mcp.copy()
+        self._integrate_mcp_cached()
 
     @property
     def _config(self) -> VibeConfig:
@@ -194,10 +200,58 @@ class ToolManager:
             }
         return dict(self._available)
 
-    def _integrate_mcp(self) -> None:
-        if not self._config.mcp_servers:
+    def _integrate_mcp_cached(self) -> None:
+        """Integrate MCP tools using cache if configuration hasn't changed."""
+        current_hash = self._get_mcp_config_hash()
+
+        # Check if we have cached MCP tools for this configuration
+        logger.debug(
+            "[TOOLMANAGER %s] MCP Cache Check: current_hash=%s, cache_keys=%s",
+            hex(id(self)),
+            current_hash,
+            list(ToolManager._mcp_cache.keys())
+        )
+        if current_hash in ToolManager._mcp_cache:
+            # Reuse cached MCP tools
+            self._available.update(ToolManager._mcp_cache[current_hash])
+            logger.debug("[TOOLMANAGER %s] Reusing cached MCP tools for config hash %s", hex(id(self)), current_hash)
             return
-        run_sync(self._integrate_mcp_async())
+
+        # Configuration changed or first time, initialize MCP
+        if self._config.mcp_servers:
+            logger.debug("[TOOLMANAGER %s] Initializing MCP for config hash %s (cache miss)", hex(id(self)), current_hash)
+            run_sync(self._integrate_mcp_async())
+        
+        # Identify MCP tools by comparing before/after MCP integration
+        mcp_tools = {
+            name: cls for name, cls in self._available.items()
+            if name not in self._tools_before_mcp
+        }
+        
+        if mcp_tools:
+            ToolManager._mcp_cache[current_hash] = mcp_tools
+            logger.debug("[TOOLMANAGER %s] Cached %d MCP tools for config hash %s", hex(id(self)), len(mcp_tools), current_hash)
+
+    def _get_mcp_config_hash(self) -> str:
+        """Generate hash of MCP configuration for caching."""
+        import json
+        
+        mcp_configs = []
+        for srv in self._config.mcp_servers or []:
+            mcp_configs.append(srv.model_dump())
+        
+        mcp_configs.sort(key=lambda x: x.get('name', ''))
+        return hashlib.md5(json.dumps(mcp_configs, sort_keys=True).encode()).hexdigest()
+
+    @classmethod
+    def invalidate_mcp_cache(cls) -> None:
+        """Invalidate MCP cache when configuration changes externally.
+        
+        This should only be called when MCP server configuration is explicitly changed
+        by the user, not during normal mode switching.
+        """
+        cls._mcp_cache = {}
+        logger.debug("MCP cache invalidated")
 
     async def _integrate_mcp_async(self) -> None:
         try:
