@@ -99,13 +99,33 @@ async def test_approval_app_bindings_include_key_4():
     bindings = ApprovalApp.BINDINGS
     
     # Find the binding for key "4"
-    key_4_bindings = [b for b in bindings if b.key == "4"]
+    # BindingType can be Binding object or tuple[str, str] or tuple[str, str, str]
+    key_4_bindings = []
+    for b in bindings:
+        if hasattr(b, 'key'):
+            # It's a Binding object
+            if b.key == "4":
+                key_4_bindings.append(b)
+        elif isinstance(b, tuple):
+            # It's a tuple
+            if b[0] == "4":
+                key_4_bindings.append(b)
     
     # Should have exactly one binding for key "4"
     assert len(key_4_bindings) == 1
     
     # The action should be "select_4"
-    assert key_4_bindings[0].action == "select_4"
+    binding = key_4_bindings[0]
+    if hasattr(binding, 'action'):
+        assert binding.action == "select_4"
+    else:
+        assert binding[1] == "select_4"
     
     # The description should mention "No"
-    assert "no" in key_4_bindings[0].description.lower()
+    if hasattr(binding, 'description'):
+        assert "no" in binding.description.lower()
+    else:
+        # For 2-tuple, description is empty
+        # For 3-tuple, description is at index 2
+        if len(binding) == 3:
+            assert "no" in binding[2].lower()
