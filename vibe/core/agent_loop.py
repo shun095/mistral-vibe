@@ -470,7 +470,10 @@ class AgentLoop:
                     content_buffer = ""
                     chunks_with_content = 0
 
-                reasoning_buffer += chunk.message.reasoning_content
+                reasoning_content = chunk.message.reasoning_content or ""
+                if isinstance(reasoning_content, list):
+                    reasoning_content = "".join(str(item) for item in reasoning_content)
+                reasoning_buffer += reasoning_content
                 chunks_with_reasoning += 1
 
                 if chunks_with_reasoning >= BATCH_SIZE:
@@ -488,7 +491,10 @@ class AgentLoop:
                     reasoning_buffer = ""
                     chunks_with_reasoning = 0
 
-                content_buffer += chunk.message.content
+                content = chunk.message.content or ""
+                if isinstance(content, list):
+                    content = "".join(str(item) for item in content)
+                content_buffer += content
                 chunks_with_content += 1
 
                 if chunks_with_content >= BATCH_SIZE:
@@ -504,8 +510,11 @@ class AgentLoop:
 
     async def _get_assistant_event(self) -> AssistantEvent:
         llm_result = await self._chat()
+        content = llm_result.message.content or ""
+        if isinstance(content, list):
+            content = "".join(str(item) for item in content)
         return AssistantEvent(
-            content=llm_result.message.content or "",
+            content=content,
             message_id=llm_result.message.message_id,
         )
 
@@ -598,9 +607,7 @@ class AgentLoop:
                     raise ToolError("Tool did not yield a result")
 
                 # Create tool response message (same for all tools)
-                text = "\n".join(
-                    f"{k}: {v}" for k, v in result_model.model_dump().items()
-                )
+                text = self._format_tool_result(result_model)
                 self._append_tool_response(tool_call, text)
                 
                 yield ToolResultEvent(
@@ -662,6 +669,23 @@ class AgentLoop:
                 self.format_handler.create_tool_response_message(tool_call, text)
             )
         )
+
+    def _format_tool_result(self, result_model: Any) -> str:
+        """Format tool result for LLM consumption with special handling for LSP diagnostics."""
+        result_dict = result_model.model_dump()
+        
+        # Check if this result contains LSP diagnostics
+        lsp_diagnostics = result_dict.get('lsp_diagnostics')
+        
+        # Format regular fields
+        regular_fields = {k: v for k, v in result_dict.items() if k != 'lsp_diagnostics'}
+        regular_text = "\n".join(f"{k}: {v}" for k, v in regular_fields.items())
+        
+        # If there are LSP diagnostics, append them prominently
+        if lsp_diagnostics:
+            return f"{regular_text}\n\n{lsp_diagnostics}"
+        
+        return regular_text
 
     def _append_special_tool_response(
         self, tool_call: ResolvedToolCall, result_model: Any
@@ -955,6 +979,9 @@ class AgentLoop:
                     "Usage data missing in compaction summary response"
                 )
             summary_content = summary_result.message.content or ""
+            # Convert Content to str for return type compatibility
+            if isinstance(summary_content, list):
+                summary_content = "".join(str(item) for item in summary_content)
 
             system_message = self.messages[0]
             summary_message = LLMMessage(role=Role.user, content=summary_content)

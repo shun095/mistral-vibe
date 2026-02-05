@@ -7,6 +7,7 @@ from typing import ClassVar, final
 import anyio
 from pydantic import BaseModel, Field
 
+from vibe.core.lsp import LSPClientManager, LSPDiagnosticFormatter
 from vibe.core.tools.base import (
     BaseTool,
     BaseToolConfig,
@@ -32,6 +33,10 @@ class WriteFileResult(BaseModel):
     bytes_written: int
     file_existed: bool
     content: str
+    lsp_diagnostics: str | None = Field(
+        default=None,
+        description="Formatted LSP diagnostics for the written file, if available"
+    )
 
 
 class WriteFileConfig(BaseToolConfig):
@@ -109,12 +114,30 @@ class WriteFile(
         if len(self.state.recently_written_files) > BUFFER_SIZE:
             self.state.recently_written_files.pop(0)
 
-        yield WriteFileResult(
+        # Automatically check for LSP diagnostics
+        diagnostics = None
+        try:
+            client_manager = LSPClientManager()
+            diagnostics_list = await client_manager.get_diagnostics(file_path=file_path)
+            
+            # Format diagnostics for LLM consumption if available
+            if diagnostics_list:
+                diagnostics = LSPDiagnosticFormatter.format_diagnostics_for_llm(
+                    diagnostics_list, file_path
+                )
+        except Exception:
+            # Don't fail the write operation if LSP fails
+            pass
+
+        result = WriteFileResult(
             path=str(file_path),
             bytes_written=content_bytes,
             file_existed=file_existed,
             content=args.content,
+            lsp_diagnostics=diagnostics,
         )
+
+        yield result
 
     def _prepare_and_validate_path(self, args: WriteFileArgs) -> tuple[Path, bool, int]:
         if not args.path.strip():

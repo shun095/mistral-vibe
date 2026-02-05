@@ -13,6 +13,7 @@ from vibe.cli.textual_ui.widgets.no_markup_static import NoMarkupStatic
 from vibe.core.tools.builtins.ask_user_question import AskUserQuestionResult
 from vibe.core.tools.builtins.bash import BashArgs, BashResult
 from vibe.core.tools.builtins.grep import GrepArgs, GrepResult
+from vibe.core.tools.builtins.lsp import LSPToolResult
 from vibe.core.tools.builtins.read_file import ReadFileArgs, ReadFileResult
 from vibe.core.tools.builtins.search_replace import (
     SEARCH_REPLACE_BLOCK_RE,
@@ -185,6 +186,12 @@ class WriteFileResultWidget(ToolResultWidget[WriteFileResult]):
         yield NoMarkupStatic(
             f"Bytes: {self.result.bytes_written}", classes="tool-result-detail"
         )
+        
+        # Display LSP diagnostics if available
+        if self.result and self.result.lsp_diagnostics:
+            yield NoMarkupStatic("")
+            yield Markdown(self.result.lsp_diagnostics)
+        
         if self.result.content:
             yield NoMarkupStatic("")
             content, _ = _truncate_lines(self.result.content, 10)
@@ -211,6 +218,12 @@ class SearchReplaceResultWidget(ToolResultWidget[SearchReplaceResult]):
             return
         for warning in self.warnings:
             yield NoMarkupStatic(f"⚠ {warning}", classes="tool-result-warning")
+        
+        # Display LSP diagnostics if available
+        if self.result and self.result.lsp_diagnostics:
+            yield NoMarkupStatic("")
+            yield Markdown(self.result.lsp_diagnostics)
+        
         if self.result.content:
             for line in parse_search_replace_to_diff(self.result.content):
                 yield render_diff_line(line)
@@ -284,6 +297,11 @@ class ReadFileResultWidget(ToolResultWidget[ReadFileResult]):
         for warning in self.warnings:
             yield NoMarkupStatic(f"⚠ {warning}", classes="tool-result-warning")
         truncation_info = None
+        # Display LSP diagnostics if available
+        if self.result and self.result.lsp_diagnostics:
+            yield NoMarkupStatic("")
+            yield Markdown(self.result.lsp_diagnostics)
+        
         if self.result and self.result.content:
             yield NoMarkupStatic("")
             ext = Path(self.result.path).suffix.lstrip(".") or "text"
@@ -320,6 +338,18 @@ class GrepResultWidget(ToolResultWidget[GrepResult]):
         yield from self._footer(truncation_info)
 
 
+class LSPResultWidget(ToolResultWidget[LSPToolResult]):
+    def compose(self) -> ComposeResult:
+        yield from self._header()
+        if self.collapsed or not self.result:
+            return
+        
+        # Display diagnostics in a readable format
+        if self.result.formatted_output:
+            yield NoMarkupStatic("")
+            yield Markdown(self.result.formatted_output)
+
+
 class AskUserQuestionResultWidget(ToolResultWidget[AskUserQuestionResult]):
     def compose(self) -> ComposeResult:
         if self.collapsed or not self.result:
@@ -351,6 +381,7 @@ RESULT_WIDGETS: dict[str, type[ToolResultWidget]] = {
     "grep": GrepResultWidget,
     "todo": TodoResultWidget,
     "ask_user_question": AskUserQuestionResultWidget,
+    "lsp": LSPResultWidget,
 }
 
 
