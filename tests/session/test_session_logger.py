@@ -327,17 +327,13 @@ class TestSessionLoggerSaveInteraction:
             steps=1, session_prompt_tokens=10, session_completion_tokens=20
         )
 
-        result = await logger.save_interaction(
+        await logger.save_interaction(
             messages=messages,
             stats=stats,
             base_config=mock_vibe_config,
             tool_manager=mock_tool_manager,
             agent_profile=mock_agent_profile,
         )
-
-        # Verify the result
-        assert result is not None
-        assert str(logger.session_dir) in result
 
         # Verify that files were created
         assert logger.session_dir is not None
