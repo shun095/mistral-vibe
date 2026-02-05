@@ -17,6 +17,7 @@ from vibe.core.lsp.builtins.pyright import PyrightLSP
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(30)
 async def test_pyright_real_server_initialization(tmp_path: Path):
     """Test that we can initialize a real pyright server."""
     manager = LSPClientManager()
@@ -46,14 +47,13 @@ async def test_pyright_real_server_initialization(tmp_path: Path):
         await client.text_document_did_change(uri, text)
         await client.text_document_did_save(uri)
         
-        print("✓ Pyright server initialized successfully")
-        
     finally:
         # Clean up
         await manager.stop_all_servers()
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(30)
 async def test_pyright_real_server_diagnostics(tmp_path: Path):
     """Test that we can get diagnostics from a real pyright server."""
     manager = LSPClientManager()
@@ -82,17 +82,19 @@ print(undefined_variable)
         )
         
         # Verify we got some diagnostics (pyright should find the errors)
-        # Note: pyright may take a moment to analyze, so we're flexible here
-        print(f"✓ Got {len(diagnostics)} diagnostics from pyright")
+        # Note: pyright may take a moment to analyze
+        assert len(diagnostics) > 0, "Expected to receive diagnostics from pyright server"
         
-        # If we got diagnostics, verify they have the expected structure
-        if diagnostics:
-            diagnostic = diagnostics[0]
-            assert "message" in diagnostic
-            assert "severity" in diagnostic
-            assert "range" in diagnostic
-            assert "source" in diagnostic
-            print(f"✓ Diagnostic structure is correct: {diagnostic.get('message')}")
+        # Verify diagnostics have the expected structure
+        diagnostic = diagnostics[0]
+        assert "message" in diagnostic, "Diagnostic should have a message"
+        assert "severity" in diagnostic, "Diagnostic should have a severity"
+        assert "range" in diagnostic, "Diagnostic should have a range"
+        assert "source" in diagnostic, "Diagnostic should have a source"
+        
+        # Verify we got actual errors (not just informational messages)
+        error_diagnostics = [d for d in diagnostics if d.get("severity", 0) in [1, 2]]  # 1=error, 2=warning
+        assert len(error_diagnostics) > 0, "Expected to receive at least one error or warning diagnostic"
         
     finally:
         # Clean up
@@ -100,6 +102,7 @@ print(undefined_variable)
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(30)
 async def test_pyright_server_lifecycle(tmp_path: Path):
     """Test the full lifecycle of a pyright server."""
     manager = LSPClientManager()
@@ -130,11 +133,10 @@ async def test_pyright_server_lifecycle(tmp_path: Path):
     
     # Clean up
     await manager.stop_all_servers()
-    
-    print("✓ Server lifecycle works correctly")
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(30)
 async def test_pyright_with_valid_code(tmp_path: Path):
     """Test pyright with valid code (should have no errors)."""
     manager = LSPClientManager()
@@ -163,37 +165,52 @@ print(result)
         # (pyright might still report informational messages)
         error_diagnostics = [d for d in diagnostics if d.get("severity", 0) in [1, 2]]  # 1=error, 2=warning
         
-        print(f"✓ Valid code has {len(error_diagnostics)} errors/warnings")
-        
     finally:
         # Clean up
         await manager.stop_all_servers()
 
 
 @pytest.mark.asyncio
-async def test_pyright_get_command_returns_real_binary():
-    """Test that PyrightLSP.get_command() returns the actual binary path."""
-    pyright = PyrightLSP()
+async def test_pyright_get_command_returns_local_binary():
+    """Test that PyrightLSP.get_command() returns the local binary path."""
+    from vibe.core.lsp.installers.pyright import PyrightInstaller
     
-    # Get the command
-    command = await pyright.get_command()
+    # First check if pyright is installed locally
+    installer = PyrightInstaller()
+    exec_path = installer.get_executable_path()
     
-    # Should return the pyright-langserver command
-    assert command == ["pyright-langserver", "--stdio"]
-    
-    # Verify the binary exists
-    import subprocess
-    result = subprocess.run(
-        ["which", "pyright-langserver"],
-        capture_output=True,
-        text=True,
-    )
-    
-    assert result.returncode == 0, "pyright-langserver should be in PATH"
-    print(f"✓ pyright-langserver found at: {result.stdout.strip()}")
+    if exec_path and exec_path.exists():
+        # If pyright is installed, test that get_command returns the correct path
+        pyright = PyrightLSP()
+        
+        # Get the command
+        command = await pyright.get_command()
+        
+        # Should return the node command with the local pyright-langserver.js path
+        assert command[0] == "node"
+        assert "pyright-langserver.js" in command[1]
+        assert "--stdio" in command
+        
+        # Verify the binary exists
+        from pathlib import Path
+        assert Path(command[1]).exists(), f"pyright-langserver.js should exist at {command[1]}"
+    else:
+        # If pyright is not installed, test that it tries to install
+        pyright = PyrightLSP()
+        
+        # Mock the installer to avoid actual installation
+        with patch.object(PyrightInstaller, 'install') as mock_install:
+            mock_install.return_value = False
+            
+            # Should raise RuntimeError when installation fails
+            with pytest.raises(RuntimeError) as exc_info:
+                await pyright.get_command()
+            
+            assert "~/.vibe/lsp/pyright" in str(exc_info.value)
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(30)
 async def test_lsp_client_json_rpc_communication(tmp_path: Path):
     """Test that LSPClient can send and receive JSON-RPC messages."""
     manager = LSPClientManager()
@@ -207,50 +224,10 @@ async def test_lsp_client_json_rpc_communication(tmp_path: Path):
         
         # Should get a response with capabilities
         assert "capabilities" in response
-        print("✓ JSON-RPC communication works")
         
     finally:
         # Clean up
         await manager.stop_all_servers()
 
 
-if __name__ == "__main__":
-    # Run tests manually for debugging
-    import sys
-    
-    async def main():
-        tmp_path = Path("/tmp/lsp_test")
-        tmp_path.mkdir(exist_ok=True)
-        
-        print("Running real LSP communication tests...\n")
-        
-        try:
-            await test_pyright_get_command_returns_real_binary()
-            print()
-            
-            await test_pyright_real_server_initialization(tmp_path)
-            print()
-            
-            await test_pyright_real_server_diagnostics(tmp_path)
-            print()
-            
-            await test_pyright_server_lifecycle(tmp_path)
-            print()
-            
-            await test_pyright_with_valid_code(tmp_path)
-            print()
-            
-            await test_lsp_client_json_rpc_communication(tmp_path)
-            print()
-            
-            print("=" * 60)
-            print("All real LSP communication tests passed!")
-            print("=" * 60)
-            
-        except Exception as e:
-            print(f"Test failed: {e}")
-            import traceback
-            traceback.print_exc()
-            sys.exit(1)
-    
-    asyncio.run(main())
+
