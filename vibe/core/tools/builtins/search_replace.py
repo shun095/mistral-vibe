@@ -10,6 +10,7 @@ from typing import ClassVar, NamedTuple, final
 import anyio
 from pydantic import BaseModel, Field
 
+from vibe.core.lsp import LSPClientManager, LSPDiagnosticFormatter
 from vibe.core.tools.base import (
     BaseTool,
     BaseToolConfig,
@@ -60,6 +61,10 @@ class SearchReplaceResult(BaseModel):
     lines_changed: int
     content: str
     warnings: list[str] = Field(default_factory=list)
+    lsp_diagnostics: str | None = Field(
+        default=None,
+        description="Formatted LSP diagnostics for the modified file, if available"
+    )
 
 
 class SearchReplaceConfig(BaseToolConfig):
@@ -142,6 +147,8 @@ class SearchReplace(
         # Calculate line changes
         if modified_content == original_content:
             lines_changed = 0
+            # No changes were made, no diagnostics needed
+            diagnostics = None
         else:
             original_lines = len(original_content.splitlines())
             new_lines = len(modified_content.splitlines())
@@ -155,12 +162,29 @@ class SearchReplace(
 
             await self._write_file(file_path, modified_content)
 
+            # Automatically check for LSP diagnostics after modification
+            try:
+                client_manager = LSPClientManager()
+                diagnostics_list = await client_manager.get_diagnostics(file_path=file_path)
+                
+                # Format diagnostics for LLM consumption if available
+                if diagnostics_list:
+                    diagnostics = LSPDiagnosticFormatter.format_diagnostics_for_llm(
+                        diagnostics_list, file_path
+                    )
+                else:
+                    diagnostics = None
+            except Exception:
+                # Don't fail the search/replace operation if LSP fails
+                diagnostics = None
+
         yield SearchReplaceResult(
             file=str(file_path),
             blocks_applied=block_result.applied,
             lines_changed=lines_changed,
             warnings=block_result.warnings,
             content=args.content,
+            lsp_diagnostics=diagnostics,
         )
 
     @final

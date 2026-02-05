@@ -242,6 +242,39 @@ MCPServer = Annotated[
     MCPHttp | MCPStreamableHttp | MCPStdio, Field(discriminator="transport")
 ]
 
+# FIXME: root_markers configuration and implementation to use the configuration should be added.
+class LSPServerConfig(BaseModel):
+    """Configuration for an LSP (Language Server Protocol) server."""
+
+    name: str = Field(description="Name of the LSP server (e.g., 'pyright', 'tsserver')")
+    command: list[str] = Field(
+        description="Command to start the LSP server (e.g., ['pyright-langserver', '--stdio'])"
+    )
+    enabled: bool = Field(
+        default=True, description="Whether this LSP server is enabled"
+    )
+    file_patterns: list[str] = Field(
+        default_factory=list,
+        description=(
+            "File patterns this server should handle (e.g., ['*.py', '*.pyi']). "
+            "Empty list means handle all files."
+        ),
+    )
+    timeout_seconds: float = Field(
+        default=10.0, description="Timeout for server startup in seconds"
+    )
+    auto_start: bool = Field(
+        default=True, description="Whether to automatically start this server"
+    )
+    env: dict[str, str] | None = Field(
+        default=None,
+        description="Environment variables to set for the LSP server process",
+    )
+    cwd: str | None = Field(
+        default=None,
+        description="Working directory for the LSP server (defaults to project root)",
+    )
+
 
 class ModelConfig(BaseModel):
     name: str
@@ -336,6 +369,14 @@ class VibeConfig(BaseSettings):
 
     mcp_servers: list[MCPServer] = Field(
         default_factory=list, description="Preferred MCP server configuration entries."
+    )
+
+    lsp_servers: list[LSPServerConfig] = Field(
+        default_factory=list,
+        description=(
+            "List of LSP (Language Server Protocol) server configurations. "
+            "Each server can be enabled/disabled and configured with specific options."
+        ),
     )
 
     enabled_tools: list[str] = Field(

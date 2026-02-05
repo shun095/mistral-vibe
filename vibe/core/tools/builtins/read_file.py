@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, ClassVar, NamedTuple, final
 import anyio
 from pydantic import BaseModel, Field
 
+from vibe.core.lsp import LSPClientManager, LSPDiagnosticFormatter
 from vibe.core.tools.base import (
     BaseTool,
     BaseToolConfig,
@@ -46,6 +47,10 @@ class ReadFileResult(BaseModel):
     was_truncated: bool = Field(
         description="True if the reading was stopped due to the max_read_bytes limit."
     )
+    lsp_diagnostics: str | None = Field(
+        default=None,
+        description="LSP diagnostics for the file content, if available."
+    )
 
 
 class ReadFileToolConfig(BaseToolConfig):
@@ -82,11 +87,27 @@ class ReadFile(
 
         self._update_state_history(file_path)
 
+        # Get LSP diagnostics for the file
+        lsp_diagnostics = None
+        try:
+            client_manager = LSPClientManager()
+            diagnostics = await client_manager.get_diagnostics(file_path=file_path)
+            
+            # Format diagnostics for LLM consumption if available
+            if diagnostics:
+                lsp_diagnostics = LSPDiagnosticFormatter.format_diagnostics_for_llm(
+                    diagnostics, file_path
+                )
+        except Exception:
+            # Don't fail the read operation if LSP fails
+            pass
+
         yield ReadFileResult(
             path=str(file_path),
             content="".join(read_result.lines),
             lines_read=len(read_result.lines),
             was_truncated=read_result.was_truncated,
+            lsp_diagnostics=lsp_diagnostics,
         )
 
     def check_allowlist_denylist(self, args: ReadFileArgs) -> ToolPermission | None:
