@@ -6,16 +6,27 @@ from typing import Any
 
 class LSPDiagnosticFormatter:
     @staticmethod
-    def format_diagnostics_for_llm(
+    def format_diagnostics(
         diagnostics: list[dict[str, Any]],
         file_path: Path | None = None,
         max_diagnostics: int = 20,
     ) -> str:
-        # Format diagnostics for LLM
+        """Format LSP diagnostics for display.
+        
+        Groups diagnostics by severity and formats them in a readable way.
+        
+        Args:
+            diagnostics: List of diagnostic dictionaries from LSP
+            file_path: Optional path to the file being diagnosed
+            max_diagnostics: Maximum number of diagnostics to display
+            
+        Returns:
+            Formatted string with diagnostics organized by severity
+        """
         if not diagnostics:
             return "No issues found."
 
-        # Limit diagnostics to avoid overwhelming the LLM
+        # Limit diagnostics to avoid overwhelming the user
         original_count = len(diagnostics)
         diagnostics = diagnostics[:max_diagnostics]
 
@@ -58,6 +69,27 @@ class LSPDiagnosticFormatter:
             lines.append(f"\n...and {original_count - max_diagnostics} more issue(s)")
 
         return "\n".join(lines)
+
+    @staticmethod
+    def format_diagnostics_for_llm(
+        diagnostics: list[dict[str, Any]],
+        file_path: Path | None = None,
+        max_diagnostics: int = 20,
+    ) -> str:
+        """Format LSP diagnostics specifically for LLM consumption.
+        
+        This is a convenience method that calls format_diagnostics.
+        Kept for backward compatibility.
+        
+        Args:
+            diagnostics: List of diagnostic dictionaries from LSP
+            file_path: Optional path to the file being diagnosed
+            max_diagnostics: Maximum number of diagnostics to display
+            
+        Returns:
+            Formatted string with diagnostics organized by severity
+        """
+        return LSPDiagnosticFormatter.format_diagnostics(diagnostics, file_path, max_diagnostics)
 
     @staticmethod
     def _format_single_diagnostic(diag: dict[str, Any]) -> str:

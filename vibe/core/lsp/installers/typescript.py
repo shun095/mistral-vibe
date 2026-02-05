@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import subprocess
+from logging import getLogger
 from pathlib import Path
 
 from vibe.core.lsp.installer import LSPServerInstaller
 
-logger = logging.getLogger(__name__)
+logger = getLogger("vibe")
 
 
 class TypeScriptLSPInstaller(LSPServerInstaller):
-    """Installer for TypeScript Language Server."""
 
     def __init__(self) -> None:
         super().__init__("typescript")
@@ -30,11 +29,12 @@ class TypeScriptLSPInstaller(LSPServerInstaller):
             logger.error("npm is not available. Please install Node.js and npm first.")
             return False
 
-        logger.info(f"Installing typescript-language-server in {install_dir}...")
+        logger.info(f"Installing typescript-language-server and typescript in {install_dir}...")
         proc = await asyncio.create_subprocess_exec(
             "npm",
             "install",
             "typescript-language-server",
+            "typescript",
             "--prefix",
             str(install_dir),
             cwd=install_dir,
@@ -48,43 +48,24 @@ class TypeScriptLSPInstaller(LSPServerInstaller):
             logger.error(f"Failed to install typescript-language-server: {stderr.decode()}")
             return False
 
-        logger.info("typescript-language-server installed successfully")
+        logger.info("typescript-language-server and typescript installed successfully")
         return True
 
     def is_installed(self) -> bool:
-        # Check if typescript-language-server is in PATH
-        try:
-            result = subprocess.run(
-                ["which", "typescript-language-server"],
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode == 0:
-                return True
-        except FileNotFoundError:
-            pass
-
-        # Check if installed via npm
+        # Check if installed in ~/.vibe/lsp/typescript
         exec_path = self.get_executable_path()
         return exec_path is not None and exec_path.exists()
 
     def get_executable_path(self) -> Path | None:
-        # Check if typescript-language-server is in PATH
-        try:
-            result = subprocess.run(
-                ["which", "typescript-language-server"],
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode == 0:
-                return Path(result.stdout.strip())
-        except FileNotFoundError:
-            pass
-
         # Check if installed via npm
         node_modules = self.install_dir / "node_modules"
         if node_modules.exists():
-            # Check for the main module
+            # Check for the modern ESM version (cli.mjs)
+            cli_mjs = node_modules / "typescript-language-server" / "lib" / "cli.mjs"
+            if cli_mjs.exists():
+                return cli_mjs
+
+            # Check for the older CommonJS version
             tsserver_js = node_modules / "typescript-language-server" / "bin" / "typescript-language-server.js"
             if tsserver_js.exists():
                 return tsserver_js
