@@ -26,6 +26,20 @@ class LSPClient:
         # Track when diagnostics were last refreshed for each URI
         # None means we're waiting for fresh diagnostics after didChange/didSave
         self.diagnostics_refreshed: dict[str, float | None] = {}
+        # Track if the server has exited
+        self._server_exited = False
+
+    def _check_server_alive(self) -> bool:
+        """Check if the LSP server process is still alive."""
+        if self._server_exited:
+            return False
+        
+        if self.process.returncode is not None:
+            self._server_exited = True
+            logger.debug(f"LSP server process exited with code: {self.process.returncode}")
+            return False
+        
+        return True
 
     async def send_request(self, method: str, params: LSPRequestParams | None = None) -> LSPResponse:
         self.message_id += 1
@@ -41,7 +55,7 @@ class LSPClient:
 
         request_json = json.dumps(request)
         # Encode with Content-Length header as per LSP specification
-        message = f"Content-Length: {len(request_json)}\r\n\r\n{request_json}".encode("utf-8")
+        message = f"Content-Length: {len(request_json)}\r\n\r\n{request_json}".encode()
         
         logger.debug(f"LSP Request: {method} with params: {params}")
         
@@ -56,7 +70,7 @@ class LSPClient:
             response = await asyncio.wait_for(future, timeout=30.0)
             logger.debug(f"LSP Response for {method}: {response}")
             return response
-        except asyncio.TimeoutError:
+        except TimeoutError:
             del self.pending_requests[request_id]
             logger.debug(f"LSP Request {method} timed out")
             raise
@@ -71,7 +85,7 @@ class LSPClient:
 
         notification_json = json.dumps(notification)
         # Encode with Content-Length header as per LSP specification
-        message = f"Content-Length: {len(notification_json)}\r\n\r\n{notification_json}".encode("utf-8")
+        message = f"Content-Length: {len(notification_json)}\r\n\r\n{notification_json}".encode()
         
         logger.debug(f"LSP Notification: {method} with params: {params}")
         
@@ -80,10 +94,26 @@ class LSPClient:
             await self.stdin.drain()
 
     async def initialize(self, init_params: LSPRequestParams | None = None) -> LSPResponse:
+        # Build minimal client capabilities for diagnostics-only support
+        capabilities: LSPRequestParams = {
+            "textDocument": {
+                "publishDiagnostics": {
+                    "relatedInformation": True,
+                    "tagSupport": {"valueSet": [1, 2]},
+                    "codeDescriptionSupport": True,
+                    "dataSupport": True
+                },
+                "diagnostic": {
+                    "dynamicRegistration": False,
+                    "documentDiagnostic": True,
+                    "reportRelatedInformation": True,
+                    "workspaceDiagnostics": False
+                }
+            }
+        }
+        
         params: LSPRequestParams = {
-            "capabilities": {},
-            "rootUri": None,
-            "workspaceFolders": None,
+            "capabilities": capabilities,
         }
         
         if init_params:
@@ -159,6 +189,7 @@ class LSPClient:
             # If the server doesn't support documentDiagnostic (like pyright),
             if "Unhandled method" in str(e):
                 # Wait for publishDiagnostics notifications with timeout
+                await asyncio.sleep(3.0)
                 return await self._wait_for_publish_diagnostics(uri, timeout=1.0)
             raise
     
@@ -171,8 +202,10 @@ class LSPClient:
         after we sent didChange/didSave notifications. If no diagnostics were received,
         it returns an empty list to indicate that the server didn't send fresh diagnostics.
         """
+        logger.debug("Waiting for publishDiagnostics")
         # Check if we're expecting fresh diagnostics (diagnostics_refreshed[uri] is None)
         if uri in self.diagnostics_refreshed and self.diagnostics_refreshed[uri] is None:
+            logger.debug("Checking refreshed flags")
             # We're waiting for fresh diagnostics after didChange/didSave
             # Wait for diagnostics to be refreshed
             start_time = asyncio.get_event_loop().time()
@@ -181,6 +214,7 @@ class LSPClient:
                 # Check if diagnostics were refreshed (not None anymore)
                 if uri in self.diagnostics_refreshed and self.diagnostics_refreshed[uri] is not None:
                     # Diagnostics were refreshed, return them
+                    logger.debug(f"publishDiagnostics was refreshed: {self.diagnostics.get(uri, [])!s}")
                     return self.diagnostics.get(uri, [])
                 
                 # Wait a bit
@@ -188,6 +222,7 @@ class LSPClient:
             
             # Timeout reached, no diagnostics were refreshed
             # This means the server didn't send publishDiagnostics after didChange/didSave
+            logger.debug("Checking refreshed flags timed out")
             return []
         
         # Not expecting fresh diagnostics or already have diagnostics
@@ -247,11 +282,13 @@ class LSPClient:
         if "error" in response:
             error_msg = str(response.get("error", "Unknown error"))
             logger.debug(f"LSP Request {request_id} returned error: {error_msg}")
-            future.set_exception(Exception(error_msg))
+            if not future.done():
+                future.set_exception(Exception(error_msg))
         else:
             result = response.get("result")
             logger.debug(f"LSP Request {request_id} completed successfully")
-            future.set_result(result if result is not None else {})
+            if not future.done():
+                future.set_result(result if result is not None else {})
 
     async def _read_messages(self) -> None:
         # Read messages from server with Content-Length headers
@@ -260,72 +297,143 @@ class LSPClient:
         logger.debug("LSP Client: Starting message reader")
         
         while True:
+            # Early exit conditions
             if not self.stdout:
                 logger.debug("LSP Client: No stdout available, stopping reader")
                 break
             
-            # Read data into buffer with timeout
-            # Use a timeout to prevent hanging indefinitely
-            try:
-                chunk = await asyncio.wait_for(self.stdout.read(4096), timeout=5.0)
-                if not chunk:
+            if not self._check_server_alive():
+                logger.debug("LSP Client: Server has exited, stopping reader")
+                break
+            
+            # Read data from server
+            chunk = await self._read_data_with_timeout()
+            if chunk is None:
+                # No more data or error occurred
+                continue
+            
+            buffer += chunk
+            logger.debug(f"LSP Client: Read {len(chunk)} bytes from server")
+            
+            # Process all complete messages in the buffer
+            await self._process_buffer(buffer)
+    
+    async def _read_data_with_timeout(self) -> bytes | None:
+        """Read data from stdout with timeout. Returns None if no data or error."""
+        if not hasattr(self.stdout, 'read'):
+            logger.debug("LSP Client: No stdout.read available")
+            return None
+            
+        try:
+            chunk = await asyncio.wait_for(self.stdout.read(4096), timeout=5.0)  # type: ignore
+            if not chunk:
+                # No more data
+                logger.debug("LSP Client: No more data from server, stopping reader")
+                return None
+            return chunk
+        except TimeoutError:
+            # Timeout occurred, continue waiting
+            return None
+        except Exception as e:
+            logger.debug(f"LSP Client: Error reading from stdout: {e}")
+            return None
+    
+    async def _process_buffer(self, buffer: bytes) -> None:
+        """Process complete messages in the buffer."""
+        while buffer:
+            message_data = await self._extract_message_from_buffer(buffer)
+            if message_data is None:
+                # Message not complete yet or error occurred
+                break
+            
+            # Process the extracted message
+            content, remaining_buffer = message_data
+            buffer = remaining_buffer
+    
+    async def _extract_message_from_buffer(self, buffer: bytes) -> tuple[bytes, bytes] | None:
+        """Extract a complete message from buffer. Returns (content, remaining_buffer) or None if incomplete."""
+        # Check if we have a Content-Length header
+        header_end = buffer.find(b"\r\n\r\n")
+        if header_end == -1:
+            # No header found, wait for more data
+            return None
+        
+        # Parse header
+        header = buffer[:header_end].decode("utf-8")
+        match = re.search(r"Content-Length:\s*(\d+)", header)
+        if not match:
+            # Invalid header, skip to next line
+            next_line = buffer.find(b"\n")
+            if next_line == -1:
+                return None
+            return None
+        
+        content_length = int(match.group(1))
+        total_message_length = header_end + 4 + content_length
+        
+        if len(buffer) < total_message_length:
+            # We don't have the complete message yet
+            return None
+        
+        # Extract the complete message
+        content = buffer[header_end + 4:total_message_length]
+        remaining_buffer = buffer[total_message_length:]
+        
+        try:
+            message = json.loads(content.decode("utf-8"))
+            logger.debug(f"LSP Client: raw message: {message}")
+            await self._handle_response(message)
+        except json.JSONDecodeError as e:
+            # Log the error and the raw content for debugging
+            logger.debug(f"Failed to parse LSP message: {e}")
+            logger.debug(f"Raw message content: {content.decode('utf-8')[:500]}")
+        
+        return content, remaining_buffer
+    
+    async def _monitor_server_process(self) -> None:
+        """Monitor the server process and detect when it exits."""
+        logger.debug("LSP Client: Starting server process monitor")
+        
+        try:
+            # Wait for the process to complete
+            await self.process.wait()
+            logger.debug(f"LSP Client: Server process exited with code: {self.process.returncode}")
+            self._server_exited = True
+        except Exception as e:
+            logger.debug(f"LSP Client: Error monitoring server process: {e}")
+            self._server_exited = True
+
+    async def _read_stderr(self) -> None:
+        """Read stderr from the LSP server and log it as debug information."""
+        logger.debug("LSP Client: Starting stderr reader")
+        
+        if not self.stderr:
+            logger.debug("LSP Client: No stderr available")
+            return
+        
+        try:
+            # Read stderr line by line
+            while True:
+                line = await self.stderr.readline()
+                if not line:
                     # No more data
-                    logger.debug("LSP Client: No more data from server, stopping reader")
+                    logger.debug("LSP Client: No more stderr data from server")
                     break
                 
-                buffer += chunk
-                logger.debug(f"LSP Client: Read {len(chunk)} bytes from server")
-            except asyncio.TimeoutError:
-                # Timeout occurred, check if we have any data to process
-                if not buffer:
-                    # No data in buffer, continue waiting
-                    continue
-            
-            # Process complete messages
-            while buffer:
-                # Check if we have a Content-Length header
-                header_end = buffer.find(b"\r\n\r\n")
-                if header_end != -1:
-                    # We have a headered content message
-                    header = buffer[:header_end].decode("utf-8")
-                    
-                    # Parse Content-Length
-                    match = re.search(r"Content-Length:\s*(\d+)", header)
-                    if match:
-                        content_length = int(match.group(1))
-                        total_message_length = header_end + 4 + content_length
-                        
-                        if len(buffer) >= total_message_length:
-                            # We have the complete message
-                            content = buffer[header_end + 4:total_message_length]
-                            
-                            try:
-                                message = json.loads(content.decode("utf-8"))
-                                logger.debug(f"LSP Client: raw message: {message}")
-                                
-                                await self._handle_response(message)
-                            except json.JSONDecodeError as e:
-                                # Log the error and the raw content for debugging
-                                logger.debug(f"Failed to parse LSP message: {e}")
-                                logger.debug(f"Raw message content: {content.decode('utf-8')[:500]}")
-                            
-                            # Remove processed message from buffer
-                            buffer = buffer[total_message_length:]
-                            # Continue processing any remaining messages in the buffer
-                            continue
-                        else:
-                            # We don't have the complete message yet, wait for more data
-                            break
-                    else:
-                        # Invalid header, skip to next line
-                        next_line = buffer.find(b"\n")
-                        if next_line == -1:
-                            break
-                        buffer = buffer[next_line + 1:]
-                else:
-                    # No header found, wait for more data
-                    break
+                # Decode and strip whitespace
+                line_str = line.decode("utf-8").strip()
+                if line_str:
+                    # Log stderr as debug information
+                    logger.debug(f"LSP Server stderr: {line_str}")
+        except Exception as e:
+            logger.debug(f"LSP Client: Error reading stderr: {e}")
 
     async def start(self) -> None:
         logger.debug("LSP Client: Starting server communication")
+        
+        # Start background tasks
+        asyncio.create_task(self._monitor_server_process())
+        asyncio.create_task(self._read_stderr())
+        
+        # Start the message reader
         asyncio.create_task(self._read_messages())
