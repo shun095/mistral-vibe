@@ -3,11 +3,11 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from vibe.core.config import LSPServerConfig
 from vibe.core.lsp.client import LSPClient
-from vibe.core.lsp.formatter import LSPDiagnosticFormatter
+from vibe.core.lsp.detector import LSPServerDetector
 from vibe.core.lsp.server import LSPServer, LSPServerRegistry
 from vibe.core.lsp.types import LSPServerHandle
 
@@ -18,10 +18,10 @@ DiagnosticsList = list[dict[str, Any]]
 
 class LSPClientManager:
     # Class-level fields to share state across instances
-    _clients: dict[str, LSPClient] = {}
-    _handles: dict[str, LSPServerHandle] = {}
-    _config: dict[str, LSPServerConfig] = {}
-    _lock = asyncio.Lock()
+    _clients: ClassVar[dict[str, LSPClient]] = {}
+    _handles: ClassVar[dict[str, LSPServerHandle]] = {}
+    _config: ClassVar[dict[str, LSPServerConfig]] = {}
+    _lock: ClassVar[asyncio.Lock] = asyncio.Lock()
 
     def __init__(self, config: list[LSPServerConfig] | None = None) -> None:
         # Initialize instance-level references to class-level fields
@@ -33,10 +33,13 @@ class LSPClientManager:
             for server_config in config:
                 if server_config.enabled:
                     self.config[server_config.name] = server_config
+        
+        # Initialize detector after config is populated
+        self.detector = LSPServerDetector(self.config)
 
     # FIXME: these are not needed anymore because LSPClientManager is not Singleton anymore.
     @classmethod
-    async def get_instance(cls, config: list[LSPServerConfig] | None = None) -> "LSPClientManager":
+    async def get_instance(cls, config: list[LSPServerConfig] | None = None) -> LSPClientManager:
         """Get or create an LSPClientManager instance."""
         async with cls._lock:
             instance = cls(config)
@@ -44,14 +47,22 @@ class LSPClientManager:
 
     # FIXME: these are not needed anymore because LSPClientManager is not Singleton anymore.
     @classmethod
-    def get_sync_instance(cls) -> "LSPClientManager":
+    def get_sync_instance(cls) -> LSPClientManager:
         """Get or create an LSPClientManager instance synchronously."""
         instance = cls()
         return instance
 
     async def start_server(self, server_name: str) -> LSPClient:
         if server_name in self.clients:
-            return self.clients[server_name]
+            # Check if the existing client is still alive
+            client = self.clients[server_name]
+            if client._check_server_alive():
+                return client
+            else:
+                # Server has exited, need to restart
+                logger.info(f"LSP server '{server_name}' has exited, restarting...")
+                await self._restart_server(server_name)
+                return self.clients[server_name]
 
         server_class = LSPServerRegistry.get_server(server_name)
         if server_class is None:
@@ -108,16 +119,43 @@ class LSPClientManager:
         initialization = await client.initialize(init_params)
         await client.initialized()
 
-        handle: LSPServerHandle = {
+        self.clients[server_name] = client
+        self.handles[server_name] = {
             "process": process,
             "initialization": initialization,
         }
 
-        self.clients[server_name] = client
-        self.handles[server_name] = handle
-
         logger.info(f"LSP server '{server_name}' started successfully")
         return client
+
+    async def _restart_server(self, server_name: str) -> None:
+        """Restart an LSP server that has exited."""
+        logger.info(f"Restarting LSP server: {server_name}")
+        
+        # Stop the existing server if it's still running
+        if server_name in self.clients:
+            client = self.clients[server_name]
+            if client._check_server_alive():
+                try:
+                    await client.shutdown()
+                    await client.exit()
+                except Exception as e:
+                    logger.warning(f"Error shutting down LSP server '{server_name}' before restart: {e}")
+            
+            try:
+                client.process.terminate()
+                await client.process.wait()
+            except Exception as e:
+                logger.warning(f"Error terminating LSP server '{server_name}' before restart: {e}")
+        
+        # Clean up old client
+        if server_name in self.clients:
+            del self.clients[server_name]
+        if server_name in self.handles:
+            del self.handles[server_name]
+        
+        # Start a new instance
+        await self.start_server(server_name)
 
     # FIXME: if you analyze caller recursively, this is finally unused method. should be removed.
     async def stop_server(self, server_name: str) -> None:
@@ -128,7 +166,6 @@ class LSPClientManager:
         logger.info(f"Stopping LSP server: {server_name}")
 
         client = self.clients[server_name]
-        handle = self.handles[server_name]
 
         try:
             await client.shutdown()
@@ -156,13 +193,13 @@ class LSPClientManager:
 
         # Auto-detect server if not specified
         if server_name is None:
-            server_name = self._detect_server_for_file(file_path)
+            server_name = self.detector.detect_server_for_file(file_path)
             if server_name is None:
                 logger.debug(f"No LSP server configured for file: {file_path}")
                 return []
 
+        # Start server (this will restart if it has exited)
         client = await self.start_server(server_name)
-        handle = self.handles[server_name]
 
         uri = file_path.as_uri()
         text = file_path.read_text()
@@ -187,18 +224,6 @@ class LSPClientManager:
         diagnostics = await client.document_diagnostics(uri)
         return diagnostics if isinstance(diagnostics, list) else []
 
-    # FIXME: unused method. should be removed.
-    def get_diagnostics_for_file(self, file_path: Path) -> DiagnosticsList:
-        """Get diagnostics for a file from any LSP client that has them."""
-        uri = file_path.as_uri()
-
-        # Check all clients for diagnostics
-        for client in self.clients.values():
-            if uri in client.diagnostics:
-                return client.diagnostics[uri]
-
-        return []
-
     # FIXME: if you analyze caller recursively, this is finally unused method. should be removed.
     async def stop_all_servers(self) -> None:
         for server_name in list(self.clients.keys()):
@@ -212,27 +237,6 @@ class LSPClientManager:
             "deno": "typescript",
         }
         return language_map.get(server_class.name, "text")
-
-    def _detect_server_for_file(self, file_path: Path) -> str | None:
-        # Try to match with configured servers first
-        if self.config:
-            for server_name, server_config in self.config.items():
-                if server_config.file_patterns:
-                    for pattern in server_config.file_patterns:
-                        if pattern.startswith("*") and pattern.endswith("*"):
-                            # Handle patterns like *.py
-                            if file_path.suffix.lower() == pattern[1:-1].lower():
-                                return server_name
-                        elif pattern.startswith("*"):
-                            # Handle patterns like *.py
-                            if file_path.suffix.lower() == pattern[1:].lower():
-                                return server_name
-                else:
-                    # Server handles all files
-                    return server_name
-
-        # Fallback to built-in servers via registry
-        return LSPServerRegistry.detect_server_for_file(file_path)
 
 # FIXME: these are not needed anymore because LSPClientManager is not Singleton anymore.
 # Singleton helper function

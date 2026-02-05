@@ -53,35 +53,11 @@ class PyrightInstaller(LSPServerInstaller):
         return True
 
     def is_installed(self) -> bool:
-        # Check if pyright-langserver is in PATH
-        try:
-            result = subprocess.run(
-                ["which", "pyright-langserver"],
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode == 0:
-                return True
-        except FileNotFoundError:
-            pass
-
-        # Check if installed via npm
+        # Check if installed in ~/.vibe/lsp/pyright
         exec_path = self.get_executable_path()
         return exec_path is not None and exec_path.exists()
 
     def get_executable_path(self) -> Path | None:
-        # Check if pyright-langserver is in PATH
-        try:
-            result = subprocess.run(
-                ["which", "pyright-langserver"],
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode == 0:
-                return Path(result.stdout.strip())
-        except FileNotFoundError:
-            pass
-
         # Check if installed via npm
         node_modules = self.install_dir / "node_modules"
         if node_modules.exists():
