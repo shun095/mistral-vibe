@@ -87,28 +87,28 @@ async def test_lsp_diagnostic_formatting():
 @pytest.mark.asyncio
 async def test_lsp_file_extension_detection():
     """Test LSP server detection based on file extensions."""
-    from vibe.core.lsp.client_manager import LSPClientManager
+    from vibe.core.lsp.detector import LSPServerDetector
 
-    manager = LSPClientManager()
+    detector = LSPServerDetector()
 
     # Test Python file
     py_file = Path("test.py")
-    server = manager._detect_server_for_file(py_file)
+    server = detector.detect_server_for_file(py_file)
     assert server == "pyright"
 
     # Test TypeScript file
     ts_file = Path("test.ts")
-    server = manager._detect_server_for_file(ts_file)
+    server = detector.detect_server_for_file(ts_file)
     assert server == "typescript"
 
     # Test JavaScript file
     js_file = Path("test.js")
-    server = manager._detect_server_for_file(js_file)
+    server = detector.detect_server_for_file(js_file)
     assert server == "typescript"
 
     # Test unknown file type
     txt_file = Path("test.txt")
-    server = manager._detect_server_for_file(txt_file)
+    server = detector.detect_server_for_file(txt_file)
     assert server is None
 
 
@@ -147,8 +147,8 @@ async def test_lsp_with_custom_config_patterns(tmp_path: Path):
     manager = LSPClientManager(config)
 
     # Test detection
-    assert manager._detect_server_for_file(test_py) == "pyright"
-    assert manager._detect_server_for_file(test_txt) == "custom"
+    assert manager.detector.detect_server_for_file(test_py) == "pyright"
+    assert manager.detector.detect_server_for_file(test_txt) == "custom"
 
 
 @pytest.mark.asyncio
