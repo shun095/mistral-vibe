@@ -111,6 +111,7 @@ class LSP(BaseTool[LSPToolArgs, LSPToolResult, LSPToolConfig, LSPToolState], Too
                     return
 
             # Get diagnostics from LSP server
+            # This will automatically restart the server if it has exited
             diagnostics = await client_manager.get_diagnostics(args.server_name, args.file_path)
 
             # FIXME: should use LSPDiagnosticFormatter directly.
