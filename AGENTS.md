@@ -213,6 +213,7 @@ guidelines:
     - Use pilot.press() for UI test if necessary
     - Do NOT assert internal behavior like private field
     - Do NOT place textual_ui things in acp directory. The opposite is also prohibited.
+  - **IMPORTANT**: NEVER rely on the new code in `git status` or `git diff` as your existing coding style. Only committed code is a reliable reference for your existing coding style.
 
 **You MUST pass all pyright check**
 - You MUST solve all errors of `uv run pyright` command. You will maintain this codebase very long. The dirtiness of the code will make confused in the future.
@@ -227,7 +228,7 @@ guidelines:
 #### **1. Unit Tests (MANDATORY FOR ALL CODE)**
 - All Python code changes MUST pass all existing pytest tests
 - Run `uv run pytest` before claiming completion
-- Fix any failing tests
+- Fix any failing tests related to the task
 
 #### **2. UI Tests (MANDATORY FOR UI CHANGES)**
 - All UI changes MUST be tested with `terminalcp_terminalcp`
