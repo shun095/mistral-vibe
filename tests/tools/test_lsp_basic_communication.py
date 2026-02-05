@@ -8,6 +8,7 @@ from vibe.core.lsp import LSPClientManager
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(30)
 async def test_pyright_server_process_starts():
     """Test that pyright server process can be started."""
     manager = LSPClientManager()
@@ -23,14 +24,13 @@ async def test_pyright_server_process_starts():
         assert client.process.stdin is not None, "stdin should be available"
         assert client.process.stdout is not None, "stdout should be available"
         
-        print("✓ Pyright server process started successfully")
-        
     finally:
         # Clean up
         await manager.stop_all_servers()
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(30)
 async def test_pyright_server_initialization_response():
     """Test that pyright server responds to initialization."""
     manager = LSPClientManager()
@@ -47,14 +47,13 @@ async def test_pyright_server_initialization_response():
         assert isinstance(response, dict)
         assert "capabilities" in response
         
-        print(f"✓ Pyright server initialized with capabilities: {list(response['capabilities'].keys())}")
-        
     finally:
         # Clean up
         await manager.stop_all_servers()
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(30)
 async def test_pyright_server_document_notifications():
     """Test that pyright server accepts document notifications."""
     manager = LSPClientManager()
@@ -74,38 +73,10 @@ async def test_pyright_server_document_notifications():
         await client.text_document_did_change(uri, text)
         await client.text_document_did_save(uri)
         
-        print("✓ Pyright server accepted document notifications")
-        
     finally:
         # Clean up
         await manager.stop_all_servers()
         test_file.unlink(missing_ok=True)
 
 
-if __name__ == "__main__":
-    import sys
-    
-    async def main():
-        print("Running simple LSP communication tests...\n")
-        
-        try:
-            await test_pyright_server_process_starts()
-            print()
-            
-            await test_pyright_server_initialization_response()
-            print()
-            
-            await test_pyright_server_document_notifications()
-            print()
-            
-            print("=" * 60)
-            print("All simple LSP communication tests passed!")
-            print("=" * 60)
-            
-        except Exception as e:
-            print(f"Test failed: {e}")
-            import traceback
-            traceback.print_exc()
-            sys.exit(1)
-    
-    asyncio.run(main())
+

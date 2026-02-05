@@ -145,10 +145,6 @@ class TestMCPToolManagerCaching:
             manager3 = ToolManager(lambda: config3)
             hash3 = manager3._get_mcp_config_hash()
 
-            print(f"Hash1: {hash1}")
-            print(f"Hash2: {hash2}")
-            print(f"Hash3: {hash3}")
-
             assert hash1 != hash2, f"Hashes should be different but got hash1={hash1}, hash2={hash2}"
             assert hash1 != hash3, f"Hashes should be different but got hash1={hash1}, hash3={hash3}"
             assert hash2 != hash3, f"Hashes should be different but got hash2={hash2}, hash3={hash3}"

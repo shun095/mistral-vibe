@@ -16,14 +16,10 @@ from vibe.core.lsp import LSPClientManager, LSPDiagnosticFormatter
 @pytest.fixture(autouse=True)
 def clear_lsp_state():
     """Clear LSP client manager state before each test to avoid sharing servers."""
-    print("\n=== Clearing LSP state ===")
     # Clear class-level state
     LSPClientManager._clients.clear()
     LSPClientManager._handles.clear()
     LSPClientManager._config.clear()
-    print(f"Clients after clear: {LSPClientManager._clients}")
-    print(f"Handles after clear: {LSPClientManager._handles}")
-    print(f"Config after clear: {LSPClientManager._config}")
     yield
 
 
@@ -58,7 +54,6 @@ async def test_write_file_calls_lsp_diagnostics():
                 result = item
             
             # Verify LSP was called
-            print(f"Mock get_diagnostics called: {mock_get_diagnostics.called}")
             assert mock_get_diagnostics.called, "get_diagnostics should have been called"
             mock_get_diagnostics.assert_called_once_with(file_path=test_file)
             
