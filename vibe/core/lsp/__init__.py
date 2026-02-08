@@ -11,8 +11,8 @@ from vibe.core.lsp.server import LSPServer, LSPServerRegistry
 from vibe.core.lsp.types import LSPDiagnostic, LSPRange, LSPServerHandle
 from vibe.core.lsp.installer import LSPServerInstaller
 from vibe.core.lsp.installer_factory import LSPServerInstallerFactory
-from vibe.core.lsp.installers import DenoLSPInstaller, PyrightInstaller, TypeScriptLSPInstaller
-from vibe.core.lsp.builtins import DenoLSP, PyrightLSP, TypeScriptLSP  # noqa: F401
+from vibe.core.lsp.installers import DenoLSPInstaller, PyrightInstaller, RuffLSPInstaller, TypeScriptLSPInstaller
+from vibe.core.lsp.builtins import DenoLSP, PyrightLSP, RuffLSP, TypeScriptLSP  # noqa: F401
 
 __all__ = [
     "LSPClient",
@@ -29,5 +29,6 @@ __all__ = [
     "LSPServerInstallerFactory",
     "PyrightInstaller",
     "TypeScriptLSPInstaller",
+    "RuffLSPInstaller",
     "DenoLSPInstaller",
 ]

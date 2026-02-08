@@ -119,6 +119,11 @@ class LSPClientManager:
         initialization = await client.initialize(init_params)
         await client.initialized()
 
+        # Send workspace configuration if available
+        # Some servers (like ruff) need this before sending diagnostics
+        if "settings" in init_params:
+            await client.workspace_did_change_configuration(init_params["settings"])
+
         self.clients[server_name] = client
         self.handles[server_name] = {
             "process": process,
@@ -184,45 +189,73 @@ class LSPClientManager:
 
         logger.info(f"LSP server '{server_name}' stopped")
 
-    # FIXME: file_path argument which is required should come at the first. server_name is optional.
-    # FIXME: should be able to retrive all diagnostics from multiple servers for same file_path. considering ruff + pyright etc.
-    async def get_diagnostics(self, server_name: str | None = None, file_path: Path | None = None) -> DiagnosticsList:
-        # Get diagnostics from LSP server
+
+
+    async def get_diagnostics_from_all_servers(self, file_path: Path) -> DiagnosticsList:
+        """Get diagnostics from all applicable LSP servers for a file.
+        
+        This method retrieves diagnostics from all servers that can handle
+        the file (e.g., both pyright and ruff for Python files) and combines
+        them into a single list.
+        
+        Args:
+            file_path: Path to the file to analyze
+            
+        Returns:
+            Combined list of diagnostics from all applicable servers
+        """
         if file_path is None:
             raise ValueError("file_path is required")
-
-        # Auto-detect server if not specified
-        if server_name is None:
-            server_name = self.detector.detect_server_for_file(file_path)
-            if server_name is None:
-                logger.debug(f"No LSP server configured for file: {file_path}")
-                return []
-
-        # Start server (this will restart if it has exited)
-        client = await self.start_server(server_name)
-
-        uri = file_path.as_uri()
-        text = file_path.read_text()
-
-        # Get the language ID from the server class
-        server_class = LSPServerRegistry.get_server(server_name)
-        if server_class is None:
-            raise ValueError(f"LSP server '{server_name}' not found")
-
-        # FIXME: language id should be calculated by filetype extension and mime instead of server class name.
-        #        This line should be like: language_id = self._get_language_id(file_path)
-        language_id = self._get_language_id(server_class)
-
-        # Notify the server about the document
-        await client.text_document_did_open(uri, text, language_id)
-        await client.text_document_did_change(uri, text)
-        await client.text_document_did_save(uri)
-
-        # Try to get diagnostics synchronously using documentDiagnostic
-        # or wait for publishDiagnostics notifications
-        # document_diagnostics already handles the fallback to publishDiagnostics
-        diagnostics = await client.document_diagnostics(uri)
-        return diagnostics if isinstance(diagnostics, list) else []
+        
+        if not file_path.exists():
+            logger.debug(f"File does not exist: {file_path}")
+            return []
+        
+        # Get all applicable servers for this file
+        server_names = self.detector.get_all_servers_for_file(file_path)
+        
+        if not server_names:
+            logger.debug(f"No LSP servers configured for file: {file_path}")
+            return []
+        
+        all_diagnostics: DiagnosticsList = []
+        
+        for server_name in server_names:
+            try:
+                # Start server (this will restart if it has exited)
+                client = await self.start_server(server_name)
+                
+                uri = file_path.as_uri()
+                text = file_path.read_text()
+                
+                # Get the language ID from the server class
+                server_class = LSPServerRegistry.get_server(server_name)
+                if server_class is None:
+                    logger.warning(f"LSP server '{server_name}' not found")
+                    continue
+                
+                language_id = self._get_language_id(server_class)
+                
+                # Notify the server about the document
+                await client.text_document_did_open(uri, text, language_id)
+                await client.text_document_did_change(uri, text)
+                await client.text_document_did_save(uri)
+                
+                # Get diagnostics from this server
+                diagnostics = await client.document_diagnostics(uri)
+                
+                # Add source information to each diagnostic
+                if isinstance(diagnostics, list):
+                    for diagnostic in diagnostics:
+                        if "source" not in diagnostic:
+                            diagnostic["source"] = server_name
+                    all_diagnostics.extend(diagnostics)
+                
+            except Exception as e:
+                logger.warning(f"Error getting diagnostics from server '{server_name}' for file '{file_path}': {e}")
+                continue
+        
+        return all_diagnostics
 
     # FIXME: if you analyze caller recursively, this is finally unused method. should be removed.
     async def stop_all_servers(self) -> None:
@@ -234,6 +267,7 @@ class LSPClientManager:
         language_map = {
             "typescript": "typescript",
             "pyright": "python",
+            "ruff": "python",
             "deno": "typescript",
         }
         return language_map.get(server_class.name, "text")
