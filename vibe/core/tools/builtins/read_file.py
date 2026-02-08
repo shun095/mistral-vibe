@@ -91,7 +91,7 @@ class ReadFile(
         lsp_diagnostics = None
         try:
             client_manager = LSPClientManager()
-            diagnostics = await client_manager.get_diagnostics(file_path=file_path)
+            diagnostics = await client_manager.get_diagnostics_from_all_servers(file_path)
             
             # Format diagnostics for LLM consumption if available
             if diagnostics:
