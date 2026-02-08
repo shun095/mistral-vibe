@@ -737,20 +737,21 @@ class TestIntegration:
                 return mock_client
 
             with patch.object(manager, 'start_server', side_effect=mock_start_server):
-                # Call get_diagnostics which should trigger the notifications
-                diagnostics = await manager.get_diagnostics(
-                    server_name="pyright",
-                    file_path=temp_file
-                )
+                # Call get_diagnostics_from_all_servers which should trigger the notifications
+                diagnostics = await manager.get_diagnostics_from_all_servers(temp_file)
 
                 # Verify diagnostics were retrieved
-                assert len(diagnostics) == 1
-                assert diagnostics[0]["message"] == "Test error"
+                # For Python files, both pyright and ruff servers are tried,
+                # but they return the same mock diagnostic
+                assert len(diagnostics) == 2
+                assert all(d["message"] == "Test error" for d in diagnostics)
 
                 # Verify all mandatory notifications were called
-                mock_client.text_document_did_open.assert_called_once()
-                mock_client.text_document_did_change.assert_called_once()
-                mock_client.text_document_did_save.assert_called_once()
+                # For Python files, both pyright and ruff servers are tried,
+                # so notifications are called twice
+                assert mock_client.text_document_did_open.call_count == 2
+                assert mock_client.text_document_did_change.call_count == 2
+                assert mock_client.text_document_did_save.call_count == 2
                 mock_client.text_document_did_close.assert_not_called()
 
         finally:

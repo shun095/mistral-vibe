@@ -40,10 +40,10 @@ async def test_write_file_calls_lsp_diagnostics():
         state = WriteFileState()
         tool = WriteFile(config, state)
         
-        # Mock get_diagnostics to return empty list
+        # Mock get_diagnostics_from_all_servers to return empty list
         mock_get_diagnostics = AsyncMock(return_value=[])
         
-        with patch.object(LSPClientManager, 'get_diagnostics', new=mock_get_diagnostics):
+        with patch.object(LSPClientManager, 'get_diagnostics_from_all_servers', new=mock_get_diagnostics):
             # Run WriteFile
             result = None
             async for item in tool.run(WriteFileArgs(
@@ -54,8 +54,8 @@ async def test_write_file_calls_lsp_diagnostics():
                 result = item
             
             # Verify LSP was called
-            assert mock_get_diagnostics.called, "get_diagnostics should have been called"
-            mock_get_diagnostics.assert_called_once_with(file_path=test_file)
+            assert mock_get_diagnostics.called, "get_diagnostics_from_all_servers should have been called"
+            mock_get_diagnostics.assert_called_once_with(test_file)
             
             # Verify result has lsp_diagnostics field
             assert hasattr(result, 'lsp_diagnostics')
@@ -108,10 +108,10 @@ async def test_search_replace_calls_lsp_diagnostics(tmp_path: Path):
     state = SearchReplaceState()
     tool = SearchReplace(config, state)
     
-    # Mock get_diagnostics to return empty list
+    # Mock get_diagnostics_from_all_servers to return empty list
     mock_get_diagnostics = AsyncMock(return_value=[])
     
-    with patch.object(LSPClientManager, 'get_diagnostics', new=mock_get_diagnostics):
+    with patch.object(LSPClientManager, 'get_diagnostics_from_all_servers', new=mock_get_diagnostics):
         # Run SearchReplace
         result = None
         async for item in tool.run(SearchReplaceArgs(
@@ -128,7 +128,7 @@ def hello():
         
         # Verify LSP was called
         assert mock_get_diagnostics.called
-        mock_get_diagnostics.assert_called_once_with(file_path=test_file)
+        mock_get_diagnostics.assert_called_once_with(test_file)
 
 
 @pytest.mark.asyncio
@@ -173,10 +173,10 @@ async def test_lsp_diagnostics_dont_break_file_operations():
         test_file = Path(temp_dir) / "test.py"
         test_file.write_text("def hello():\n    return 'world'\n")
         
-        # Mock get_diagnostics to raise an exception
+        # Mock get_diagnostics_from_all_servers to raise an exception
         mock_get_diagnostics = AsyncMock(side_effect=Exception("LSP server error"))
         
-        with patch.object(LSPClientManager, 'get_diagnostics', new=mock_get_diagnostics):
+        with patch.object(LSPClientManager, 'get_diagnostics_from_all_servers', new=mock_get_diagnostics):
             # Run WriteFile - should succeed even with LSP error
             result = None
             async for item in tool.run(WriteFileArgs(
