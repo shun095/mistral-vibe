@@ -159,6 +159,8 @@ def _get_default_denylist() -> list[str]:
             "dash -i",
             "screen",
             "tmux",
+            "git checkout",
+            "git reset --hard",
         ]
 
 

@@ -102,13 +102,10 @@ class LSPClient:
                     "tagSupport": {"valueSet": [1, 2]},
                     "codeDescriptionSupport": True,
                     "dataSupport": True
-                },
-                "diagnostic": {
-                    "dynamicRegistration": False,
-                    "documentDiagnostic": True,
-                    "reportRelatedInformation": True,
-                    "workspaceDiagnostics": False
                 }
+                # Note: We intentionally do NOT include the "diagnostic" capability
+                # to ensure servers send push diagnostics via publishDiagnostics
+                # instead of requiring us to pull them via documentDiagnostic
             }
         }
         
@@ -124,6 +121,19 @@ class LSPClient:
     async def initialized(self) -> None:
         await self.send_notification("initialized", {})
 
+    async def workspace_did_change_configuration(self, settings: dict[str, Any]) -> None:
+        """Send workspace/didChangeConfiguration notification.
+        
+        Some LSP servers (like ruff) require this notification to be sent
+        with workspace settings before they will start sending diagnostics.
+        
+        Args:
+            settings: Workspace settings to send to the server
+        """
+        await self.send_notification("workspace/didChangeConfiguration", {
+            "settings": settings
+        })
+
     async def shutdown(self) -> LSPResponse:
         return await self.send_request("shutdown")
 
@@ -132,6 +142,8 @@ class LSPClient:
 
     async def text_document_did_open(self, uri: str, text: str, language_id: str) -> None:
         logger.debug(f"Opening document: {uri} (language: {language_id})")
+        # Reset diagnostics_refreshed to indicate we're waiting for fresh diagnostics
+        self.diagnostics_refreshed[uri] = None
         await self.send_notification("textDocument/didOpen", {
             "textDocument": {
                 "uri": uri,
@@ -186,8 +198,10 @@ class LSPClient:
             })
             return result if isinstance(result, list) else [result]
         except Exception as e:
-            # If the server doesn't support documentDiagnostic (like pyright),
-            if "Unhandled method" in str(e):
+            # If the server doesn't support documentDiagnostic (like pyright, ruff),
+            # check for both "Unhandled method" and "Unknown request" errors
+            error_msg = str(e)
+            if "Unhandled method" in error_msg or "Unknown request" in error_msg:
                 # Wait for publishDiagnostics notifications with timeout
                 await asyncio.sleep(3.0)
                 return await self._wait_for_publish_diagnostics(uri, timeout=1.0)
