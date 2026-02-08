@@ -165,7 +165,7 @@ class SearchReplace(
             # Automatically check for LSP diagnostics after modification
             try:
                 client_manager = LSPClientManager()
-                diagnostics_list = await client_manager.get_diagnostics(file_path=file_path)
+                diagnostics_list = await client_manager.get_diagnostics_from_all_servers(file_path)
                 
                 # Format diagnostics for LLM consumption if available
                 if diagnostics_list:

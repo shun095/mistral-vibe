@@ -76,10 +76,7 @@ print(undefined_variable)
         client = await manager.start_server("pyright")
         
         # Get diagnostics for the file
-        diagnostics = await manager.get_diagnostics(
-            server_name="pyright",
-            file_path=test_file
-        )
+        diagnostics = await manager.get_diagnostics_from_all_servers(test_file)
         
         # Verify we got some diagnostics (pyright should find the errors)
         # Note: pyright may take a moment to analyze
@@ -156,10 +153,7 @@ print(result)
         client = await manager.start_server("pyright")
         
         # Get diagnostics for the file
-        diagnostics = await manager.get_diagnostics(
-            server_name="pyright",
-            file_path=test_file
-        )
+        diagnostics = await manager.get_diagnostics_from_all_servers(test_file)
         
         # For valid code, we should get no errors or warnings
         # (pyright might still report informational messages)
