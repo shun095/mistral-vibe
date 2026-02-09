@@ -548,6 +548,8 @@ class AgentLoop:
 
             try:
                 tool_instance = self.tool_manager.get(tool_call.tool_name)
+                from vibe.core.utils import logger
+                logger.debug(f"Tool instance: {vars(tool_instance)}")
             except Exception as exc:
                 error_msg = f"Error getting tool '{tool_call.tool_name}': {exc}"
                 yield ToolResultEvent(
@@ -811,9 +813,8 @@ class AgentLoop:
     async def _should_execute_tool(
         self, tool: BaseTool, args: BaseModel, tool_call_id: str
     ) -> ToolDecision:
-        if self.auto_approve:
-            return ToolDecision(verdict=ToolExecutionResponse.EXECUTE)
-
+        # Always check denylist first for security-critical operations
+        # This ensures dangerous commands are blocked even in auto-approve mode
         allowlist_denylist_result = tool.check_allowlist_denylist(args)
         if allowlist_denylist_result == ToolPermission.ALWAYS:
             return ToolDecision(verdict=ToolExecutionResponse.EXECUTE)
@@ -824,6 +825,10 @@ class AgentLoop:
                 verdict=ToolExecutionResponse.SKIP,
                 feedback=f"Tool '{tool.get_name()}' blocked by denylist: [{denylist_str}]",
             )
+
+        # Auto-approve mode bypasses user prompts but respects denylist
+        if self.auto_approve:
+            return ToolDecision(verdict=ToolExecutionResponse.EXECUTE)
 
         tool_name = tool.get_name()
         perm = self.tool_manager.get_tool_config(tool_name).permission

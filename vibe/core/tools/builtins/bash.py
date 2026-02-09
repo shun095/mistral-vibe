@@ -304,6 +304,9 @@ class Bash(
         timeout = args.timeout or self.config.default_timeout
         max_bytes = self.config.max_output_bytes
 
+        from vibe.core.utils import logger
+        logger.debug(f"Config: {self.config}")
+
         proc = None
         try:
             # start_new_session is Unix-only, on Windows it's ignored
