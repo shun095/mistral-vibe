@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 from vibe.core.lsp.installer import LSPServerInstaller
+from vibe.core.lsp.mason_paths import MasonPaths
 from vibe.core.paths.global_paths import VIBE_HOME
 
 logger = logging.getLogger(__name__)
@@ -83,7 +84,11 @@ class RuffLSPInstaller(LSPServerInstaller):
         exec_path = self.get_executable_path()
         return exec_path is not None and exec_path.exists()
 
-    def get_executable_path(self) -> Path | None:
+    def get_executable_path_from_mason(self) -> Path | None:
+        # Look for ruff executable in Mason packages
+        return MasonPaths.find_ruff_in_mason()
+
+    def _get_default_executable_path(self) -> Path | None:
         # First check if ruff is available in PATH
         try:
             result = subprocess.run(
@@ -103,7 +108,7 @@ class RuffLSPInstaller(LSPServerInstaller):
         ruff_exe = venv_dir / "bin" / "ruff"
         if ruff_exe.exists():
             return ruff_exe
-
+        
         # Check for Windows
         ruff_exe_win = venv_dir / "Scripts" / "ruff.exe"
         if ruff_exe_win.exists():
