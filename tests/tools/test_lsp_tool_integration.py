@@ -215,7 +215,7 @@ async def test_lsp_diagnostics_limited_to_20(tmp_path: Path):
     
     formatted = LSPDiagnosticFormatter.format_diagnostics_for_llm(diagnostics)
     
-    # Should only include first 20
+    # Should only include first 10
     assert "Error 0" in formatted
-    assert "Error 19" in formatted
-    assert "Error 20" not in formatted  # Should be cut off
+    assert "Error 9" in formatted
+    assert "Error 10" not in formatted  # Should be cut off

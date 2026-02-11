@@ -72,10 +72,10 @@ class LSP(BaseTool[LSPToolArgs, LSPToolResult, LSPToolConfig, LSPToolState], Too
         if warnings:
             message_parts.append(f"{len(warnings)} warning(s)")
 
-        if len(diagnostics) <= 20:
+        if len(diagnostics) <= 10:
             message = f"Found {len(diagnostics)} issue(s)"
         else:
-            message = f"Found {len(diagnostics)} issue(s) (showing first 20)"
+            message = f"Found {len(diagnostics)} issue(s) (showing first 10)"
 
         return ToolResultDisplay(
             success=len(errors) == 0,
@@ -163,5 +163,5 @@ class LSP(BaseTool[LSPToolArgs, LSPToolResult, LSPToolConfig, LSPToolState], Too
     def _format_diagnostics(self, diagnostics: list[dict[str, Any]]) -> str:
         # Use the formatter for consistent output
         return LSPDiagnosticFormatter.format_diagnostics_for_llm(
-            diagnostics, max_diagnostics=20
+            diagnostics, max_diagnostics=10
         )

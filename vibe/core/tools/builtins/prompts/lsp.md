@@ -23,7 +23,7 @@ The LSP tool automatically:
 3. Opens and analyzes the file
 4. Returns diagnostics (errors, warnings, etc.)
 5. Formats diagnostics in a readable format
-6. Limits output to 20 diagnostics to avoid overwhelming the user
+6. Limits output to 10 diagnostics to avoid overwhelming the user
 
 ## Integration with File Operations
 
