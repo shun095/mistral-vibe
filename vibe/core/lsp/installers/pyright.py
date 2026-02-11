@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 from vibe.core.lsp.installer import LSPServerInstaller
+from vibe.core.lsp.mason_paths import MasonPaths
 from vibe.core.paths.global_paths import VIBE_HOME
 
 logger = logging.getLogger(__name__)
@@ -52,12 +53,11 @@ class PyrightInstaller(LSPServerInstaller):
         logger.info("pyright installed successfully")
         return True
 
-    def is_installed(self) -> bool:
-        # Check if installed in ~/.vibe/lsp/pyright
-        exec_path = self.get_executable_path()
-        return exec_path is not None and exec_path.exists()
+    def get_executable_path_from_mason(self) -> Path | None:
+        # Look for pyright-langserver.js in Mason packages
+        return MasonPaths.find_pyright_in_mason()
 
-    def get_executable_path(self) -> Path | None:
+    def _get_default_executable_path(self) -> Path | None:
         # Check if installed via npm
         node_modules = self.install_dir / "node_modules"
         if node_modules.exists():
@@ -66,3 +66,8 @@ class PyrightInstaller(LSPServerInstaller):
                 return pyright_js
 
         return None
+
+    def is_installed(self) -> bool:
+        # Check if installed in ~/.vibe/lsp/pyright
+        exec_path = self.get_executable_path()
+        return exec_path is not None and exec_path.exists()
