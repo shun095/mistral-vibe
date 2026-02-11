@@ -151,6 +151,7 @@ class VibeApp(App):  # noqa: PLR0904
         self._loading_widget: LoadingWidget | None = None
         self._pending_approval: asyncio.Future | None = None
         self._pending_question: asyncio.Future | None = None
+        self._queued_message: str | None = None
 
         self.event_handler: EventHandler | None = None
         self.commands = CommandRegistry()
@@ -266,6 +267,23 @@ class VibeApp(App):  # noqa: PLR0904
 
         input_widget = self.query_one(ChatInputContainer)
         input_widget.value = ""
+
+        # Queue message during compaction without interrupting it
+        if self.event_handler and self.event_handler.current_compact:
+            # If there's already a queued message, update it
+            if self._queued_message is not None:
+                self._queued_message = value
+                # Show notification that message is updated
+                await self._mount_and_scroll(
+                    UserMessage(f"Queued message updated: {value[:50]}{'...' if len(value) > 50 else ''}")
+                )
+            else:
+                self._queued_message = value
+                # Show notification that message is queued
+                await self._mount_and_scroll(
+                    UserMessage(f"Message queued: {value[:50]}{'...' if len(value) > 50 else ''}")
+                )
+            return
 
         if self._agent_running:
             await self._interrupt_agent_loop()
@@ -415,11 +433,20 @@ class VibeApp(App):  # noqa: PLR0904
             return
 
         if compact_index == 0:
+            # Process queued message after compaction ends
+            if self._queued_message:
+                await self._handle_user_message(self._queued_message)
+                self._queued_message = None
             return
 
         with self.batch_update():
             for widget in children[:compact_index]:
                 await widget.remove()
+
+        # Process queued message after compaction ends
+        if self._queued_message:
+            await self._handle_user_message(self._queued_message)
+            self._queued_message = None
 
     def _set_tool_permission_always(
         self, tool_name: str, save_permanently: bool = False
@@ -1028,6 +1055,19 @@ Enhanced prompt:"""
                 question_app.action_cancel()
             except Exception:
                 pass
+            self._last_escape_time = None
+            return
+
+        # Handle ESC key for queued message during compaction
+        if (
+            self._current_bottom_app == BottomApp.Input
+            and self._queued_message is not None
+            and self.event_handler
+            and self.event_handler.current_compact
+        ):
+            # Clear the queued message
+            self._queued_message = None
+            self.run_worker(self._mount_and_scroll(ErrorMessage("Queued message cleared")), exclusive=False)
             self._last_escape_time = None
             return
 
