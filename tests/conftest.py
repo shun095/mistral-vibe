@@ -80,3 +80,33 @@ def _mock_platform(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture(autouse=True)
 def _mock_update_commands(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("vibe.cli.update_notifier.update.UPDATE_COMMANDS", ["true"])
+
+
+@pytest.fixture(autouse=True)
+def _cleanup_lsp_client_manager() -> None:
+    """Clean up LSPClientManager state between tests.
+    
+    This fixture ensures that the class-level state of LSPClientManager
+    is reset between tests to prevent test pollution.
+    """
+    from vibe.core.lsp.client_manager import LSPClientManager
+    
+    # Store the current state
+    clients_before = LSPClientManager._clients.copy()
+    handles_before = LSPClientManager._handles.copy()
+    config_before = LSPClientManager._config.copy()
+    
+    yield
+    
+    # Clean up any clients that were created during the test
+    for server_name in list(LSPClientManager._clients.keys()):
+        if server_name not in clients_before:
+            del LSPClientManager._clients[server_name]
+    
+    for server_name in list(LSPClientManager._handles.keys()):
+        if server_name not in handles_before:
+            del LSPClientManager._handles[server_name]
+    
+    for server_name in list(LSPClientManager._config.keys()):
+        if server_name not in config_before:
+            del LSPClientManager._config[server_name]

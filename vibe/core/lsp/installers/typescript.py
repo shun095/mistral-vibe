@@ -6,6 +6,7 @@ from logging import getLogger
 from pathlib import Path
 
 from vibe.core.lsp.installer import LSPServerInstaller
+from vibe.core.lsp.mason_paths import MasonPaths
 
 logger = getLogger("vibe")
 
@@ -51,12 +52,11 @@ class TypeScriptLSPInstaller(LSPServerInstaller):
         logger.info("typescript-language-server and typescript installed successfully")
         return True
 
-    def is_installed(self) -> bool:
-        # Check if installed in ~/.vibe/lsp/typescript
-        exec_path = self.get_executable_path()
-        return exec_path is not None and exec_path.exists()
+    def get_executable_path_from_mason(self) -> Path | None:
+        # Look for typescript-language-server in Mason packages
+        return MasonPaths.find_typescript_in_mason()
 
-    def get_executable_path(self) -> Path | None:
+    def _get_default_executable_path(self) -> Path | None:
         # Check if installed via npm
         node_modules = self.install_dir / "node_modules"
         if node_modules.exists():
@@ -76,3 +76,8 @@ class TypeScriptLSPInstaller(LSPServerInstaller):
                 return main_js
 
         return None
+
+    def is_installed(self) -> bool:
+        # Check if installed in ~/.vibe/lsp/typescript
+        exec_path = self.get_executable_path()
+        return exec_path is not None and exec_path.exists()

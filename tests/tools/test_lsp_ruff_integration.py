@@ -75,22 +75,28 @@ async def test_ruff_lsp_installer():
     """Test Ruff LSP installer functionality."""
     installer = RuffLSPInstaller()
     
-    # Test get_executable_path when ruff is not installed
-    with patch('subprocess.run') as mock_run:
+    # Test get_executable_path when ruff is not installed and not in Mason
+    with patch('subprocess.run') as mock_run, \
+         patch('vibe.core.lsp.mason_paths.MasonPaths.find_ruff_in_mason') as mock_mason:
         mock_run.return_value.returncode = 1
+        mock_mason.return_value = None
         result = installer.get_executable_path()
         assert result is None
     
     # Test get_executable_path when ruff is in PATH
-    with patch('subprocess.run') as mock_run:
+    with patch('subprocess.run') as mock_run, \
+         patch('vibe.core.lsp.mason_paths.MasonPaths.find_ruff_in_mason') as mock_mason:
         mock_run.return_value.returncode = 0
         mock_run.return_value.stdout = "/usr/bin/ruff\n"
+        mock_mason.return_value = None
         result = installer.get_executable_path()
         assert result == Path("/usr/bin/ruff")
     
     # Test get_executable_path when ruff is in virtual environment
-    with patch('subprocess.run') as mock_run:
+    with patch('subprocess.run') as mock_run, \
+         patch('vibe.core.lsp.mason_paths.MasonPaths.find_ruff_in_mason') as mock_mason:
         mock_run.return_value.returncode = 1  # Not in PATH
+        mock_mason.return_value = None  # Not in Mason
         with patch.object(installer, 'install_dir', Path("/tmp/test_install")):
             venv_dir = installer.install_dir / ".venv" / "bin"
             venv_dir.mkdir(parents=True, exist_ok=True)
