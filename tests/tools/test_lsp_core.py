@@ -169,14 +169,14 @@ async def test_lsp_diagnostic_limiting():
         for i in range(30)
     ]
 
-    # Format with default limit (20)
+    # Format with default limit (10)
     formatted = LSPDiagnosticFormatter.format_diagnostics_for_llm(diagnostics)
 
-    # Should only include first 20
+    # Should only include first 10
     assert "Error 0" in formatted
-    assert "Error 19" in formatted
-    assert "Error 20" not in formatted
-    assert "...and 10 more issue(s)" in formatted
+    assert "Error 9" in formatted
+    assert "Error 10" not in formatted
+    assert "...and 20 more issue(s)" in formatted
 
 
 @pytest.mark.asyncio
