@@ -9,7 +9,7 @@ class LSPDiagnosticFormatter:
     def format_diagnostics(
         diagnostics: list[dict[str, Any]],
         file_path: Path | None = None,
-        max_diagnostics: int = 20,
+        max_diagnostics: int = 10,
     ) -> str:
         """Format LSP diagnostics for display.
         
@@ -74,7 +74,7 @@ class LSPDiagnosticFormatter:
     def format_diagnostics_for_llm(
         diagnostics: list[dict[str, Any]],
         file_path: Path | None = None,
-        max_diagnostics: int = 20,
+        max_diagnostics: int = 10,
     ) -> str:
         """Format LSP diagnostics specifically for LLM consumption.
         
