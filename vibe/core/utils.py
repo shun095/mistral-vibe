@@ -156,9 +156,28 @@ def get_user_agent(backend: Backend) -> str:
     return user_agent
 
 
-def _is_retryable_http_error(e: Exception) -> bool:
+def _is_retryable_backend_error(e: Exception) -> bool:
+    """Check if an exception is retryable for LLM backend operations.
+
+    Handles both HTTP status errors and network/transport errors.
+    """
+    # HTTP status code errors (retry on server errors and rate limits)
     if isinstance(e, httpx.HTTPStatusError):
         return e.response.status_code in {408, 409, 425, 429, 500, 502, 503, 504}
+
+    # Network/transport errors (retry on transient network issues)
+    if isinstance(e, httpx.RequestError):
+        error_str = str(e).lower()
+        # Incomplete chunked read (the specific error we need to fix)
+        if "incomplete chunked read" in error_str:
+            return True
+        # Peer closed connection
+        if "peer closed connection" in error_str:
+            return True
+        # Other common network errors
+        if any(keyword in error_str for keyword in ["network", "connection", "timeout"]):
+            return True
+
     return False
 
 
@@ -166,14 +185,14 @@ def async_retry[T, **P](
     tries: int = 3,
     delay_seconds: float = 0.5,
     backoff_factor: float = 2.0,
-    is_retryable: Callable[[Exception], bool] = _is_retryable_http_error,
+    is_retryable: Callable[[Exception], bool] = _is_retryable_backend_error,
 ) -> Callable[[Callable[P, Awaitable[T]]], Callable[P, Awaitable[T]]]:
     """Args:
         tries: Number of retry attempts
         delay_seconds: Initial delay between retries in seconds
         backoff_factor: Multiplier for delay on each retry
         is_retryable: Function to determine if an exception should trigger a retry
-                     (defaults to checking for retryable HTTP errors from both urllib and httpx)
+                     (defaults to checking for retryable backend errors including HTTP and network errors)
 
     Returns:
         Decorated function with retry logic
@@ -208,7 +227,7 @@ def async_generator_retry[T, **P](
     tries: int = 3,
     delay_seconds: float = 0.5,
     backoff_factor: float = 2.0,
-    is_retryable: Callable[[Exception], bool] = _is_retryable_http_error,
+    is_retryable: Callable[[Exception], bool] = _is_retryable_backend_error,
 ) -> Callable[[Callable[P, AsyncGenerator[T]]], Callable[P, AsyncGenerator[T]]]:
     """Retry decorator for async generators.
 
@@ -217,7 +236,7 @@ def async_generator_retry[T, **P](
         delay_seconds: Initial delay between retries in seconds
         backoff_factor: Multiplier for delay on each retry
         is_retryable: Function to determine if an exception should trigger a retry
-                     (defaults to checking for retryable HTTP errors from both urllib and httpx)
+                     (defaults to checking for retryable backend errors including HTTP and network errors)
 
     Returns:
         Decorated async generator function with retry logic
