@@ -21,35 +21,35 @@ class TestGitDenylist:
     def test_denies_git_reset_hard(self, bash):
         """Test that 'git reset --hard' is denied."""
         result = bash.check_allowlist_denylist(
-            BashArgs(command="git reset --hard")
+            BashArgs(command="git reset --hard", timeout=10)
         )
         assert result is ToolPermission.NEVER
 
     def test_denies_git_reset_hard_with_origin(self, bash):
         """Test that 'git reset --hard origin/main' is denied."""
         result = bash.check_allowlist_denylist(
-            BashArgs(command="git reset --hard origin/main")
+            BashArgs(command="git reset --hard origin/main", timeout=10)
         )
         assert result is ToolPermission.NEVER
 
     def test_denies_git_reset_hard_in_subdirectory(self, bash):
         """Test that 'cd /path/to/dir && git reset --hard' is denied."""
         result = bash.check_allowlist_denylist(
-            BashArgs(command="cd /path/to/dir && git reset --hard")
+            BashArgs(command="cd /path/to/dir && git reset --hard", timeout=10)
         )
         assert result is ToolPermission.NEVER
 
     def test_denies_git_checkout(self, bash):
         """Test that 'git checkout' is denied."""
         result = bash.check_allowlist_denylist(
-            BashArgs(command="git checkout main")
+            BashArgs(command="git checkout main", timeout=10)
         )
         assert result is ToolPermission.NEVER
 
     def test_denies_git_checkout_branch(self, bash):
         """Test that 'git checkout -b new-branch' is denied."""
         result = bash.check_allowlist_denylist(
-            BashArgs(command="git checkout -b new-branch")
+            BashArgs(command="git checkout -b new-branch", timeout=10)
         )
         assert result is ToolPermission.NEVER
 
@@ -65,7 +65,7 @@ class TestGitDenylist:
         ]
         
         for cmd in safe_commands:
-            result = bash.check_allowlist_denylist(BashArgs(command=cmd))
+            result = bash.check_allowlist_denylist(BashArgs(command=cmd, timeout=10))
             # Should not be NEVER (could be None or ALWAYS depending on allowlist)
             assert result is not ToolPermission.NEVER
 
@@ -78,7 +78,7 @@ class TestGitDenylist:
         ]
         
         for cmd in commands:
-            result = bash.check_allowlist_denylist(BashArgs(command=cmd))
+            result = bash.check_allowlist_denylist(BashArgs(command=cmd, timeout=10))
             assert result is ToolPermission.NEVER
 
 
@@ -100,7 +100,7 @@ class TestEditorDenylist:
     )
     def test_denies_editors(self, bash, command):
         """Test that various text editors are denied."""
-        result = bash.check_allowlist_denylist(BashArgs(command=command))
+        result = bash.check_allowlist_denylist(BashArgs(command=command, timeout=10))
         assert result is ToolPermission.NEVER
 
 
@@ -121,7 +121,7 @@ class TestShellDenylist:
     )
     def test_denies_interactive_shells(self, bash, command):
         """Test that interactive shells are denied."""
-        result = bash.check_allowlist_denylist(BashArgs(command=command))
+        result = bash.check_allowlist_denylist(BashArgs(command=command, timeout=10))
         assert result is ToolPermission.NEVER
 
 
@@ -131,7 +131,7 @@ class TestDebuggerDenylist:
     @pytest.mark.parametrize("command", ["gdb", "pdb", "gdb program", "pdb script.py"])
     def test_denies_debuggers(self, bash, command):
         """Test that debuggers are denied."""
-        result = bash.check_allowlist_denylist(BashArgs(command=command))
+        result = bash.check_allowlist_denylist(BashArgs(command=command, timeout=10))
         assert result is ToolPermission.NEVER
 
 
@@ -151,13 +151,13 @@ class TestAllowlist:
     )
     def test_allows_allowlisted_commands(self, bash, command):
         """Test that allowlisted commands are automatically allowed."""
-        result = bash.check_allowlist_denylist(BashArgs(command=command))
+        result = bash.check_allowlist_denylist(BashArgs(command=command, timeout=10))
         assert result is ToolPermission.ALWAYS
 
     def test_mixed_commands_not_always_allowed(self, bash):
         """Test that mixed commands (allowlisted + non-allowlisted) are not ALWAYS allowed."""
         result = bash.check_allowlist_denylist(
-            BashArgs(command="echo hello && whoami")
+            BashArgs(command="echo hello && whoami", timeout=10)
         )
         # whoami is not in the default allowlist, so this should not be ALWAYS
         # However, the current implementation returns ALWAYS if ALL commands are allowlisted
@@ -183,7 +183,7 @@ class TestStandaloneDenylist:
     )
     def test_denies_standalone_commands(self, bash, command):
         """Test that standalone commands without arguments are denied."""
-        result = bash.check_allowlist_denylist(BashArgs(command=command))
+        result = bash.check_allowlist_denylist(BashArgs(command=command, timeout=10))
         assert result is ToolPermission.NEVER
 
     @pytest.mark.parametrize(
@@ -197,7 +197,7 @@ class TestStandaloneDenylist:
     )
     def test_allows_standalone_commands_with_args(self, bash, command):
         """Test that standalone commands with arguments are allowed."""
-        result = bash.check_allowlist_denylist(BashArgs(command=command))
+        result = bash.check_allowlist_denylist(BashArgs(command=command, timeout=10))
         # Should not be NEVER (could be None or ALWAYS)
         assert result is not ToolPermission.NEVER
 
@@ -208,35 +208,35 @@ class TestCommandParsing:
     def test_parses_pipe_commands(self, bash):
         """Test that commands with pipes are parsed correctly."""
         result = bash.check_allowlist_denylist(
-            BashArgs(command="git reset --hard | cat")
+            BashArgs(command="git reset --hard | cat", timeout=10)
         )
         assert result is ToolPermission.NEVER
 
     def test_parses_and_commands(self, bash):
         """Test that commands with && are parsed correctly."""
         result = bash.check_allowlist_denylist(
-            BashArgs(command="echo test && git reset --hard")
+            BashArgs(command="echo test && git reset --hard", timeout=10)
         )
         assert result is ToolPermission.NEVER
 
     def test_parses_or_commands(self, bash):
         """Test that commands with || are parsed correctly."""
         result = bash.check_allowlist_denylist(
-            BashArgs(command="git reset --hard || echo failed")
+            BashArgs(command="git reset --hard || echo failed", timeout=10)
         )
         assert result is ToolPermission.NEVER
 
     def test_parses_subshell_commands(self, bash):
         """Test that commands in subshells are parsed correctly."""
         result = bash.check_allowlist_denylist(
-            BashArgs(command="(git reset --hard)")
+            BashArgs(command="(git reset --hard)", timeout=10)
         )
         assert result is ToolPermission.NEVER
 
     def test_parses_background_commands(self, bash):
         """Test that background commands are parsed correctly."""
         result = bash.check_allowlist_denylist(
-            BashArgs(command="git reset --hard &")
+            BashArgs(command="git reset --hard &", timeout=10)
         )
         assert result is ToolPermission.NEVER
 
@@ -246,48 +246,48 @@ class TestEdgeCases:
 
     def test_empty_command(self, bash):
         """Test that empty command is not denied."""
-        result = bash.check_allowlist_denylist(BashArgs(command=""))
+        result = bash.check_allowlist_denylist(BashArgs(command="", timeout=10))
         assert result is None
 
     def test_whitespace_only_command(self, bash):
         """Test that whitespace-only command is not denied."""
-        result = bash.check_allowlist_denylist(BashArgs(command="   "))
+        result = bash.check_allowlist_denylist(BashArgs(command="   ", timeout=10))
         assert result is None
 
     def test_comment_only_command(self, bash):
         """Test that comment-only command is not denied."""
-        result = bash.check_allowlist_denylist(BashArgs(command="# This is a comment"))
+        result = bash.check_allowlist_denylist(BashArgs(command="# This is a comment", timeout=10))
         assert result is None
 
     def test_denylist_pattern_matching(self, bash):
         """Test that denylist uses prefix matching correctly."""
         # 'git reset --hard' should match because it starts with 'git reset --hard'
         result = bash.check_allowlist_denylist(
-            BashArgs(command="git reset --hard")
+            BashArgs(command="git reset --hard", timeout=10)
         )
         assert result is ToolPermission.NEVER
 
         # 'git reset --hard' with additional flags should also match
         result = bash.check_allowlist_denylist(
-            BashArgs(command="git reset --hard -q")
+            BashArgs(command="git reset --hard -q", timeout=10)
         )
         assert result is ToolPermission.NEVER
 
     def test_allowlist_pattern_matching(self, bash):
         """Test that allowlist uses prefix matching correctly."""
         # 'git status' should be allowlisted
-        result = bash.check_allowlist_denylist(BashArgs(command="git status"))
+        result = bash.check_allowlist_denylist(BashArgs(command="git status", timeout=10))
         assert result is ToolPermission.ALWAYS
 
         # 'git status --short' should also be allowlisted (starts with 'git status')
-        result = bash.check_allowlist_denylist(BashArgs(command="git status --short"))
+        result = bash.check_allowlist_denylist(BashArgs(command="git status --short", timeout=10))
         assert result is ToolPermission.ALWAYS
 
     def test_denylist_takes_precedence(self, bash):
         """Test that denylist takes precedence over allowlist."""
         # Even though 'git' is part of allowlisted commands, 'git reset --hard' should be denied
         result = bash.check_allowlist_denylist(
-            BashArgs(command="git reset --hard")
+            BashArgs(command="git reset --hard", timeout=10)
         )
         assert result is ToolPermission.NEVER
 
@@ -303,12 +303,12 @@ class TestCustomConfigurations:
         bash_tool = Bash(config=config, state=BaseToolState())
         
         result = bash_tool.check_allowlist_denylist(
-            BashArgs(command="dangerous_command")
+            BashArgs(command="dangerous_command", timeout=10)
         )
         assert result is ToolPermission.NEVER
         
         result = bash_tool.check_allowlist_denylist(
-            BashArgs(command="another_dangerous arg")
+            BashArgs(command="another_dangerous arg", timeout=10)
         )
         assert result is ToolPermission.NEVER
 
@@ -318,12 +318,12 @@ class TestCustomConfigurations:
         bash_tool = Bash(config=config, state=BaseToolState())
         
         result = bash_tool.check_allowlist_denylist(
-            BashArgs(command="safe_command")
+            BashArgs(command="safe_command", timeout=10)
         )
         assert result is ToolPermission.ALWAYS
         
         result = bash_tool.check_allowlist_denylist(
-            BashArgs(command="another_safe arg")
+            BashArgs(command="another_safe arg", timeout=10)
         )
         assert result is ToolPermission.ALWAYS
 
@@ -336,19 +336,19 @@ class TestCustomConfigurations:
         bash_tool = Bash(config=config, state=BaseToolState())
         
         # Allowlisted commands should be ALWAYS
-        result = bash_tool.check_allowlist_denylist(BashArgs(command="echo test"))
+        result = bash_tool.check_allowlist_denylist(BashArgs(command="echo test", timeout=10))
         assert result is ToolPermission.ALWAYS
         
-        result = bash_tool.check_allowlist_denylist(BashArgs(command="cat file.txt"))
+        result = bash_tool.check_allowlist_denylist(BashArgs(command="cat file.txt", timeout=10))
         assert result is ToolPermission.ALWAYS
         
         # Denylisted commands should be NEVER
-        result = bash_tool.check_allowlist_denylist(BashArgs(command="rm file.txt"))
+        result = bash_tool.check_allowlist_denylist(BashArgs(command="rm file.txt", timeout=10))
         assert result is ToolPermission.NEVER
         
-        result = bash_tool.check_allowlist_denylist(BashArgs(command="mv file1 file2"))
+        result = bash_tool.check_allowlist_denylist(BashArgs(command="mv file1 file2", timeout=10))
         assert result is ToolPermission.NEVER
         
         # Other commands should return None
-        result = bash_tool.check_allowlist_denylist(BashArgs(command="ls"))
+        result = bash_tool.check_allowlist_denylist(BashArgs(command="ls", timeout=10))
         assert result is None
