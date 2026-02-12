@@ -879,7 +879,6 @@ class VibeApp(App):  # noqa: PLR0904
         loading = LoadingWidget()
         self._loading_widget = loading
         await loading_area.mount(loading)
-        self._show_todo_area()
 
         try:
             # Load the enhancement prompt template
@@ -935,7 +934,6 @@ Enhanced prompt:"""
                 await self._loading_widget.remove()
             self._loading_widget = None
             self._enhancement_task = None
-            self._hide_todo_area()
 
     async def _show_help(self) -> None:
         help_text = self.commands.get_help_text()
