@@ -340,7 +340,6 @@ class GrepResultWidget(ToolResultWidget[GrepResult]):
 
 class LSPResultWidget(ToolResultWidget[LSPToolResult]):
     def compose(self) -> ComposeResult:
-        yield from self._header()
         if self.collapsed or not self.result:
             return
         
