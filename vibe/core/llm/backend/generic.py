@@ -385,6 +385,18 @@ class GenericBackend:
         response_body = response.json()
         return self.HTTPResponse(response_body, response_headers)
 
+    def _is_retryable_streaming_error(self, exception: Exception) -> bool:
+        """Check if an exception is retryable for streaming requests.
+        
+        HTTP status errors are not retryable for streaming requests because they
+        indicate a problem with the request itself, not a transient network issue.
+        """
+        # Don't retry HTTP status errors for streaming requests
+        if isinstance(exception, httpx.HTTPStatusError):
+            return False
+        # Retry other errors (network issues, etc.)
+        return True
+
     @async_generator_retry(tries=10)
     async def _make_streaming_request(
         self, url: str, data: bytes, headers: dict[str, str]
