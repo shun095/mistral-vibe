@@ -198,8 +198,8 @@ class BashToolConfig(BaseToolConfig):
 
 class BashArgs(BaseModel):
     command: str
-    timeout: int | None = Field(
-        default=None, description="Override the default command timeout."
+    timeout: int = Field(
+        description="Timeout for the command in seconds (required to prevent hanging)."
     )
 
 
@@ -302,7 +302,7 @@ class Bash(
     async def run(
         self, args: BashArgs, ctx: InvokeContext | None = None
     ) -> AsyncGenerator[ToolStreamEvent | BashResult, None]:
-        timeout = args.timeout or self.config.default_timeout
+        timeout = args.timeout if args.timeout is not None else self.config.default_timeout
         max_bytes = self.config.max_output_bytes
 
         from vibe.core.utils import logger

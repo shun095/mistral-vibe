@@ -32,7 +32,7 @@ class TestAgentLoopDenylist:
         bash_tool = agent_loop.tool_manager.get("bash")
         
         # Test git checkout (denylisted command)
-        args = BashArgs(command="git checkout main")
+        args = BashArgs(command="git checkout main", timeout=10)
         decision = await agent_loop._should_execute_tool(
             bash_tool, args, "test-call-id"
         )
@@ -50,7 +50,7 @@ class TestAgentLoopDenylist:
         """Test that git reset --hard is blocked in auto-approve mode."""
         bash_tool = agent_loop.tool_manager.get("bash")
         
-        args = BashArgs(command="git reset --hard")
+        args = BashArgs(command="git reset --hard", timeout=10)
         decision = await agent_loop._should_execute_tool(
             bash_tool, args, "test-call-id"
         )
@@ -69,7 +69,7 @@ class TestAgentLoopDenylist:
         bash_tool = agent_loop.tool_manager.get("bash")
         
         for editor_cmd in ["vim file.txt", "nano file.txt", "emacs file.txt"]:
-            args = BashArgs(command=editor_cmd)
+            args = BashArgs(command=editor_cmd, timeout=10)
             decision = await agent_loop._should_execute_tool(
                 bash_tool, args, "test-call-id"
             )
@@ -87,7 +87,7 @@ class TestAgentLoopDenylist:
         bash_tool = agent_loop.tool_manager.get("bash")
         
         for shell_cmd in ["bash -i", "sh -i", "zsh -i"]:
-            args = BashArgs(command=shell_cmd)
+            args = BashArgs(command=shell_cmd, timeout=10)
             decision = await agent_loop._should_execute_tool(
                 bash_tool, args, "test-call-id"
             )
@@ -106,7 +106,7 @@ class TestAgentLoopDenylist:
         
         # Test allowlisted commands (safe commands)
         for safe_cmd in ["echo hello", "pwd", "ls", "git status"]:
-            args = BashArgs(command=safe_cmd)
+            args = BashArgs(command=safe_cmd, timeout=10)
             decision = await agent_loop._should_execute_tool(
                 bash_tool, args, "test-call-id"
             )
@@ -122,7 +122,7 @@ class TestAgentLoopDenylist:
         
         # Commands that are not in allowlist or denylist should be auto-approved
         # (since auto_approve is True)
-        args = BashArgs(command="cat README.md")
+        args = BashArgs(command="cat README.md", timeout=10)
         decision = await agent_loop._should_execute_tool(
             bash_tool, args, "test-call-id"
         )
@@ -146,7 +146,7 @@ class TestAgentLoopDenylist:
         ]
         
         for cmd in denylisted_commands:
-            args = BashArgs(command=cmd)
+            args = BashArgs(command=cmd, timeout=10)
             decision = await agent_loop._should_execute_tool(
                 bash_tool, args, "test-call-id"
             )
@@ -177,7 +177,7 @@ class TestAgentLoopNormalMode:
         """Test that denylisted commands are blocked in normal mode."""
         bash_tool = agent_loop.tool_manager.get("bash")
         
-        args = BashArgs(command="git checkout main")
+        args = BashArgs(command="git checkout main", timeout=10)
         decision = await agent_loop._should_execute_tool(
             bash_tool, args, "test-call-id"
         )
@@ -196,7 +196,7 @@ class TestAgentLoopNormalMode:
         
         # Test with a command that's not in allowlist or denylist
         # Without setting up an approval callback, this should skip
-        args = BashArgs(command="date +%Y-%m-%d")
+        args = BashArgs(command="date +%Y-%m-%d", timeout=10)
         decision = await agent_loop._should_execute_tool(
             bash_tool, args, "test-call-id"
         )
@@ -234,7 +234,7 @@ class TestDenylistPrecedence:
         
         # Even though auto_approve is True and bash permission is ALWAYS,
         # denylisted commands should still be blocked
-        args = BashArgs(command="git checkout main")
+        args = BashArgs(command="git checkout main", timeout=10)
         decision = await agent_loop._should_execute_tool(
             bash_tool, args, "test-call-id"
         )
@@ -252,7 +252,7 @@ class TestDenylistPrecedence:
         bash_tool = agent_loop.tool_manager.get("bash")
         
         # The tool config has permission=ALWAYS, but denylist should still block
-        args = BashArgs(command="git reset --hard")
+        args = BashArgs(command="git reset --hard", timeout=10)
         decision = await agent_loop._should_execute_tool(
             bash_tool, args, "test-call-id"
         )
@@ -270,7 +270,7 @@ class TestDenylistPrecedence:
         bash_tool = agent_loop.tool_manager.get("bash")
         
         # Allowlisted commands should execute even with denylist checks
-        args = BashArgs(command="echo hello")
+        args = BashArgs(command="echo hello", timeout=10)
         decision = await agent_loop._should_execute_tool(
             bash_tool, args, "test-call-id"
         )

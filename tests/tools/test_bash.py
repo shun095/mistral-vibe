@@ -16,7 +16,7 @@ def bash(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_runs_echo_successfully(bash):
-    result = await collect_result(bash.run(BashArgs(command="echo hello")))
+    result = await collect_result(bash.run(BashArgs(command="echo hello", timeout=10)))
 
     assert result.returncode == 0
     assert result.stdout == "hello\n"
@@ -26,7 +26,7 @@ async def test_runs_echo_successfully(bash):
 @pytest.mark.asyncio
 async def test_fails_cat_command_with_missing_file(bash):
     with pytest.raises(ToolError) as err:
-        await collect_result(bash.run(BashArgs(command="cat missing_file.txt")))
+        await collect_result(bash.run(BashArgs(command="cat missing_file.txt", timeout=10)))
 
     message = str(err.value)
     assert "Command failed" in message
@@ -40,7 +40,7 @@ async def test_uses_effective_workdir(tmp_path, monkeypatch):
     config = BashToolConfig()
     bash_tool = Bash(config=config, state=BaseToolState())
 
-    result = await collect_result(bash_tool.run(BashArgs(command="pwd")))
+    result = await collect_result(bash_tool.run(BashArgs(command="pwd", timeout=10)))
 
     assert result.stdout.strip() == str(tmp_path)
 
@@ -59,7 +59,7 @@ async def test_truncates_output_to_max_bytes(bash):
     bash_tool = Bash(config=config, state=BaseToolState())
 
     result = await collect_result(
-        bash_tool.run(BashArgs(command="printf 'abcdefghij'"))
+        bash_tool.run(BashArgs(command="printf 'abcdefghij'", timeout=10))
     )
 
     assert result.stdout == "abcde"
@@ -69,7 +69,7 @@ async def test_truncates_output_to_max_bytes(bash):
 
 @pytest.mark.asyncio
 async def test_decodes_non_utf8_bytes(bash):
-    result = await collect_result(bash.run(BashArgs(command="printf '\\xff\\xfe'")))
+    result = await collect_result(bash.run(BashArgs(command="printf '\\xff\\xfe'", timeout=10)))
 
     # accept both possible encodings, as some shells emit escaped bytes as literal strings
     assert result.stdout in {"��", "\xff\xfe", r"\xff\xfe"}
@@ -80,10 +80,10 @@ def test_check_allowlist_denylist():
     config = BashToolConfig(allowlist=["echo", "pwd"], denylist=["rm"])
     bash_tool = Bash(config=config, state=BaseToolState())
 
-    allowlisted = bash_tool.check_allowlist_denylist(BashArgs(command="echo hi"))
-    denylisted = bash_tool.check_allowlist_denylist(BashArgs(command="rm -rf /tmp"))
-    mixed = bash_tool.check_allowlist_denylist(BashArgs(command="pwd && whoami"))
-    empty = bash_tool.check_allowlist_denylist(BashArgs(command=""))
+    allowlisted = bash_tool.check_allowlist_denylist(BashArgs(command="echo hi", timeout=10))
+    denylisted = bash_tool.check_allowlist_denylist(BashArgs(command="rm -rf /tmp", timeout=10))
+    mixed = bash_tool.check_allowlist_denylist(BashArgs(command="pwd && whoami", timeout=10))
+    empty = bash_tool.check_allowlist_denylist(BashArgs(command="", timeout=10))
 
     assert allowlisted is ToolPermission.ALWAYS
     assert denylisted is ToolPermission.NEVER

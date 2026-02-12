@@ -117,9 +117,9 @@ class TestAcpBashBasic:
         assert Bash.get_name() == "bash"
 
     def test_get_summary_simple_command(self) -> None:
-        args = BashArgs(command="ls")
+        args = BashArgs(command="ls", timeout=10)
         display = Bash.get_summary(args)
-        assert display == "ls"
+        assert display == "ls (timeout 10s)"
 
     def test_get_summary_with_timeout(self) -> None:
         args = BashArgs(command="ls", timeout=10)
@@ -134,7 +134,7 @@ class TestAcpBashExecution:
     ) -> None:
         from pathlib import Path
 
-        args = BashArgs(command="echo hello")
+        args = BashArgs(command="echo hello", timeout=10)
         result = await collect_result(acp_bash_tool.run(args))
 
         assert isinstance(result, BashResult)
@@ -160,7 +160,7 @@ class TestAcpBashExecution:
             ),
         )
 
-        args = BashArgs(command="NODE_ENV=test npm run build")
+        args = BashArgs(command="NODE_ENV=test npm run build", timeout=10)
         await collect_result(tool.run(args))
 
         params = mock_client._last_create_params
@@ -180,7 +180,7 @@ class TestAcpBashExecution:
             ),
         )
 
-        args = BashArgs(command="test_command")
+        args = BashArgs(command="test_command", timeout=10)
         with pytest.raises(ToolError) as exc_info:
             await collect_result(tool.run(args))
 
@@ -200,7 +200,7 @@ class TestAcpBashExecution:
             ),
         )
 
-        args = BashArgs(command="test")
+        args = BashArgs(command="test", timeout=10)
         with pytest.raises(ToolError) as exc_info:
             await collect_result(tool.run(args))
 
@@ -218,7 +218,7 @@ class TestAcpBashExecution:
             ),
         )
 
-        args = BashArgs(command="test")
+        args = BashArgs(command="test", timeout=10)
         with pytest.raises(ToolError) as exc_info:
             await collect_result(tool.run(args))
 
@@ -237,7 +237,7 @@ class TestAcpBashExecution:
             ),
         )
 
-        args = BashArgs(command="test")
+        args = BashArgs(command="test", timeout=10)
         with pytest.raises(ToolError) as exc_info:
             await collect_result(tool.run(args))
 
@@ -260,7 +260,7 @@ class TestAcpBashExecution:
             ),
         )
 
-        args = BashArgs(command="test_command")
+        args = BashArgs(command="test_command", timeout=10)
         result = await collect_result(tool.run(args))
 
         assert result.returncode == 0
@@ -334,7 +334,7 @@ class TestAcpBashEmbedding:
             ),
         )
 
-        args = BashArgs(command="test")
+        args = BashArgs(command="test", timeout=10)
         await collect_result(tool.run(args))
 
         assert mock_client._session_update_called
@@ -350,7 +350,7 @@ class TestAcpBashEmbedding:
             ),
         )
 
-        args = BashArgs(command="test")
+        args = BashArgs(command="test", timeout=10)
         await collect_result(tool.run(args))
 
         # Embedding should be skipped when tool_call_id is None
@@ -373,7 +373,7 @@ class TestAcpBashEmbedding:
             ),
         )
 
-        args = BashArgs(command="test")
+        args = BashArgs(command="test", timeout=10)
         # Should not raise, embedding failure is silently ignored
         result = await collect_result(tool.run(args))
 
@@ -399,7 +399,7 @@ class TestAcpBashConfig:
             ),
         )
 
-        args = BashArgs(command="fast", timeout=None)
+        args = BashArgs(command="fast", timeout=10)
         result = await collect_result(tool.run(args))
 
         # Should succeed with config timeout
@@ -429,7 +429,7 @@ class TestAcpBashCleanup:
             ),
         )
 
-        args = BashArgs(command="test")
+        args = BashArgs(command="test", timeout=10)
         await collect_result(tool.run(args))
 
         assert release_called
@@ -487,7 +487,7 @@ class TestAcpBashCleanup:
             ),
         )
 
-        args = BashArgs(command="test")
+        args = BashArgs(command="test", timeout=10)
         # Should not raise, release failure is silently ignored
         result = await collect_result(tool.run(args))
 

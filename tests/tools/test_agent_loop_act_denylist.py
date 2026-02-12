@@ -34,7 +34,7 @@ class TestAgentLoopActDenylist:
         tool_call = ToolCall(
             id="call_1",
             index=0,
-            function=FunctionCall(name="bash", arguments='{"command": "git checkout --help"}'),
+            function=FunctionCall(name="bash", arguments='{"command": "git checkout --help","timeout":10}'),
         )
         
         backend = FakeBackend([
@@ -70,7 +70,7 @@ class TestAgentLoopActDenylist:
         tool_call = ToolCall(
             id="call_1",
             index=0,
-            function=FunctionCall(name="bash", arguments='{"command": "git reset --hard"}'),
+            function=FunctionCall(name="bash", arguments='{"command": "git reset --hard","timeout":10}'),
         )
         
         backend = FakeBackend([
@@ -106,7 +106,7 @@ class TestAgentLoopActDenylist:
         tool_call = ToolCall(
             id="call_1",
             index=0,
-            function=FunctionCall(name="bash", arguments='{"command": "vim file.txt"}'),
+            function=FunctionCall(name="bash", arguments='{"command": "vim file.txt","timeout":10}'),
         )
         
         backend = FakeBackend([
@@ -142,7 +142,7 @@ class TestAgentLoopActDenylist:
         tool_call = ToolCall(
             id="call_1",
             index=0,
-            function=FunctionCall(name="bash", arguments='{"command": "bash -i"}'),
+            function=FunctionCall(name="bash", arguments='{"command": "bash -i","timeout":10}'),
         )
         
         backend = FakeBackend([
@@ -178,7 +178,7 @@ class TestAgentLoopActDenylist:
         tool_call = ToolCall(
             id="call_1",
             index=0,
-            function=FunctionCall(name="bash", arguments='{"command": "echo hello"}'),
+            function=FunctionCall(name="bash", arguments='{"command": "echo hello","timeout":10}'),
         )
         
         backend = FakeBackend([
@@ -212,7 +212,7 @@ class TestAgentLoopActDenylist:
         tool_call = ToolCall(
             id="call_1",
             index=0,
-            function=FunctionCall(name="bash", arguments='{"command": "git checkout -b new-branch"}'),
+            function=FunctionCall(name="bash", arguments='{"command": "git checkout -b new-branch","timeout":10}'),
         )
         
         backend = FakeBackend([
@@ -248,7 +248,7 @@ class TestAgentLoopActDenylist:
         tool_call = ToolCall(
             id="call_1",
             index=0,
-            function=FunctionCall(name="bash", arguments='{"command": "git reset --hard -q"}'),
+            function=FunctionCall(name="bash", arguments='{"command": "git reset --hard -q","timeout":10}'),
         )
         
         backend = FakeBackend([
@@ -284,7 +284,7 @@ class TestAgentLoopActDenylist:
         tool_call = ToolCall(
             id="call_1",
             index=0,
-            function=FunctionCall(name="bash", arguments='{"command": "nano README.md"}'),
+            function=FunctionCall(name="bash", arguments='{"command": "nano README.md","timeout":10}'),
         )
         
         backend = FakeBackend([
