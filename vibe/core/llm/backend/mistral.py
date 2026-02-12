@@ -11,6 +11,7 @@ import httpx
 import mistralai
 
 from vibe.core.llm.exceptions import BackendErrorBuilder
+from vibe.core.utils import async_generator_retry, async_retry
 from vibe.core.types import (
     AvailableTool,
     Content,
@@ -205,6 +206,7 @@ class MistralBackend:
             )
         return self._client
 
+    @async_retry(tries=10)
     async def complete(
         self,
         *,
@@ -278,6 +280,7 @@ class MistralBackend:
                 tool_choice=tool_choice,
             ) from e
 
+    @async_generator_retry(tries=10)
     async def complete_streaming(
         self,
         *,
