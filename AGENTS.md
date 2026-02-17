@@ -231,9 +231,9 @@ You behave adhering this guidelines strictly.
 - Fix any failing tests related to the task
 
 #### **2. UI Tests (MANDATORY FOR UI CHANGES)**
-- All UI changes MUST be tested with `terminalcp_terminalcp`
+- All UI changes MUST be tested with `terminalcp` CLI tool.
 
-**Why terminalcp_terminalcp is Required:**
+**Why terminalcp is Required:**
 - Tests actual user interaction in a real terminal environment
 - Catches edge cases, timing issues, and real-world scenarios
 - Validates complex UI behavior (widget lifecycle, async operations, config loading)
@@ -298,66 +298,17 @@ Always use dedicated tools instead of `bash` when available. Use `bash` only for
 
 
 
-### terminalcp_terminalcp - Comprehensive Guide
+### terminalcp
 
 #### Overview
-`terminalcp_terminalcp` is the mandatory tool for testing terminal UI. It provides a virtual terminal environment to interact with your application.
+`terminalcp` is the mandatory tool for testing terminal UI. It provides a virtual terminal environment to interact with your application.
+
+#### Installations
+
+```bash
+npm i -g @mariozechner/terminalcp@latest
+```
 
 #### Basic Usage
 
-**Launch app:**
-```python
-terminalcp_terminalcp({
-    "args": {
-        "action": "start",
-        "command": "cd /path/to/project && OPENAI_BASE_URL=... OPENAI_API_KEY=... MISTRAL_API_KEY=... uv run vibe",
-        "cwd": "/path/to/project",
-        "name": "test-session"
-    }
-})
-```
-
-**IMPORTANT**: Always specify OPENAI_* and MISTRAL_* environment variables. Get them with:
-```bash
-env | grep -e OPENAI -e MISTRAL
-```
-
-**View UI output:**
-```python
-terminalcp_terminalcp({
-    "args": {
-        "action": "stdout",
-        "id": "test-session",
-        "lines": 50  # Number of lines to retrieve
-    }
-})
-```
-
-**Send input:**
-```python
-terminalcp_terminalcp({
-    "args": {
-        "action": "stdin",
-        "id": "test-session",
-        "data": "/sessions\r"  # \r = Enter
-    }
-})
-```
-
-**Stop process:**
-```python
-terminalcp_terminalcp({
-    "args": {
-        "action": "stop",
-        "id": "test-session"
-    }
-})
-```
-
-**Keyboard Input Examples:**
-- Enter: `"\r"` or `"\u000d"`
-- Tab: `"\t"` or `"\u0009"`
-- Escape: `"\u001b"`
-- Backspace: `"\u007f"`
-- Ctrl+C: `"\u0003"`
-- Arrow keys: Up=`"\u001b[A"`, Down=`"\u001b[B"`, Right=`"\u001b[C"`, Left=`"\u001b[D"`
+Refer `~/.vibe/skills/terminalcp/SKILL.md`
