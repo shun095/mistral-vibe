@@ -6,7 +6,7 @@ from enum import StrEnum, auto
 from http import HTTPStatus
 from threading import Thread
 import time
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 from uuid import uuid4
 
 from pydantic import BaseModel
@@ -672,25 +672,18 @@ class AgentLoop:
             )
         )
 
-    def _format_tool_result(self, result_model: Any) -> str:
-        """Format tool result for LLM consumption with special handling for LSP diagnostics."""
+    def _format_tool_result(self, result_model: BaseModel) -> str:
+        """Format tool result for LLM consumption."""
         result_dict = result_model.model_dump()
         
-        # Check if this result contains LSP diagnostics
-        lsp_diagnostics = result_dict.get('lsp_diagnostics')
-        
-        # Format regular fields
-        regular_fields = {k: v for k, v in result_dict.items() if k != 'lsp_diagnostics'}
-        regular_text = "\n".join(f"{k}: {v}" for k, v in regular_fields.items())
-        
-        # If there are LSP diagnostics, append them prominently
-        if lsp_diagnostics:
-            return f"{regular_text}\n\n{lsp_diagnostics}"
-        
-        return regular_text
+        # Format all fields uniformly
+        lines = []
+        for k, v in result_dict.items():
+            lines.append(f"{k}: {v}")
+        return "\n".join(lines)
 
     def _append_special_tool_response(
-        self, tool_call: ResolvedToolCall, result_model: Any
+        self, tool_call: ResolvedToolCall, result_model: BaseModel
     ) -> None:
         """
         Append additional LLM messages for tools with special handling.

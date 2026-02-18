@@ -13,8 +13,9 @@ from vibe.core.lsp.types import LSPServerHandle
 
 logger = logging.getLogger(__name__)
 
-# Type alias for diagnostics
-DiagnosticsList = list[dict[str, Any]]
+# Type alias for diagnostics (from LSP servers)
+# Using object type since diagnostics come from external sources
+DiagnosticsList = list[dict[str, object]]
 
 class LSPClientManager:
     # Class-level fields to share state across instances
