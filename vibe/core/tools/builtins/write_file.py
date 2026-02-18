@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import ClassVar, final
+from typing import Any, ClassVar, final
 
 import anyio
 from pydantic import BaseModel, Field

@@ -74,13 +74,10 @@ async def test_lsp_diagnostic_formatting():
     # Format diagnostics
     formatted = LSPDiagnosticFormatter.format_diagnostics_for_llm(diagnostics)
 
-    # Verify formatting
-    assert "LSP diagnostics:" in formatted
-    assert "**ERRORS:**" in formatted
-    assert "**WARNINGS:**" in formatted
-    assert "ERROR at line 6, columns 11-26" in formatted
+    # Verify YAML format for LLM backends (new flat structure)
+    assert "source: LSP" in formatted
+    assert "diagnostics:" in formatted
     assert "Name 'undefined_var' is not defined" in formatted
-    assert "WARNING at line 3, columns 1-16" in formatted
     assert "Unused import 'os'" in formatted
 
 
@@ -172,11 +169,11 @@ async def test_lsp_diagnostic_limiting():
     # Format with default limit (10)
     formatted = LSPDiagnosticFormatter.format_diagnostics_for_llm(diagnostics)
 
-    # Should only include first 10
+    # Should only include first 10 (in YAML format)
     assert "Error 0" in formatted
     assert "Error 9" in formatted
     assert "Error 10" not in formatted
-    assert "...and 20 more issue(s)" in formatted
+    assert "note: 20 more issue(s) not shown" in formatted
 
 
 @pytest.mark.asyncio

@@ -10,6 +10,7 @@ from textual.widgets import Static
 
 from vibe.cli.textual_ui.ansi_markdown import AnsiMarkdown as Markdown
 from vibe.cli.textual_ui.widgets.no_markup_static import NoMarkupStatic
+from vibe.core.lsp import LSPDiagnosticFormatter
 from vibe.core.tools.builtins.ask_user_question import AskUserQuestionResult
 from vibe.core.tools.builtins.bash import BashArgs, BashResult
 from vibe.core.tools.builtins.grep import GrepArgs, GrepResult
@@ -190,7 +191,9 @@ class WriteFileResultWidget(ToolResultWidget[WriteFileResult]):
         # Display LSP diagnostics if available
         if self.result and self.result.lsp_diagnostics:
             yield NoMarkupStatic("")
-            yield Markdown(self.result.lsp_diagnostics)
+            # Convert YAML to Markdown for UI display
+            markdown_content = LSPDiagnosticFormatter.format_yaml_to_markdown(self.result.lsp_diagnostics)
+            yield Markdown(markdown_content)
         
         if self.result.content:
             yield NoMarkupStatic("")
@@ -222,7 +225,9 @@ class SearchReplaceResultWidget(ToolResultWidget[SearchReplaceResult]):
         # Display LSP diagnostics if available
         if self.result and self.result.lsp_diagnostics:
             yield NoMarkupStatic("")
-            yield Markdown(self.result.lsp_diagnostics)
+            # Convert YAML to Markdown for UI display
+            markdown_content = LSPDiagnosticFormatter.format_yaml_to_markdown(self.result.lsp_diagnostics)
+            yield Markdown(markdown_content)
         
         if self.result.content:
             for line in parse_search_replace_to_diff(self.result.content):
@@ -300,7 +305,9 @@ class ReadFileResultWidget(ToolResultWidget[ReadFileResult]):
         # Display LSP diagnostics if available
         if self.result and self.result.lsp_diagnostics:
             yield NoMarkupStatic("")
-            yield Markdown(self.result.lsp_diagnostics)
+            # Convert YAML to Markdown for UI display
+            markdown_content = LSPDiagnosticFormatter.format_yaml_to_markdown(self.result.lsp_diagnostics)
+            yield Markdown(markdown_content)
         
         if self.result and self.result.content:
             yield NoMarkupStatic("")
