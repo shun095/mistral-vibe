@@ -169,6 +169,9 @@ def _is_retryable_backend_error(e: Exception) -> bool:
     if isinstance(e, httpx.RequestError):
         error_str = str(e).lower()
         # Incomplete chunked read (the specific error we need to fix)
+        if "server disconnected without sending a response" in error_str:
+            return True
+        # Incomplete chunked read (the specific error we need to fix)
         if "incomplete chunked read" in error_str:
             return True
         # Peer closed connection

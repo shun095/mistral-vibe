@@ -86,6 +86,7 @@ class SearchReplace(
     description: ClassVar[str] = (
         "Replace sections of files using SEARCH/REPLACE blocks. "
         "Supports fuzzy matching and detailed error reporting. "
+        "To use this tool, fill [text] and [replacement] in following format with proper text. "
         "Format: <<<<<<< SEARCH\\n[text]\\n=======\\n[replacement]\\n>>>>>>> REPLACE"
     )
 
@@ -222,6 +223,7 @@ class SearchReplace(
         if not search_replace_blocks:
             raise ToolError(
                 "No valid SEARCH/REPLACE blocks found in content.\n"
+                "To use this tool, fill [exact content to find] and [new content to replace with] in following format with proper text.\n"
                 "Expected format:\n"
                 "<<<<<<< SEARCH\n"
                 "[exact content to find]\n"
