@@ -4,19 +4,26 @@ import asyncio
 from collections.abc import AsyncGenerator, Callable
 from enum import StrEnum, auto
 from http import HTTPStatus
+import json
+from pathlib import Path
 from threading import Thread
 import time
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 from uuid import uuid4
 
 from pydantic import BaseModel
 
 from vibe.core.agents.manager import AgentManager
 from vibe.core.agents.models import AgentProfile, BuiltinAgentName
-from vibe.core.config import VibeConfig
+from vibe.core.config import Backend, ProviderConfig, VibeConfig
 from vibe.core.llm.backend.factory import BACKEND_FACTORY
 from vibe.core.llm.exceptions import BackendError
-from vibe.core.llm.format import APIToolFormatHandler, ResolvedMessage, ResolvedToolCall
+from vibe.core.llm.format import (
+    APIToolFormatHandler,
+    FailedToolCall,
+    ResolvedMessage,
+    ResolvedToolCall,
+)
 from vibe.core.llm.types import BackendLike
 from vibe.core.middleware import (
     AutoCompactMiddleware,
@@ -35,6 +42,7 @@ from vibe.core.session.session_logger import SessionLogger
 from vibe.core.session.session_migration import migrate_sessions_entrypoint
 from vibe.core.skills.manager import SkillManager
 from vibe.core.system_prompt import get_universal_system_prompt
+from vibe.core.telemetry.send import TelemetryClient
 from vibe.core.tools.base import (
     BaseTool,
     BaseToolConfig,
@@ -46,6 +54,7 @@ from vibe.core.tools.base import (
     EventConstructor,
 )
 from vibe.core.tools.manager import ToolManager
+from vibe.core.trusted_folders import has_agents_md_file
 from vibe.core.types import (
     AgentStats,
     ApprovalCallback,
@@ -99,6 +108,7 @@ class ToolExecutionResponse(StrEnum):
 
 class ToolDecision(BaseModel):
     verdict: ToolExecutionResponse
+    approval_type: ToolPermission
     feedback: str | None = None
 
 
@@ -174,7 +184,9 @@ class AgentLoop:
         self.user_input_callback: UserInputCallback | None = None
 
         self.session_id = str(uuid4())
+        self._current_user_message_id: str | None = None
 
+        self.telemetry_client = TelemetryClient(config_getter=lambda: self.config)
         self.session_logger = SessionLogger(config.session_logging, self.session_id)
         self._teleport_service: TeleportService | None = None
 
@@ -211,6 +223,21 @@ class AgentLoop:
 
         self.config.tools[tool_name].permission = permission
         self.tool_manager.invalidate_tool(tool_name)
+
+    def emit_new_session_telemetry(
+        self, entrypoint: Literal["cli", "acp", "programmatic"]
+    ) -> None:
+        has_agents_md = has_agents_md_file(Path.cwd())
+        nb_skills = len(self.skill_manager.available_skills)
+        nb_mcp_servers = len(self.config.mcp_servers)
+        nb_models = len(self.config.models)
+        self.telemetry_client.send_new_session(
+            has_agents_md=has_agents_md,
+            nb_skills=nb_skills,
+            nb_mcp_servers=nb_mcp_servers,
+            nb_models=nb_models,
+            entrypoint=entrypoint,
+        )
 
     def _select_backend(self) -> BackendLike:
         active_model = self.config.get_active_model()
@@ -334,12 +361,11 @@ class AgentLoop:
                 )
 
             case MiddlewareAction.INJECT_MESSAGE:
-                if result.message and len(self.messages) > 0:
-                    last_msg = self.messages[-1]
-                    if last_msg.content:
-                        last_msg.content += f"\n\n{result.message}"
-                    else:
-                        last_msg.content = result.message
+                if result.message:
+                    injected_message = LLMMessage(
+                        role=Role.user, content=result.message
+                    )
+                    self.messages.append(injected_message)
 
             case MiddlewareAction.COMPACT:
                 old_tokens = result.metadata.get(
@@ -355,6 +381,7 @@ class AgentLoop:
                     current_context_tokens=old_tokens,
                     threshold=threshold,
                 )
+                self.telemetry_client.send_auto_compact_triggered()
 
                 summary = await self.compact()
 
@@ -373,10 +400,25 @@ class AgentLoop:
             messages=self.messages, stats=self.stats, config=self.config
         )
 
+    def _get_extra_headers(self, provider: ProviderConfig) -> dict[str, str]:
+        headers: dict[str, str] = {
+            "user-agent": get_user_agent(provider.backend),
+            "x-affinity": self.session_id,
+        }
+        if (
+            provider.backend == Backend.MISTRAL
+            and self._current_user_message_id is not None
+        ):
+            headers["metadata"] = json.dumps({
+                "message_id": self._current_user_message_id
+            })
+        return headers
+
     async def _conversation_loop(self, user_msg: str) -> AsyncGenerator[BaseEvent]:
         user_message = LLMMessage(role=Role.user, content=user_msg)
         self.messages.append(user_message)
         self.stats.steps += 1
+        self._current_user_message_id = user_message.message_id
 
         if user_message.message_id is None:
             raise AgentLoopError("User message must have a message_id")
@@ -416,15 +458,6 @@ class AgentLoop:
                 should_break_loop = not yielded_continueable_event and last_message.role != Role.tool
 
                 if user_cancelled:
-                    return
-
-                after_result = await self.middleware_pipeline.run_after_turn(
-                    self._get_context()
-                )
-                async for event in self._handle_middleware_result(after_result):
-                    yield event
-
-                if after_result.action == MiddlewareAction.STOP:
                     return
 
         finally:
@@ -518,19 +551,17 @@ class AgentLoop:
             message_id=llm_result.message.message_id,
         )
 
-    async def _handle_tool_calls(
-        self, resolved: ResolvedMessage
-    ) -> AsyncGenerator[ToolCallEvent | ToolResultEvent | ToolStreamEvent | ContinueableUserMessageEvent | AssistantEvent]:
-        for failed in resolved.failed_calls:
+    async def _emit_failed_tool_events(
+        self, failed_calls: list[FailedToolCall]
+    ) -> AsyncGenerator[ToolResultEvent]:
+        for failed in failed_calls:
             error_msg = f"<{TOOL_ERROR_TAG}>{failed.tool_name}: {failed.error}</{TOOL_ERROR_TAG}>"
-
             yield ToolResultEvent(
                 tool_name=failed.tool_name,
                 tool_class=None,
                 error=error_msg,
                 tool_call_id=failed.call_id,
             )
-
             self.stats.tool_calls_failed += 1
             self.messages.append(
                 self.format_handler.create_failed_tool_response_message(
@@ -538,6 +569,125 @@ class AgentLoop:
                 )
             )
 
+    async def _process_one_tool_call(
+        self, tool_call: ResolvedToolCall
+    ) -> AsyncGenerator[ToolResultEvent | ToolStreamEvent]:
+        try:
+            tool_instance = self.tool_manager.get(tool_call.tool_name)
+        except Exception as exc:
+            error_msg = f"Error getting tool '{tool_call.tool_name}': {exc}"
+            yield ToolResultEvent(
+                tool_name=tool_call.tool_name,
+                tool_class=tool_call.tool_class,
+                error=error_msg,
+                tool_call_id=tool_call.call_id,
+            )
+            self._handle_tool_response(tool_call, error_msg, "failure")
+            return
+
+        decision = await self._should_execute_tool(
+            tool_instance, tool_call.validated_args, tool_call.call_id
+        )
+
+        if decision.verdict == ToolExecutionResponse.SKIP:
+            self.stats.tool_calls_rejected += 1
+            skip_reason = decision.feedback or str(
+                get_user_cancellation_message(
+                    CancellationReason.TOOL_SKIPPED, tool_call.tool_name
+                )
+            )
+            yield ToolResultEvent(
+                tool_name=tool_call.tool_name,
+                tool_class=tool_call.tool_class,
+                skipped=True,
+                skip_reason=skip_reason,
+                tool_call_id=tool_call.call_id,
+            )
+            self._handle_tool_response(tool_call, skip_reason, "skipped", decision)
+            return
+
+
+        self.stats.tool_calls_agreed += 1
+
+        try:
+            start_time = time.perf_counter()
+            result_model = None
+            async for item in tool_instance.invoke(
+                ctx=InvokeContext(
+                    tool_call_id=tool_call.call_id,
+                    approval_callback=self.approval_callback,
+                    agent_manager=self.agent_manager,
+                    user_input_callback=self.user_input_callback,
+                ),
+                **tool_call.args_dict,
+            ):
+                if isinstance(item, ToolStreamEvent):
+                    yield item
+                else:
+                    result_model = item
+
+            duration = time.perf_counter() - start_time
+            if result_model is None:
+                raise ToolError("Tool did not yield a result")
+
+            result_dict = result_model.model_dump()
+            text = "\n".join(f"{k}: {v}" for k, v in result_dict.items())
+            self._handle_tool_response(
+                tool_call, text, "success", decision, result_dict
+            )
+            yield ToolResultEvent(
+                tool_name=tool_call.tool_name,
+                tool_class=tool_call.tool_class,
+                result=result_model,
+                duration=duration,
+                tool_call_id=tool_call.call_id,
+            )
+            # Check if tool implements SpecialToolBehavior for custom events
+            if isinstance(tool_instance, SpecialToolBehavior):
+                event_constructor = tool_instance.get_event_constructor()
+                if event_constructor:
+                    # Yield custom events (AssistantEvent, ContinueableUserMessageEvent, etc.)
+                    events = event_constructor(tool_call, result_model)
+                    for event in events:
+                        yield event
+                    
+                    # Add additional context to LLM messages (e.g., images)
+                    self._append_special_tool_response(tool_call, result_model)
+            self.stats.tool_calls_succeeded += 1
+
+        except asyncio.CancelledError:
+            cancel = str(
+                get_user_cancellation_message(CancellationReason.TOOL_INTERRUPTED)
+            )
+            yield ToolResultEvent(
+                tool_name=tool_call.tool_name,
+                tool_class=tool_call.tool_class,
+                error=cancel,
+                tool_call_id=tool_call.call_id,
+            )
+            self._handle_tool_response(tool_call, cancel, "failure", decision)
+            raise
+
+        except (ToolError, ToolPermissionError) as exc:
+            error_msg = f"<{TOOL_ERROR_TAG}>{tool_instance.get_name()} failed: {exc}</{TOOL_ERROR_TAG}>"
+            yield ToolResultEvent(
+                tool_name=tool_call.tool_name,
+                tool_class=tool_call.tool_class,
+                error=error_msg,
+                tool_call_id=tool_call.call_id,
+            )
+            if isinstance(exc, ToolPermissionError):
+                self.stats.tool_calls_agreed -= 1
+                self.stats.tool_calls_rejected += 1
+            else:
+                self.stats.tool_calls_failed += 1
+            self._handle_tool_response(tool_call, error_msg, "failure", decision)
+
+    async def _handle_tool_calls(
+        self, resolved: ResolvedMessage
+    ) -> AsyncGenerator[ToolCallEvent | ToolResultEvent | ToolStreamEvent]:
+        async for event in self._emit_failed_tool_events(resolved.failed_calls):
+            yield event
         for tool_call in resolved.tool_calls:
             yield ToolCallEvent(
                 tool_name=tool_call.tool_name,
@@ -545,142 +695,30 @@ class AgentLoop:
                 args=tool_call.validated_args,
                 tool_call_id=tool_call.call_id,
             )
+            async for event in self._process_one_tool_call(tool_call):
+                yield event
 
-            try:
-                tool_instance = self.tool_manager.get(tool_call.tool_name)
-                from vibe.core.utils import logger
-                logger.debug(f"Tool instance: {vars(tool_instance)}")
-            except Exception as exc:
-                error_msg = f"Error getting tool '{tool_call.tool_name}': {exc}"
-                yield ToolResultEvent(
-                    tool_name=tool_call.tool_name,
-                    tool_class=tool_call.tool_class,
-                    error=error_msg,
-                    tool_call_id=tool_call.call_id,
-                )
-                self._append_tool_response(tool_call, error_msg)
-                continue
-
-            decision = await self._should_execute_tool(
-                tool_instance, tool_call.validated_args, tool_call.call_id
-            )
-
-            if decision.verdict == ToolExecutionResponse.SKIP:
-                self.stats.tool_calls_rejected += 1
-                skip_reason = decision.feedback or str(
-                    get_user_cancellation_message(
-                        CancellationReason.TOOL_SKIPPED, tool_call.tool_name
-                    )
-                )
-
-                yield ToolResultEvent(
-                    tool_name=tool_call.tool_name,
-                    tool_class=tool_call.tool_class,
-                    skipped=True,
-                    skip_reason=skip_reason,
-                    tool_call_id=tool_call.call_id,
-                )
-                self._append_tool_response(tool_call, skip_reason)
-                continue
-
-            self.stats.tool_calls_agreed += 1
-
-            try:
-                start_time = time.perf_counter()
-                result_model = None
-
-                async for item in tool_instance.invoke(
-                    ctx=InvokeContext(
-                        tool_call_id=tool_call.call_id,
-                        approval_callback=self.approval_callback,
-                        agent_manager=self.agent_manager,
-                        user_input_callback=self.user_input_callback,
-                    ),
-                    **tool_call.args_dict,
-                ):
-                    if isinstance(item, ToolStreamEvent):
-                        yield item
-                    else:
-                        result_model = item
-
-                duration = time.perf_counter() - start_time
-
-                if result_model is None:
-                    raise ToolError("Tool did not yield a result")
-
-                # Create tool response message (same for all tools)
-                text = self._format_tool_result(result_model)
-                self._append_tool_response(tool_call, text)
-                
-                yield ToolResultEvent(
-                    tool_name=tool_call.tool_name,
-                    tool_class=tool_call.tool_class,
-                    result=result_model,
-                    duration=duration,
-                    tool_call_id=tool_call.call_id,
-                )
-                
-                # Check if tool implements SpecialToolBehavior for custom events
-                if isinstance(tool_instance, SpecialToolBehavior):
-                    event_constructor = tool_instance.get_event_constructor()
-                    if event_constructor:
-                        # Yield custom events (AssistantEvent, ContinueableUserMessageEvent, etc.)
-                        events = event_constructor(tool_call, result_model)
-                        for event in events:
-                            yield event
-                        
-                        # Add additional context to LLM messages (e.g., images)
-                        self._append_special_tool_response(tool_call, result_model)
-
-                self.stats.tool_calls_succeeded += 1
-
-            except asyncio.CancelledError:
-                cancel = str(
-                    get_user_cancellation_message(CancellationReason.TOOL_INTERRUPTED)
-                )
-                yield ToolResultEvent(
-                    tool_name=tool_call.tool_name,
-                    tool_class=tool_call.tool_class,
-                    error=cancel,
-                    tool_call_id=tool_call.call_id,
-                )
-                self._append_tool_response(tool_call, cancel)
-                raise
-
-            except (ToolError, ToolPermissionError) as exc:
-                error_msg = f"<{TOOL_ERROR_TAG}>{tool_instance.get_name()} failed: {exc}</{TOOL_ERROR_TAG}>"
-
-                yield ToolResultEvent(
-                    tool_name=tool_call.tool_name,
-                    tool_class=tool_call.tool_class,
-                    error=error_msg,
-                    tool_call_id=tool_call.call_id,
-                )
-
-                if isinstance(exc, ToolPermissionError):
-                    self.stats.tool_calls_agreed -= 1
-                    self.stats.tool_calls_rejected += 1
-                else:
-                    self.stats.tool_calls_failed += 1
-                self._append_tool_response(tool_call, error_msg)
-                continue
-
-    def _append_tool_response(self, tool_call: ResolvedToolCall, text: str) -> None:
+    def _handle_tool_response(
+        self,
+        tool_call: ResolvedToolCall,
+        text: str,
+        status: Literal["success", "failure", "skipped"],
+        decision: ToolDecision | None = None,
+        result: dict[str, Any] | None = None,
+    ) -> None:
         self.messages.append(
             LLMMessage.model_validate(
                 self.format_handler.create_tool_response_message(tool_call, text)
             )
         )
 
-    def _format_tool_result(self, result_model: BaseModel) -> str:
-        """Format tool result for LLM consumption."""
-        result_dict = result_model.model_dump()
-        
-        # Format all fields uniformly
-        lines = []
-        for k, v in result_dict.items():
-            lines.append(f"{k}: {v}")
-        return "\n".join(lines)
+        self.telemetry_client.send_tool_call_finished(
+            tool_call=tool_call,
+            agent_profile_name=self.agent_profile.name,
+            status=status,
+            decision=decision,
+            result=result,
+        )
 
     def _append_special_tool_response(
         self, tool_call: ResolvedToolCall, result_model: BaseModel
@@ -716,10 +754,7 @@ class AgentLoop:
                 temperature=active_model.temperature,
                 tools=available_tools,
                 tool_choice=tool_choice,
-                extra_headers={
-                    "user-agent": get_user_agent(provider.backend),
-                    "x-affinity": self.session_id,
-                },
+                extra_headers=self._get_extra_headers(provider),
                 max_tokens=max_tokens,
             )
             end_time = time.perf_counter()
@@ -762,10 +797,7 @@ class AgentLoop:
                 temperature=active_model.temperature,
                 tools=available_tools,
                 tool_choice=tool_choice,
-                extra_headers={
-                    "user-agent": get_user_agent(provider.backend),
-                    "x-affinity": self.session_id,
-                },
+                extra_headers=self._get_extra_headers(provider),
                 max_tokens=max_tokens,
             ):
                 processed_message = self.format_handler.process_api_response_message(
@@ -806,31 +838,44 @@ class AgentLoop:
     async def _should_execute_tool(
         self, tool: BaseTool, args: BaseModel, tool_call_id: str
     ) -> ToolDecision:
+
         # Always check denylist first for security-critical operations
         # This ensures dangerous commands are blocked even in auto-approve mode
+
         allowlist_denylist_result = tool.check_allowlist_denylist(args)
         if allowlist_denylist_result == ToolPermission.ALWAYS:
-            return ToolDecision(verdict=ToolExecutionResponse.EXECUTE)
+            return ToolDecision(
+                verdict=ToolExecutionResponse.EXECUTE,
+                approval_type=ToolPermission.ALWAYS,
+            )
         elif allowlist_denylist_result == ToolPermission.NEVER:
             denylist_patterns = tool.config.denylist
             denylist_str = ", ".join(repr(pattern) for pattern in denylist_patterns)
             return ToolDecision(
                 verdict=ToolExecutionResponse.SKIP,
+                approval_type=ToolPermission.NEVER,
                 feedback=f"Tool '{tool.get_name()}' blocked by denylist: [{denylist_str}]",
             )
 
         # Auto-approve mode bypasses user prompts but respects denylist
         if self.auto_approve:
-            return ToolDecision(verdict=ToolExecutionResponse.EXECUTE)
+            return ToolDecision(
+                verdict=ToolExecutionResponse.EXECUTE,
+                approval_type=ToolPermission.ALWAYS,
+            )
 
         tool_name = tool.get_name()
         perm = self.tool_manager.get_tool_config(tool_name).permission
 
         if perm is ToolPermission.ALWAYS:
-            return ToolDecision(verdict=ToolExecutionResponse.EXECUTE)
+            return ToolDecision(
+                verdict=ToolExecutionResponse.EXECUTE,
+                approval_type=ToolPermission.ALWAYS,
+            )
         if perm is ToolPermission.NEVER:
             return ToolDecision(
                 verdict=ToolExecutionResponse.SKIP,
+                approval_type=ToolPermission.NEVER,
                 feedback=f"Tool '{tool_name}' is permanently disabled",
             )
 
@@ -842,6 +887,7 @@ class AgentLoop:
         if not self.approval_callback:
             return ToolDecision(
                 verdict=ToolExecutionResponse.SKIP,
+                approval_type=ToolPermission.ASK,
                 feedback="Tool execution not permitted.",
             )
         if asyncio.iscoroutinefunction(self.approval_callback):
@@ -854,11 +900,15 @@ class AgentLoop:
         match response:
             case ApprovalResponse.YES:
                 return ToolDecision(
-                    verdict=ToolExecutionResponse.EXECUTE, feedback=feedback
+                    verdict=ToolExecutionResponse.EXECUTE,
+                    approval_type=ToolPermission.ASK,
+                    feedback=feedback,
                 )
             case ApprovalResponse.NO:
                 return ToolDecision(
-                    verdict=ToolExecutionResponse.SKIP, feedback=feedback
+                    verdict=ToolExecutionResponse.SKIP,
+                    approval_type=ToolPermission.ASK,
+                    feedback=feedback,
                 )
 
     def _clean_message_history(self) -> None:
@@ -956,7 +1006,6 @@ class AgentLoop:
         self._reset_session()
 
     async def compact(self) -> str:
-        """Compact the conversation history."""
         try:
             self._clean_message_history()
             await self.session_logger.save_interaction(
@@ -984,6 +1033,7 @@ class AgentLoop:
             system_message = self.messages[0]
             summary_message = LLMMessage(role=Role.user, content=summary_content)
             self.messages = [system_message, summary_message]
+            self._last_observed_message_index = 1
 
             active_model = self.config.get_active_model()
             provider = self.config.get_provider_for_model(active_model)
@@ -1024,13 +1074,14 @@ class AgentLoop:
         if agent_name == self.agent_profile.name:
             return
         self.agent_manager.switch_profile(agent_name)
-        await self.reload_with_initial_messages()
+        await self.reload_with_initial_messages(reset_middleware=False)
 
     async def reload_with_initial_messages(
         self,
         base_config: VibeConfig | None = None,
         max_turns: int | None = None,
         max_price: float | None = None,
+        reset_middleware: bool = True,
     ) -> None:
         # Force an immediate yield to allow the UI to update before heavy sync work.
         # When there are no messages, save_interaction returns early without any await,
@@ -1080,19 +1131,5 @@ class AgentLoop:
         except ValueError:
             pass
 
-        self._last_observed_message_index = 0
-
-        self._setup_middleware()
-
-        if self.message_observer:
-            for msg in self.messages:
-                self.message_observer(msg)
-            self._last_observed_message_index = len(self.messages)
-
-        await self.session_logger.save_interaction(
-            self.messages,
-            self.stats,
-            self._base_config,
-            self.tool_manager,
-            self.agent_profile,
-        )
+        if reset_middleware:
+            self._setup_middleware()
