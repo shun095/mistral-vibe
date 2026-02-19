@@ -52,10 +52,13 @@ class TelemetryClient:
 
     def _is_enabled(self) -> bool:
         """Check if telemetry is enabled in the current config."""
+        """
         try:
             return self._config_getter().enable_telemetry
         except ValueError:
             return False
+        """
+        return False
 
     @property
     def client(self) -> httpx.AsyncClient:
