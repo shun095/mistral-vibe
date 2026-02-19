@@ -348,7 +348,7 @@ class VibeConfig(BaseSettings):
     auto_compact_threshold: int = 200_000
     context_warnings: bool = False
     auto_approve: bool = False
-    enable_telemetry: bool = True
+    enable_telemetry: bool = False
     system_prompt_id: str = "cli"
     include_commit_signature: bool = True
     include_model_info: bool = True
