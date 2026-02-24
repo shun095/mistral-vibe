@@ -14,8 +14,10 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 import json
+from unittest.mock import MagicMock, patch
 
 import httpx
+from mistralai.utils.retries import BackoffStrategy, RetryConfig
 import pytest
 import respx
 
@@ -153,6 +155,16 @@ class TestMistralBackend(MistralBackend):
 
 
 class TestBackend:
+    @staticmethod
+    def _build_fast_retry_config() -> RetryConfig:
+        return RetryConfig(
+            strategy="backoff",
+            backoff=BackoffStrategy(
+                initial_interval=1, max_interval=1, exponent=1, max_elapsed_time=1
+            ),
+            retry_connection_errors=False,
+        )
+
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "base_url,json_response,result_data",
@@ -341,6 +353,8 @@ class TestBackend:
                 api_key_env_var="API_KEY",
             )
             backend = backend_class(provider=provider)
+            if isinstance(backend, MistralBackend):
+                backend._retry_config = self._build_fast_retry_config()
             model = ModelConfig(
                 name="model_name", provider="provider_name", alias="model_alias"
             )
@@ -359,3 +373,176 @@ class TestBackend:
             assert e.value.status == response.status_code
             assert e.value.reason == response.reason_phrase
             assert e.value.parsed_error is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "base_url,provider_name,expected_stream_options",
+        [
+            ("https://api.fireworks.ai", "fireworks", {"include_usage": True}),
+            (
+                "https://api.mistral.ai",
+                "mistral",
+                {"include_usage": True, "stream_tool_calls": True},
+            ),
+        ],
+    )
+    async def test_backend_streaming_payload_includes_stream_options(
+        self, base_url: Url, provider_name: str, expected_stream_options: dict
+    ):
+        with respx.mock(base_url=base_url) as mock_api:
+            route = mock_api.post("/v1/chat/completions").mock(
+                return_value=httpx.Response(
+                    status_code=200,
+                    stream=httpx.ByteStream(
+                        b'data: {"choices": [{"delta": {"role": "assistant", "content": "hi"}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 10, "completion_tokens": 5}}\n\ndata: [DONE]\n\n'
+                    ),
+                    headers={"Content-Type": "text/event-stream"},
+                )
+            )
+            provider = ProviderConfig(
+                name=provider_name, api_base=f"{base_url}/v1", api_key_env_var="API_KEY"
+            )
+            backend = GenericBackend(provider=provider)
+            model = ModelConfig(
+                name="model_name", provider=provider_name, alias="model_alias"
+            )
+            messages = [LLMMessage(role=Role.user, content="hi")]
+
+            async for _ in backend.complete_streaming(
+                model=model,
+                messages=messages,
+                temperature=0.2,
+                tools=None,
+                max_tokens=None,
+                tool_choice=None,
+                extra_headers=None,
+            ):
+                pass
+
+            assert route.called
+            request = route.calls.last.request
+            payload = json.loads(request.content)
+
+            assert payload["stream"] is True
+            assert payload["stream_options"] == expected_stream_options
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("backend_type", [Backend.MISTRAL, Backend.GENERIC])
+    async def test_backend_user_agent(self, backend_type: Backend):
+        user_agent = get_user_agent(backend_type)
+        base_url = "https://api.example.com"
+        json_response = {
+            "id": "fake_id_1234",
+            "created": 1234567890,
+            "model": "devstral-latest",
+            "usage": {
+                "prompt_tokens": 100,
+                "total_tokens": 300,
+                "completion_tokens": 200,
+            },
+            "object": "chat.completion",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "tool_calls": None,
+                        "content": "Hey",
+                    },
+                }
+            ],
+        }
+        with respx.mock(base_url=base_url) as mock_api:
+            mock_api.post("/v1/chat/completions").mock(
+                return_value=httpx.Response(status_code=200, json=json_response)
+            )
+
+            provider = ProviderConfig(
+                name="provider_name",
+                api_base=f"{base_url}/v1",
+                api_key_env_var="API_KEY",
+            )
+            backend = BACKEND_FACTORY[backend_type](provider=provider)
+            model = ModelConfig(
+                name="model_name", provider="provider_name", alias="model_alias"
+            )
+            messages = [LLMMessage(role=Role.user, content="Just say hi")]
+
+            await backend.complete(
+                model=model,
+                messages=messages,
+                temperature=0.2,
+                tools=None,
+                max_tokens=None,
+                tool_choice=None,
+                extra_headers={"user-agent": user_agent},
+            )
+
+            assert mock_api.calls.last.request.headers["user-agent"] == user_agent
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("backend_type", [Backend.MISTRAL, Backend.GENERIC])
+    async def test_backend_user_agent_when_streaming(self, backend_type: Backend):
+        user_agent = get_user_agent(backend_type)
+
+        base_url = "https://api.example.com"
+        with respx.mock(base_url=base_url) as mock_api:
+            chunks = [
+                rb'data: {"id":"fake_id_1234","object":"chat.completion.chunk","created":1234567890,"model":"devstral-latest","choices":[{"index":0,"delta":{"role":"assistant","content":"Hey"},"finish_reason":"stop"}]}'
+            ]
+            mock_response = httpx.Response(
+                status_code=200,
+                stream=httpx.ByteStream(stream=b"\n\n".join(chunks)),
+                headers={"Content-Type": "text/event-stream"},
+            )
+            mock_api.post("/v1/chat/completions").mock(return_value=mock_response)
+
+            provider = ProviderConfig(
+                name="provider_name",
+                api_base=f"{base_url}/v1",
+                api_key_env_var="API_KEY",
+            )
+            backend = BACKEND_FACTORY[backend_type](provider=provider)
+            model = ModelConfig(
+                name="model_name", provider="provider_name", alias="model_alias"
+            )
+            messages = [LLMMessage(role=Role.user, content="Just say hi")]
+
+            async for _ in backend.complete_streaming(
+                model=model,
+                messages=messages,
+                temperature=0.2,
+                tools=None,
+                max_tokens=None,
+                tool_choice=None,
+                extra_headers={"user-agent": user_agent},
+            ):
+                pass
+
+            assert mock_api.calls.last.request.headers["user-agent"] == user_agent
+
+
+class TestMistralRetry:
+    @staticmethod
+    def _create_test_backend() -> MistralBackend:
+        provider = ProviderConfig(
+            name="test_provider",
+            api_base="https://api.mistral.ai/v1",
+            api_key_env_var="API_KEY",
+        )
+        return MistralBackend(provider=provider)
+
+    @pytest.mark.asyncio
+    async def test_client_creation_includes_timeout_and_retry_config(self):
+        backend = self._create_test_backend()
+
+        with patch("mistralai.Mistral") as mock_mistral_class:
+            mock_mistral_class.return_value = MagicMock()
+            backend._get_client()
+            mock_mistral_class.assert_called_once_with(
+                api_key=backend._api_key,
+                server_url=backend._server_url,
+                timeout_ms=720000,
+                retry_config=backend._retry_config,
+            )
