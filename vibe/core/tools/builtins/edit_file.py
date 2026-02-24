@@ -48,21 +48,20 @@ class EditFileArgs(BaseModel):
 
 class EditFileResult(BaseModel):
     file: str
-    occurrences_replaced: int
+    blocks_applied: int
+    lines_changed: int
+    warnings: list[str] = Field(default_factory=list)
     content: str
     lsp_diagnostics: str | None = Field(
         default=None,
         description="Formatted LSP diagnostics for the modified file, if available"
     )
-    warnings: list[str] = Field(default_factory=list)
 
 
 class EditFileConfig(BaseToolConfig):
-    permission: ToolPermission = ToolPermission.ASK
     max_content_size: int = 100_000
     create_backup: bool = False
     fuzzy_threshold: float = 0.9
-    fuzzy_match_enabled: bool = False
 
 
 class FuzzyMatch(NamedTuple):
@@ -104,16 +103,10 @@ class EditFile(
     @classmethod
     def get_result_display(cls, event: ToolResultEvent) -> ToolResultDisplay:
         if isinstance(event.result, EditFileResult):
-            warnings: list[str] = []
-            if event.result.warnings:
-                warnings.extend(event.result.warnings)
-            if event.result.lsp_diagnostics:
-                warnings.extend(event.result.lsp_diagnostics.split("\n"))
-
             return ToolResultDisplay(
                 success=True,
-                message=f"Replaced {event.result.occurrences_replaced} occurrence{'' if event.result.occurrences_replaced == 1 else 's'}",
-                warnings=warnings,
+                message=f"Applied {event.result.blocks_applied} block{'' if event.result.blocks_applied == 1 else 's'}",
+                warnings=event.result.warnings,
             )
 
         return ToolResultDisplay(success=True, message="File edited")
@@ -144,20 +137,19 @@ class EditFile(
     async def run(
         self, args: EditFileArgs, ctx: InvokeContext | None = None
     ) -> AsyncGenerator[ToolStreamEvent | EditFileResult, None]:
-        file_path, content_bytes = self._prepare_and_validate_args(args)
+        file_path = self._prepare_and_validate_args(args)
 
         original_content = await self._read_file(file_path)
 
+        # Count occurrences
+        occurrences = original_content.count(args.old_string)
+
         # Check if old_string exists in content
-        if args.old_string not in original_content:
+        if occurrences == 0:
             context = EditFile._find_context(original_content, args.old_string)
-            fuzzy_context = None
-            
-            # Try fuzzy matching if enabled
-            if self.config.fuzzy_match_enabled and args.old_string:
-                fuzzy_context = EditFile._find_fuzzy_match_context(
-                    original_content, args.old_string, self.config.fuzzy_threshold
-                )
+            fuzzy_context = EditFile._find_fuzzy_match_context(
+                original_content, args.old_string, self.config.fuzzy_threshold
+            )
             
             error_msg = (
                 f"old_string not found in file: {file_path}\n"
@@ -169,41 +161,12 @@ class EditFile(
                 "3. Ensure the old_string hasn't been modified by previous tool calls\n"
                 "4. Check for typos or case sensitivity issues"
             )
-            
-            if self.config.fuzzy_match_enabled:
-                error_msg += (
-                    f"\n5. Enable fuzzy matching (fuzzy_match_enabled=True) to find similar matches"
-                )
             
             error_msg += f"\n\nContext analysis:\n{context}"
             
             if fuzzy_context:
                 error_msg += f"\n\n{fuzzy_context}"
             
-            raise ToolError(error_msg)
-
-        # Count occurrences
-        occurrences = original_content.count(args.old_string)
-
-        if occurrences == 0:
-            context = EditFile._find_context(original_content, args.old_string)
-            error_msg = (
-                f"old_string not found in file: {file_path}\n"
-                "Make sure the exact literal text (including all whitespace, indentation, "
-                "and newlines) matches exactly what's in the file.\n"
-                "Debugging tips:\n"
-                "1. Check for exact whitespace/indentation match\n"
-                "2. Verify line endings match the file exactly (\\r\\n vs \\n)\n"
-                "3. Ensure the old_string hasn't been modified by previous tool calls\n"
-                "4. Check for typos or case sensitivity issues"
-            )
-            
-            if self.config.fuzzy_match_enabled:
-                error_msg += (
-                    f"\n5. Enable fuzzy matching (fuzzy_match_enabled=True) to find similar matches"
-                )
-            
-            error_msg += f"\n\nContext analysis:\n{context}"
             raise ToolError(error_msg)
 
         # Warn if multiple occurrences (unless replace_all is True)
@@ -255,18 +218,24 @@ class EditFile(
             # Don't fail the edit_file operation if LSP fails
             pass
 
+        # Generate unified diff between old and new content
+        diff = EditFile._create_unified_diff(
+            original_content, modified_content, "ORIGINAL", "MODIFIED"
+        )
+
         yield EditFileResult(
             file=str(file_path),
-            occurrences_replaced=occurrences_replaced,
-            content=args.old_string,
-            lsp_diagnostics=lsp_diagnostics,
+            blocks_applied=occurrences_replaced,
+            lines_changed=lines_changed,
             warnings=warnings,
+            content=diff,
+            lsp_diagnostics=lsp_diagnostics,
         )
 
     @final
     def _prepare_and_validate_args(
         self, args: EditFileArgs
-    ) -> tuple[Path, int]:
+    ) -> Path:
         file_path_str = args.file_path.strip()
         old_string = args.old_string
         new_string = args.new_string
@@ -301,7 +270,7 @@ class EditFile(
         if not file_path.is_file():
             raise ToolError(f"Path is not a file: {file_path}")
 
-        return file_path, content_bytes
+        return file_path
 
     async def _read_file(self, file_path: Path) -> str:
         try:
@@ -460,8 +429,8 @@ class EditFile(
 
         diff_lines = list(diff)
 
-        if diff_lines and not diff_lines[0].startswith("==="):
-            diff_lines.insert(2, "=" * 67 + "\n")
+        # Ensure all diff lines end with newline for proper formatting
+        diff_lines = [line if line.endswith("\n") else line + "\n" for line in diff_lines]
 
         result = "".join(diff_lines)
 
