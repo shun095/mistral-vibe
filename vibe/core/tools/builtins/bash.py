@@ -8,7 +8,7 @@ import signal
 import sys
 from typing import ClassVar, Literal, final
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from tree_sitter import Language, Node, Parser
 import tree_sitter_bash as tsbash
 
@@ -199,8 +199,15 @@ class BashToolConfig(BaseToolConfig):
 class BashArgs(BaseModel):
     command: str
     timeout: int = Field(
-        description="Timeout for the command in seconds (required to prevent hanging)."
+        description="Timeout for the command in seconds (required to prevent hanging).",
     )
+
+    @field_validator("timeout", mode="before")
+    @classmethod
+    def _clamp_timeout(cls, value: int | None) -> int | None:
+        if value is None:
+            return value
+        return min(value, 600)
 
 
 class BashResult(BaseModel):
@@ -221,7 +228,11 @@ class Bash(
         if not isinstance(event.args, BashArgs):
             return ToolCallDisplay(summary="bash")
 
-        return ToolCallDisplay(summary=f"bash: {event.args.command}")
+        command = event.args.command
+        timeout = event.args.timeout
+        if timeout is not None:
+            return ToolCallDisplay(summary=f"bash: {command} (timeout: {timeout}s)")
+        return ToolCallDisplay(summary=f"bash: {command}")
 
     @classmethod
     def get_result_display(cls, event: ToolResultEvent) -> ToolResultDisplay:

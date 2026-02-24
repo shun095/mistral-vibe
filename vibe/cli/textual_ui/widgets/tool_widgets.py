@@ -128,6 +128,8 @@ class ToolResultWidget[TResult: BaseModel](Static):
 class BashApprovalWidget(ToolApprovalWidget[BashArgs]):
     def compose(self) -> ComposeResult:
         yield Markdown(f"```bash\n{self.args.command}\n```")
+        if self.args.timeout is not None:
+            yield NoMarkupStatic(f"timeout: {self.args.timeout}s", classes="approval-description")
 
 
 class BashResultWidget(ToolResultWidget[BashResult]):
