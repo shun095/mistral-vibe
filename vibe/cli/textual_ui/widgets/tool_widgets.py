@@ -15,6 +15,7 @@ from vibe.core.tools.builtins.ask_user_question import AskUserQuestionResult
 from vibe.core.tools.builtins.bash import BashArgs, BashResult
 from vibe.core.tools.builtins.grep import GrepArgs, GrepResult
 from vibe.core.tools.builtins.lsp import LSPToolResult
+from vibe.core.tools.builtins.edit_file import EditFileArgs, EditFileResult
 from vibe.core.tools.builtins.read_file import ReadFileArgs, ReadFileResult
 from vibe.core.tools.builtins.search_replace import (
     SEARCH_REPLACE_BLOCK_RE,
@@ -35,21 +36,31 @@ def _truncate_lines(content: str, max_lines: int) -> tuple[str, str | None]:
 
 
 def parse_search_replace_to_diff(content: str) -> list[str]:
-    """Parse SEARCH/REPLACE blocks and generate unified diff lines."""
-    all_diff_lines: list[str] = []
+    """Parse SEARCH/REPLACE blocks and generate unified diff lines.
+    
+    Handles both SEARCH/REPLACE blocks format and unified diff format.
+    """
+    # Try parsing as SEARCH/REPLACE blocks first
     matches = SEARCH_REPLACE_BLOCK_RE.findall(content)
-    if not matches:
-        return [content[:500]] if content else []
-
-    for i, (search_text, replace_text) in enumerate(matches):
-        if i > 0:
-            all_diff_lines.append("")  # Separator between blocks
-        search_lines = search_text.strip().split("\n")
-        replace_lines = replace_text.strip().split("\n")
-        diff = difflib.unified_diff(search_lines, replace_lines, lineterm="", n=2)
-        all_diff_lines.extend(list(diff)[2:])  # Skip file headers
-
-    return all_diff_lines
+    if matches:
+        all_diff_lines: list[str] = []
+        for i, (search_text, replace_text) in enumerate(matches):
+            if i > 0:
+                all_diff_lines.append("")  # Separator between blocks
+            search_lines = search_text.strip().split("\n")
+            replace_lines = replace_text.strip().split("\n")
+            diff = difflib.unified_diff(search_lines, replace_lines, lineterm="", n=2)
+            all_diff_lines.extend(list(diff)[2:])  # Skip file headers
+        return all_diff_lines
+    
+    # If no SEARCH/REPLACE blocks found, treat as unified diff
+    # Check if content looks like a unified diff
+    if content and ("---" in content or "+++" in content or "@@" in content):
+        # It's a unified diff, split into lines
+        return content.split("\n")
+    
+    # Fallback: return content truncated
+    return [content[:500]] if content else []
 
 
 def render_diff_line(line: str) -> Static:
@@ -201,6 +212,45 @@ class WriteFileResultWidget(ToolResultWidget[WriteFileResult]):
             yield NoMarkupStatic("")
             content, _ = _truncate_lines(self.result.content, 10)
             yield Markdown(f"```{ext}\n{content}\n```")
+        yield from self._footer()
+
+
+class EditFileApprovalWidget(ToolApprovalWidget[EditFileArgs]):
+    def compose(self) -> ComposeResult:
+        yield NoMarkupStatic(
+            f"File: {self.args.file_path}", classes="approval-description"
+        )
+        yield NoMarkupStatic("")
+        old_string = self.args.old_string[:200]
+        if len(self.args.old_string) > 200:
+            old_string += "…"
+        yield NoMarkupStatic(f"old_string: {old_string}", classes="approval-description")
+        yield NoMarkupStatic("")
+        new_string = self.args.new_string[:200]
+        if len(self.args.new_string) > 200:
+            new_string += "…"
+        yield NoMarkupStatic(f"new_string: {new_string}", classes="approval-description")
+
+
+class EditFileResultWidget(ToolResultWidget[EditFileResult]):
+    def compose(self) -> ComposeResult:
+        if not self.result:
+            yield from self._footer()
+            return
+        for warning in self.warnings:
+            yield NoMarkupStatic(f"⚠ {warning}", classes="tool-result-warning")
+        
+        # Display LSP diagnostics if available
+        if self.result and self.result.lsp_diagnostics:
+            yield NoMarkupStatic("")
+            # Convert YAML to Markdown for UI display
+            markdown_content = LSPDiagnosticFormatter.format_yaml_to_markdown(self.result.lsp_diagnostics)
+            yield Markdown(markdown_content)
+        
+        if self.result.content:
+            # Parse and render the unified diff
+            for line in parse_search_replace_to_diff(self.result.content):
+                yield render_diff_line(line)
         yield from self._footer()
 
 
@@ -377,6 +427,7 @@ APPROVAL_WIDGETS: dict[str, type[ToolApprovalWidget]] = {
     "read_file": ReadFileApprovalWidget,
     "write_file": WriteFileApprovalWidget,
     "search_replace": SearchReplaceApprovalWidget,
+    "edit_file": EditFileApprovalWidget,
     "grep": GrepApprovalWidget,
     "todo": TodoApprovalWidget,
 }
@@ -386,6 +437,7 @@ RESULT_WIDGETS: dict[str, type[ToolResultWidget]] = {
     "read_file": ReadFileResultWidget,
     "write_file": WriteFileResultWidget,
     "search_replace": SearchReplaceResultWidget,
+    "edit_file": EditFileResultWidget,
     "grep": GrepResultWidget,
     "todo": TodoResultWidget,
     "ask_user_question": AskUserQuestionResultWidget,

@@ -47,10 +47,11 @@ def another_function():
         )
     )
 
-    assert result.occurrences_replaced == 1
+    assert result.blocks_applied == 1
     assert result.file == str(test_file)
-    # content field contains the old_string that was replaced
+    # content field contains the unified diff between old and new content
     assert "old_function" in result.content
+    assert "new_function" in result.content
 
     # Verify file was actually updated
     updated_content = test_file.read_text()
@@ -85,7 +86,7 @@ old_value = 3
     )
 
     # With replace_all=True, all occurrences should be replaced
-    assert result.occurrences_replaced == 1  # Only one occurrence of "old_value = 3"
+    assert result.blocks_applied == 1  # Only one occurrence of "old_value = 3"
 
     # Verify file was updated
     updated_content = test_file.read_text()
@@ -281,7 +282,7 @@ def function_two():
         )
     )
 
-    assert result.occurrences_replaced == 1
+    assert result.blocks_applied == 1
 
     # Verify file was updated
     updated_content = test_file.read_text()
@@ -315,7 +316,7 @@ async def test_backup_file_creation(tmp_path, monkeypatch):
         )
     )
 
-    assert result.occurrences_replaced == 1
+    assert result.blocks_applied == 1
     # Verify backup file was created
     backup_file = tmp_path / "test.py.bak"
     assert backup_file.exists()
@@ -397,7 +398,7 @@ value = 1
         )
     )
 
-    assert result.occurrences_replaced == 1
+    assert result.blocks_applied == 1
     # Check that warnings are included in the result
     assert len(result.warnings) > 0
     # Check that warning mentions multiple occurrences
@@ -433,7 +434,7 @@ async def test_create_backup_config_option(tmp_path, monkeypatch):
 
     backup_file = tmp_path / "test_no_backup.py.bak"
     assert not backup_file.exists()  # No backup should be created
-    assert result1.occurrences_replaced == 1
+    assert result1.blocks_applied == 1
 
     # Test with create_backup=True
     config_with_backup = EditFileConfig(create_backup=True)
@@ -456,14 +457,14 @@ async def test_create_backup_config_option(tmp_path, monkeypatch):
     backup_file2 = tmp_path / "test_with_backup.py.bak"
     assert backup_file2.exists()
     assert backup_file2.read_text() == original2
-    assert result2.occurrences_replaced == 1
+    assert result2.blocks_applied == 1
 
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
 async def test_fuzzy_match_with_enabled_config(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    config = EditFileConfig(fuzzy_match_enabled=True, fuzzy_threshold=0.9)
+    config = EditFileConfig(fuzzy_threshold=0.9)
     edit_file_tool = EditFile(config=config, state=EditFileState())
 
     # Create a test file with slight whitespace differences
@@ -485,7 +486,7 @@ async def test_fuzzy_match_with_enabled_config(tmp_path, monkeypatch):
         )
     )
 
-    assert result.occurrences_replaced == 1
+    assert result.blocks_applied == 1
     assert len(result.warnings) == 0
     
     # Verify file was updated
@@ -498,7 +499,7 @@ async def test_fuzzy_match_with_enabled_config(tmp_path, monkeypatch):
 @pytest.mark.timeout(30)
 async def test_fuzzy_match_provides_similar_matches_in_error(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    config = EditFileConfig(fuzzy_match_enabled=True, fuzzy_threshold=0.8)
+    config = EditFileConfig(fuzzy_threshold=0.8)
     edit_file_tool = EditFile(config=config, state=EditFileState())
 
     # Create a test file
