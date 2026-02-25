@@ -350,6 +350,8 @@ class VibeConfig(BaseSettings):
     context_warnings: bool = False
     auto_approve: bool = False
     enable_telemetry: bool = False
+    loop_detection_enabled: bool = True
+    loop_detection_threshold: int = 3
     system_prompt_id: str = "cli"
     include_commit_signature: bool = True
     include_model_info: bool = True
