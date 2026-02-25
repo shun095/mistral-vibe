@@ -30,18 +30,18 @@ class BackendLike(Protocol):
         *,
         model: ModelConfig,
         messages: list[LLMMessage],
-        temperature: float,
-        tools: list[AvailableTool] | None,
-        max_tokens: int | None,
-        tool_choice: StrToolChoice | AvailableTool | None,
-        extra_headers: dict[str, str] | None,
+        temperature: float | None = None,
+        tools: list[AvailableTool] | None = None,
+        max_tokens: int | None = None,
+        tool_choice: StrToolChoice | AvailableTool | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> LLMChunk:
         """Complete a chat conversation using the specified model and provider.
 
         Args:
             model: Model configuration
             messages: List of conversation messages
-            temperature: Sampling temperature (0.0 to 1.0)
+            temperature: Sampling temperature (0.0 to 1.0), None to use backend default
             tools: Optional list of available tools
             max_tokens: Maximum tokens to generate
             tool_choice: How to choose tools (auto, none, or specific tool)
@@ -63,11 +63,11 @@ class BackendLike(Protocol):
         *,
         model: ModelConfig,
         messages: list[LLMMessage],
-        temperature: float,
-        tools: list[AvailableTool] | None,
-        max_tokens: int | None,
-        tool_choice: StrToolChoice | AvailableTool | None,
-        extra_headers: dict[str, str] | None,
+        temperature: float | None = None,
+        tools: list[AvailableTool] | None = None,
+        max_tokens: int | None = None,
+        tool_choice: StrToolChoice | AvailableTool | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> AsyncGenerator[LLMChunk, None]:
         """Equivalent of the complete method, but yields LLMEvent objects
         instead of a single LLMEvent.
@@ -75,7 +75,7 @@ class BackendLike(Protocol):
         Args:
             model: Model configuration
             messages: List of conversation messages
-            temperature: Sampling temperature (0.0 to 1.0)
+            temperature: Sampling temperature (0.0 to 1.0), None to use backend default
             tools: Optional list of available tools
             max_tokens: Maximum tokens to generate
             tool_choice: How to choose tools (auto, none, or specific tool)
@@ -94,10 +94,10 @@ class BackendLike(Protocol):
         *,
         model: ModelConfig,
         messages: list[LLMMessage],
-        temperature: float = 0.0,
-        tools: list[AvailableTool] | None,
+        temperature: float | None = None,
+        tools: list[AvailableTool] | None = None,
         tool_choice: StrToolChoice | AvailableTool | None = None,
-        extra_headers: dict[str, str] | None,
+        extra_headers: dict[str, str] | None = None,
     ) -> int:
         """Count the number of tokens in the prompt without generating a real response.
 
@@ -109,7 +109,7 @@ class BackendLike(Protocol):
         Args:
             model: Model configuration
             messages: List of messages to count tokens for
-            temperature: Sampling temperature
+            temperature: Sampling temperature, None to use backend default
             tools: Optional list of available tools
             tool_choice: How to choose tools
             extra_headers: Additional HTTP headers to include
