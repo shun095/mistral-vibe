@@ -37,7 +37,9 @@ from vibe.core.middleware import (
     ResetReason,
     TurnLimitMiddleware,
 )
+from vibe.core.loop_detection import ToolCallLoopHandler
 from vibe.core.prompts import UtilityPrompt
+from vibe.core.utils import TOOL_ERROR_TAG
 from vibe.core.session.session_logger import SessionLogger
 from vibe.core.session.session_migration import migrate_sessions_entrypoint
 from vibe.core.skills.manager import SkillManager
@@ -73,6 +75,7 @@ from vibe.core.types import (
     Role,
     SyncApprovalCallback,
     ToolCallEvent,
+    ToolCallSignature,
     ToolResultEvent,
     ToolStreamEvent,
     UserInputCallback,
@@ -173,6 +176,10 @@ class AgentLoop:
             self._last_observed_message_index = 1
 
         self.stats = AgentStats()
+        
+        # Initialize loop handler for tool call loop detection (only if enabled)
+        self._loop_handler = ToolCallLoopHandler(config)
+        
         try:
             active_model = config.get_active_model()
             self.stats.input_price_per_million = active_model.input_price
@@ -533,6 +540,15 @@ class AgentLoop:
     async def _process_one_tool_call(
         self, tool_call: ResolvedToolCall
     ) -> AsyncGenerator[ToolResultEvent | ToolStreamEvent]:
+        # Check for tool call loop before processing (only if enabled)
+        if self._loop_handler is not None:
+            is_loop, event = self._loop_handler.check_and_handle_loop_for_agent_loop(
+                tool_call, TOOL_ERROR_TAG, tool_call.tool_class, tool_call.call_id, self._handle_tool_response
+            )
+            if is_loop:
+                yield event
+                return
+
         try:
             tool_instance = self.tool_manager.get(tool_call.tool_name)
         except Exception as exc:
