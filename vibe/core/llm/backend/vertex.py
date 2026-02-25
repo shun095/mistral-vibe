@@ -68,7 +68,7 @@ class VertexAnthropicAdapter(AnthropicAdapter):
         *,
         model_name: str,
         messages: list[LLMMessage],
-        temperature: float,
+        temperature: float | None,
         tools: list[AvailableTool] | None,
         max_tokens: int | None,
         tool_choice: StrToolChoice | AvailableTool | None,

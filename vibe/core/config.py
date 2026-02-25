@@ -283,7 +283,7 @@ class ModelConfig(BaseModel):
     name: str
     provider: str
     alias: str
-    temperature: float = 0.2
+    temperature: float | None = None
     input_price: float = 0.0  # Price per million input tokens
     output_price: float = 0.0  # Price per million output tokens
     thinking: Literal["off", "low", "medium", "high"] = "off"

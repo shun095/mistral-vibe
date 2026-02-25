@@ -5,7 +5,7 @@ import json
 import os
 import re
 import types
-from typing import TYPE_CHECKING, NamedTuple, cast
+from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 import httpx
 import mistralai
@@ -229,7 +229,7 @@ class MistralBackend:
         *,
         model: ModelConfig,
         messages: list[LLMMessage],
-        temperature: float,
+        temperature: float | None,
         tools: list[AvailableTool] | None,
         max_tokens: int | None,
         tool_choice: StrToolChoice | AvailableTool | None,
@@ -237,20 +237,20 @@ class MistralBackend:
     ) -> LLMChunk:
         try:
             merged_messages = merge_consecutive_user_messages(messages)
-            response = await self._get_client().chat.complete_async(
-                model=model.name,
-                messages=[self._mapper.prepare_message(msg) for msg in merged_messages],
-                temperature=temperature,
-                tools=[self._mapper.prepare_tool(tool) for tool in tools]
-                if tools
-                else None,
-                max_tokens=max_tokens,
-                tool_choice=self._mapper.prepare_tool_choice(tool_choice)
-                if tool_choice
-                else None,
-                http_headers=extra_headers,
-                stream=False,
-            )
+            # Only pass temperature if it's explicitly set
+            kwargs: dict[str, Any] = {
+                "model": model.name,
+                "messages": [self._mapper.prepare_message(msg) for msg in merged_messages],
+                "tools": [self._mapper.prepare_tool(tool) for tool in tools] if tools else None,
+                "max_tokens": max_tokens,
+                "tool_choice": self._mapper.prepare_tool_choice(tool_choice) if tool_choice else None,
+                "http_headers": extra_headers,
+                "stream": False,
+            }
+            if temperature is not None:
+                kwargs["temperature"] = temperature
+            
+            response = await self._get_client().chat.complete_async(**kwargs)
 
             parsed = (
                 self._mapper.parse_content(response.choices[0].message.content)
@@ -304,7 +304,7 @@ class MistralBackend:
         *,
         model: ModelConfig,
         messages: list[LLMMessage],
-        temperature: float,
+        temperature: float | None,
         tools: list[AvailableTool] | None,
         max_tokens: int | None,
         tool_choice: StrToolChoice | AvailableTool | None,
@@ -312,19 +312,19 @@ class MistralBackend:
     ) -> AsyncGenerator[LLMChunk, None]:
         try:
             merged_messages = merge_consecutive_user_messages(messages)
-            async for chunk in await self._get_client().chat.stream_async(
-                model=model.name,
-                messages=[self._mapper.prepare_message(msg) for msg in merged_messages],
-                temperature=temperature,
-                tools=[self._mapper.prepare_tool(tool) for tool in tools]
-                if tools
-                else None,
-                max_tokens=max_tokens,
-                tool_choice=self._mapper.prepare_tool_choice(tool_choice)
-                if tool_choice
-                else None,
-                http_headers=extra_headers,
-            ):
+            # Only pass temperature if it's explicitly set
+            kwargs: dict[str, Any] = {
+                "model": model.name,
+                "messages": [self._mapper.prepare_message(msg) for msg in merged_messages],
+                "tools": [self._mapper.prepare_tool(tool) for tool in tools] if tools else None,
+                "max_tokens": max_tokens,
+                "tool_choice": self._mapper.prepare_tool_choice(tool_choice) if tool_choice else None,
+                "http_headers": extra_headers,
+            }
+            if temperature is not None:
+                kwargs["temperature"] = temperature
+            
+            async for chunk in await self._get_client().chat.stream_async(**kwargs):
                 parsed = (
                     self._mapper.parse_content(chunk.data.choices[0].delta.content)
                     if chunk.data.choices[0].delta.content
@@ -380,7 +380,7 @@ class MistralBackend:
         *,
         model: ModelConfig,
         messages: list[LLMMessage],
-        temperature: float = 0.0,
+        temperature: float | None = None,
         tools: list[AvailableTool] | None = None,
         tool_choice: StrToolChoice | AvailableTool | None = None,
         extra_headers: dict[str, str] | None = None,

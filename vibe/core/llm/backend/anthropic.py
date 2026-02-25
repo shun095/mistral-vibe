@@ -382,7 +382,7 @@ class AnthropicAdapter(APIAdapter):
         *,
         model_name: str,
         messages: list[dict[str, Any]],
-        temperature: float,
+        temperature: float | None,
         max_tokens: int | None,
         thinking: str,
     ) -> None:
@@ -390,7 +390,8 @@ class AnthropicAdapter(APIAdapter):
         thinking_level = thinking
 
         if thinking_level == "off" and not has_thinking:
-            payload["temperature"] = temperature
+            if temperature is not None:
+                payload["temperature"] = temperature
             if max_tokens is not None:
                 payload["max_tokens"] = max_tokens
             else:
@@ -419,7 +420,7 @@ class AnthropicAdapter(APIAdapter):
         model_name: str,
         system_prompt: str | None,
         messages: list[dict[str, Any]],
-        temperature: float,
+        temperature: float | None,
         tools: list[dict[str, Any]] | None,
         max_tokens: int | None,
         tool_choice: dict[str, Any] | None,
@@ -458,7 +459,7 @@ class AnthropicAdapter(APIAdapter):
         *,
         model_name: str,
         messages: list[LLMMessage],
-        temperature: float,
+        temperature: float | None,
         tools: list[AvailableTool] | None,
         max_tokens: int | None,
         tool_choice: StrToolChoice | AvailableTool | None,

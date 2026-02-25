@@ -34,7 +34,7 @@ class OpenAIAdapter(APIAdapter):
         self,
         model_name: str,
         converted_messages: list[dict[str, Any]],
-        temperature: float,
+        temperature: float | None,
         tools: list[AvailableTool] | None,
         max_tokens: int | None,
         tool_choice: StrToolChoice | AvailableTool | None,
@@ -42,9 +42,10 @@ class OpenAIAdapter(APIAdapter):
         payload = {
             "model": model_name,
             "messages": converted_messages,
-            "temperature": temperature,
         }
 
+        if temperature is not None:
+            payload["temperature"] = temperature
         if tools:
             payload["tools"] = [tool.model_dump(exclude_none=True) for tool in tools]
         if tool_choice:
@@ -83,17 +84,17 @@ class OpenAIAdapter(APIAdapter):
         *,
         model_name: str,
         messages: list[LLMMessage],
-        temperature: float,
-        tools: list[AvailableTool] | None,
-        max_tokens: int | None,
-        tool_choice: StrToolChoice | AvailableTool | None,
-        enable_streaming: bool,
-        provider: ProviderConfig,
+        temperature: float | None = None,
+        tools: list[AvailableTool] | None = None,
+        max_tokens: int | None = None,
+        tool_choice: StrToolChoice | AvailableTool | None = None,
+        enable_streaming: bool = False,
+        provider: ProviderConfig | None = None,
         api_key: str | None = None,
         thinking: str = "off",
     ) -> PreparedRequest:
         merged_messages = merge_consecutive_user_messages(messages)
-        field_name = provider.reasoning_field_name
+        field_name = provider.reasoning_field_name if provider else "reasoning_content"
         converted_messages = [
             self._reasoning_to_api(
                 msg.model_dump(exclude_none=True, exclude={"message_id"}), field_name
@@ -108,7 +109,7 @@ class OpenAIAdapter(APIAdapter):
         if enable_streaming:
             payload["stream"] = True
             stream_options = {"include_usage": True}
-            if provider.name == "mistral":
+            if provider and provider.name == "mistral":
                 stream_options["stream_tool_calls"] = True
             payload["stream_options"] = stream_options
 
@@ -212,7 +213,7 @@ class GenericBackend:
         *,
         model: ModelConfig,
         messages: list[LLMMessage],
-        temperature: float = 0.2,
+        temperature: float | None = None,
         tools: list[AvailableTool] | None = None,
         max_tokens: int | None = None,
         tool_choice: StrToolChoice | AvailableTool | None = None,
@@ -227,10 +228,13 @@ class GenericBackend:
         api_style = getattr(self._provider, "api_style", "openai")
         adapter = ADAPTERS[api_style]
 
+        # Use model's temperature if not explicitly provided
+        effective_temperature = temperature if temperature is not None else model.temperature
+
         req = adapter.prepare_request(
             model_name=model.name,
             messages=messages,
-            temperature=temperature,
+            temperature=effective_temperature,
             tools=tools,
             max_tokens=max_tokens,
             tool_choice=tool_choice,
@@ -259,7 +263,7 @@ class GenericBackend:
                 headers=e.response.headers,
                 model=model.name,
                 messages=messages,
-                temperature=temperature,
+                temperature=effective_temperature,
                 has_tools=bool(tools),
                 tool_choice=tool_choice,
             ) from e
@@ -270,7 +274,7 @@ class GenericBackend:
                 error=e,
                 model=model.name,
                 messages=messages,
-                temperature=temperature,
+                temperature=effective_temperature,
                 has_tools=bool(tools),
                 tool_choice=tool_choice,
             ) from e
@@ -280,7 +284,7 @@ class GenericBackend:
         *,
         model: ModelConfig,
         messages: list[LLMMessage],
-        temperature: float = 0.2,
+        temperature: float | None = None,
         tools: list[AvailableTool] | None = None,
         max_tokens: int | None = None,
         tool_choice: StrToolChoice | AvailableTool | None = None,
@@ -295,10 +299,13 @@ class GenericBackend:
         api_style = getattr(self._provider, "api_style", "openai")
         adapter = ADAPTERS[api_style]
 
+        # Use model's temperature if not explicitly provided
+        effective_temperature = temperature if temperature is not None else model.temperature
+
         req = adapter.prepare_request(
             model_name=model.name,
             messages=messages,
-            temperature=temperature,
+            temperature=effective_temperature,
             tools=tools,
             max_tokens=max_tokens,
             tool_choice=tool_choice,
@@ -327,7 +334,7 @@ class GenericBackend:
                 headers=e.response.headers,
                 model=model.name,
                 messages=messages,
-                temperature=temperature,
+                temperature=effective_temperature,
                 has_tools=bool(tools),
                 tool_choice=tool_choice,
             ) from e
@@ -338,7 +345,7 @@ class GenericBackend:
                 error=e,
                 model=model.name,
                 messages=messages,
-                temperature=temperature,
+                temperature=effective_temperature,
                 has_tools=bool(tools),
                 tool_choice=tool_choice,
             ) from e
@@ -408,7 +415,7 @@ class GenericBackend:
         *,
         model: ModelConfig,
         messages: list[LLMMessage],
-        temperature: float = 0.0,
+        temperature: float | None = None,
         tools: list[AvailableTool] | None = None,
         tool_choice: StrToolChoice | AvailableTool | None = None,
         extra_headers: dict[str, str] | None = None,
