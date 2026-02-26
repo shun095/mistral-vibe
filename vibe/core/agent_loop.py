@@ -390,14 +390,24 @@ class AgentLoop:
                 )
                 self.telemetry_client.send_auto_compact_triggered()
 
-                summary = await self.compact()
-
-                yield CompactEndEvent(
-                    tool_call_id=tool_call_id,
-                    old_context_tokens=old_tokens,
-                    new_context_tokens=self.stats.context_tokens,
-                    summary_length=len(summary),
-                )
+                try:
+                    summary = await self.compact()
+                    new_tokens = self.stats.context_tokens
+                    yield CompactEndEvent(
+                        tool_call_id=tool_call_id,
+                        old_context_tokens=old_tokens,
+                        new_context_tokens=new_tokens,
+                        summary_length=len(summary),
+                    )
+                except Exception as e:
+                    yield CompactEndEvent(
+                        tool_call_id=tool_call_id,
+                        old_context_tokens=old_tokens,
+                        new_context_tokens=old_tokens,
+                        summary_length=0,
+                        error=str(e),
+                    )
+                    raise
 
             case MiddlewareAction.CONTINUE:
                 pass

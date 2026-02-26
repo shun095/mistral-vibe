@@ -96,6 +96,22 @@ def create_compact_end_session_update(event: CompactEndEvent) -> ToolCallProgres
     # This should be revisited when the ACP protocol defines how compact events
     # should be represented.
     # [RFD](https://agentclientprotocol.com/rfds/session-usage)
+    if event.error:
+        return ToolCallProgress(
+            session_update="tool_call_update",
+            tool_call_id=event.tool_call_id,
+            title="Compaction failed",
+            status="error",
+            content=[
+                ContentToolCallContent(
+                    type="content",
+                    content=TextContentBlock(
+                        type="text",
+                        text=f"Compaction failed: {event.error}",
+                    ),
+                )
+            ],
+        )
     return ToolCallProgress(
         session_update="tool_call_update",
         tool_call_id=event.tool_call_id,

@@ -1108,14 +1108,18 @@ Enhanced prompt:"""
 
         except asyncio.CancelledError:
             compact_msg.set_error("Compaction interrupted")
+            self._queued_message = None
+            if self.event_handler:
+                self.event_handler.current_compact = None
             raise
         except Exception as e:
             compact_msg.set_error(str(e))
+            self._queued_message = None
+            if self.event_handler:
+                self.event_handler.current_compact = None
         finally:
             self._agent_running = False
             self._agent_task = None
-            if self.event_handler:
-                self.event_handler.current_compact = None
 
     def _get_session_resume_info(self) -> str | None:
         if not self.agent_loop.session_logger.enabled:

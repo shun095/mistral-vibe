@@ -148,9 +148,12 @@ class EventHandler:
 
     async def _handle_compact_end(self, event: CompactEndEvent) -> None:
         if self.current_compact:
-            self.current_compact.set_complete(
-                old_tokens=event.old_context_tokens, new_tokens=event.new_context_tokens
-            )
+            if event.error:
+                self.current_compact.set_error(event.error)
+            else:
+                self.current_compact.set_complete(
+                    old_tokens=event.old_context_tokens, new_tokens=event.new_context_tokens
+                )
             self.current_compact = None
 
     async def _handle_unknown_event(self, event: BaseEvent) -> None:
