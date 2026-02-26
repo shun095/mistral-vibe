@@ -21,7 +21,7 @@ from vibe.core.types import (
     Role,
     StrToolChoice,
 )
-from vibe.core.utils import async_generator_retry, async_retry
+from vibe.core.utils import async_generator_retry, async_retry, logger
 
 if TYPE_CHECKING:
     from vibe.core.config import ModelConfig, ProviderConfig
@@ -358,12 +358,20 @@ class GenericBackend:
     async def _make_request(
         self, url: str, data: bytes, headers: dict[str, str]
     ) -> HTTPResponse:
+        logger.debug(
+            "LLM Backend Request: %s",
+            json.dumps({"url": url, "headers": headers, "body": json.loads(data)}, ensure_ascii=False),
+        )
         client = self._get_client()
         response = await client.post(url, content=data, headers=headers)
         response.raise_for_status()
 
         response_headers = dict(response.headers.items())
         response_body = response.json()
+        logger.debug(
+            "LLM Backend Response: %s",
+            json.dumps(response_body, ensure_ascii=False),
+        )
         return self.HTTPResponse(response_body, response_headers)
 
     def _is_retryable_streaming_error(self, exception: Exception) -> bool:
@@ -382,6 +390,10 @@ class GenericBackend:
     async def _make_streaming_request(
         self, url: str, data: bytes, headers: dict[str, str]
     ) -> AsyncGenerator[dict[str, Any]]:
+        logger.debug(
+            "LLM Backend Streaming Request: %s",
+            json.dumps({"url": url, "headers": headers, "body": json.loads(data)}, ensure_ascii=False),
+        )
         client = self._get_client()
         async with client.stream(
             method="POST", url=url, content=data, headers=headers
@@ -408,7 +420,12 @@ class GenericBackend:
                     continue
                 if value == "[DONE]":
                     return
-                yield json.loads(value.strip())
+                chunk_data = json.loads(value.strip())
+                logger.debug(
+                    "LLM Backend Streaming Response Chunk: %s",
+                    json.dumps(chunk_data, ensure_ascii=False),
+                )
+                yield chunk_data
 
     async def count_tokens(
         self,
