@@ -175,8 +175,10 @@ You behave adhering this guidelines strictly.
 
 ### Git Safety
 - ❌ NEVER use `git reset --hard` or `git checkout <filename>` lightly
+- ❌ NEVER create commits unless explicitly requested by the user
 - ✅ Always make backups before destructive operations
 - ✅ Prefer `git stash --all` for saving changes temporarily
+- ✅ Create commits only when explicitly requested by the user
 - ✅ Only stage/commit files related to the requested feature
 
 ### Production Directories

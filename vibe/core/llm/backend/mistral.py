@@ -12,7 +12,7 @@ import mistralai
 from mistralai.utils.retries import BackoffStrategy, RetryConfig
 
 from vibe.core.llm.exceptions import BackendErrorBuilder
-from vibe.core.utils import async_generator_retry, async_retry
+from vibe.core.utils import async_generator_retry, async_retry, logger
 from vibe.core.llm.message_utils import merge_consecutive_user_messages
 from vibe.core.types import (
     AvailableTool,
@@ -250,7 +250,17 @@ class MistralBackend:
             if temperature is not None:
                 kwargs["temperature"] = temperature
             
+            logger.debug(
+                "Mistral Backend Request: %s",
+                json.dumps(kwargs, default=str, ensure_ascii=False),
+            )
+            
             response = await self._get_client().chat.complete_async(**kwargs)
+
+            logger.debug(
+                "Mistral Backend Response: %s",
+                json.dumps(response.model_dump(), default=str, ensure_ascii=False),
+            )
 
             parsed = (
                 self._mapper.parse_content(response.choices[0].message.content)
@@ -324,7 +334,16 @@ class MistralBackend:
             if temperature is not None:
                 kwargs["temperature"] = temperature
             
+            logger.debug(
+                "Mistral Backend Streaming Request: %s",
+                json.dumps(kwargs, indent=2, default=str, ensure_ascii=False),
+            )
+            
             async for chunk in await self._get_client().chat.stream_async(**kwargs):
+                logger.debug(
+                    "Mistral Backend Streaming Response Chunk: %s",
+                    json.dumps(chunk.data.model_dump(), indent=2, default=str, ensure_ascii=False),
+                )
                 parsed = (
                     self._mapper.parse_content(chunk.data.choices[0].delta.content)
                     if chunk.data.choices[0].delta.content
