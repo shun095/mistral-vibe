@@ -32,7 +32,6 @@ class _ReadResult(NamedTuple):
 class ReadFileArgs(BaseModel):
     path: str
     offset: int = Field(
-        default=0,
         description="Line number to start reading from (0-indexed, inclusive).",
     )
     limit: int | None = Field(
