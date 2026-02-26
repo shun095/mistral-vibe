@@ -420,6 +420,7 @@ class CompactEndEvent(BaseEvent):
     old_context_tokens: int
     new_context_tokens: int
     summary_length: int
+    error: str | None = None
     # WORKAROUND: Using tool_call to communicate compact events to the client.
     # This should be revisited when the ACP protocol defines how compact events
     # should be represented.

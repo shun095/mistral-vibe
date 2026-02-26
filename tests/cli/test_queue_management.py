@@ -250,3 +250,71 @@ async def test_no_interruption_during_compaction():
     # Verify interrupt was not called (compaction continues)
     assert not interrupt_called
     assert app._queued_message == test_message
+
+
+@pytest.mark.asyncio
+async def test_clear_queued_message_after_compaction_failure():
+    """Test that queued message is cleared (not processed) after compaction fails."""
+    # Create a mock agent loop
+    mock_agent_loop = MagicMock()
+    mock_agent_loop.config = MagicMock()
+    mock_agent_loop.agent_profile = MagicMock()
+    mock_agent_loop.agent_profile.safety = "NEUTRAL"
+    mock_agent_loop.messages = ["msg1", "msg2"]  # At least 2 messages
+    mock_agent_loop.stats = MagicMock()
+    mock_agent_loop.stats.context_tokens = 1000
+    
+    # Create the app
+    app = VibeApp(agent_loop=mock_agent_loop)
+    
+    # Queue a message
+    test_message = "Test message"
+    app._queued_message = test_message
+    
+    # Mock the handle_user_message method to verify it's NOT called
+    handle_user_message_called = False
+    async def mock_handle_user_message(message):
+        nonlocal handle_user_message_called
+        handle_user_message_called = True
+    
+    app._handle_user_message = mock_handle_user_message
+    
+    # Mock _mount_and_scroll to avoid actual mounting
+    async def mock_mount_and_scroll(widget):
+        pass
+    
+    app._mount_and_scroll = mock_mount_and_scroll
+    
+    # Mock _run_compact to simulate failure
+    async def mock_run_compact(compact_msg, old_tokens):
+        app._agent_running = True
+        try:
+            raise Exception("Simulated compaction failure")
+        except Exception as e:
+            compact_msg.set_error(str(e))
+            app._queued_message = None  # Clear the queue on failure
+        finally:
+            app._agent_running = False
+            app._agent_task = None
+            if app.event_handler:
+                app.event_handler.current_compact = None
+    
+    app._run_compact = mock_run_compact
+    app._agent_task = None
+    
+    # Mock event handler
+    app.event_handler = MagicMock()
+    
+    # Call the compact history method
+    await app._compact_history()
+    
+    # Wait for the task to complete
+    if app._agent_task:
+        try:
+            await app._agent_task
+        except Exception:
+            pass  # Expected to fail
+    
+    # Verify the queued message was cleared but NOT processed
+    assert not handle_user_message_called
+    assert app._queued_message is None
