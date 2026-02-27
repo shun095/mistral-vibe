@@ -404,50 +404,8 @@ class LSPClient:
         
         return content, remaining_buffer
     
-    async def _monitor_server_process(self) -> None:
-        """Monitor the server process and detect when it exits."""
-        logger.debug("LSP Client: Starting server process monitor")
-        
-        try:
-            # Wait for the process to complete
-            await self.process.wait()
-            logger.debug(f"LSP Client: Server process exited with code: {self.process.returncode}")
-            self._server_exited = True
-        except Exception as e:
-            logger.debug(f"LSP Client: Error monitoring server process: {e}")
-            self._server_exited = True
-
-    async def _read_stderr(self) -> None:
-        """Read stderr from the LSP server and log it as debug information."""
-        logger.debug("LSP Client: Starting stderr reader")
-        
-        if not self.stderr:
-            logger.debug("LSP Client: No stderr available")
-            return
-        
-        try:
-            # Read stderr line by line
-            while True:
-                line = await self.stderr.readline()
-                if not line:
-                    # No more data
-                    logger.debug("LSP Client: No more stderr data from server")
-                    break
-                
-                # Decode and strip whitespace
-                line_str = line.decode("utf-8").strip()
-                if line_str:
-                    # Log stderr as debug information
-                    logger.debug(f"LSP Server stderr: {line_str}")
-        except Exception as e:
-            logger.debug(f"LSP Client: Error reading stderr: {e}")
-
     async def start(self) -> None:
         logger.debug("LSP Client: Starting server communication")
-        
-        # Start background tasks
-        asyncio.create_task(self._monitor_server_process())
-        asyncio.create_task(self._read_stderr())
         
         # Start the message reader
         asyncio.create_task(self._read_messages())

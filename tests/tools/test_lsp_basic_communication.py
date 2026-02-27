@@ -25,8 +25,7 @@ async def test_pyright_server_process_starts():
         assert client.process.stdout is not None, "stdout should be available"
         
     finally:
-        # Clean up
-        await manager.stop_all_servers()
+        pass
 
 
 @pytest.mark.asyncio
@@ -48,8 +47,7 @@ async def test_pyright_server_initialization_response():
         assert "capabilities" in response
         
     finally:
-        # Clean up
-        await manager.stop_all_servers()
+        pass
 
 
 @pytest.mark.asyncio
@@ -74,8 +72,6 @@ async def test_pyright_server_document_notifications():
         await client.text_document_did_save(uri)
         
     finally:
-        # Clean up
-        await manager.stop_all_servers()
         test_file.unlink(missing_ok=True)
 
 
