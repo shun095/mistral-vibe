@@ -7,7 +7,6 @@ from typing import Any
 from vibe.core.lsp.installers.pyright import PyrightInstaller
 from vibe.core.lsp.project_root import ProjectRootFinder
 from vibe.core.lsp.server import LSPServer
-from vibe.core.lsp.utils import get_python_path
 
 logger = logging.getLogger(__name__)
 
@@ -53,12 +52,24 @@ class PyrightLSP(LSPServer):
         return ProjectRootFinder.find_project_root(root_markers)
 
     def get_initialization_params(self) -> dict[str, Any]:
-        # Get minimal initialization params for Pyright LSP server
+        # Get initialization params for Pyright LSP server
         params: dict[str, Any] = {}
 
         # Find Python project root
         root_uri = self._find_python_project_root()
         params["rootUri"] = root_uri
+
+        # Include workspaceFolders with the detected project root
+        workspace_folder = {
+            "uri": root_uri,
+            "name": Path(root_uri[7:]).name  # Remove 'file://' prefix and get folder name
+        }
+        params["workspaceFolders"] = [workspace_folder]
+
+        # Minimal settings for Pyright diagnostics
+        params["settings"] = {
+            "python": {}
+        }
 
         return params
 
