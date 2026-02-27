@@ -255,8 +255,7 @@ def foo():
         assert "severity" in diagnostic, "Diagnostic should have a severity"
         
     finally:
-        # Clean up
-        await manager.stop_all_servers()
+        pass
 
 
 @pytest.mark.asyncio
@@ -327,5 +326,4 @@ def foo():
         assert len(type_error_diagnostics) > 0, "Expected to receive type error from Pyright"
         
     finally:
-        # Clean up
-        await manager.stop_all_servers()
+        pass

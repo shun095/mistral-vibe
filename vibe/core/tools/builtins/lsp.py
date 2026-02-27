@@ -6,7 +6,7 @@ from typing import Any, AsyncGenerator
 
 from pydantic import BaseModel, Field
 
-from vibe.core.lsp import LSPClientManager, get_lsp_client_manager
+from vibe.core.lsp import LSPClientManager
 from vibe.core.lsp.formatter import LSPDiagnosticFormatter
 from vibe.core.lsp.server import LSPServerRegistry
 from vibe.core.tools.base import BaseTool, BaseToolConfig, BaseToolState, InvokeContext, ToolStreamEvent
@@ -96,8 +96,8 @@ class LSP(BaseTool[LSPToolArgs, LSPToolResult, LSPToolConfig, LSPToolState], Too
         self, args: LSPToolArgs, ctx: InvokeContext | None = None
     ) -> AsyncGenerator[ToolStreamEvent | LSPToolResult, None]:
         try:
-            # Get the singleton client manager
-            client_manager = await get_lsp_client_manager()
+            # Create client manager instance
+            client_manager = LSPClientManager()
 
             # Detect server if not specified
             if args.server_name is None:
@@ -114,7 +114,6 @@ class LSP(BaseTool[LSPToolArgs, LSPToolResult, LSPToolConfig, LSPToolState], Too
             # This will automatically restart servers if they have exited
             diagnostics = await client_manager.get_diagnostics_from_all_servers(args.file_path)
 
-            # FIXME: should use LSPDiagnosticFormatter directly.
             # Format diagnostics for display
             formatted_output = self._format_diagnostics(diagnostics)
 
@@ -139,26 +138,6 @@ class LSP(BaseTool[LSPToolArgs, LSPToolResult, LSPToolConfig, LSPToolState], Too
                 formatted_output=error_msg
             )
             yield result
-
-    # FIXME: this is finally unused method. should be removed.
-    async def cleanup(self) -> None:
-        if self.client_manager:
-            await self.client_manager.stop_all_servers()
-
-    # FIXME: this is duplicated to lsp server registry detection method. please use that.
-    def _detect_server(self, file_path: Path) -> str | None:
-        extension = file_path.suffix.lower()
-
-        # Mapping of file extensions to LSP servers
-        extension_map = {
-            ".py": "pyright",
-            ".ts": "typescript",
-            ".js": "typescript",
-            ".tsx": "typescript",
-            ".jsx": "typescript",
-        }
-
-        return extension_map.get(extension)
 
     def _format_diagnostics(self, diagnostics: list[dict[str, Any]]) -> str:
         # Use the formatter for consistent output

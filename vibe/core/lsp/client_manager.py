@@ -38,20 +38,7 @@ class LSPClientManager:
         # Initialize detector after config is populated
         self.detector = LSPServerDetector(self.config)
 
-    # FIXME: these are not needed anymore because LSPClientManager is not Singleton anymore.
-    @classmethod
-    async def get_instance(cls, config: list[LSPServerConfig] | None = None) -> LSPClientManager:
-        """Get or create an LSPClientManager instance."""
-        async with cls._lock:
-            instance = cls(config)
-        return instance
-
-    # FIXME: these are not needed anymore because LSPClientManager is not Singleton anymore.
-    @classmethod
-    def get_sync_instance(cls) -> LSPClientManager:
-        """Get or create an LSPClientManager instance synchronously."""
-        instance = cls()
-        return instance
+    pass
 
     async def start_server(self, server_name: str) -> LSPClient:
         if server_name in self.clients:
@@ -163,33 +150,6 @@ class LSPClientManager:
         # Start a new instance
         await self.start_server(server_name)
 
-    # FIXME: if you analyze caller recursively, this is finally unused method. should be removed.
-    async def stop_server(self, server_name: str) -> None:
-        # Stop LSP server
-        if server_name not in self.clients:
-            return
-
-        logger.info(f"Stopping LSP server: {server_name}")
-
-        client = self.clients[server_name]
-
-        try:
-            await client.shutdown()
-            await client.exit()
-        except Exception as e:
-            logger.warning(f"Error shutting down LSP server '{server_name}': {e}")
-
-        try:
-            client.process.terminate()
-            await client.process.wait()
-        except Exception as e:
-            logger.warning(f"Error terminating LSP server '{server_name}': {e}")
-
-        del self.clients[server_name]
-        del self.handles[server_name]
-
-        logger.info(f"LSP server '{server_name}' stopped")
-
 
 
     async def get_diagnostics_from_all_servers(self, file_path: Path) -> DiagnosticsList:
@@ -258,11 +218,6 @@ class LSPClientManager:
         
         return all_diagnostics
 
-    # FIXME: if you analyze caller recursively, this is finally unused method. should be removed.
-    async def stop_all_servers(self) -> None:
-        for server_name in list(self.clients.keys()):
-            await self.stop_server(server_name)
-
     def _get_language_id(self, server_class: type[LSPServer]) -> str:
         # This is a simple mapping, can be extended as needed
         language_map = {
@@ -273,13 +228,4 @@ class LSPClientManager:
         }
         return language_map.get(server_class.name, "text")
 
-# FIXME: these are not needed anymore because LSPClientManager is not Singleton anymore.
-# Singleton helper function
-async def get_lsp_client_manager(config: list[LSPServerConfig] | None = None) -> LSPClientManager:
-    """Get the singleton LSPClientManager instance."""
-    return await LSPClientManager.get_instance(config)
 
-# FIXME: these are not needed anymore because LSPClientManager is not Singleton anymore.
-def get_lsp_client_manager_sync() -> LSPClientManager:
-    """Get the singleton LSPClientManager instance (synchronous)."""
-    return LSPClientManager.get_sync_instance()
