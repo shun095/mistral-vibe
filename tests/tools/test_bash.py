@@ -76,14 +76,14 @@ async def test_decodes_non_utf8_bytes(bash):
     assert result.stderr == ""
 
 
-def test_check_allowlist_denylist():
+def test_resolve_permission():
     config = BashToolConfig(allowlist=["echo", "pwd"], denylist=["rm"])
     bash_tool = Bash(config=config, state=BaseToolState())
 
-    allowlisted = bash_tool.check_allowlist_denylist(BashArgs(command="echo hi", timeout=10))
-    denylisted = bash_tool.check_allowlist_denylist(BashArgs(command="rm -rf /tmp", timeout=10))
-    mixed = bash_tool.check_allowlist_denylist(BashArgs(command="pwd && whoami", timeout=10))
-    empty = bash_tool.check_allowlist_denylist(BashArgs(command="", timeout=10))
+    allowlisted = bash_tool.resolve_permission(BashArgs(command="echo hi", timeout=10))
+    denylisted = bash_tool.resolve_permission(BashArgs(command="rm -rf /tmp", timeout=10))
+    mixed = bash_tool.resolve_permission(BashArgs(command="pwd && whoami", timeout=10))
+    empty = bash_tool.resolve_permission(BashArgs(command="", timeout=10))
 
     assert allowlisted is ToolPermission.ALWAYS
     assert denylisted is ToolPermission.NEVER

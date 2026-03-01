@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Callable, Generator
 from enum import StrEnum, auto
 from http import HTTPStatus
 import json
@@ -13,6 +13,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel
 
+from vibe.cli.terminal_setup import detect_terminal
 from vibe.core.agents.manager import AgentManager
 from vibe.core.agents.models import AgentProfile, BuiltinAgentName
 from vibe.core.config import Backend, ProviderConfig, VibeConfig
@@ -26,14 +27,18 @@ from vibe.core.llm.format import (
 )
 from vibe.core.llm.types import BackendLike
 from vibe.core.middleware import (
+    CHAT_AGENT_EXIT,
+    CHAT_AGENT_REMINDER,
+    PLAN_AGENT_EXIT,
+    PLAN_AGENT_REMINDER,
     AutoCompactMiddleware,
     ContextWarningMiddleware,
     ConversationContext,
     MiddlewareAction,
     MiddlewarePipeline,
     MiddlewareResult,
-    PlanAgentMiddleware,
     PriceLimitMiddleware,
+    ReadOnlyAgentMiddleware,
     ResetReason,
     TurnLimitMiddleware,
 )
@@ -56,6 +61,8 @@ from vibe.core.tools.base import (
     EventConstructor,
 )
 from vibe.core.tools.manager import ToolManager
+from vibe.core.tools.mcp import MCPRegistry
+from vibe.core.tools.mcp_sampling import MCPSamplingHandler
 from vibe.core.trusted_folders import has_agents_md_file
 from vibe.core.types import (
     AgentStats,
@@ -67,13 +74,16 @@ from vibe.core.types import (
     CompactEndEvent,
     CompactStartEvent,
     ContinueableUserMessageEvent,
+    EntrypointMetadata,
     LLMChunk,
     LLMMessage,
     LLMUsage,
+    MessageList,
     RateLimitError,
     ReasoningEvent,
     Role,
     SyncApprovalCallback,
+    ToolCall,
     ToolCallEvent,
     ToolCallSignature,
     ToolResultEvent,
@@ -145,6 +155,7 @@ class AgentLoop:
         max_price: float | None = None,
         backend: BackendLike | None = None,
         enable_streaming: bool = False,
+        entrypoint_metadata: EntrypointMetadata | None = None,
     ) -> None:
         self._base_config = config
         self._max_turns = max_turns
@@ -153,15 +164,20 @@ class AgentLoop:
         self.agent_manager = AgentManager(
             lambda: self._base_config, initial_agent=agent_name
         )
-        self.tool_manager = ToolManager(lambda: self.config)
+        self._mcp_registry = MCPRegistry()
+        self.tool_manager = ToolManager(
+            lambda: self.config, mcp_registry=self._mcp_registry
+        )
         self.skill_manager = SkillManager(lambda: self.config)
         self.format_handler = APIToolFormatHandler()
 
         self.backend_factory = lambda: backend or self._select_backend()
         self.backend = self.backend_factory()
+        self._sampling_handler = MCPSamplingHandler(
+            backend_getter=lambda: self.backend, config_getter=lambda: self.config
+        )
 
         self.message_observer = message_observer
-        self._last_observed_message_index: int = 0
         self.enable_streaming = enable_streaming
         self.middleware_pipeline = MiddlewarePipeline()
         self._setup_middleware()
@@ -169,11 +185,8 @@ class AgentLoop:
         system_prompt = get_universal_system_prompt(
             self.tool_manager, self.config, self.skill_manager, self.agent_manager
         )
-        self.messages = [LLMMessage(role=Role.system, content=system_prompt)]
-
-        if self.message_observer:
-            self.message_observer(self.messages[0])
-            self._last_observed_message_index = 1
+        system_message = LLMMessage(role=Role.system, content=system_prompt)
+        self.messages = MessageList(initial=[system_message], observer=message_observer)
 
         self.stats = AgentStats()
         
@@ -190,6 +203,7 @@ class AgentLoop:
         self.approval_callback: ApprovalCallback | None = None
         self.user_input_callback: UserInputCallback | None = None
 
+        self.entrypoint_metadata = entrypoint_metadata
         self.session_id = str(uuid4())
         self._current_user_message_id: str | None = None
 
@@ -231,19 +245,28 @@ class AgentLoop:
         self.config.tools[tool_name].permission = permission
         self.tool_manager.invalidate_tool(tool_name)
 
-    def emit_new_session_telemetry(
-        self, entrypoint: Literal["cli", "acp", "programmatic"]
-    ) -> None:
+    def emit_new_session_telemetry(self) -> None:
+        entrypoint = (
+            self.entrypoint_metadata.agent_entrypoint
+            if self.entrypoint_metadata
+            else "unknown"
+        )
         has_agents_md = has_agents_md_file(Path.cwd())
         nb_skills = len(self.skill_manager.available_skills)
         nb_mcp_servers = len(self.config.mcp_servers)
         nb_models = len(self.config.models)
+
+        terminal_emulator = None
+        if entrypoint == "cli":
+            terminal_emulator = detect_terminal().value
+
         self.telemetry_client.send_new_session(
             has_agents_md=has_agents_md,
             nb_skills=nb_skills,
             nb_mcp_servers=nb_mcp_servers,
             nb_models=nb_models,
             entrypoint=entrypoint,
+            terminal_emulator=terminal_emulator,
         )
 
     def _select_backend(self) -> BackendLike:
@@ -251,9 +274,6 @@ class AgentLoop:
         provider = self.config.get_provider_for_model(active_model)
         timeout = self.config.api_timeout
         return BACKEND_FACTORY[provider.backend](provider=provider, timeout=timeout)
-
-    def add_message(self, message: LLMMessage) -> None:
-        self.messages.append(message)
 
     async def _save_messages(self) -> None:
         await self.session_logger.save_interaction(
@@ -263,19 +283,6 @@ class AgentLoop:
             self.tool_manager,
             self.agent_profile,
         )
-
-    async def _flush_new_messages(self) -> None:
-        await self._save_messages()
-
-        if not self.message_observer:
-            return
-
-        if self._last_observed_message_index >= len(self.messages):
-            return
-
-        for msg in self.messages[self._last_observed_message_index :]:
-            self.message_observer(msg)
-        self._last_observed_message_index = len(self.messages)
 
     async def act(self, msg: str) -> AsyncGenerator[BaseEvent]:
         self._clean_message_history()
@@ -355,7 +362,22 @@ class AgentLoop:
                     ContextWarningMiddleware(0.5, self.config.auto_compact_threshold)
                 )
 
-        self.middleware_pipeline.add(PlanAgentMiddleware(lambda: self.agent_profile))
+        self.middleware_pipeline.add(
+            ReadOnlyAgentMiddleware(
+                lambda: self.agent_profile,
+                BuiltinAgentName.PLAN,
+                PLAN_AGENT_REMINDER,
+                PLAN_AGENT_EXIT,
+            )
+        )
+        self.middleware_pipeline.add(
+            ReadOnlyAgentMiddleware(
+                lambda: self.agent_profile,
+                BuiltinAgentName.CHAT,
+                CHAT_AGENT_REMINDER,
+                CHAT_AGENT_EXIT,
+            )
+        )
 
     async def _handle_middleware_result(
         self, result: MiddlewareResult
@@ -466,7 +488,7 @@ class AgentLoop:
                     if isinstance(event, ContinueableUserMessageEvent):
                         yielded_continueable_event = True
                     yield event
-                    await self._flush_new_messages()
+                    await self._save_messages()
 
                 last_message = self.messages[-1]
                 
@@ -478,7 +500,7 @@ class AgentLoop:
                     return
 
         finally:
-            await self._flush_new_messages()
+            await self._save_messages()
 
     async def _perform_llm_turn(self) -> AsyncGenerator[BaseEvent, None]:
         if self.enable_streaming:
@@ -500,14 +522,41 @@ class AgentLoop:
         async for event in self._handle_tool_calls(resolved):
             yield event
 
+    def _build_tool_call_events(
+        self, tool_calls: list[ToolCall] | None, emitted_ids: set[str]
+    ) -> Generator[ToolCallEvent, None, None]:
+        for tc in tool_calls or []:
+            if tc.id is None or not tc.function.name:
+                continue
+            if tc.id in emitted_ids:
+                continue
+
+            tool_class = self.tool_manager.available_tools.get(tc.function.name)
+            if tool_class is None:
+                continue
+
+            yield ToolCallEvent(
+                tool_call_id=tc.id,
+                tool_call_index=tc.index,
+                tool_name=tc.function.name,
+                tool_class=tool_class,
+            )
+
     async def _stream_assistant_events(
         self,
-    ) -> AsyncGenerator[AssistantEvent | ReasoningEvent]:
+    ) -> AsyncGenerator[AssistantEvent | ReasoningEvent | ToolCallEvent]:
         message_id: str | None = None
+        emitted_tool_call_ids = set[str]()
 
         async for chunk in self._chat_streaming():
             if message_id is None:
                 message_id = chunk.message.message_id
+
+            for event in self._build_tool_call_events(
+                chunk.message.tool_calls, emitted_tool_call_ids
+            ):
+                emitted_tool_call_ids.add(event.tool_call_id)
+                yield event
 
             if chunk.message.reasoning_content:
                 yield ReasoningEvent(
@@ -602,9 +651,12 @@ class AgentLoop:
             async for item in tool_instance.invoke(
                 ctx=InvokeContext(
                     tool_call_id=tool_call.call_id,
-                    approval_callback=self.approval_callback,
                     agent_manager=self.agent_manager,
+                    session_dir=self.session_logger.session_dir,
+                    entrypoint_metadata=self.entrypoint_metadata,
+                    approval_callback=self.approval_callback,
                     user_input_callback=self.user_input_callback,
+                    sampling_callback=self._sampling_handler,
                 ),
                 **tool_call.args_dict,
             ):
@@ -743,6 +795,9 @@ class AgentLoop:
                 tool_choice=tool_choice,
                 extra_headers=self._get_extra_headers(provider),
                 max_tokens=max_tokens,
+                metadata=self.entrypoint_metadata.model_dump()
+                if self.entrypoint_metadata
+                else None,
             )
             end_time = time.perf_counter()
 
@@ -786,6 +841,9 @@ class AgentLoop:
                 tool_choice=tool_choice,
                 extra_headers=self._get_extra_headers(provider),
                 max_tokens=max_tokens,
+                metadata=self.entrypoint_metadata.model_dump()
+                if self.entrypoint_metadata
+                else None,
             ):
                 processed_message = self.format_handler.process_api_response_message(
                     chunk.message
@@ -826,47 +884,27 @@ class AgentLoop:
         self, tool: BaseTool, args: BaseModel, tool_call_id: str
     ) -> ToolDecision:
 
-        # Always check denylist first for security-critical operations
-        # This ensures dangerous commands are blocked even in auto-approve mode
-
-        allowlist_denylist_result = tool.check_allowlist_denylist(args)
-        if allowlist_denylist_result == ToolPermission.ALWAYS:
-            return ToolDecision(
-                verdict=ToolExecutionResponse.EXECUTE,
-                approval_type=ToolPermission.ALWAYS,
-            )
-        elif allowlist_denylist_result == ToolPermission.NEVER:
-            denylist_patterns = tool.config.denylist
-            denylist_str = ", ".join(repr(pattern) for pattern in denylist_patterns)
-            return ToolDecision(
-                verdict=ToolExecutionResponse.SKIP,
-                approval_type=ToolPermission.NEVER,
-                feedback=f"Tool '{tool.get_name()}' blocked by denylist: [{denylist_str}]",
-            )
-
-        # Auto-approve mode bypasses user prompts but respects denylist
-        if self.auto_approve:
-            return ToolDecision(
-                verdict=ToolExecutionResponse.EXECUTE,
-                approval_type=ToolPermission.ALWAYS,
-            )
 
         tool_name = tool.get_name()
-        perm = self.tool_manager.get_tool_config(tool_name).permission
+        effective = (
+            tool.resolve_permission(args)
+            or self.tool_manager.get_tool_config(tool_name).permission
+        )
 
-        if perm is ToolPermission.ALWAYS:
-            return ToolDecision(
-                verdict=ToolExecutionResponse.EXECUTE,
-                approval_type=ToolPermission.ALWAYS,
-            )
-        if perm is ToolPermission.NEVER:
-            return ToolDecision(
-                verdict=ToolExecutionResponse.SKIP,
-                approval_type=ToolPermission.NEVER,
-                feedback=f"Tool '{tool_name}' is permanently disabled",
-            )
-
-        return await self._ask_approval(tool_name, args, tool_call_id)
+        match effective:
+            case ToolPermission.ALWAYS:
+                return ToolDecision(
+                    verdict=ToolExecutionResponse.EXECUTE,
+                    approval_type=ToolPermission.ALWAYS,
+                )
+            case ToolPermission.NEVER:
+                return ToolDecision(
+                    verdict=ToolExecutionResponse.SKIP,
+                    approval_type=ToolPermission.NEVER,
+                    feedback=f"Tool '{tool_name}' is permanently disabled",
+                )
+            case _:
+                return await self._ask_approval(tool_name, args, tool_call_id)
 
     async def _ask_approval(
         self, tool_name: str, args: BaseModel, tool_call_id: str
@@ -929,9 +967,11 @@ class AgentLoop:
                             empty_response = LLMMessage(
                                 role=Role.tool,
                                 tool_call_id=tool_call_data.id or "",
-                                name=(tool_call_data.function.name or "")
-                                if tool_call_data.function
-                                else "",
+                                name=(
+                                    (tool_call_data.function.name or "")
+                                    if tool_call_data.function
+                                    else ""
+                                ),
                                 content=str(
                                     get_user_cancellation_message(
                                         CancellationReason.TOOL_NO_RESPONSE
@@ -975,7 +1015,7 @@ class AgentLoop:
             self.tool_manager,
             self.agent_profile,
         )
-        self.messages = self.messages[:1]
+        self.messages.reset(self.messages[:1])
 
         self.stats = AgentStats.create_fresh(self.stats)
         self.stats.trigger_listeners()
@@ -1004,10 +1044,14 @@ class AgentLoop:
             )
 
             summary_request = UtilityPrompt.COMPACT.read()
-            self.messages.append(LLMMessage(role=Role.user, content=summary_request))
             self.stats.steps += 1
 
-            summary_result = await self._chat()
+            with self.messages.silent():
+                self.messages.append(
+                    LLMMessage(role=Role.user, content=summary_request)
+                )
+                summary_result = await self._chat()
+
             if summary_result.usage is None:
                 raise AgentLoopLLMResponseError(
                     "Usage data missing in compaction summary response"
@@ -1019,8 +1063,7 @@ class AgentLoop:
 
             system_message = self.messages[0]
             summary_message = LLMMessage(role=Role.user, content=summary_content)
-            self.messages = [system_message, summary_message]
-            self._last_observed_message_index = 1
+            self.messages.reset([system_message, summary_message])
 
             active_model = self.config.get_active_model()
             provider = self.config.get_provider_for_model(active_model)
@@ -1030,6 +1073,9 @@ class AgentLoop:
                 messages=self.messages,
                 tools=self.format_handler.get_available_tools(self.tool_manager),
                 extra_headers={"user-agent": get_user_agent(provider.backend)},
+                metadata=self.entrypoint_metadata.model_dump()
+                if self.entrypoint_metadata
+                else None,
             )
 
             self.stats.context_tokens = actual_context_tokens
@@ -1095,17 +1141,19 @@ class AgentLoop:
         if max_price is not None:
             self._max_price = max_price
 
-        self.tool_manager = ToolManager(lambda: self.config)
+        self.tool_manager = ToolManager(
+            lambda: self.config, mcp_registry=self._mcp_registry
+        )
         self.skill_manager = SkillManager(lambda: self.config)
 
         new_system_prompt = get_universal_system_prompt(
             self.tool_manager, self.config, self.skill_manager, self.agent_manager
         )
 
-        self.messages = [
+        self.messages.reset([
             LLMMessage(role=Role.system, content=new_system_prompt),
             *[msg for msg in self.messages if msg.role != Role.system],
-        ]
+        ])
 
         if len(self.messages) == 1:
             self.stats.reset_context_state()

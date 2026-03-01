@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 import json
 import os
 import re
@@ -228,12 +228,13 @@ class MistralBackend:
         self,
         *,
         model: ModelConfig,
-        messages: list[LLMMessage],
+        messages: Sequence[LLMMessage],
         temperature: float | None,
         tools: list[AvailableTool] | None,
         max_tokens: int | None,
         tool_choice: StrToolChoice | AvailableTool | None,
         extra_headers: dict[str, str] | None,
+        metadata: dict[str, str] | None = None,
     ) -> LLMChunk:
         try:
             merged_messages = merge_consecutive_user_messages(messages)
@@ -245,6 +246,7 @@ class MistralBackend:
                 "max_tokens": max_tokens,
                 "tool_choice": self._mapper.prepare_tool_choice(tool_choice) if tool_choice else None,
                 "http_headers": extra_headers,
+                "metadata": metadata,
                 "stream": False,
             }
             if temperature is not None:
@@ -313,12 +315,13 @@ class MistralBackend:
         self,
         *,
         model: ModelConfig,
-        messages: list[LLMMessage],
+        messages: Sequence[LLMMessage],
         temperature: float | None,
         tools: list[AvailableTool] | None,
         max_tokens: int | None,
         tool_choice: StrToolChoice | AvailableTool | None,
         extra_headers: dict[str, str] | None,
+        metadata: dict[str, str] | None = None,
     ) -> AsyncGenerator[LLMChunk, None]:
         try:
             merged_messages = merge_consecutive_user_messages(messages)
@@ -330,6 +333,7 @@ class MistralBackend:
                 "max_tokens": max_tokens,
                 "tool_choice": self._mapper.prepare_tool_choice(tool_choice) if tool_choice else None,
                 "http_headers": extra_headers,
+                "metadata": metadata,
             }
             if temperature is not None:
                 kwargs["temperature"] = temperature
@@ -398,11 +402,12 @@ class MistralBackend:
         self,
         *,
         model: ModelConfig,
-        messages: list[LLMMessage],
+        messages: Sequence[LLMMessage],
         temperature: float | None = None,
         tools: list[AvailableTool] | None = None,
         tool_choice: StrToolChoice | AvailableTool | None = None,
         extra_headers: dict[str, str] | None = None,
+        metadata: dict[str, str] | None = None,
     ) -> int:
         result = await self.complete(
             model=model,
@@ -412,6 +417,7 @@ class MistralBackend:
             max_tokens=1,
             tool_choice=tool_choice,
             extra_headers=extra_headers,
+            metadata=metadata,
         )
         if result.usage is None:
             raise ValueError("Missing usage in non streaming completion")

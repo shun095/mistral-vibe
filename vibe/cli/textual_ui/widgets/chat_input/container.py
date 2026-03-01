@@ -195,6 +195,15 @@ class ChatInputContainer(Vertical):
         if original_text:
             self.post_message(self.PromptEnhancementRequested(original_text))
 
+    @property
+    def switching_mode(self) -> bool:
+        return self._body.switching_mode if self._body else False
+
+    @switching_mode.setter
+    def switching_mode(self, value: bool) -> None:
+        if self._body:
+            self._body.switching_mode = value
+
     def set_safety(self, safety: AgentSafety) -> None:
         self._safety = safety
 
