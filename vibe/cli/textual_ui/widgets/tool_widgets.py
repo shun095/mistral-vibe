@@ -42,25 +42,18 @@ def parse_search_replace_to_diff(content: str) -> list[str]:
     """
     # Try parsing as SEARCH/REPLACE blocks first
     matches = SEARCH_REPLACE_BLOCK_RE.findall(content)
-    if matches:
-        all_diff_lines: list[str] = []
-        for i, (search_text, replace_text) in enumerate(matches):
-            if i > 0:
-                all_diff_lines.append("")  # Separator between blocks
-            search_lines = search_text.strip().split("\n")
-            replace_lines = replace_text.strip().split("\n")
-            diff = difflib.unified_diff(search_lines, replace_lines, lineterm="", n=2)
-            all_diff_lines.extend(list(diff)[2:])  # Skip file headers
-        return all_diff_lines
-    
-    # If no SEARCH/REPLACE blocks found, treat as unified diff
-    # Check if content looks like a unified diff
-    if content and ("---" in content or "+++" in content or "@@" in content):
-        # It's a unified diff, split into lines
-        return content.split("\n")
-    
-    # Fallback: return content truncated
-    return [content[:500]] if content else []
+    if not matches:
+        return [content[:500]] if content else []
+
+    for i, (search_text, replace_text) in enumerate(matches):
+        if i > 0:
+            all_diff_lines.append("")  # Separator between blocks
+        search_lines = search_text.strip("\n").split("\n")
+        replace_lines = replace_text.strip("\n").split("\n")
+        diff = difflib.unified_diff(search_lines, replace_lines, lineterm="", n=2)
+        all_diff_lines.extend(list(diff)[2:])  # Skip file headers
+
+    return all_diff_lines
 
 
 def render_diff_line(line: str) -> Static:
@@ -87,8 +80,10 @@ class ToolApprovalWidget[TArgs: BaseModel](Vertical):
 
     def compose(self) -> ComposeResult:
         MAX_MSG_SIZE = 150
-        for field_name in type(self.args).model_fields:
-            value = getattr(self.args, field_name)
+        model_cls = type(self.args)
+        field_names = model_cls.model_fields or self.args.model_extra or {}
+        for field_name in field_names:
+            value = getattr(self.args, field_name, None)
             if value is None or value in ("", []):
                 continue
             value_str = str(value)

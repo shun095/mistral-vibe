@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 import json
 import os
 import types
@@ -83,13 +83,13 @@ class OpenAIAdapter(APIAdapter):
         self,
         *,
         model_name: str,
-        messages: list[LLMMessage],
+        messages: Sequence[LLMMessage],
         temperature: float | None = None,
-        tools: list[AvailableTool] | None = None,
-        max_tokens: int | None = None,
-        tool_choice: StrToolChoice | AvailableTool | None = None,
-        enable_streaming: bool = False,
-        provider: ProviderConfig | None = None,
+        tools: list[AvailableTool] | None,
+        max_tokens: int | None,
+        tool_choice: StrToolChoice | AvailableTool | None,
+        enable_streaming: bool,
+        provider: ProviderConfig,
         api_key: str | None = None,
         thinking: str = "off",
     ) -> PreparedRequest:
@@ -212,12 +212,13 @@ class GenericBackend:
         self,
         *,
         model: ModelConfig,
-        messages: list[LLMMessage],
+        messages: Sequence[LLMMessage],
         temperature: float | None = None,
         tools: list[AvailableTool] | None = None,
         max_tokens: int | None = None,
         tool_choice: StrToolChoice | AvailableTool | None = None,
         extra_headers: dict[str, str] | None = None,
+        metadata: dict[str, str] | None = None,
     ) -> LLMChunk:
         api_key = (
             os.getenv(self._provider.api_key_env_var)
@@ -283,12 +284,13 @@ class GenericBackend:
         self,
         *,
         model: ModelConfig,
-        messages: list[LLMMessage],
+        messages: Sequence[LLMMessage],
         temperature: float | None = None,
         tools: list[AvailableTool] | None = None,
         max_tokens: int | None = None,
         tool_choice: StrToolChoice | AvailableTool | None = None,
         extra_headers: dict[str, str] | None = None,
+        metadata: dict[str, str] | None = None,
     ) -> AsyncGenerator[LLMChunk, None]:
         api_key = (
             os.getenv(self._provider.api_key_env_var)
@@ -431,11 +433,12 @@ class GenericBackend:
         self,
         *,
         model: ModelConfig,
-        messages: list[LLMMessage],
+        messages: Sequence[LLMMessage],
         temperature: float | None = None,
         tools: list[AvailableTool] | None = None,
         tool_choice: StrToolChoice | AvailableTool | None = None,
         extra_headers: dict[str, str] | None = None,
+        metadata: dict[str, str] | None = None,
     ) -> int:
         probe_messages = list(messages)
         if not probe_messages or probe_messages[-1].role != Role.user:
