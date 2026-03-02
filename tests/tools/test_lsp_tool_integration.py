@@ -5,11 +5,12 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from vibe.core.tools.builtins.write_file import (
-    WriteFile, WriteFileConfig, WriteFileState, WriteFileArgs
+    WriteFile, WriteFileConfig, WriteFileArgs
 )
 from vibe.core.tools.builtins.search_replace import (
-    SearchReplace, SearchReplaceConfig, SearchReplaceState, SearchReplaceArgs
+    SearchReplace, SearchReplaceConfig, SearchReplaceArgs
 )
+from vibe.core.tools.base import BaseToolState
 from vibe.core.lsp import LSPClientManager, LSPDiagnosticFormatter
 
 
@@ -37,7 +38,7 @@ async def test_write_file_calls_lsp_diagnostics():
         
         # Create WriteFile tool
         config = WriteFileConfig()
-        state = WriteFileState()
+        state = BaseToolState()
         tool = WriteFile(config, state)
         
         # Mock get_diagnostics_from_all_servers to return empty list
@@ -66,7 +67,7 @@ async def test_write_file_formats_lsp_diagnostics():
     """Test that WriteFile formats LSP diagnostics correctly."""
     
     config = WriteFileConfig()
-    state = WriteFileState()
+    state = BaseToolState()
     tool = WriteFile(config, state)
     
     # Test diagnostics
@@ -115,7 +116,7 @@ async def test_search_replace_calls_lsp_diagnostics(tmp_path: Path):
     
     # Create SearchReplace tool
     config = SearchReplaceConfig()
-    state = SearchReplaceState()
+    state = BaseToolState()
     tool = SearchReplace(config, state)
     
     # Mock get_diagnostics_from_all_servers to return empty list
@@ -146,7 +147,7 @@ async def test_search_replace_formats_lsp_diagnostics():
     """Test that SearchReplace formats LSP diagnostics correctly."""
     
     config = SearchReplaceConfig()
-    state = SearchReplaceState()
+    state = BaseToolState()
     tool = SearchReplace(config, state)
     
     # Test diagnostics
@@ -183,7 +184,7 @@ async def test_lsp_diagnostics_dont_break_file_operations():
     
     # Create WriteFile tool
     config = WriteFileConfig()
-    state = WriteFileState()
+    state = BaseToolState()
     tool = WriteFile(config, state)
     
     # Create test file in project directory
@@ -215,7 +216,7 @@ async def test_lsp_diagnostics_limited_to_20(tmp_path: Path):
     """Test that LSP diagnostics are limited to 20 to avoid overwhelming the user."""
     
     config = WriteFileConfig()
-    state = WriteFileState()
+    state = BaseToolState()
     tool = WriteFile(config, state)
     
     # Create 30 diagnostics

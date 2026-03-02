@@ -5,7 +5,7 @@ import json
 import re
 from typing import Any
 
-from vibe.core.utils import logger
+from vibe.core.logger import logger
 
 # Type aliases for LSP protocol messages
 LSPRequestParams = dict[str, Any]

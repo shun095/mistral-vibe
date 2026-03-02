@@ -51,7 +51,7 @@ class ParallelToolCallsApp(App):
                     tool_call_index=i,
                     tool_name="read_file",
                     tool_class=ReadFile,
-                    args=ReadFileArgs(path=f"/src/file_{i}.py"),
+                    args=ReadFileArgs(path=f"/src/file_{i}.py", offset=0),
                 )
             )
 

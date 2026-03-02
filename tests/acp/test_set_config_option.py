@@ -35,7 +35,7 @@ def acp_agent_loop(backend) -> VibeAcpAgentLoop:
         ],
     )
 
-    VibeConfig.dump_config(config.model_dump())
+    VibeConfig.dump_config(config.model_dump(exclude_none=True))
 
     class PatchedAgentLoop(AgentLoop):
         def __init__(self, *args, **kwargs) -> None:

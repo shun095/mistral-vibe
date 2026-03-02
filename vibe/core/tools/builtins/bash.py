@@ -221,7 +221,7 @@ class Bash(
     def format_call_display(cls, args: BashArgs) -> ToolCallDisplay:
         timeout = args.timeout
         if timeout is not None:
-            return ToolCallDisplay(summary=f"bash: {command} (timeout: {timeout}s)")
+            return ToolCallDisplay(summary=f"bash: {args.command} (timeout: {timeout}s)")
         return ToolCallDisplay(summary=f"bash: {args.command}")
 
     @classmethod
@@ -306,7 +306,7 @@ class Bash(
         timeout = args.timeout if args.timeout is not None else self.config.default_timeout
         max_bytes = self.config.max_output_bytes
 
-        from vibe.core.utils import logger
+        from vibe.core.logger import logger
         logger.debug(f"Config: {self.config}")
 
         proc = None

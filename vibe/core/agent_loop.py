@@ -883,7 +883,11 @@ class AgentLoop:
     async def _should_execute_tool(
         self, tool: BaseTool, args: BaseModel, tool_call_id: str
     ) -> ToolDecision:
-
+        if self.auto_approve:
+            return ToolDecision(
+                verdict=ToolExecutionResponse.EXECUTE,
+                approval_type=ToolPermission.ALWAYS,
+            )
 
         tool_name = tool.get_name()
         effective = (
@@ -1034,7 +1038,9 @@ class AgentLoop:
 
     async def compact(self) -> str:
         try:
-            self._clean_message_history()
+            with self.messages.silent():
+                self._clean_message_history()
+
             await self.session_logger.save_interaction(
                 self.messages,
                 self.stats,

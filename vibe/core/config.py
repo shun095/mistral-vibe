@@ -12,7 +12,6 @@ from typing import Annotated, Any, Literal
 from dotenv import dotenv_values
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic.fields import FieldInfo
-from pydantic_core import to_jsonable_python
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -634,9 +633,9 @@ class VibeConfig(BaseSettings):
                     target[key] = value
 
         deep_merge(current_config, updates)
-        cls.dump_config(
-            to_jsonable_python(current_config, exclude_none=True, fallback=str)
-        )
+        # Re-validate through Pydantic model to properly exclude None from nested structures
+        validated = cls.model_validate(current_config)
+        cls.dump_config(validated.model_dump(mode="json", exclude_none=True))
 
     @classmethod
     def dump_config(cls, config: dict[str, Any]) -> None:
