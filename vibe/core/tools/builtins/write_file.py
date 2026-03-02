@@ -106,7 +106,6 @@ class WriteFile(
             # Don't fail the write operation if LSP fails
             pass
 
-        result = WriteFileResult(
         yield WriteFileResult(
             path=str(file_path),
             bytes_written=content_bytes,
@@ -114,8 +113,6 @@ class WriteFile(
             content=args.content,
             lsp_diagnostics=diagnostics,
         )
-
-        yield result
 
     def _prepare_and_validate_path(self, args: WriteFileArgs) -> tuple[Path, bool, int]:
         if not args.path.strip():

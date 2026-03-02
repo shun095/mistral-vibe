@@ -14,7 +14,7 @@ from tests.e2e.common import (
 from tests.e2e.mock_server import ChatCompletionsRequestPayload, StreamingMockServer
 
 PREDICTABLE_OUTPUT = "__E2E_BASH_OK__"
-TOOL_ARGUMENTS = f'{{"command":"printf \\"{PREDICTABLE_OUTPUT}\\\\n\\""}}'
+TOOL_ARGUMENTS = f'{{"command":"printf \\"{PREDICTABLE_OUTPUT}\\\\n\\"","timeout":60}}'
 
 
 def _tool_call_factory(

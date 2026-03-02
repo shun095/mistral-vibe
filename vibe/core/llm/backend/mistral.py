@@ -12,7 +12,8 @@ import mistralai
 from mistralai.utils.retries import BackoffStrategy, RetryConfig
 
 from vibe.core.llm.exceptions import BackendErrorBuilder
-from vibe.core.utils import async_generator_retry, async_retry, logger
+from vibe.core.logger import logger
+from vibe.core.utils import async_generator_retry, async_retry
 from vibe.core.llm.message_utils import merge_consecutive_user_messages
 from vibe.core.types import (
     AvailableTool,

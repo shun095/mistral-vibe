@@ -12,7 +12,7 @@ class TestToolCallSessionUpdate:
         return ToolCallEvent(
             tool_name="read_file",
             tool_call_id="test_call_123",
-            args=ReadFileArgs(path="/tmp/test.txt"),
+            args=ReadFileArgs(path="/tmp/test.txt", offset=0),
             tool_class=ReadFile,
         )
 
