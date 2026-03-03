@@ -31,7 +31,9 @@ async def test_bare_domain_gets_https(webfetch):
     )
     result = await collect_result(webfetch.run(WebFetchArgs(url="example.com")))
     assert result.url == "https://example.com"
-    assert result.content == "ok"
+    assert result.content == "1: ok"
+    assert result.lines_read == 1
+    assert result.was_truncated is False
 
 
 @pytest.mark.asyncio
@@ -68,7 +70,7 @@ async def test_protocol_relative_url_normalized(webfetch):
     )
     result = await collect_result(webfetch.run(WebFetchArgs(url="//example.com")))
     assert result.url == "https://example.com"
-    assert result.content == "ok"
+    assert result.content == "1: ok"
 
 
 @pytest.mark.asyncio
@@ -108,7 +110,8 @@ async def test_plain_text_unchanged(webfetch):
     result = await collect_result(
         webfetch.run(WebFetchArgs(url="https://example.com/file.txt"))
     )
-    assert result.content == "just text"
+    assert result.content == "1: just text"
+    assert result.lines_read == 1
 
 
 @pytest.mark.asyncio
@@ -135,7 +138,7 @@ async def test_cloudflare_retry_on_challenge(webfetch):
         httpx.Response(200, text="success", headers={"Content-Type": "text/plain"}),
     ]
     result = await collect_result(webfetch.run(WebFetchArgs(url="https://example.com")))
-    assert result.content == "success"
+    assert result.content == "1: success"
     assert route.call_count == 2
 
     second_request = route.calls[1].request
@@ -165,8 +168,9 @@ async def test_truncates_to_max_bytes_with_disclaimer(webfetch_small):
     result = await collect_result(
         webfetch_small.run(WebFetchArgs(url="https://example.com"))
     )
-    assert result.content.startswith("a" * 100)
+    assert result.content.startswith("1: a")
     assert "[Content truncated due to size limit]" in result.content
+    assert result.lines_read == 1
 
 
 @pytest.mark.asyncio
