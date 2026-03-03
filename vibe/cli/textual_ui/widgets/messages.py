@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import time
 from typing import Any
 
 from textual.app import ComposeResult
@@ -67,6 +69,9 @@ class StreamingMessageBase(Static):
         self._markdown: Markdown | None = None
         self._stream: MarkdownStream | None = None
         self._content_initialized = False
+        # Time-based batching fields
+        self._batch_buffer: list[str] = []
+        self._flush_task: asyncio.Task | None = None
 
     def _get_markdown(self) -> Markdown:
         if self._markdown is None:
@@ -85,9 +90,32 @@ class StreamingMessageBase(Static):
             return
 
         self._content += content
-        if self._should_write_content():
+        self._batch_buffer.append(content)
+        if self._flush_task is None or self._flush_task.done():
+            current_ms = time.perf_counter() * 1000
+            next_flush_time = ((current_ms // 500) + 1) * 500
+            self._flush_task = asyncio.create_task(
+                self._periodic_flush(next_flush_time)
+            )
+
+    async def _periodic_flush(self, next_flush_time: float) -> None:
+        """Flush buffer once at next 500ms interval."""
+        try:
+            current_ms = time.perf_counter() * 1000
+            wait_time = next_flush_time - current_ms
+            if wait_time > 0:
+                await asyncio.sleep(wait_time / 1000.0)
+            await self._flush_batch()
+        finally:
+            self._flush_task = None
+
+    async def _flush_batch(self) -> None:
+        """Flush batch buffer to stream."""
+        if self._batch_buffer and self._markdown is not None:
+            batch_content = "".join(self._batch_buffer)
+            self._batch_buffer = []
             stream = self._ensure_stream()
-            await stream.write(content)
+            await stream.write(batch_content)
 
     async def write_initial_content(self) -> None:
         if self._content_initialized:
@@ -100,8 +128,20 @@ class StreamingMessageBase(Static):
         if self._stream is None:
             return
 
+        # Cancel periodic flush
+        if self._flush_task and not self._flush_task.done():
+            self._flush_task.cancel()
+            try:
+                await self._flush_task
+            except asyncio.CancelledError:
+                pass
+
+        # Immediate flush of remaining content
+        await self._flush_batch()
+
         await self._stream.stop()
         self._stream = None
+        self._flush_task = None
 
     def _should_write_content(self) -> bool:
         return True
