@@ -18,7 +18,7 @@ from vibe.core.tools.base import (
     ToolPermission,
 )
 from vibe.core.tools.ui import ToolCallDisplay, ToolResultDisplay, ToolUIData
-from vibe.core.types import ToolCallEvent, ToolResultEvent, ToolStreamEvent
+from vibe.core.types import ToolResultEvent, ToolStreamEvent
 import shutil
 
 
@@ -89,11 +89,7 @@ class EditFile(
     )
 
     @classmethod
-    def get_call_display(cls, event: ToolCallEvent) -> ToolCallDisplay:
-        if not isinstance(event.args, EditFileArgs):
-            return ToolCallDisplay(summary="Invalid arguments")
-
-        args = event.args
+    def format_call_display(cls, args: EditFileArgs) -> ToolCallDisplay:
         occurrences = "all" if args.replace_all else "single"
         return ToolCallDisplay(
             summary=f"Patching {args.file_path} ({occurrences} occurrence)",

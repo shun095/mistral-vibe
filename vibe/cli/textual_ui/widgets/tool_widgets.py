@@ -36,13 +36,15 @@ def _truncate_lines(content: str, max_lines: int) -> tuple[str, str | None]:
 
 
 def parse_search_replace_to_diff(content: str) -> list[str]:
-    """Parse SEARCH/REPLACE blocks and generate unified diff lines.
-    
-    Handles both SEARCH/REPLACE blocks format and unified diff format.
-    """
-    # Try parsing as SEARCH/REPLACE blocks first
+    """Parse SEARCH/REPLACE blocks and generate unified diff lines."""
+    all_diff_lines: list[str] = []
     matches = SEARCH_REPLACE_BLOCK_RE.findall(content)
     if not matches:
+        # If no SEARCH/REPLACE blocks found, treat as unified diff
+        # Check if content looks like a unified diff
+        if content and ("---" in content or "+++" in content or "@@" in content):
+            # It's a unified diff, split into lines
+            return content.split("\n")
         return [content[:500]] if content else []
 
     for i, (search_text, replace_text) in enumerate(matches):
