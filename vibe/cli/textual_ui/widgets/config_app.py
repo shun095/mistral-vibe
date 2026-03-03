@@ -30,7 +30,8 @@ class ConfigApp(Container):
         Binding("up", "move_up", "Up", show=False),
         Binding("down", "move_down", "Down", show=False),
         Binding("space", "toggle_setting", "Toggle", show=False),
-        Binding("enter", "cycle", "Next", show=False),
+        Binding("right", "cycle", "Next", show=False),
+        Binding("left", "prev_cycle", "Prev", show=False),
     ]
 
     class SettingChanged(Message):
@@ -90,7 +91,7 @@ class ConfigApp(Container):
             yield NoMarkupStatic("")
 
             self.help_widget = NoMarkupStatic(
-                "↑↓ navigate  Space/Enter toggle  ESC exit", classes="settings-help"
+                "↑↓ navigate  Space toggle  ←→ cycle  ESC exit", classes="settings-help"
             )
             yield self.help_widget
 
@@ -136,6 +137,23 @@ class ConfigApp(Container):
 
     def action_move_down(self) -> None:
         self.selected_index = (self.selected_index + 1) % len(self.settings)
+        self._update_display()
+
+    def action_prev_cycle(self) -> None:
+        """Cycle value backward (←)."""
+        setting = self.settings[self.selected_index]
+        key: str = setting["key"]
+        current: str = self._get_display_value(setting)
+        options: list[str] = setting["options"]
+        new_value = ""
+        try:
+            current_idx = options.index(current)
+            prev_idx = (current_idx - 1) % len(options)
+            new_value = options[prev_idx]
+        except (ValueError, IndexError):
+            new_value = options[-1] if options else current
+        self.changes[key] = new_value
+        self.post_message(self.SettingChanged(key=key, value=new_value))
         self._update_display()
 
     def action_toggle_setting(self) -> None:
