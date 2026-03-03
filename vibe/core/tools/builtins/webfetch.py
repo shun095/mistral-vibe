@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
+import re
 from typing import TYPE_CHECKING, ClassVar, final
 from urllib.parse import urlparse
 
@@ -38,12 +39,34 @@ class WebFetchArgs(BaseModel):
     timeout: int | None = Field(
         default=None, description="Timeout in seconds (max 120)"
     )
+    pattern: str | None = Field(
+        default=None,
+        description="Optional regex pattern to filter lines. When set, returns matching lines with line numbers.",
+    )
+    offset: int = Field(
+        default=0,
+        description="Number of lines to skip from the start (0-indexed). Default: 0.",
+    )
+    limit: int = Field(
+        default=1000,
+        description="Maximum number of lines to read. Default: 1000.",
+    )
 
 
 class WebFetchResult(BaseModel):
     url: str
     content: str
     content_type: str
+    lines_read: int = Field(
+        description="Number of lines returned in the result."
+    )
+    total_lines: int = Field(
+        description="Total number of lines in the original content."
+    )
+    was_truncated: bool = Field(
+        default=False,
+        description="True if the content was truncated due to size or line limits.",
+    )
 
 
 class WebFetchConfig(BaseToolConfig):
@@ -86,7 +109,18 @@ class WebFetch(
         if "text/html" in content_type:
             content = _html_to_markdown(content)
 
-        yield WebFetchResult(url=url, content=content, content_type=content_type)
+        filtered_content, lines_read, total_lines, was_truncated = (
+            self._filter_content(content, args)
+        )
+
+        yield WebFetchResult(
+            url=url,
+            content=filtered_content,
+            content_type=content_type,
+            lines_read=lines_read,
+            total_lines=total_lines,
+            was_truncated=was_truncated,
+        )
 
     def _validate_args(self, args: WebFetchArgs) -> None:
         if not args.url.strip():
@@ -106,10 +140,62 @@ class WebFetch(
                     f"Timeout cannot exceed {self.config.max_timeout} seconds"
                 )
 
+        # Cannot use pattern with line range filters
+        if args.pattern and (args.offset != 0 or args.limit != 1000):
+            raise ToolError(
+                "Cannot use 'pattern' with custom 'offset' or 'limit'. "
+                "Use either pattern matching or line range filtering, not both."
+            )
+
     def _resolve_timeout(self, timeout: int | None) -> int:
         if timeout is None:
             return self.config.default_timeout
         return min(timeout, self.config.max_timeout)
+
+    def _filter_content(
+        self, content: str, args: WebFetchArgs
+    ) -> tuple[str, int, int, bool]:
+        lines = content.splitlines()
+        total_lines = len(lines)
+
+        # Apply pattern filter
+        if args.pattern:
+            try:
+                pattern = re.compile(args.pattern)
+                matching_lines = [
+                    f"{i + 1}: {line}"
+                    for i, line in enumerate(lines)
+                    if pattern.search(line)
+                ]
+                return (
+                    "\n".join(matching_lines),
+                    len(matching_lines),
+                    total_lines,
+                    False,
+                )
+            except re.error as e:
+                raise ToolError(f"Invalid regex pattern: {e}")
+
+        # Apply line range filter with defaults
+        start = max(0, args.offset)
+        end = start + args.limit
+        filtered_lines = lines[start:end]
+
+        # Check if truncated (more lines available after end)
+        was_truncated = end < total_lines
+
+        # Add line numbers
+        filtered_lines = [
+            f"{start + i + 1}: {line}"
+            for i, line in enumerate(filtered_lines)
+        ]
+
+        return (
+            "\n".join(filtered_lines),
+            len(filtered_lines),
+            total_lines,
+            was_truncated,
+        )
 
     async def _fetch_url(self, url: str, timeout: int) -> tuple[str, str]:
         headers = {
@@ -184,10 +270,11 @@ class WebFetch(
                 success=False, message=event.error or event.skip_reason or "No result"
             )
 
-        content_len = len(event.result.content)
-        message = (
-            f"Fetched {content_len:,} chars ({event.result.content_type.split(';')[0]})"
-        )
+        content_type = event.result.content_type.split(";")[0]
+        message = f"Fetched {event.result.lines_read:,}/{event.result.total_lines:,} lines ({content_type})"
+
+        if event.result.was_truncated:
+            message += " [Content truncated - use offset for next page]"
 
         return ToolResultDisplay(success=True, message=message)
 
