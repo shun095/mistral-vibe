@@ -239,13 +239,16 @@ class MistralBackend:
     ) -> LLMChunk:
         try:
             merged_messages = merge_consecutive_user_messages(messages)
-            # Only pass temperature if it's explicitly set
             kwargs: dict[str, Any] = {
                 "model": model.name,
                 "messages": [self._mapper.prepare_message(msg) for msg in merged_messages],
-                "tools": [self._mapper.prepare_tool(tool) for tool in tools] if tools else None,
+                "tools": [self._mapper.prepare_tool(tool) for tool in tools]
+                if tools
+                else None,
                 "max_tokens": max_tokens,
-                "tool_choice": self._mapper.prepare_tool_choice(tool_choice) if tool_choice else None,
+                "tool_choice": self._mapper.prepare_tool_choice(tool_choice)
+                if tool_choice
+                else None,
                 "http_headers": extra_headers,
                 "metadata": metadata,
                 "stream": False,
@@ -326,13 +329,16 @@ class MistralBackend:
     ) -> AsyncGenerator[LLMChunk, None]:
         try:
             merged_messages = merge_consecutive_user_messages(messages)
-            # Only pass temperature if it's explicitly set
             kwargs: dict[str, Any] = {
                 "model": model.name,
                 "messages": [self._mapper.prepare_message(msg) for msg in merged_messages],
-                "tools": [self._mapper.prepare_tool(tool) for tool in tools] if tools else None,
+                "tools": [self._mapper.prepare_tool(tool) for tool in tools]
+                if tools
+                else None,
                 "max_tokens": max_tokens,
-                "tool_choice": self._mapper.prepare_tool_choice(tool_choice) if tool_choice else None,
+                "tool_choice": self._mapper.prepare_tool_choice(tool_choice)
+                if tool_choice
+                else None,
                 "http_headers": extra_headers,
                 "metadata": metadata,
             }

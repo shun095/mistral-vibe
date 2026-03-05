@@ -414,11 +414,11 @@ class AgentLoop:
 
                 try:
                     summary = await self.compact()
-                    new_tokens = self.stats.context_tokens
+
                     yield CompactEndEvent(
                         tool_call_id=tool_call_id,
                         old_context_tokens=old_tokens,
-                        new_context_tokens=new_tokens,
+                        new_context_tokens=self.stats.context_tokens,
                         summary_length=len(summary),
                     )
                 except Exception as e:
@@ -641,7 +641,6 @@ class AgentLoop:
             )
             self._handle_tool_response(tool_call, skip_reason, "skipped", decision)
             return
-
 
         self.stats.tool_calls_agreed += 1
 

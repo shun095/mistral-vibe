@@ -95,7 +95,7 @@ class OpenAIAdapter(APIAdapter):
         thinking: str = "off",
     ) -> PreparedRequest:
         merged_messages = merge_consecutive_user_messages(messages)
-        field_name = provider.reasoning_field_name if provider else "reasoning_content"
+        field_name = provider.reasoning_field_name
         converted_messages = [
             self._reasoning_to_api(
                 msg.model_dump(exclude_none=True, exclude={"message_id"}), field_name
@@ -110,7 +110,7 @@ class OpenAIAdapter(APIAdapter):
         if enable_streaming:
             payload["stream"] = True
             stream_options = {"include_usage": True}
-            if provider and provider.name == "mistral":
+            if provider.name == "mistral":
                 stream_options["stream_tool_calls"] = True
             payload["stream_options"] = stream_options
 
@@ -376,18 +376,6 @@ class GenericBackend:
             json.dumps(response_body, ensure_ascii=False),
         )
         return self.HTTPResponse(response_body, response_headers)
-
-    def _is_retryable_streaming_error(self, exception: Exception) -> bool:
-        """Check if an exception is retryable for streaming requests.
-        
-        HTTP status errors are not retryable for streaming requests because they
-        indicate a problem with the request itself, not a transient network issue.
-        """
-        # Don't retry HTTP status errors for streaming requests
-        if isinstance(exception, httpx.HTTPStatusError):
-            return False
-        # Retry other errors (network issues, etc.)
-        return True
 
     @async_generator_retry(tries=10)
     async def _make_streaming_request(
