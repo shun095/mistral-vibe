@@ -270,11 +270,9 @@ class WebFetch(
                 success=False, message=event.error or event.skip_reason or "No result"
             )
 
-        content_type = event.result.content_type.split(";")[0]
-        message = f"Fetched {event.result.lines_read:,}/{event.result.total_lines:,} lines ({content_type})"
-
-        if event.result.was_truncated:
-            message += " [Content truncated - use offset for next page]"
+        message = (
+            f"Fetched {event.result.lines_read:,}/{event.result.total_lines:,} lines ({event.result.content_type.split(';')[0]})"
+        )
 
         return ToolResultDisplay(success=True, message=message)
 

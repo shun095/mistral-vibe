@@ -303,7 +303,7 @@ class Bash(
     async def run(
         self, args: BashArgs, ctx: InvokeContext | None = None
     ) -> AsyncGenerator[ToolStreamEvent | BashResult, None]:
-        timeout = args.timeout if args.timeout is not None else self.config.default_timeout
+        timeout = args.timeout or self.config.default_timeout
         max_bytes = self.config.max_output_bytes
 
         from vibe.core.logger import logger
