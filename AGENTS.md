@@ -293,18 +293,6 @@ Always use dedicated tools instead of `bash` when available. Use `bash` only for
 - `bash({"command": "git status", "timeout": 10})` - Git operations
 - `bash({"command": "ls -la", "timeout": 10})` - Directory listings
 - `bash({"command": "uv run pytest", "timeout": 60})` - Run tests (PREFER uv directly when possible)
-- **CRITICAL: ALWAYS specify timeout parameter** - Omitting the timeout parameter is strictly prohibited
-  **Timeout Requirements:**
-  - **REQUIRED**: All bash commands MUST include a timeout parameter
-  - **REASON**: Prevents hanging processes and ensures task completion
-  - **FORMAT**: `"timeout": <seconds>` where <seconds> is appropriate for the command
-  - **EXAMPLES**:
-    - Quick commands: `"timeout": 5` (pwd, whoami, date)
-    - Medium commands: `"timeout": 10` (git status, ls, grep)
-    - Long commands: `"timeout": 60` (pytest, build processes)
-    - Very long commands: `"timeout": 300` (installations, compilations)
-
-
 
 ### terminalcp
 

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, AsyncGenerator, ClassVar, final, cast, Any
 from urllib.parse import urlparse
 
+import asyncio
 import anyio
 from pydantic import BaseModel, Field
 
@@ -41,9 +42,8 @@ class ReadImageArgs(BaseModel):
 
 
 class ReadImageResult(BaseModel):
-    image_url: str
     source_type: str  # "http", "https", or "file"
-    source_path: str | None = None
+    source_url: str
 
 
 class ReadImageToolConfig(BaseToolConfig):
@@ -80,9 +80,8 @@ class ReadImage(
                 raise ToolError(f"Invalid HTTP/HTTPS URL: {args.image_url}")
             
             yield ReadImageResult(
-                image_url=args.image_url,
                 source_type=parsed_url.scheme,
-                source_path=None
+                source_url=str(args.image_url)
             )
         elif parsed_url.scheme == "file":
             # For file:// URLs, read the file and encode as base64
@@ -91,31 +90,21 @@ class ReadImage(
                 raise ToolError(f"Image file not found: {file_path}")
             if file_path.is_dir():
                 raise ToolError(f"Path is a directory, not a file: {file_path}")
-            
-            # Read and encode the image file
-            image_data = await self._read_image_file(file_path)
-            encoded_data = base64.b64encode(image_data).decode("utf-8")
-            
-            # Determine content type
-            content_type, _ = mimetypes.guess_type(str(file_path))
-            if not content_type:
-                content_type = "application/octet-stream"
-            
-            # Create data URL
-            data_url = f"data:{content_type};base64,{encoded_data}"
-            
+            await self._check_file_size(file_path)
+
             yield ReadImageResult(
-                image_url=data_url,
                 source_type="file",
-                source_path=str(file_path)
+                source_url=str(args.image_url)
             )
+            
+            
         else:
             raise ToolError(
                 f"Unsupported URL scheme: {parsed_url.scheme}. "
                 "Only http://, https://, and file:// are supported."
             )
 
-    async def _read_image_file(self, file_path: Path) -> bytes:
+    async def _check_file_size(self, file_path: Path) -> None:
         """Read image file with size validation."""
         try:
             async with await anyio.Path(file_path).open(mode="rb") as f:
@@ -126,8 +115,6 @@ class ReadImage(
                     f"Image file too large: {len(image_data)} bytes "
                     f"(maximum allowed: {self.config.max_image_size_bytes} bytes)"
                 )
-            
-            return image_data
             
         except OSError as exc:
             raise ToolError(f"Error reading image file {file_path}: {exc}") from exc
@@ -185,7 +172,7 @@ class ReadImage(
     @classmethod
     def _construct_llm_message(
         cls,
-        tool_call: "ResolvedToolCall",
+        tool_call: ResolvedToolCall,
         result_model: ReadImageResult,
     ) -> list[LLMMessage]:
         """Construct LLM messages with image content for read_image tool.
@@ -200,6 +187,25 @@ class ReadImage(
             content="Understood.",
             tool_call_id=tool_call.call_id,
         )
+
+        if result_model.source_type == "file":
+            # Read and encode the image file
+            parsed_url = urlparse(result_model.source_url)
+            file_path = Path(parsed_url.path).expanduser()
+            with Path(file_path).open(mode="rb") as f:
+                image_data = f.read()
+
+            encoded_data = base64.b64encode(image_data).decode("utf-8")
+
+            # Determine content type
+            content_type, _ = mimetypes.guess_type(str(file_path))
+            if not content_type:
+                content_type = "application/octet-stream"
+            
+            # Create data URL
+            data_url = f"data:{content_type};base64,{encoded_data}"
+        else:
+            data_url = result_model.source_url
         
         # User message with the image
         image_message = LLMMessage(
@@ -214,7 +220,7 @@ class ReadImage(
                     {
                         "type": "image_url",
                         "image_url": {
-                            "url": result_model.image_url
+                            "url": data_url,
                         }
                     }
                 ],
@@ -227,7 +233,7 @@ class ReadImage(
     @classmethod
     def _construct_events(
         cls,
-        tool_call: "ResolvedToolCall",
+        tool_call: ResolvedToolCall,
         result_model: ReadImageResult,
     ) -> list[AssistantEvent | ContinueableUserMessageEvent]:
         """Construct custom events for read_image tool.
@@ -235,6 +241,26 @@ class ReadImage(
         Returns UI events. The image content is also added to LLM context via
         the tool's get_llm_message_constructor() method.
         """
+        # Convert file URLs to base64 for display
+        if result_model.source_type == "file":
+            # Read and encode the image file
+            parsed_url = urlparse(result_model.source_url)
+            file_path = Path(parsed_url.path).expanduser()
+            with Path(file_path).open(mode="rb") as f:
+                image_data = f.read()
+
+            encoded_data = base64.b64encode(image_data).decode("utf-8")
+
+            # Determine content type
+            content_type, _ = mimetypes.guess_type(str(file_path))
+            if not content_type:
+                content_type = "application/octet-stream"
+            
+            # Create data URL
+            display_url = f"data:{content_type};base64,{encoded_data}"
+        else:
+            display_url = result_model.source_url
+
         # Assistant message (as event)
         assistant_event = AssistantEvent(
             content="Understood.",
@@ -251,7 +277,7 @@ class ReadImage(
                 {
                     "type": "image_url",
                     "image_url": {
-                        "url": result_model.image_url
+                        "url": display_url
                     }
                 }
             ],
@@ -280,9 +306,9 @@ class ReadImage(
             )
 
         if event.result.source_type in ("http", "https"):
-            message = f"Fetched image from {event.result.source_type}://..."
+            message = f"Fetched image from {event.result.source_url}"
         else:  # file
-            message = f"Read image from {event.result.source_path}"
+            message = f"Read image from {event.result.source_url}"
 
         return ToolResultDisplay(
             success=True,

@@ -62,9 +62,8 @@ def make_read_image_tool_call(
 def assert_http_url_events(events):
     """Assertions for HTTP URL test case."""
     # Verify tool result - HTTP URL should be returned as-is
-    assert events[3].result.image_url == "https://example.com/image.jpg"
+    assert events[3].result.source_url == "https://example.com/image.jpg"
     assert events[3].result.source_type == "https"
-    assert events[3].result.source_path is None
     # Verify image message contains image_url
     assert any(
         item.get("type") == "image_url"
@@ -75,11 +74,9 @@ def assert_http_url_events(events):
 
 def assert_file_url_events(events, tmp_path):
     """Assertions for File URL test case."""
-    # Verify base64 encoding
-    assert events[3].result.image_url.startswith("data:")
-    assert ";base64," in events[3].result.image_url
+    # Verify source URL is returned
     assert events[3].result.source_type == "file"
-    assert events[3].result.source_path == str(Path(tmp_path) / "test.jpg")
+    assert str(Path(tmp_path) / "test.jpg") in events[3].result.source_url
     # Verify image message has base64 data
     image_url_item = next(
         (
@@ -266,9 +263,8 @@ def assert_http_url_messages(messages):
         key, value = line.split(": ", 1)
         content_dict[key] = value
     
-    assert content_dict["image_url"] == "https://example.com/image.jpg"
+    assert content_dict["source_url"] == "https://example.com/image.jpg"
     assert content_dict["source_type"] == "https"
-    assert content_dict["source_path"] == "None"
     
     # Verify message 4: Assistant "Understood" message
     assert messages[4].role == Role.assistant
@@ -306,10 +302,9 @@ def assert_file_url_messages(messages, tmp_path):
         key, value = line.split(": ", 1)
         content_dict[key] = value
     
-    assert "image_url" in content_dict
+    assert "source_url" in content_dict
     assert content_dict["source_type"] == "file"
-    assert "source_path" in content_dict
-    assert tmp_path.as_posix() in content_dict["source_path"]
+    assert tmp_path.as_posix() in content_dict["source_url"]
     
     # Verify message 4: Assistant "Understood" message
     assert messages[4].role == Role.assistant
