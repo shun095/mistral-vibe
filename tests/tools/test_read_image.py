@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -32,9 +32,8 @@ async def test_http_url_validation(read_image_tool):
     )
 
     assert isinstance(result, ReadImageResult)
-    assert result.image_url == "http://example.com/image.jpg"
+    assert result.source_url == "http://example.com/image.jpg"
     assert result.source_type == "http"
-    assert result.source_path is None
 
 
 @pytest.mark.asyncio
@@ -45,9 +44,8 @@ async def test_https_url_validation(read_image_tool):
     )
 
     assert isinstance(result, ReadImageResult)
-    assert result.image_url == "https://example.com/image.jpg"
+    assert result.source_url == "https://example.com/image.jpg"
     assert result.source_type == "https"
-    assert result.source_path is None
 
 
 @pytest.mark.asyncio
@@ -63,35 +61,23 @@ async def test_invalid_http_url_fails(read_image_tool):
 
 @pytest.mark.asyncio
 async def test_file_url_reads_and_encodes(read_image_tool, tmp_path):
-    """Test that file:// URLs are read and encoded as base64."""
-    
+    """Test that file:// URLs are validated and returned."""
     # Create a test image file
     test_image = tmp_path / "test.jpg"
     test_image.write_bytes(b"fake_image_data_1234567890")
-    
+
     result = await collect_result(
         read_image_tool.run(ReadImageArgs(image_url=f"file://{test_image}"))
     )
 
     assert isinstance(result, ReadImageResult)
     assert result.source_type == "file"
-    assert result.source_path == str(test_image)
-    
-    # Verify the data URL format
-    assert result.image_url.startswith("data:")
-    assert ";base64," in result.image_url
-    
-    # Extract and decode the base64 data
-    data_part = result.image_url.split(";base64,")[1]
-    decoded_data = base64.b64decode(data_part)
-    
-    assert decoded_data == b"fake_image_data_1234567890"
+    assert result.source_url == f"file://{test_image}"
 
 
 @pytest.mark.asyncio
 async def test_file_url_with_missing_file_fails(read_image_tool, tmp_path):
     """Test that missing files are handled properly."""
-    
     with pytest.raises(ToolError) as err:
         await collect_result(
             read_image_tool.run(ReadImageArgs(image_url="file:///nonexistent.jpg"))
@@ -103,7 +89,6 @@ async def test_file_url_with_missing_file_fails(read_image_tool, tmp_path):
 @pytest.mark.asyncio
 async def test_file_url_with_directory_fails(read_image_tool, tmp_path):
     """Test that directories are rejected."""
-    
     # Create a directory
     test_dir = tmp_path / "test_dir"
     test_dir.mkdir()
@@ -119,7 +104,6 @@ async def test_file_url_with_directory_fails(read_image_tool, tmp_path):
 @pytest.mark.asyncio
 async def test_file_size_limit_enforcement(read_image_tool, tmp_path):
     """Test that large files are rejected."""
-    
     # Create a file larger than the default limit (10MB)
     test_image = tmp_path / "large.jpg"
     large_data = b"x" * (11_000_000)  # 11MB
@@ -138,7 +122,6 @@ async def test_file_size_limit_enforcement(read_image_tool, tmp_path):
 @pytest.mark.asyncio
 async def test_custom_file_size_limit(tmp_path):
     """Test that custom file size limits work."""
-    
     # Create a file larger than 1MB but smaller than 10MB
     test_image = tmp_path / "medium.jpg"
     medium_data = b"x" * (2_000_000)  # 2MB
@@ -172,7 +155,6 @@ async def test_unsupported_url_scheme_fails(read_image_tool):
 @pytest.mark.asyncio
 async def test_file_read_error_handling(read_image_tool, tmp_path):
     """Test that file read errors are properly handled."""
-    
     # Create a test file
     test_image = tmp_path / "test.jpg"
     test_image.write_bytes(b"test_data")
@@ -206,9 +188,9 @@ async def test_relative_file_path_resolution(read_image_tool, tmp_path, monkeypa
 
     assert isinstance(result, ReadImageResult)
     assert result.source_type == "file"
-    # The path should be resolved to the absolute path
-    assert result.source_path is not None
-    assert "subdir" in result.source_path
+    # The URL should contain the path
+    assert "subdir" in result.source_url
+    assert "image.jpg" in result.source_url
 
 
 @pytest.mark.asyncio
@@ -268,10 +250,11 @@ async def test_allowlist_denylist_for_file_urls(read_image_tool, tmp_path, monke
 
 
 @pytest.mark.asyncio
-async def test_message_construction():
+async def test_message_construction(tmp_path, monkeypatch):
     """Test that message construction works correctly."""
-    from vibe.core.types import LLMMessage, Role
-    from vibe.core.llm.format import ResolvedToolCall
+    from vibe.core.types import Role
+
+    monkeypatch.chdir(tmp_path)
     
     # Create a mock tool call
     class MockToolCall:
@@ -280,39 +263,69 @@ async def test_message_construction():
             self.tool_name = "read_image"
             self.args_dict = {"image_url": "https://example.com/image.jpg"}
     
-    # Create a mock result
-    result = ReadImageResult(
-        image_url="data:image/jpeg;base64,test_data",
-        source_type="http",
-        source_path=None
+    # Test HTTP URL - result just contains the URL
+    result_http = ReadImageResult(
+        source_url="https://example.com/image.jpg",
+        source_type="http"
     )
     
-    # Call the LLM message constructor
-    llm_messages = ReadImage._construct_llm_message(MockToolCall(), result)  # type: ignore[arg-type]
+    llm_messages_http = ReadImage._construct_llm_message(MockToolCall(), result_http)  # type: ignore[arg-type]
+    assert isinstance(llm_messages_http, list)
+    assert len(llm_messages_http) == 2
+    assert llm_messages_http[0].role == Role.assistant
+    assert llm_messages_http[0].content == "Understood."
+    assert llm_messages_http[0].tool_call_id == "test_call_123"
     
-    # Verify we get 2 messages (Understood + image)
-    assert isinstance(llm_messages, list)
-    assert len(llm_messages) == 2
+    # Verify user message contains the image URL
+    assert llm_messages_http[1].role == Role.user
+    assert llm_messages_http[1].tool_call_id == "test_call_123"
     
-    # Verify first message is assistant response
-    assert llm_messages[0].role == Role.assistant
-    assert llm_messages[0].content == "Understood."
-    assert llm_messages[0].tool_call_id == "test_call_123"
+    # Test file URL - create a test image and verify base64 encoding
+    test_image = tmp_path / "test.jpg"
+    test_image.write_bytes(b"fake_image_data_1234567890")
     
-    # Verify second message is user message with image
-    assert llm_messages[1].role == Role.user
-    assert isinstance(llm_messages[1].content, list)
-    assert len(llm_messages[1].content) == 2
+    result_file = ReadImageResult(
+        source_url=f"file://{test_image}",
+        source_type="file"
+    )
     
-    # Verify text content
-    text_item = llm_messages[1].content[0]
-    assert text_item["type"] == "text"
-    assert "This is an image fetched from https://example.com/image.jpg" in text_item["text"]
+    # Create a new mock tool call with file URL
+    class MockToolCallFile:
+        def __init__(self):
+            self.call_id = "test_call_456"
+            self.tool_name = "read_image"
+            self.args_dict = {"image_url": f"file://{test_image}"}
     
-    # Verify image content
-    image_item = llm_messages[1].content[1]
-    assert image_item["type"] == "image_url"
-    assert image_item["image_url"]["url"] == "data:image/jpeg;base64,test_data"
+    llm_messages_file = ReadImage._construct_llm_message(MockToolCallFile(), result_file)  # type: ignore[arg-type]
+    assert isinstance(llm_messages_file, list)
+    assert len(llm_messages_file) == 2
+    
+    # Verify user message contains base64 encoded data
+    user_message = llm_messages_file[1]
+    assert user_message.role == Role.user
+    
+    # Check that the content has text and image_url
+    assert isinstance(user_message.content, list)
+    assert len(user_message.content) == 2
+    
+    # First item is text description
+    text_content = user_message.content[0]
+    assert isinstance(text_content, dict)
+    assert text_content["type"] == "text"
+    assert "file://" in text_content["text"]
+    
+    # Second item is image_url
+    image_content = user_message.content[1]
+    assert isinstance(image_content, dict)
+    assert image_content["type"] == "image_url"
+    assert isinstance(image_content["image_url"], dict)
+    data_url = image_content["image_url"]["url"]
+    assert data_url.startswith("data:image/jpeg;base64,")
+    
+    # Decode and verify the data
+    data_part = data_url.split(";base64,")[1]
+    decoded_data = base64.b64decode(data_part)
+    assert decoded_data == b"fake_image_data_1234567890"
 
 
 @pytest.mark.asyncio
