@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any, cast, TypeVar
+from typing import TYPE_CHECKING, Any
 
+import json_repair
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from vibe.core.tools.base import BaseTool
@@ -106,10 +107,7 @@ class APIToolFormatHandler:
         for tc in api_tool_calls:
             if not (function_call := tc.function):
                 continue
-            try:
-                args = json.loads(function_call.arguments or "{}")
-            except json.JSONDecodeError:
-                args = {}
+            args = self._parse_tool_call_args(function_call.arguments or "{}")
 
             tool_calls.append(
                 ParsedToolCall(
@@ -120,6 +118,21 @@ class APIToolFormatHandler:
             )
 
         return ParsedMessage(tool_calls=tool_calls)
+
+    def _parse_tool_call_args(self, args_str: str) -> dict[str, Any]:
+        """Parse tool call arguments, attempting to repair malformed JSON."""
+        if not args_str:
+            return {}
+        try:
+            return json.loads(args_str)
+        except json.JSONDecodeError:
+            try:
+                repaired = json_repair.loads(args_str)
+                if isinstance(repaired, dict):
+                    return repaired
+            except Exception:
+                pass
+            return {}
 
     def resolve_tool_calls(
         self, parsed: ParsedMessage, tool_manager: ToolManager
