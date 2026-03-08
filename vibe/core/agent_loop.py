@@ -26,6 +26,7 @@ from vibe.core.llm.format import (
     ResolvedToolCall,
 )
 from vibe.core.llm.types import BackendLike
+from vibe.core.loop_detection import ToolCallLoopHandler
 from vibe.core.middleware import (
     CHAT_AGENT_EXIT,
     CHAT_AGENT_REMINDER,
@@ -42,9 +43,7 @@ from vibe.core.middleware import (
     ResetReason,
     TurnLimitMiddleware,
 )
-from vibe.core.loop_detection import ToolCallLoopHandler
 from vibe.core.prompts import UtilityPrompt
-from vibe.core.utils import TOOL_ERROR_TAG
 from vibe.core.session.session_logger import SessionLogger
 from vibe.core.session.session_migration import migrate_sessions_entrypoint
 from vibe.core.skills.manager import SkillManager
@@ -58,7 +57,6 @@ from vibe.core.tools.base import (
     ToolError,
     ToolPermission,
     ToolPermissionError,
-    EventConstructor,
 )
 from vibe.core.tools.manager import ToolManager
 from vibe.core.tools.mcp import MCPRegistry
@@ -85,7 +83,6 @@ from vibe.core.types import (
     SyncApprovalCallback,
     ToolCall,
     ToolCallEvent,
-    ToolCallSignature,
     ToolResultEvent,
     ToolStreamEvent,
     UserInputCallback,
@@ -287,6 +284,19 @@ class AgentLoop:
     async def act(self, msg: str) -> AsyncGenerator[BaseEvent]:
         self._clean_message_history()
         async for event in self._conversation_loop(msg):
+            yield event
+
+    async def act_without_adding_message(self) -> AsyncGenerator[BaseEvent]:
+        """Trigger the LLM without adding a new message to history.
+        
+        This is used when the message has already been added to history
+        (e.g., after editing a previous message).
+        
+        Note: We do NOT call _clean_message_history() here because the message
+        history has already been cleaned up by edit_last_message(). Calling it
+        would incorrectly add "Understood." after the user message.
+        """
+        async for event in self._conversation_loop_without_adding_message():
             yield event
 
     @property
@@ -494,6 +504,63 @@ class AgentLoop:
                 
                 # Special handling for tools that yield ContinueableUserMessageEvent
                 # If we just yielded a ContinueableUserMessageEvent, continue the conversation
+                should_break_loop = not yielded_continueable_event and last_message.role != Role.tool
+
+                if user_cancelled:
+                    return
+
+        finally:
+            await self._save_messages()
+
+    async def _conversation_loop_without_adding_message(
+        self,
+    ) -> AsyncGenerator[BaseEvent]:
+        """Run the conversation loop without adding a new message to history.
+        
+        This is used when the message has already been added to history
+        (e.g., after editing a previous message).
+        """
+        from vibe.core.conversation_loop import extract_last_user_message
+
+        # Extract last user message
+        content, message_id = extract_last_user_message(self.messages)
+        if content is None or message_id is None:
+            raise AgentLoopError("No user message found in history")
+
+        # Set the current user message ID
+        self._current_user_message_id = message_id
+
+        # Yield a UserMessageEvent for the existing message
+        yield UserMessageEvent(content=content, message_id=message_id)
+
+        try:
+            should_break_loop = False
+            while not should_break_loop:
+                result = await self.middleware_pipeline.run_before_turn(
+                    self._get_context()
+                )
+                async for event in self._handle_middleware_result(result):
+                    yield event
+
+                if result.action == MiddlewareAction.STOP:
+                    return
+
+                self.stats.steps += 1
+                user_cancelled = False
+
+                # Track if we yielded a ContinueableUserMessageEvent (e.g., for image messages)
+                yielded_continueable_event = False
+                async for event in self._perform_llm_turn():
+                    if is_user_cancellation_event(event):
+                        user_cancelled = True
+                    if isinstance(event, ContinueableUserMessageEvent):
+                        yielded_continueable_event = True
+                    yield event
+                    await self._save_messages()
+
+                last_message = self.messages[-1]
+
+                # Special handling for tools that yield ContinueableUserMessageEvent
                 should_break_loop = not yielded_continueable_event and last_message.role != Role.tool
 
                 if user_cancelled:
@@ -761,8 +828,7 @@ class AgentLoop:
     def _append_special_tool_response(
         self, tool_call: ResolvedToolCall, result_model: BaseModel
     ) -> None:
-        """
-        Append additional LLM messages for tools with special handling.
+        """Append additional LLM messages for tools with special handling.
         
         This is called after yielding custom events and is used to add
         context to the LLM that isn't part of the standard tool response.
@@ -1034,6 +1100,54 @@ class AgentLoop:
         self.middleware_pipeline.reset()
         self.tool_manager.reset_all()
         self._reset_session()
+
+    async def edit_last_message(self, new_content: str) -> None:
+        """Edit the last user message and remove all subsequent messages.
+
+        This method finds the last user message, replaces its content with the
+        new content, and removes all messages that came after it (including
+        assistant responses, tool calls, and tool results).
+
+        Args:
+            new_content: The new content for the last user message.
+
+        Raises:
+            AgentLoopStateError: If no user message exists to edit.
+        """
+        # Find the last user message (excluding system message at index 0)
+        last_user_index = None
+        for i in range(len(self.messages) - 1, 0, -1):
+            if self.messages[i].role == Role.user:
+                last_user_index = i
+                break
+
+        if last_user_index is None:
+            raise AgentLoopStateError(
+                "No user message found to edit. Start a conversation first."
+            )
+
+        # Get the message ID of the last user message for tracking
+        edited_message_id = self.messages[last_user_index].message_id
+
+        # Remove all messages after the last user message
+        with self.messages.silent():
+            # Keep only messages up to and including the last user message
+            self.messages.reset(self.messages[: last_user_index + 1])
+
+            # Update the content of the last user message
+            self.messages[last_user_index].content = new_content
+
+        # Save the updated message history
+        await self.session_logger.save_interaction(
+            self.messages,
+            self.stats,
+            self._base_config,
+            self.tool_manager,
+            self.agent_profile,
+        )
+
+        # Update the current user message ID for tracking
+        self._current_user_message_id = edited_message_id
 
     async def compact(self) -> str:
         try:
