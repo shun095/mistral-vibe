@@ -289,6 +289,221 @@ class TestAPIToolFormatHandlerReasoningContent:
         assert result.reasoning_content is None
 
 
+class TestAPIToolFormatHandlerJsonRepair:
+    def test_parse_message_with_valid_json_args(self):
+        """Test that valid JSON arguments are parsed correctly."""
+        from vibe.core.types import FunctionCall, ToolCall
+
+        handler = APIToolFormatHandler()
+
+        message = LLMMessage(
+            role=Role.assistant,
+            content="I will read the file",
+            tool_calls=[
+                ToolCall(
+                    id="call_123",
+                    index=0,
+                    function=FunctionCall(
+                        name="read_file",
+                        arguments='{"path": "test.py", "limit": 100}',
+                    ),
+                )
+            ],
+        )
+
+        parsed = handler.parse_message(message)
+
+        assert len(parsed.tool_calls) == 1
+        assert parsed.tool_calls[0].tool_name == "read_file"
+        assert parsed.tool_calls[0].raw_args == {"path": "test.py", "limit": 100}
+
+    def test_parse_message_with_unclosed_brace(self):
+        """Test that JSON with missing closing brace is repaired."""
+        from vibe.core.types import FunctionCall, ToolCall
+
+        handler = APIToolFormatHandler()
+
+        message = LLMMessage(
+            role=Role.assistant,
+            content="I will read the file",
+            tool_calls=[
+                ToolCall(
+                    id="call_123",
+                    index=0,
+                    function=FunctionCall(
+                        name="read_file",
+                        arguments='{"path": "test.py"',  # Missing closing brace
+                    ),
+                )
+            ],
+        )
+
+        parsed = handler.parse_message(message)
+
+        assert len(parsed.tool_calls) == 1
+        assert parsed.tool_calls[0].tool_name == "read_file"
+        assert parsed.tool_calls[0].raw_args == {"path": "test.py"}
+
+    def test_parse_message_with_missing_quotes(self):
+        """Test that JSON with unquoted keys is repaired."""
+        from vibe.core.types import FunctionCall, ToolCall
+
+        handler = APIToolFormatHandler()
+
+        message = LLMMessage(
+            role=Role.assistant,
+            content="I will write the file",
+            tool_calls=[
+                ToolCall(
+                    id="call_456",
+                    index=0,
+                    function=FunctionCall(
+                        name="write_file",
+                        arguments='{path: "test.py", content: "hello"}',  # Unquoted keys
+                    ),
+                )
+            ],
+        )
+
+        parsed = handler.parse_message(message)
+
+        assert len(parsed.tool_calls) == 1
+        assert parsed.tool_calls[0].tool_name == "write_file"
+        assert parsed.tool_calls[0].raw_args == {
+            "path": "test.py",
+            "content": "hello",
+        }
+
+    def test_parse_message_with_trailing_comma(self):
+        """Test that JSON with trailing comma is repaired."""
+        from vibe.core.types import FunctionCall, ToolCall
+
+        handler = APIToolFormatHandler()
+
+        message = LLMMessage(
+            role=Role.assistant,
+            content="I will read the file",
+            tool_calls=[
+                ToolCall(
+                    id="call_789",
+                    index=0,
+                    function=FunctionCall(
+                        name="read_file",
+                        arguments='{"path": "test.py",}',  # Trailing comma
+                    ),
+                )
+            ],
+        )
+
+        parsed = handler.parse_message(message)
+
+        assert len(parsed.tool_calls) == 1
+        assert parsed.tool_calls[0].tool_name == "read_file"
+        assert parsed.tool_calls[0].raw_args == {"path": "test.py"}
+
+    def test_parse_message_with_empty_value(self):
+        """Test that JSON with empty value is repaired."""
+        from vibe.core.types import FunctionCall, ToolCall
+
+        handler = APIToolFormatHandler()
+
+        message = LLMMessage(
+            role=Role.assistant,
+            content="I will read the file",
+            tool_calls=[
+                ToolCall(
+                    id="call_999",
+                    index=0,
+                    function=FunctionCall(
+                        name="read_file",
+                        arguments='{"path":}',  # Empty value
+                    ),
+                )
+            ],
+        )
+
+        parsed = handler.parse_message(message)
+
+        assert len(parsed.tool_calls) == 1
+        assert parsed.tool_calls[0].tool_name == "read_file"
+        assert parsed.tool_calls[0].raw_args == {"path": ""}
+
+    def test_parse_message_with_empty_args_string(self):
+        """Test that empty arguments string returns empty dict."""
+        from vibe.core.types import FunctionCall, ToolCall
+
+        handler = APIToolFormatHandler()
+
+        message = LLMMessage(
+            role=Role.assistant,
+            content="I will execute a tool",
+            tool_calls=[
+                ToolCall(
+                    id="call_empty",
+                    index=0,
+                    function=FunctionCall(
+                        name="some_tool",
+                        arguments="",
+                    ),
+                )
+            ],
+        )
+
+        parsed = handler.parse_message(message)
+
+        assert len(parsed.tool_calls) == 1
+        assert parsed.tool_calls[0].raw_args == {}
+
+    def test_parse_message_with_multiple_tool_calls_mixed_validity(self):
+        """Test parsing multiple tool calls with mixed JSON validity."""
+        from vibe.core.types import FunctionCall, ToolCall
+
+        handler = APIToolFormatHandler()
+
+        message = LLMMessage(
+            role=Role.assistant,
+            content="I will perform multiple actions",
+            tool_calls=[
+                ToolCall(
+                    id="call_1",
+                    index=0,
+                    function=FunctionCall(
+                        name="read_file",
+                        arguments='{"path": "valid.py"}',  # Valid JSON
+                    ),
+                ),
+                ToolCall(
+                    id="call_2",
+                    index=1,
+                    function=FunctionCall(
+                        name="write_file",
+                        arguments='{"path": "test.py",}',  # Trailing comma
+                    ),
+                ),
+                ToolCall(
+                    id="call_3",
+                    index=2,
+                    function=FunctionCall(
+                        name="bash",
+                        arguments='{command: "echo hello"}',  # Unquoted key
+                    ),
+                ),
+            ],
+        )
+
+        parsed = handler.parse_message(message)
+
+        assert len(parsed.tool_calls) == 3
+        assert parsed.tool_calls[0].tool_name == "read_file"
+        assert parsed.tool_calls[0].raw_args == {"path": "valid.py"}
+
+        assert parsed.tool_calls[1].tool_name == "write_file"
+        assert parsed.tool_calls[1].raw_args == {"path": "test.py"}
+
+        assert parsed.tool_calls[2].tool_name == "bash"
+        assert parsed.tool_calls[2].raw_args == {"command": "echo hello"}
+
+
 class TestAgentLoopStreamingReasoningEvents:
     @pytest.mark.asyncio
     async def test_streaming_accumulates_reasoning_in_message(self):
