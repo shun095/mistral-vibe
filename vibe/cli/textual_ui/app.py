@@ -567,19 +567,38 @@ class VibeApp(App):  # noqa: PLR0904
         )
 
     async def _handle_command(self, user_input: str) -> bool:
-        if command := self.commands.find_command(user_input):
-            if cmd_name := self.commands.get_command_name(user_input):
-                self.agent_loop.telemetry_client.send_slash_command_used(
-                    cmd_name, "builtin"
-                )
-            await self._mount_and_scroll(UserMessage(user_input))
-            handler = getattr(self, command.handler)
-            if asyncio.iscoroutinefunction(handler):
-                await handler()
-            else:
-                handler()
-            return True
-        return False
+        # Check if input starts with a known command alias
+        cmd_name = None
+        for alias, name in self.commands._alias_map.items():
+            if user_input.startswith(alias):
+                cmd_name = name
+                break
+        
+        if not cmd_name:
+            return False
+        
+        command = self.commands.commands.get(cmd_name)
+        if not command:
+            return False
+        
+        self.agent_loop.telemetry_client.send_slash_command_used(
+            cmd_name, "builtin"
+        )
+        
+        # Add message to agent_loop.messages BEFORE calling handler
+        # so the handler can find it
+        user_message = LLMMessage(role=Role.user, content=user_input)
+        self.agent_loop.messages.append(user_message)
+        
+        # Also mount to UI for display
+        await self._mount_and_scroll(UserMessage(user_input))
+        
+        handler = getattr(self, command.handler)
+        if asyncio.iscoroutinefunction(handler):
+            await handler()
+        else:
+            handler()
+        return True
 
     def _get_skill_entries(self) -> list[tuple[str, str]]:
         if not self.agent_loop:
@@ -1196,6 +1215,69 @@ Enhanced prompt:"""
                 )
             )
 
+    async def _edit_last_message(self) -> None:
+        """Edit the last user message and restart the conversation."""
+        from vibe.cli.textual_ui.handlers.edit_handler import (
+            EditHandler,
+            EditValidationError,
+            extract_edit_content,
+            get_last_user_message,
+            validate_edit_preconditions,
+        )
+
+        messages = self.agent_loop.messages
+
+        try:
+            # Validate preconditions
+            validate_edit_preconditions(self, messages)
+
+            # Get last user message
+            last_user_msg = get_last_user_message(messages)
+            if not last_user_msg:
+                await self._mount_and_scroll(
+                    ErrorMessage(
+                        "No user message found.", collapsed=self._tools_collapsed
+                    )
+                )
+                return
+
+            # Extract new content from command
+            user_input = last_user_msg.content
+            if not isinstance(user_input, str):
+                await self._mount_and_scroll(
+                    ErrorMessage(
+                        "Invalid message content.", collapsed=self._tools_collapsed
+                    )
+                )
+                return
+
+            new_content = extract_edit_content(user_input)
+
+            if not new_content:
+                await self._mount_and_scroll(
+                    ErrorMessage(
+                        "No content provided for edit.", collapsed=self._tools_collapsed
+                    )
+                )
+                return
+
+            # Execute edit
+            handler = EditHandler(
+                app=self,
+                agent_loop=self.agent_loop,
+                last_user_msg=last_user_msg,
+                new_content=new_content,
+            )
+            await handler.execute()
+
+        except EditValidationError as e:
+            await self._mount_and_scroll(
+                ErrorMessage(str(e), collapsed=self._tools_collapsed)
+            )
+        except Exception as e:
+            await self._mount_and_scroll(
+                ErrorMessage(f"Failed to edit message: {e}", collapsed=self._tools_collapsed)
+            )
     async def _compact_history(self) -> None:
         if self._agent_running:
             await self._mount_and_scroll(

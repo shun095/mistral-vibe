@@ -77,6 +77,11 @@ class CommandRegistry:
                 description="Browse and resume past sessions",
                 handler="_show_session_picker",
             ),
+            "edit": Command(
+                aliases=frozenset(["/edit"]),
+                description="Edit the last submitted message and restart conversation",
+                handler="_edit_last_message",
+            ),
         }
 
         for command in excluded_commands:
