@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
+import io
 import re
-from typing import TYPE_CHECKING, ClassVar, final
+from typing import ClassVar, final
 from urllib.parse import urlparse
 
 import httpx
 from markdownify import MarkdownConverter
+from markitdown import MarkItDown
 from pydantic import BaseModel, Field
+
+_DEFAULT_LIMIT = 1000
 
 from vibe.core.tools.base import (
     BaseTool,
@@ -18,10 +22,7 @@ from vibe.core.tools.base import (
     ToolPermission,
 )
 from vibe.core.tools.ui import ToolCallDisplay, ToolResultDisplay, ToolUIData
-from vibe.core.types import ToolStreamEvent
-
-if TYPE_CHECKING:
-    from vibe.core.types import ToolCallEvent, ToolResultEvent
+from vibe.core.types import ToolStreamEvent, ToolCallEvent, ToolResultEvent
 
 
 _HONEST_USER_AGENT = "vibe-cli"
@@ -91,7 +92,7 @@ class WebFetch(
     ToolUIData[WebFetchArgs, WebFetchResult],
 ):
     description: ClassVar[str] = (
-        "Fetch content from a URL. Converts HTML to markdown for readability."
+        "Fetch content from a URL. Converts HTML and PDF to markdown for readability."
     )
 
     @final
@@ -104,12 +105,24 @@ class WebFetch(
         url = raw if raw.startswith(("http://", "https://")) else "https://" + raw
         timeout = self._resolve_timeout(args.timeout)
 
-        content, content_type = await self._fetch_url(url, timeout)
+        content_bytes, content_type = await self._fetch_url_bytes(url, timeout)
 
-        if "text/html" in content_type:
-            content = _html_to_markdown(content)
+        # Convert to text based on content type
+        if "application/pdf" in content_type:
+            content = _pdf_to_markdown(content_bytes)
+        elif "text/html" in content_type:
+            content = _html_to_markdown(content_bytes.decode("utf-8", errors="ignore"))
+        else:
+            content = content_bytes.decode("utf-8", errors="ignore")
 
-        filtered_content, lines_read, total_lines, was_truncated = (
+        # Apply truncation if needed
+        was_truncated = False
+        if len(content.encode("utf-8")) > self.config.max_content_bytes:
+            content = content[: self.config.max_content_bytes]
+            content += "\n[Content truncated due to size limit]"
+            was_truncated = True
+
+        filtered_content, lines_read, total_lines, line_truncation = (
             self._filter_content(content, args)
         )
 
@@ -119,7 +132,7 @@ class WebFetch(
             content_type=content_type,
             lines_read=lines_read,
             total_lines=total_lines,
-            was_truncated=was_truncated,
+            was_truncated=was_truncated or line_truncation,
         )
 
     def _validate_args(self, args: WebFetchArgs) -> None:
@@ -141,7 +154,7 @@ class WebFetch(
                 )
 
         # Cannot use pattern with line range filters
-        if args.pattern and (args.offset != 0 or args.limit != 1000):
+        if args.pattern and (args.offset != 0 or args.limit != _DEFAULT_LIMIT):
             raise ToolError(
                 "Cannot use 'pattern' with custom 'offset' or 'limit'. "
                 "Use either pattern matching or line range filtering, not both."
@@ -197,7 +210,9 @@ class WebFetch(
             was_truncated,
         )
 
-    async def _fetch_url(self, url: str, timeout: int) -> tuple[str, str]:
+    async def _fetch_url_bytes(
+        self, url: str, timeout: int
+    ) -> tuple[bytes, str]:
         headers = {
             "User-Agent": self.config.user_agent,
             "Accept": (
@@ -220,14 +235,7 @@ class WebFetch(
             )
 
         content_type = response.headers.get("Content-Type", "text/plain")
-
-        content_bytes = response.content[: self.config.max_content_bytes]
-        content = content_bytes.decode("utf-8", errors="ignore")
-
-        if len(response.content) > self.config.max_content_bytes:
-            content += "[Content truncated due to size limit]"
-
-        return content, content_type
+        return response.content, content_type
 
     async def _do_fetch(
         self, url: str, timeout: int, headers: dict[str, str]
@@ -283,3 +291,9 @@ class WebFetch(
 
 def _html_to_markdown(html: str) -> str:
     return _Converter(heading_style="ATX", bullets="-").convert(html)
+
+
+def _pdf_to_markdown(pdf_bytes: bytes) -> str:
+    converter = MarkItDown()
+    result = converter.convert(io.BytesIO(pdf_bytes))
+    return result.text_content
