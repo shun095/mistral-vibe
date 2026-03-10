@@ -63,6 +63,7 @@ class SearchReplaceResult(BaseModel):
     lines_changed: int
     content: str
     warnings: list[str] = Field(default_factory=list)
+    file_content_before: str
     lsp_diagnostics: str | None = Field(
         default=None,
         description="Formatted LSP diagnostics for the modified file, if available"
@@ -186,6 +187,7 @@ class SearchReplace(
             lines_changed=lines_changed,
             warnings=block_result.warnings,
             content=args.content,
+            file_content_before=original_content,
             lsp_diagnostics=diagnostics,
         )
 

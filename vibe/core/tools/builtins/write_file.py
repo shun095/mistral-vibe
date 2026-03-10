@@ -34,6 +34,7 @@ class WriteFileResult(BaseModel):
     bytes_written: int
     file_existed: bool
     content: str
+    file_content_before: str | None = None
     lsp_diagnostics: str | None = Field(
         default=None,
         description="Formatted LSP diagnostics for the written file, if available"
@@ -89,6 +90,14 @@ class WriteFile(
     ) -> AsyncGenerator[ToolStreamEvent | WriteFileResult, None]:
         file_path, file_existed, content_bytes = self._prepare_and_validate_path(args)
 
+        file_content_before: str | None = None
+        if file_existed and args.overwrite:
+            try:
+                async with await anyio.Path(file_path).open(encoding="utf-8") as f:
+                    file_content_before = await f.read(524_288)  # 512kb
+            except Exception:
+                pass
+
         await self._write_file(args, file_path)
 
         # Automatically check for LSP diagnostics
@@ -111,6 +120,7 @@ class WriteFile(
             bytes_written=content_bytes,
             file_existed=file_existed,
             content=args.content,
+            file_content_before=file_content_before,
             lsp_diagnostics=diagnostics,
         )
 
