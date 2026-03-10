@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import httpx
 import pytest
 import respx
@@ -170,7 +172,9 @@ async def test_truncates_to_max_bytes_with_disclaimer(webfetch_small):
     )
     assert result.content.startswith("1: a")
     assert "[Content truncated due to size limit]" in result.content
-    assert result.lines_read == 1
+    assert result.was_truncated is True
+    # lines_read includes the disclaimer line
+    assert result.lines_read == 2
 
 
 @pytest.mark.asyncio
@@ -255,3 +259,53 @@ async def test_over_max_timeout_rejected(webfetch):
 
 def test_get_status_text():
     assert WebFetch.get_status_text() == "Fetching URL"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_pdf_converted_to_markdown(webfetch):
+    """Test that PDFs are converted to markdown."""
+    with patch(
+        "vibe.core.tools.builtins.webfetch._pdf_to_markdown"
+    ) as mock_pdf:
+        mock_pdf.return_value = "# Hello PDF World\n\nSome content here."
+        respx.get("https://example.com/document.pdf").mock(
+            return_value=httpx.Response(
+                200,
+                content=b"%PDF-1.4...minimal pdf placeholder",
+                headers={"Content-Type": "application/pdf"},
+            )
+        )
+        result = await collect_result(
+            webfetch.run(WebFetchArgs(url="https://example.com/document.pdf"))
+        )
+        assert "# Hello PDF World" in result.content
+        assert result.content_type == "application/pdf"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_pdf_truncated_after_markdown_conversion(webfetch_small):
+    """Test that PDFs are truncated after markdown conversion, not before."""
+    with patch(
+        "vibe.core.tools.builtins.webfetch._pdf_to_markdown"
+    ) as mock_pdf:
+        # Return a large markdown that will be truncated
+        mock_pdf.return_value = "# Large PDF\n\n" + "x" * 200
+        respx.get("https://example.com/document.pdf").mock(
+            return_value=httpx.Response(
+                200,
+                content=b"%PDF-1.4...minimal pdf placeholder",
+                headers={"Content-Type": "application/pdf"},
+            )
+        )
+        result = await collect_result(
+            webfetch_small.run(WebFetchArgs(url="https://example.com/document.pdf"))
+        )
+        # PDF should be converted to markdown
+        assert result.content_type == "application/pdf"
+        # Content should contain the header
+        assert "# Large PDF" in result.content
+        # Should be truncated with disclaimer
+        assert result.was_truncated is True
+        assert "[Content truncated due to size limit]" in result.content

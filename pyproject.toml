@@ -38,6 +38,7 @@ dependencies = [
     "json-repair>=0.30.0",
     "keyring>=25.6.0",
     "markdownify>=1.2.2",
+    "markitdown[pdf]>=0.1.0",
     "mcp>=1.14.0",
     "mistralai==1.12.4",
     "packaging>=24.1",
