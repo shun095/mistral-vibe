@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 from vibe.core.lsp.mason_paths import MasonPaths
-from vibe.core.paths.global_paths import VIBE_HOME
+from vibe.core.paths._vibe_home import VIBE_HOME
 
 
 class LSPServerInstaller(ABC):
