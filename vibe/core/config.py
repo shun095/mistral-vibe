@@ -17,7 +17,7 @@ from pydantic_settings import (
     PydanticBaseSettingsSource,
     SettingsConfigDict,
 )
-import tomli_w
+import tomlkit
 
 from vibe.core.paths.config_paths import CONFIG_DIR, CONFIG_FILE, PROMPTS_DIR
 from vibe.core.paths.global_paths import (
@@ -604,9 +604,430 @@ class VibeConfig(BaseSettings):
         cls.dump_config(validated.model_dump(mode="json", exclude_none=True))
 
     @classmethod
+    def _get_nested_model_class(cls, field_info: FieldInfo | None) -> type[BaseModel] | None:
+        """Get the nested model class for a field if it's a known Pydantic model."""
+        if field_info is None:
+            return None
+
+        # Check the annotation for nested models
+        annotation = field_info.annotation
+        # Handle bare types (e.g., ProjectContextConfig)
+        if hasattr(annotation, '__origin__'):
+            # It's a generic type like list[T] or dict[K, V]
+            return None
+        # Check if it's a BaseModel subclass
+        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+            return annotation
+        return None
+
+    @classmethod
+    def _exclude_defaults(cls, config_dict: dict[str, Any]) -> dict[str, Any]:
+        """Recursively remove fields that have default values."""
+        result: dict[str, Any] = {}
+
+        for key, value in config_dict.items():
+            field_info = cls.model_fields.get(key)
+            if field_info is None:
+                if value is not None:
+                    result[key] = value
+                continue
+
+            # Check if value equals default
+            if cls._value_is_default(value, field_info):
+                continue
+
+            # Skip None values (can't be serialized to TOML)
+            if value is None:
+                continue
+
+            if isinstance(value, dict):
+                # Get the nested model class if this is a known nested field
+                nested_model = cls._get_nested_model_class(field_info)
+                nested_result = cls._exclude_nested_defaults(value, nested_model)
+                if nested_result:
+                    result[key] = nested_result
+                continue
+
+            if isinstance(value, list):
+                processed_list = cls._process_list_excluding_defaults(value)
+                if processed_list:
+                    result[key] = processed_list
+                continue
+
+            result[key] = value
+
+        return result
+
+    @classmethod
+    def _value_is_default(cls, value: Any, field_info: FieldInfo) -> bool:
+        """Check if a value is equal to the field's default."""
+        if field_info.is_required():
+            return False
+
+        if field_info.default_factory is not None:
+            try:
+                default_value = field_info.default_factory()  # type: ignore[call-arg]
+                # Normalize BaseModel instances to dicts for comparison
+                if isinstance(default_value, BaseModel):
+                    default_value = default_value.model_dump(mode="json")
+                elif isinstance(default_value, list):
+                    default_value = [
+                        item.model_dump(mode="json") if isinstance(item, BaseModel) else item
+                        for item in default_value
+                    ]
+                elif isinstance(default_value, dict):
+                    default_value = {
+                        k: v.model_dump(mode="json") if isinstance(v, BaseModel) else v
+                        for k, v in default_value.items()
+                    }
+                return value == default_value
+            except Exception:
+                return False
+
+        return value == field_info.default
+
+    @classmethod
+    def _exclude_nested_defaults(
+        cls, value: dict[str, Any], model_class: type[BaseModel] | None = None
+    ) -> dict[str, Any]:
+        """Recursively exclude default values from nested dicts."""
+        result: dict[str, Any] = {}
+
+        for key, val in value.items():
+            if val is None:
+                continue
+
+            field_info = None
+            if model_class is not None:
+                field_info = model_class.model_fields.get(key)
+
+            if field_info is not None and cls._value_is_default(val, field_info):
+                continue
+
+            if isinstance(val, dict):
+                nested_result = cls._exclude_nested_defaults(val)
+                if nested_result:
+                    result[key] = nested_result
+                continue
+
+            if isinstance(val, list):
+                processed_list = cls._process_list_excluding_defaults(val)
+                if processed_list:
+                    result[key] = processed_list
+                continue
+
+            result[key] = val
+
+        return result
+
+    @classmethod
+    def _process_list_excluding_defaults(cls, value: list[Any]) -> list[Any]:
+        """Process a list, excluding None values and default values from nested dicts."""
+        processed_list: list[Any] = []
+
+        for item in value:
+            if item is None:
+                continue
+            if isinstance(item, dict):
+                nested_result = cls._exclude_nested_defaults(item)
+                if nested_result:
+                    processed_list.append(nested_result)
+            else:
+                processed_list.append(item)
+        return processed_list
+
+    @classmethod
     def dump_config(cls, config: dict[str, Any]) -> None:
+        """Write config to file, preserving existing comments and excluding defaults."""
+        # Read existing file to preserve comments
+        if CONFIG_FILE.path.exists():
+            with CONFIG_FILE.path.open("rb") as f:
+                doc = tomlkit.load(f)
+        else:
+            doc = tomlkit.document()
+
+        # Update document with provided values
+        # Skip providers and models - they're already in the file, just remove defaults
+        for key, value in config.items():
+            if key in {"providers", "models"}:
+                # Skip array-based models - preserve existing with comments
+                continue
+            
+            field_info = cls.model_fields.get(key)
+            
+            if isinstance(value, dict):
+                cls._update_dict_value(doc, key, value, field_info)
+            else:
+                doc[key] = value
+
+        # Remove ALL default values from the document (not just updated keys)
+        # This ensures existing default values are cleaned up
+        cls._remove_defaults_from_doc(doc)
+
+        # Write back with preserved comments using tomlkit
         with CONFIG_FILE.path.open("wb") as f:
-            tomli_w.dump(config, f)
+            f.write(tomlkit.dumps(doc).encode("utf-8"))
+
+    @classmethod
+    def _get_models_for_array_field(cls, field_name: str, field_type: Any) -> list[type[BaseModel]]:
+        """Get model classes for an array field, handling discriminated unions.
+        
+        For discriminated unions (e.g., MCPServer = MCPHttp | MCPStreamableHttp | MCPStdio),
+        returns ALL union members so we can process items with all possible fields.
+        
+        Args:
+            field_name: Name of the field (for debugging)
+            field_type: The type extracted from list[SomeType]
+            
+        Returns:
+            List of BaseModel classes to use for processing
+        """
+        # Check if this is a Union type (discriminated union)
+        # Union types have __args__ with multiple types (e.g., A | B | C)
+        if hasattr(field_type, "__args__") and len(field_type.__args__) > 1:
+            # This is a Union - collect all BaseModel members
+            models: list[type[BaseModel]] = []
+            for arg in field_type.__args__:
+                if isinstance(arg, type) and issubclass(arg, BaseModel):
+                    models.append(arg)
+            return models
+        
+        # Default: return the type if it's a BaseModel
+        if isinstance(field_type, type) and issubclass(field_type, BaseModel):
+            return [field_type]
+        return []
+
+    @classmethod
+    def _remove_defaults_from_doc(cls, doc: tomlkit.TOMLDocument) -> None:
+        """Remove all fields with default values from the document."""
+        # Dynamically detect field types from model_fields
+        # Arrays of models: list[SomeModel] -> extract SomeModel
+        # Simple arrays: list[str] or list[Path] -> no nested processing needed
+        # Nested dicts: SomeModel (not in a list) -> process as nested section
+        # Dicts: dict[str, SomeModel] -> process values as models
+        
+        nested_section_keys: set[str] = set()
+        array_model_map: dict[str, list[type[BaseModel]]] = {}
+        dict_model_keys: dict[str, type[BaseModel]] = {}
+        
+        for field_name, field_info in cls.model_fields.items():
+            annotation = field_info.annotation
+            origin = getattr(annotation, "__origin__", None)
+            
+            if origin is list:
+                # It's a list[field_type]
+                args = getattr(annotation, "__args__", ())
+                if args:
+                    field_type = args[0]
+                    # Check if it's a BaseModel subclass (possibly wrapped in Annotated)
+                    if hasattr(field_type, "__origin__"):
+                        # It's Annotated[SomeModel, ...] - extract the actual type
+                        actual_args = getattr(field_type, "__args__", ())
+                        if actual_args:
+                            field_type = actual_args[0]
+                    
+                    # Use helper to handle discriminated unions
+                    model_classes = cls._get_models_for_array_field(field_name, field_type)
+                    if model_classes:
+                        array_model_map[field_name] = model_classes
+            
+            elif origin is dict:
+                # It's a dict[str, SomeModel]
+                args = getattr(annotation, "__args__", ())
+                if len(args) >= 2:
+                    value_type = args[1]
+                    # Handle Annotated wrapper
+                    if hasattr(value_type, "__origin__"):
+                        actual_args = getattr(value_type, "__args__", ())
+                        if actual_args:
+                            value_type = actual_args[0]
+                    
+                    if isinstance(value_type, type) and issubclass(value_type, BaseModel):
+                        dict_model_keys[field_name] = value_type
+            
+            elif isinstance(annotation, type) and issubclass(annotation, BaseModel):
+                # It's a direct BaseModel (nested section)
+                nested_section_keys.add(field_name)
+
+        # Remove top-level defaults (excluding nested sections, arrays, and dicts)
+        keys_to_remove: list[str] = []
+        for key in doc.keys():
+            if key in nested_section_keys or key in array_model_map or key in dict_model_keys:
+                # Skip nested structures - handle separately
+                continue
+            
+            field_info = cls.model_fields.get(key)
+            if field_info and key in doc:
+                value = doc[key]
+                if cls._value_is_default(value, field_info):
+                    keys_to_remove.append(key)
+        
+        for key in keys_to_remove:
+            del doc[key]
+
+        # Check and remove ALL array fields that are default (empty lists)
+        for key in list(doc.keys()):
+            if key in nested_section_keys or key in dict_model_keys:
+                # Skip nested sections and dicts - handle separately
+                continue
+            
+            field_info = cls.model_fields.get(key)
+            value = doc[key]
+            
+            # Check if this is an array field with a default empty list
+            if field_info and isinstance(value, list):
+                if cls._value_is_default(value, field_info):
+                    del doc[key]
+                    continue
+                
+                # If it's a model array, process items within
+                if key in array_model_map:
+                    model_classes = array_model_map[key]
+                    for item in value:
+                        if isinstance(item, dict):
+                            # Process with ALL model classes to handle all possible fields from discriminated unions
+                            for model_class in model_classes:
+                                cls._remove_defaults_from_dict(item, model_class)
+
+        # Process nested dict sections (e.g., project_context, session_logging)
+        for key in nested_section_keys:
+            if key not in doc:
+                continue
+            field_info = cls.model_fields.get(key)
+            value = doc[key]
+            nested_model = cls._get_nested_model_class(field_info)
+            if nested_model is not None and isinstance(value, dict):
+                cls._remove_defaults_from_dict(
+                    value, nested_model, remove_empty=True, parent=doc, parent_key=key
+                )
+
+        # Process dict fields with model values (e.g., tools: dict[str, BaseToolConfig])
+        for key, model_class in dict_model_keys.items():
+            if key not in doc:
+                continue
+            value = doc[key]
+            if isinstance(value, dict):
+                for item in value.values():
+                    if isinstance(item, dict):
+                        cls._remove_defaults_from_dict(item, model_class)
+
+    @classmethod
+    def _remove_defaults_from_dict(
+        cls,
+        data: dict[str, Any],
+        model_class: type[BaseModel],
+        remove_empty: bool = False,
+        parent: Any = None,
+        parent_key: str | None = None,
+    ) -> None:
+        """Remove default values from a dict using the given model class.
+        
+        Args:
+            data: Dict to process
+            model_class: Pydantic model class for field info
+            remove_empty: If True, remove parent key if dict becomes empty
+            parent: Parent container (for removal when empty)
+            parent_key: Key in parent to remove
+        """
+        keys_to_remove: list[str] = []
+        for key in list(data.keys()):
+            field_info = model_class.model_fields.get(key)
+            if field_info and key in data:
+                value = data[key]
+                if cls._value_is_default(value, field_info):
+                    keys_to_remove.append(key)
+                    continue
+                
+                # Remove empty nested dicts (e.g., [mcp_servers.env] when env is {})
+                if isinstance(value, dict) and not value:
+                    keys_to_remove.append(key)
+        
+        for key in keys_to_remove:
+            del data[key]
+        
+        # Remove the section if it's now empty
+        if remove_empty and not data and parent is not None and parent_key is not None:
+            del parent[parent_key]
+
+    @classmethod
+    def _update_dict_value(
+        cls,
+        doc: tomlkit.TOMLDocument,
+        key: str,
+        value: dict[str, Any],
+        field_info: FieldInfo | None,
+    ) -> None:
+        """Update a dict value in the document."""
+        # For nested config sections (project_context, session_logging)
+        if field_info and hasattr(field_info.annotation, "__origin__"):
+            # Skip dict types
+            return
+        
+        if (
+            field_info
+            and isinstance(field_info.annotation, type)
+            and issubclass(field_info.annotation, BaseModel)
+        ):
+            # Handle nested Pydantic model sections
+            cls._update_nested_table(doc, key, value, field_info.annotation)
+            return
+
+        # Generic dict handling
+        if key not in doc:
+            doc.add(tomlkit.key(key), tomlkit.table())
+        table = doc[key]  # type: ignore[assignment]
+        if isinstance(table, dict):
+            for subkey, subvalue in value.items():
+                table[subkey] = subvalue
+
+    @classmethod
+    def _update_nested_table(
+        cls,
+        doc: tomlkit.TOMLDocument,
+        section_key: str,
+        values: dict[str, Any],
+        model_class: type[BaseModel],
+    ) -> None:
+        """Update a nested table section, removing default values while preserving comments."""
+        # Ensure the section exists
+        if section_key not in doc:
+            doc.add(tomlkit.key(section_key), tomlkit.table())
+        
+        table = doc[section_key]  # type: ignore[assignment]
+        if not isinstance(table, dict):
+            return
+
+        # Track which keys we've updated
+        updated_keys: set[str] = set()
+
+        for subkey, subvalue in values.items():
+            field_info = model_class.model_fields.get(subkey)
+            updated_keys.add(subkey)
+
+            if field_info is None:
+                # Unknown field, just set it
+                table[subkey] = subvalue
+                continue
+
+            # Check if value equals default
+            if cls._value_is_default(subvalue, field_info):
+                # Remove from table if it exists (it's a default value)
+                if subkey in table:
+                    del table[subkey]
+            else:
+                # Set the value
+                table[subkey] = subvalue
+
+        # Remove any keys in the table that are now defaults but weren't in the update
+        # (This handles the case where a value was changed back to default)
+        for key in list(table.keys()):
+            if key not in updated_keys:
+                continue
+            field_info = model_class.model_fields.get(key)
+            if field_info and key in values:
+                if cls._value_is_default(values[key], field_info):
+                    if key in table:
+                        del table[key]
 
     @classmethod
     def _migrate(cls) -> None:
