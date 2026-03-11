@@ -19,12 +19,8 @@ from pydantic_settings import (
 )
 import tomlkit
 
-from vibe.core.paths.config_paths import CONFIG_DIR, CONFIG_FILE, PROMPTS_DIR
-from vibe.core.paths.global_paths import (
-    GLOBAL_ENV_FILE,
-    GLOBAL_PROMPTS_DIR,
-    SESSION_LOG_DIR,
-)
+from vibe.core.config.harness_files import get_harness_files_manager
+from vibe.core.paths import GLOBAL_ENV_FILE, SESSION_LOG_DIR
 from vibe.core.prompts import SystemPrompt
 from vibe.core.tools.base import BaseToolConfig
 
@@ -54,20 +50,14 @@ class MissingAPIKeyError(RuntimeError):
 
 
 class MissingPromptFileError(RuntimeError):
-    def __init__(
-        self, system_prompt_id: str, prompt_dir: str, global_prompt_dir: str
-    ) -> None:
-        extra_global_prompt_dir = (
-            f" or {global_prompt_dir}" if global_prompt_dir != prompt_dir else ""
-        )
-
+    def __init__(self, system_prompt_id: str, *prompt_dirs: str) -> None:
+        dirs_str = " or ".join(prompt_dirs) if prompt_dirs else "<no prompt dirs>"
         super().__init__(
             f"Invalid system_prompt_id value: '{system_prompt_id}'. "
             f"Must be one of the available prompts ({', '.join(f'{p.name.lower()}' for p in SystemPrompt)}), "
-            f"or correspond to a .md file in {prompt_dir}{extra_global_prompt_dir}"
+            f"or correspond to a .md file in {dirs_str}"
         )
         self.system_prompt_id = system_prompt_id
-        self.prompt_dir = prompt_dir
 
 
 class TomlFileSettingsSource(PydanticBaseSettingsSource):
@@ -76,7 +66,9 @@ class TomlFileSettingsSource(PydanticBaseSettingsSource):
         self.toml_data = self._load_toml()
 
     def _load_toml(self) -> dict[str, Any]:
-        file = CONFIG_FILE.path
+        file = get_harness_files_manager().config_file
+        if file is None:
+            return {}
         try:
             with file.open("rb") as f:
                 return tomllib.load(f)
@@ -464,7 +456,9 @@ class VibeConfig(BaseSettings):
         except KeyError:
             pass
 
-        for current_prompt_dir in [PROMPTS_DIR.path, GLOBAL_PROMPTS_DIR.path]:
+        mgr = get_harness_files_manager()
+        prompt_dirs = mgr.project_prompts_dirs + mgr.user_prompts_dirs
+        for current_prompt_dir in prompt_dirs:
             custom_sp_path = (current_prompt_dir / self.system_prompt_id).with_suffix(
                 ".md"
             )
@@ -472,7 +466,7 @@ class VibeConfig(BaseSettings):
                 return custom_sp_path.read_text()
 
         raise MissingPromptFileError(
-            self.system_prompt_id, str(PROMPTS_DIR.path), str(GLOBAL_PROMPTS_DIR.path)
+            self.system_prompt_id, *(str(d) for d in prompt_dirs)
         )
 
     def get_active_model(self) -> ModelConfig:
@@ -575,7 +569,8 @@ class VibeConfig(BaseSettings):
 
     @classmethod
     def save_updates(cls, updates: dict[str, Any]) -> None:
-        CONFIG_DIR.path.mkdir(parents=True, exist_ok=True)
+        if not get_harness_files_manager().persist_allowed:
+            return
         current_config = TomlFileSettingsSource(cls).toml_data
 
         def deep_merge(target: dict, source: dict) -> None:
@@ -739,9 +734,15 @@ class VibeConfig(BaseSettings):
     @classmethod
     def dump_config(cls, config: dict[str, Any]) -> None:
         """Write config to file, preserving existing comments and excluding defaults."""
+        mgr = get_harness_files_manager()
+        if not mgr.persist_allowed:
+            return
+        target = mgr.config_file or mgr.user_config_file
+        target.parent.mkdir(parents=True, exist_ok=True)
+
         # Read existing file to preserve comments
-        if CONFIG_FILE.path.exists():
-            with CONFIG_FILE.path.open("rb") as f:
+        if target.exists():
+            with target.open("rb") as f:
                 doc = tomlkit.load(f)
         else:
             doc = tomlkit.document()
@@ -752,9 +753,9 @@ class VibeConfig(BaseSettings):
             if key in {"providers", "models"}:
                 # Skip array-based models - preserve existing with comments
                 continue
-            
+
             field_info = cls.model_fields.get(key)
-            
+
             if isinstance(value, dict):
                 cls._update_dict_value(doc, key, value, field_info)
             else:
@@ -765,20 +766,20 @@ class VibeConfig(BaseSettings):
         cls._remove_defaults_from_doc(doc)
 
         # Write back with preserved comments using tomlkit
-        with CONFIG_FILE.path.open("wb") as f:
+        with target.open("wb") as f:
             f.write(tomlkit.dumps(doc).encode("utf-8"))
 
     @classmethod
     def _get_models_for_array_field(cls, field_name: str, field_type: Any) -> list[type[BaseModel]]:
         """Get model classes for an array field, handling discriminated unions.
-        
+
         For discriminated unions (e.g., MCPServer = MCPHttp | MCPStreamableHttp | MCPStdio),
         returns ALL union members so we can process items with all possible fields.
-        
+
         Args:
             field_name: Name of the field (for debugging)
             field_type: The type extracted from list[SomeType]
-            
+
         Returns:
             List of BaseModel classes to use for processing
         """
@@ -791,7 +792,7 @@ class VibeConfig(BaseSettings):
                 if isinstance(arg, type) and issubclass(arg, BaseModel):
                     models.append(arg)
             return models
-        
+
         # Default: return the type if it's a BaseModel
         if isinstance(field_type, type) and issubclass(field_type, BaseModel):
             return [field_type]
@@ -805,15 +806,15 @@ class VibeConfig(BaseSettings):
         # Simple arrays: list[str] or list[Path] -> no nested processing needed
         # Nested dicts: SomeModel (not in a list) -> process as nested section
         # Dicts: dict[str, SomeModel] -> process values as models
-        
+
         nested_section_keys: set[str] = set()
         array_model_map: dict[str, list[type[BaseModel]]] = {}
         dict_model_keys: dict[str, type[BaseModel]] = {}
-        
+
         for field_name, field_info in cls.model_fields.items():
             annotation = field_info.annotation
             origin = getattr(annotation, "__origin__", None)
-            
+
             if origin is list:
                 # It's a list[field_type]
                 args = getattr(annotation, "__args__", ())
@@ -825,12 +826,12 @@ class VibeConfig(BaseSettings):
                         actual_args = getattr(field_type, "__args__", ())
                         if actual_args:
                             field_type = actual_args[0]
-                    
+
                     # Use helper to handle discriminated unions
                     model_classes = cls._get_models_for_array_field(field_name, field_type)
                     if model_classes:
                         array_model_map[field_name] = model_classes
-            
+
             elif origin is dict:
                 # It's a dict[str, SomeModel]
                 args = getattr(annotation, "__args__", ())
@@ -841,10 +842,10 @@ class VibeConfig(BaseSettings):
                         actual_args = getattr(value_type, "__args__", ())
                         if actual_args:
                             value_type = actual_args[0]
-                    
+
                     if isinstance(value_type, type) and issubclass(value_type, BaseModel):
                         dict_model_keys[field_name] = value_type
-            
+
             elif isinstance(annotation, type) and issubclass(annotation, BaseModel):
                 # It's a direct BaseModel (nested section)
                 nested_section_keys.add(field_name)
@@ -855,13 +856,13 @@ class VibeConfig(BaseSettings):
             if key in nested_section_keys or key in array_model_map or key in dict_model_keys:
                 # Skip nested structures - handle separately
                 continue
-            
+
             field_info = cls.model_fields.get(key)
             if field_info and key in doc:
                 value = doc[key]
                 if cls._value_is_default(value, field_info):
                     keys_to_remove.append(key)
-        
+
         for key in keys_to_remove:
             del doc[key]
 
@@ -870,16 +871,16 @@ class VibeConfig(BaseSettings):
             if key in nested_section_keys or key in dict_model_keys:
                 # Skip nested sections and dicts - handle separately
                 continue
-            
+
             field_info = cls.model_fields.get(key)
             value = doc[key]
-            
+
             # Check if this is an array field with a default empty list
             if field_info and isinstance(value, list):
                 if cls._value_is_default(value, field_info):
                     del doc[key]
                     continue
-                
+
                 # If it's a model array, process items within
                 if key in array_model_map:
                     model_classes = array_model_map[key]
@@ -921,7 +922,7 @@ class VibeConfig(BaseSettings):
         parent_key: str | None = None,
     ) -> None:
         """Remove default values from a dict using the given model class.
-        
+
         Args:
             data: Dict to process
             model_class: Pydantic model class for field info
@@ -937,14 +938,14 @@ class VibeConfig(BaseSettings):
                 if cls._value_is_default(value, field_info):
                     keys_to_remove.append(key)
                     continue
-                
+
                 # Remove empty nested dicts (e.g., [mcp_servers.env] when env is {})
                 if isinstance(value, dict) and not value:
                     keys_to_remove.append(key)
-        
+
         for key in keys_to_remove:
             del data[key]
-        
+
         # Remove the section if it's now empty
         if remove_empty and not data and parent is not None and parent_key is not None:
             del parent[parent_key]
@@ -962,7 +963,7 @@ class VibeConfig(BaseSettings):
         if field_info and hasattr(field_info.annotation, "__origin__"):
             # Skip dict types
             return
-        
+
         if (
             field_info
             and isinstance(field_info.annotation, type)
@@ -992,7 +993,7 @@ class VibeConfig(BaseSettings):
         # Ensure the section exists
         if section_key not in doc:
             doc.add(tomlkit.key(section_key), tomlkit.table())
-        
+
         table = doc[section_key]  # type: ignore[assignment]
         if not isinstance(table, dict):
             return
@@ -1040,11 +1041,7 @@ class VibeConfig(BaseSettings):
 
     @classmethod
     def create_default(cls) -> dict[str, Any]:
-        try:
-            config = cls()
-        except MissingAPIKeyError:
-            config = cls.model_construct()
-
+        config = cls.model_construct()
         config_dict = config.model_dump(mode="json", exclude_none=True)
 
         from vibe.core.tools.manager import ToolManager

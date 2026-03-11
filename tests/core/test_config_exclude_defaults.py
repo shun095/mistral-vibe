@@ -1,11 +1,37 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
 from vibe.core.config import VibeConfig
-from vibe.core.paths.config_paths import unlock_config_paths
+from vibe.core.config.harness_files import (
+    HarnessFilesManager,
+    init_harness_files_manager,
+    reset_harness_files_manager,
+)
+
+
+def unlock_config_paths() -> None:
+    """Helper to enable config persistence for tests."""
+    reset_harness_files_manager()
+    init_harness_files_manager("user")
+
+
+def setup_config_file_for_test(tmp_path: Path, config_file_name: str = "config.toml") -> Path:
+    """Helper to create a config file path for tests."""
+    return tmp_path / config_file_name
+
+
+def mock_harness_manager_for_config_file(config_file: Path) -> HarnessFilesManager:
+    """Create a mock HarnessFilesManager that returns the specified config file."""
+    mock_manager = MagicMock(spec=HarnessFilesManager)
+    mock_manager.config_file = config_file
+    mock_manager.user_config_file = config_file
+    mock_manager.persist_allowed = True
+    mock_manager.sources = ("user",)
+    return mock_manager
 
 
 class TestExcludeDefaults:
@@ -165,7 +191,7 @@ auto_approve = true
 
         # Patch CONFIG_FILE to use the temporary file
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config.CONFIG_FILE", type("obj", (object,), {"path": config_file})())
+        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
 
         # Save updates
         VibeConfig.save_updates({"active_model": "custom-model"})
@@ -195,7 +221,7 @@ timeout_seconds = 2.0
         config_file.write_text(config_content)
 
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config.CONFIG_FILE", type("obj", (object,), {"path": config_file})())
+        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
 
         # Save some updates
         VibeConfig.save_updates({"project_context": {"timeout_seconds": 5.0}})
@@ -213,7 +239,7 @@ timeout_seconds = 2.0
         # Don't create the file - test new file creation
 
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config.CONFIG_FILE", type("obj", (object,), {"path": config_file})())
+        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
 
         # Save config for a new file
         VibeConfig.save_updates({"active_model": "custom-model"})
@@ -238,7 +264,7 @@ auto_approve = true
         config_file.write_text(config_content)
 
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config.CONFIG_FILE", type("obj", (object,), {"path": config_file})())
+        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
 
         # Set vim_keybindings back to default (False)
         VibeConfig.save_updates({"vim_keybindings": False})
@@ -272,7 +298,7 @@ max_doc_bytes = 50000
         config_file.write_text(config_content)
 
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config.CONFIG_FILE", type("obj", (object,), {"path": config_file})())
+        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
 
         # Set default_commit_count back to default (5)
         VibeConfig.save_updates({"project_context": {"default_commit_count": 5}})
@@ -307,7 +333,7 @@ session_prefix = "session"
         config_file.write_text(config_content)
 
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config.CONFIG_FILE", type("obj", (object,), {"path": config_file})())
+        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
 
         # Set session_prefix back to default ("session")
         VibeConfig.save_updates({"session_logging": {"session_prefix": "session"}})
@@ -331,7 +357,7 @@ session_prefix = "session"
         # Don't create the file - test new file creation
 
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config.CONFIG_FILE", type("obj", (object,), {"path": config_file})())
+        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
 
         # Save config with nested section
         VibeConfig.save_updates({"project_context": {"max_doc_bytes": 50000}})
@@ -373,7 +399,7 @@ save_dir = "/custom/logs"
         config_file.write_text(config_content)
 
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config.CONFIG_FILE", type("obj", (object,), {"path": config_file})())
+        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
 
         # Save with default values
         VibeConfig.save_updates({
@@ -417,7 +443,7 @@ auto_approve = true
         config_file.write_text(config_content)
 
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config.CONFIG_FILE", type("obj", (object,), {"path": config_file})())
+        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
 
         # Set displayed_workdir back to default (empty string)
         VibeConfig.save_updates({"displayed_workdir": ""})
@@ -440,7 +466,7 @@ enabled = false
         config_file.write_text(config_content)
 
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config.CONFIG_FILE", type("obj", (object,), {"path": config_file})())
+        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
 
         # Set session_prefix back to default ("session")
         VibeConfig.save_updates({"session_logging": {"session_prefix": "session"}})
@@ -464,7 +490,7 @@ enabled_tools = []
         config_file.write_text(config_content)
 
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config.CONFIG_FILE", type("obj", (object,), {"path": config_file})())
+        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
 
         # Update only active_model - but ALL defaults should be removed
         VibeConfig.save_updates({"active_model": "another-model"})
@@ -493,7 +519,7 @@ save_dir = "/custom/logs"
         config_file.write_text(config_content)
 
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config.CONFIG_FILE", type("obj", (object,), {"path": config_file})())
+        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
 
         # Save with any update to trigger cleanup
         VibeConfig.save_updates({"active_model": "devstral-2"})
@@ -523,7 +549,7 @@ save_dir = "/custom/logs"
         config_file.write_text(config_content)
 
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config.CONFIG_FILE", type("obj", (object,), {"path": config_file})())
+        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
 
         # Save with any update to trigger cleanup
         VibeConfig.save_updates({"active_model": "devstral-2"})
@@ -551,7 +577,7 @@ auto_compact_threshold = 200000
         config_file.write_text(config_content)
 
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config.CONFIG_FILE", type("obj", (object,), {"path": config_file})())
+        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
 
         # Save with any update to trigger cleanup
         VibeConfig.save_updates({"active_model": "devstral-2"})
@@ -584,7 +610,7 @@ region = ""
         config_file.write_text(config_content)
 
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config.CONFIG_FILE", type("obj", (object,), {"path": config_file})())
+        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
 
         # Save with any update to trigger cleanup
         VibeConfig.save_updates({"active_model": "devstral-2"})
