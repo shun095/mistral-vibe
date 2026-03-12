@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator, Sequence
-import difflib
 import json
 import os
 import types
@@ -182,7 +181,6 @@ class MistralBackend:
         self._server_url = server_url
         self._timeout = timeout
         self._retry_config = self._build_retry_config()
-        self._previous_request_body: dict[str, Any] | None = None
 
     def _build_retry_config(self) -> RetryConfig:
         return RetryConfig(
@@ -257,23 +255,12 @@ class MistralBackend:
             if temperature is not None:
                 kwargs["temperature"] = temperature
             
-            current_body = kwargs.copy()
-            
             logger.debug(
                 "Mistral Backend Request: %s",
-                json.dumps(current_body, default=str, ensure_ascii=False),
+                json.dumps(kwargs.copy(), default=str, ensure_ascii=False),
             )
             
-            if self._previous_request_body is None:
-                logger.info("Mistral Backend Request Body (first request):\n%s", json.dumps(current_body, indent=2, default=str, ensure_ascii=False, sort_keys=True))
-            else:
-                diff = self._generate_json_diff(self._previous_request_body, current_body)
-                if diff:
-                    logger.info("Mistral Backend Request Body Diff:\n%s", diff)
-            
             response = await self._get_client().chat.complete_async(**kwargs)
-
-            self._previous_request_body = current_body
 
             logger.debug(
                 "Mistral Backend Response: %s",
@@ -357,21 +344,10 @@ class MistralBackend:
             if temperature is not None:
                 kwargs["temperature"] = temperature
             
-            current_body = kwargs.copy()
-            
             logger.debug(
                 "Mistral Backend Streaming Request: %s",
-                json.dumps(current_body, indent=2, default=str, ensure_ascii=False),
+                json.dumps(kwargs.copy(), indent=2, default=str, ensure_ascii=False),
             )
-            
-            if self._previous_request_body is None:
-                logger.info("Mistral Backend Streaming Request Body (first request):\n%s", json.dumps(current_body, indent=2, default=str, ensure_ascii=False, sort_keys=True))
-            else:
-                diff = self._generate_json_diff(self._previous_request_body, current_body)
-                if diff:
-                    logger.info("Mistral Backend Streaming Request Body Diff:\n%s", diff)
-            
-            self._previous_request_body = current_body
             
             async for chunk in await self._get_client().chat.stream_async(**kwargs):
                 logger.debug(
@@ -454,32 +430,3 @@ class MistralBackend:
 
         return result.usage.prompt_tokens
 
-    def _generate_json_diff(
-        self, old_data: dict[str, Any], new_data: dict[str, Any]
-    ) -> str:
-        """Generate a unified diff between two JSON objects.
-        
-        Args:
-            old_data: Previous request body as a dictionary.
-            new_data: Current request body as a dictionary.
-            
-        Returns:
-            A string containing the unified diff, or empty string if no differences.
-        """
-        old_json = json.dumps(old_data, indent=2, ensure_ascii=False, sort_keys=True, default=str)
-        new_json = json.dumps(new_data, indent=2, ensure_ascii=False, sort_keys=True, default=str)
-        
-        old_lines = old_json.splitlines()
-        new_lines = new_json.splitlines()
-        
-        diff_lines = list(
-            difflib.unified_diff(
-                old_lines,
-                new_lines,
-                fromfile="previous_request",
-                tofile="current_request",
-                lineterm="",
-            )
-        )
-        
-        return "\n".join(diff_lines) if diff_lines else ""

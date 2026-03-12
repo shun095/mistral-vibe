@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator, Sequence
-import difflib
 import json
 import os
 import types
@@ -184,7 +183,6 @@ class GenericBackend:
         self._owns_client = client is None
         self._provider = provider
         self._timeout = timeout
-        self._previous_request_body: dict[str, Any] | None = None
 
     async def __aenter__(self) -> GenericBackend:
         if self._client is None:
@@ -365,21 +363,11 @@ class GenericBackend:
     async def _make_request(
         self, url: str, data: bytes, headers: dict[str, str]
     ) -> HTTPResponse:
-        current_body = json.loads(data)
         
         logger.debug(
             "LLM Backend Request: %s",
-            json.dumps({"url": url, "headers": headers, "body": current_body}, ensure_ascii=False),
+            json.dumps({"url": url, "headers": headers, "body": json.loads(data)}, ensure_ascii=False),
         )
-        
-        if self._previous_request_body is None:
-            logger.info("LLM Backend Request Body (first request):\n%s", json.dumps(current_body, indent=2, ensure_ascii=False, sort_keys=True))
-        else:
-            diff = self._generate_json_diff(self._previous_request_body, current_body)
-            if diff:
-                logger.info("LLM Backend Request Body Diff:\n%s", diff)
-        
-        self._previous_request_body = current_body
         
         client = self._get_client()
         response = await client.post(url, content=data, headers=headers)
@@ -397,21 +385,10 @@ class GenericBackend:
     async def _make_streaming_request(
         self, url: str, data: bytes, headers: dict[str, str]
     ) -> AsyncGenerator[dict[str, Any]]:
-        current_body = json.loads(data)
-        
         logger.debug(
             "LLM Backend Streaming Request: %s",
-            json.dumps({"url": url, "headers": headers, "body": current_body}, ensure_ascii=False),
+            json.dumps({"url": url, "headers": headers, "body": json.loads(data)}, ensure_ascii=False),
         )
-        
-        if self._previous_request_body is None:
-            logger.info("LLM Backend Streaming Request Body (first request):\n%s", json.dumps(current_body, indent=2, ensure_ascii=False, sort_keys=True))
-        else:
-            diff = self._generate_json_diff(self._previous_request_body, current_body)
-            if diff:
-                logger.info("LLM Backend Streaming Request Body Diff:\n%s", diff)
-        
-        self._previous_request_body = current_body
         
         client = self._get_client()
         async with client.stream(
@@ -475,36 +452,6 @@ class GenericBackend:
             raise ValueError("Missing usage in non streaming completion")
 
         return result.usage.prompt_tokens
-
-    def _generate_json_diff(
-        self, old_data: dict[str, Any], new_data: dict[str, Any]
-    ) -> str:
-        """Generate a unified diff between two JSON objects.
-        
-        Args:
-            old_data: Previous request body as a dictionary.
-            new_data: Current request body as a dictionary.
-            
-        Returns:
-            A string containing the unified diff, or empty string if no differences.
-        """
-        old_json = json.dumps(old_data, indent=2, ensure_ascii=False, sort_keys=True)
-        new_json = json.dumps(new_data, indent=2, ensure_ascii=False, sort_keys=True)
-        
-        old_lines = old_json.splitlines()
-        new_lines = new_json.splitlines()
-        
-        diff_lines = list(
-            difflib.unified_diff(
-                old_lines,
-                new_lines,
-                fromfile="previous_request",
-                tofile="current_request",
-                lineterm="",
-            )
-        )
-        
-        return "\n".join(diff_lines) if diff_lines else ""
 
     async def close(self) -> None:
         if self._owns_client and self._client:
