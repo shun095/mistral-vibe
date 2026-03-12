@@ -11,7 +11,29 @@ from vibe.cli.textual_ui.widgets.messages import (
     UserMessage,
 )
 from vibe.cli.textual_ui.widgets.tools import ToolCallMessage, ToolResultMessage
-from vibe.core.types import LLMMessage, Role
+from vibe.core.types import Content, LLMMessage, Role
+
+
+def _content_to_str(content: Content | None) -> str | None:
+    """Convert Content (str | list) to string for display."""
+    if content is None:
+        return None
+    if isinstance(content, str):
+        return content
+    # Handle list content (e.g., multi-part messages with images)
+    parts: list[str] = []
+    for item in content:
+        if isinstance(item, dict):
+            if item.get("type") == "image_url":
+                # For image parts, show a simple placeholder (avoid large URLs)
+                parts.append("[image]")
+            elif "text" in item:
+                parts.append(str(item["text"]))
+            else:
+                parts.append(str(item))
+        else:
+            parts.append(str(item))
+    return "\n".join(parts) if parts else None
 
 
 def non_system_history_messages(messages: Sequence[LLMMessage]) -> list[LLMMessage]:
@@ -44,15 +66,19 @@ def build_history_widgets(
         match msg.role:
             case Role.user:
                 if msg.content:
-                    widget = UserMessage(msg.content)
-                    widgets.append(widget)
-                    history_widget_indices[widget] = history_index
+                    content_str = _content_to_str(msg.content)
+                    if content_str:
+                        widget = UserMessage(content_str)
+                        widgets.append(widget)
+                        history_widget_indices[widget] = history_index
 
             case Role.assistant:
                 if msg.content:
-                    assistant_widget = AssistantMessage(msg.content)
-                    widgets.append(assistant_widget)
-                    history_widget_indices[assistant_widget] = history_index
+                    content_str = _content_to_str(msg.content)
+                    if content_str:
+                        assistant_widget = AssistantMessage(content_str)
+                        widgets.append(assistant_widget)
+                        history_widget_indices[assistant_widget] = history_index
 
                 if msg.tool_calls:
                     for tool_call in msg.tool_calls:
@@ -67,8 +93,9 @@ def build_history_widgets(
                 tool_name = msg.name or tool_call_map.get(
                     msg.tool_call_id or "", "tool"
                 )
+                content_str = _content_to_str(msg.content)
                 widget = ToolResultMessage(
-                    tool_name=tool_name, content=msg.content, collapsed=tools_collapsed
+                    tool_name=tool_name, content=content_str, collapsed=tools_collapsed
                 )
                 widgets.append(widget)
                 history_widget_indices[widget] = history_index
