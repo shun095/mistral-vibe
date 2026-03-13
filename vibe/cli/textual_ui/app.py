@@ -1333,9 +1333,16 @@ Enhanced prompt:"""
     async def _run_compact(self, compact_msg: CompactMessage, old_tokens: int) -> None:
         self._agent_running = True
         try:
-            await self.agent_loop.compact()
+            summary = await self.agent_loop.compact()
             new_tokens = self.agent_loop.stats.context_tokens
             compact_msg.set_complete(old_tokens=old_tokens, new_tokens=new_tokens)
+
+            # Mount summary widget if there's content
+            if summary and self.event_handler:
+                from vibe.cli.textual_ui.widgets.messages import CompactSummaryMessage
+
+                summary_widget = CompactSummaryMessage(summary)
+                await self._mount_and_scroll(summary_widget)
 
         except asyncio.CancelledError:
             compact_msg.set_error("Compaction interrupted")

@@ -447,10 +447,26 @@ StatusMessage {
 }
 
 .compact-message,
+.compact-summary-message,
 .tool-call {
     width: 100%;
     height: auto;
     margin-top: 1;
+}
+
+.compact-summary-container {
+    width: 100%;
+    height: auto;
+}
+
+.compact-summary-content {
+    width: 1fr;
+    height: auto;
+    margin: 0;
+    padding-left: 1;
+    border-left: heavy $mistral_orange;
+    color: $mistral_orange;
+    text-style: italic;
 }
 
 .tool-call.no-gap {

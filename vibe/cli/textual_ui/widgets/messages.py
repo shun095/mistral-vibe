@@ -318,3 +318,14 @@ class WarningMessage(Static):
             if self._show_border:
                 yield ExpandingBorder(classes="warning-border")
             yield NoMarkupStatic(self._message, classes="warning-content")
+
+
+class CompactSummaryMessage(Static):
+    def __init__(self, content: str) -> None:
+        super().__init__()
+        self.add_class("compact-summary-message")
+        self._content = content
+
+    def compose(self) -> ComposeResult:
+        with Horizontal(classes="compact-summary-container"):
+            yield NoMarkupStatic(self._content, classes="compact-summary-content")
