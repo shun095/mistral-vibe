@@ -231,6 +231,11 @@ You behave adhering this guidelines strictly.
 
 ## 🧪 Testing Requirements
 
+### Debugging in Tests
+- ✅ Use `logger.debug()` instead of `print()` for debugging in tests
+- ✅ Use `--log-cli-level=DEBUG` with pytest to show debug logs
+- ❌ NEVER use `print()` statements for debugging - they clutter output and don't integrate with logging
+
 ### Mandatory Standards
 
 #### **1. Unit Tests (MANDATORY FOR ALL CODE)**

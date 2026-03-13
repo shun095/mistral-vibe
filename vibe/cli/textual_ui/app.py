@@ -158,12 +158,21 @@ PRUNE_HIGH_MARK = 1500
 
 
 async def prune_oldest_children(
-    messages_area: Widget, low_mark: int, high_mark: int
+    messages_area: Widget,
+    low_mark: int,
+    high_mark: int,
+    protected_widgets: set[Widget] | None = None,
 ) -> bool:
     """Remove the oldest children so the virtual height stays within bounds.
 
     Walks children back-to-front to find how much to keep (up to *low_mark*
     of visible height), then removes everything before that point.
+
+    Args:
+        messages_area: The container widget to prune.
+        low_mark: The minimum height to keep.
+        high_mark: The threshold above which pruning is triggered.
+        protected_widgets: Set of widgets that should not be pruned.
     """
     total_height = messages_area.virtual_size.height
     if total_height <= high_mark:
@@ -186,6 +195,13 @@ async def prune_oldest_children(
             break
 
     to_remove = list(children[:cut])
+    if not to_remove:
+        return False
+
+    # Remove protected widgets from the removal list
+    if protected_widgets:
+        to_remove = [w for w in to_remove if w not in protected_widgets]
+
     if not to_remove:
         return False
 
@@ -1798,10 +1814,21 @@ Enhanced prompt:"""
 
     async def _try_prune(self) -> None:
         messages_area = self._cached_messages_area or self.query_one("#messages")
+        # Protect the "Load more" widget from pruning if there's backfill
+        protected_widgets: set[Widget] | None = None
+        if self._load_more.widget and self._windowing.has_backfill:
+            protected_widgets = {self._load_more.widget}
         pruned = await prune_oldest_children(
-            messages_area, PRUNE_LOW_MARK, PRUNE_HIGH_MARK
+            messages_area, PRUNE_LOW_MARK, PRUNE_HIGH_MARK, protected_widgets
         )
-        if self._load_more.widget and not self._load_more.widget.parent:
+        # Only clear the widget reference if there's no backfill remaining.
+        # If there's still backfill, the widget will be shown again by
+        # _refresh_windowing_from_history.
+        if (
+            self._load_more.widget
+            and not self._load_more.widget.parent
+            and not self._windowing.has_backfill
+        ):
             self._load_more.widget = None
         if pruned:
             chat = self._cached_chat or self.query_one("#chat", ChatScroll)
@@ -1809,8 +1836,6 @@ Enhanced prompt:"""
                 self.call_later(chat.anchor)
 
     async def _refresh_windowing_from_history(self) -> None:
-        if self._load_more.widget is None:
-            return
         messages_area = self._cached_messages_area or self.query_one("#messages")
         has_backfill, tool_call_map = sync_backfill_state(
             history_messages=non_system_history_messages(self.agent_loop.messages),
