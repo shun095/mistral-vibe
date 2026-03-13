@@ -438,6 +438,7 @@ class AgentLoop:
                         old_context_tokens=old_tokens,
                         new_context_tokens=self.stats.context_tokens,
                         summary_length=len(summary),
+                        summary_content=summary,
                     )
                 except Exception as e:
                     yield CompactEndEvent(
@@ -445,6 +446,7 @@ class AgentLoop:
                         old_context_tokens=old_tokens,
                         new_context_tokens=old_tokens,
                         summary_length=0,
+                        summary_content=None,
                         error=str(e),
                     )
                     raise
