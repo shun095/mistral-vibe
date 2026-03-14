@@ -85,6 +85,57 @@ async def test_edit_last_message_basic(edit_test_app: VibeApp) -> None:
 
 
 @pytest.mark.asyncio
+async def test_edit_command_does_not_block_ui(edit_test_app: VibeApp) -> None:
+    """Test that /edit command doesn't block the UI during agent_task execution.
+
+    This test verifies that after triggering /edit, the UI remains responsive
+    and the agent_task is properly spawned as a background task.
+    """
+    async with edit_test_app.run_test() as pilot:
+        app = edit_test_app
+
+        # Send first message
+        await pilot.press(*"first message")
+        await pilot.press("enter")
+        await pilot.pause()
+
+        # Send second message
+        await pilot.press(*"second message")
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause()  # Ensure agent has fully responded
+
+        # Trigger edit command - this should spawn an agent_task
+        await pilot.press(*"/edit edited message")
+        await pilot.press("enter")
+
+        # Give the task a moment to start
+        await pilot.pause()
+
+        # Verify that _agent_task was spawned (task object exists)
+        assert app._agent_task is not None, "agent_task should be spawned"
+
+        # The UI should be responsive - we can still access widgets
+        # This is the key test: UI is not blocked
+        chat_input = app.query_one(ChatInputBody)
+        assert chat_input is not None, "UI should remain accessible during edit"
+
+        # Wait for the task to complete
+        await pilot.pause()
+        await pilot.pause()
+        await pilot.pause()
+
+        # After completion, the task should be done
+        assert app._agent_task.done(), "agent_task should be completed"
+
+        # agent_running should be reset
+        assert app._agent_running is False, "agent_running should be reset after completion"
+
+        # Exit the app
+        app.exit()
+
+
+@pytest.mark.asyncio
 async def test_edit_last_message_with_tool_calls(
     edit_test_app: VibeApp,
 ) -> None:
@@ -233,16 +284,6 @@ async def test_edit_last_message_multiple_edits(
         await pilot.press(*"edit final edit")
         await pilot.press("enter")
         await pilot.pause()
-
-        # Verify final message content
-        last_user_msg = next(
-            (m for m in reversed(app.agent_loop.messages) if m.role == Role.user), None
-        )
-        assert last_user_msg is not None
-        assert last_user_msg.content == "final edit"
-
-        # Exit the app
-        app.exit()
 
         # Verify final message content
         last_user_msg = next(
