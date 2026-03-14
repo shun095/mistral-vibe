@@ -26,6 +26,8 @@ from vibe.core.llm.format import (
     ResolvedToolCall,
 )
 from vibe.core.llm.types import BackendLike
+from vibe.core.loop_detection import ToolCallLoopHandler
+from vibe.core.message_handler import create_message_handler
 from vibe.core.middleware import (
     CHAT_AGENT_EXIT,
     CHAT_AGENT_REMINDER,
@@ -44,7 +46,6 @@ from vibe.core.middleware import (
 )
 from vibe.core.plan_session import PlanSession
 from vibe.core.prompts import UtilityPrompt
-from vibe.core.loop_detection import ToolCallLoopHandler
 from vibe.core.session.session_logger import SessionLogger
 from vibe.core.session.session_migration import migrate_sessions_entrypoint
 from vibe.core.skills.manager import SkillManager
@@ -58,7 +59,6 @@ from vibe.core.tools.base import (
     ToolError,
     ToolPermission,
     ToolPermissionError,
-    EventConstructor,
 )
 from vibe.core.tools.manager import ToolManager
 from vibe.core.tools.mcp import MCPRegistry
@@ -85,7 +85,6 @@ from vibe.core.types import (
     SyncApprovalCallback,
     ToolCall,
     ToolCallEvent,
-    ToolCallSignature,
     ToolResultEvent,
     ToolStreamEvent,
     UserInputCallback,
@@ -482,24 +481,17 @@ class AgentLoop:
             user_msg: New user message to add. If None, extracts last user message
                 from history (used for edit operations).
         """
-        from vibe.core.conversation_loop import extract_last_user_message
+        # Use strategy pattern to handle message preparation
+        handler = create_message_handler(user_msg)
+        
+        try:
+            content, message_id = handler.prepare_message(self.messages, user_msg)
+        except ValueError as e:
+            raise AgentLoopError(str(e)) from e
 
-        # Determine message source: new message or existing from history
-        if user_msg is not None:
-            # New message: create and append to history
-            user_message = LLMMessage(role=Role.user, content=user_msg)
-            self.messages.append(user_message)
+        # Increment steps if this is a new message operation
+        if handler.should_increment_steps():
             self.stats.steps += 1
-            message_id = user_message.message_id
-            content = user_msg
-            
-            if message_id is None:
-                raise AgentLoopError("User message must have a message_id")
-        else:
-            # Existing message: extract from history (e.g., after editing)
-            content, message_id = extract_last_user_message(self.messages)
-            if content is None or message_id is None:
-                raise AgentLoopError("No user message found in history")
 
         # Set the current user message ID
         self._current_user_message_id = message_id
