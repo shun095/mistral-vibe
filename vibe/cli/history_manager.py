@@ -44,8 +44,16 @@ class HistoryManager:
 
     def add(self, text: str) -> None:
         text = text.strip()
-        if not text or text.startswith("/"):
+        if not text:
             return
+
+        # For slash commands, save only the arguments (e.g., "/edit foo" → "foo")
+        if text.startswith("/"):
+            parts = text.split(maxsplit=1)
+            if len(parts) > 1:
+                text = parts[1]
+            else:
+                return  # Command with no arguments
 
         if self._entries and self._entries[-1] == text:
             return
