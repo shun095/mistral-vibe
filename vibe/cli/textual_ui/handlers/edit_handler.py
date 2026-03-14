@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 
+from vibe.cli.textual_ui.notifications.ports.notification_port import (
+    NotificationContext,
+)
 from vibe.cli.textual_ui.widgets.loading import LoadingWidget
 from vibe.cli.textual_ui.widgets.messages import UserCommandMessage
 from vibe.core.types import MessageList, Role
@@ -11,7 +15,8 @@ from vibe.core.types import MessageList, Role
 if TYPE_CHECKING:
     from vibe.cli.textual_ui.app import VibeApp
     from vibe.core.agent_loop import AgentLoop
-    from vibe.core.llm.types import LLMMessage
+
+from vibe.core.llm.types import LLMMessage
 
 
 class EditValidationError(Exception):
@@ -80,67 +85,64 @@ def validate_edit_preconditions(
 
 
 class EditHandler:
-    """Handles editing of last user message."""
+    """Handles editing of last user message asynchronously."""
 
-    def __init__(
-        self,
-        app: VibeApp,
-        agent_loop: AgentLoop,
-        last_user_msg: LLMMessage,
-        new_content: str,
-    ) -> None:
+    def __init__(self, app: VibeApp, agent_loop: AgentLoop, new_content: str) -> None:
         """Initialize edit handler.
 
         Args:
             app: The VibeApp instance.
             agent_loop: The agent loop instance.
-            last_user_msg: The last user message being edited.
             new_content: The new content for the message.
         """
         self.app = app
         self.agent_loop = agent_loop
-        self.last_user_msg = last_user_msg
         self.new_content = new_content
 
     async def execute(self) -> None:
-        """Execute the edit operation."""
-        # Remove the /edit command message from history
-        with self.agent_loop.messages.silent():
-            if (
-                self.agent_loop.messages
-                and self.agent_loop.messages[-1].role == Role.user
-            ):
-                self.agent_loop.messages.reset(
-                    self.agent_loop.messages[:-1]
-                )
+        """Execute the edit operation asynchronously.
 
-        # Edit the last message in the agent loop
-        await self.agent_loop.edit_last_message(self.new_content)
-
-        # Reset UI state
-        self.app._reset_ui_state()
-
-        # Remove old message widgets and rebuild
-        messages_area = (
-            self.app._cached_messages_area
-            or self.app.query_one("#messages")
-        )
-        await messages_area.remove_children()
-
-        # Rebuild message widgets from the updated history
-        await self.app._resume_history_from_messages()
-
-        # Trigger the agent loop to generate a new response
+        This method can be interrupted via asyncio.CancelledError.
+        """
         self.app._agent_running = True
+
         loading_area = (
             self.app._cached_loading_area
             or self.app.query_one("#loading-area-content")
         )
+
         loading = LoadingWidget()
         self.app._loading_widget = loading
         await loading_area.mount(loading)
 
         try:
+            # Remove the /edit command message from history
+            with self.agent_loop.messages.silent():
+                if (
+                    self.agent_loop.messages
+                    and self.agent_loop.messages[-1].role == Role.user
+                ):
+                    self.agent_loop.messages.reset(
+                        self.agent_loop.messages[:-1]
+                    )
+
+            # Edit the last message in the agent loop
+            await self.agent_loop.edit_last_message(self.new_content)
+
+            # Reset UI state
+            self.app._reset_ui_state()
+
+            # Remove old message widgets and rebuild
+            messages_area = (
+                self.app._cached_messages_area
+                or self.app.query_one("#messages")
+            )
+            await messages_area.remove_children()
+
+            # Rebuild message widgets from the updated history
+            await self.app._resume_history_from_messages()
+
+            # Trigger the agent loop to generate a new response
             async for event in self.agent_loop.act_without_adding_message():
                 if self.app.event_handler:
                     await self.app.event_handler.handle_event(
@@ -148,16 +150,35 @@ class EditHandler:
                         loading_active=self.app._loading_widget is not None,
                         loading_widget=self.app._loading_widget,
                     )
+
+        except asyncio.CancelledError:
+            if self.app._loading_widget and self.app._loading_widget.parent:
+                await self.app._loading_widget.remove()
+            if self.app.event_handler:
+                self.app.event_handler.stop_current_tool_call(success=False)
+            raise
+        except Exception as e:
+            if self.app._loading_widget and self.app._loading_widget.parent:
+                await self.app._loading_widget.remove()
+            if self.app.event_handler:
+                self.app.event_handler.stop_current_tool_call(success=False)
+
+            from vibe.cli.textual_ui.widgets.messages import ErrorMessage
+
+            await self.app._mount_and_scroll(
+                ErrorMessage(str(e), collapsed=self.app._tools_collapsed)
+            )
         finally:
             self.app._agent_running = False
             self.app._interrupt_requested = False
-            self.app._agent_task = None
             if self.app._loading_widget:
                 await self.app._loading_widget.remove()
             self.app._loading_widget = None
             if self.app.event_handler:
-                self.app.event_handler.stop_current_tool_call(success=True)
+                await self.app.event_handler.finalize_streaming()
+            await self.app._refresh_windowing_from_history()
+            self.app._terminal_notifier.notify(NotificationContext.COMPLETE)
 
-        await self.app._mount_and_scroll(
-            UserCommandMessage("Message edited and conversation restarted.")
-        )
+            await self.app._mount_and_scroll(
+                UserCommandMessage("Message edited and conversation restarted.")
+            )

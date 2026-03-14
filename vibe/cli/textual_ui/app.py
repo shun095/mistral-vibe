@@ -1298,14 +1298,13 @@ Enhanced prompt:"""
                 )
                 return
 
-            # Execute edit
+            # Execute edit asynchronously to allow interruption
             handler = EditHandler(
                 app=self,
                 agent_loop=self.agent_loop,
-                last_user_msg=last_user_msg,
                 new_content=new_content,
             )
-            await handler.execute()
+            self._agent_task = asyncio.create_task(handler.execute())
 
         except EditValidationError as e:
             await self._mount_and_scroll(
