@@ -302,7 +302,7 @@ class AgentLoop:
         history has already been cleaned up by edit_last_message(). Calling it
         would incorrectly add "Understood." after the user message.
         """
-        async for event in self._conversation_loop_without_adding_message():
+        async for event in self._conversation_loop(None):
             yield event
 
     @property
@@ -473,74 +473,38 @@ class AgentLoop:
             })
         return headers
 
-    async def _conversation_loop(self, user_msg: str) -> AsyncGenerator[BaseEvent]:
-        user_message = LLMMessage(role=Role.user, content=user_msg)
-        self.messages.append(user_message)
-        self.stats.steps += 1
-        self._current_user_message_id = user_message.message_id
-
-        if user_message.message_id is None:
-            raise AgentLoopError("User message must have a message_id")
-
-        yield UserMessageEvent(content=user_msg, message_id=user_message.message_id)
-
-        try:
-            should_break_loop = False
-            while not should_break_loop:
-                result = await self.middleware_pipeline.run_before_turn(
-                    self._get_context()
-                )
-                async for event in self._handle_middleware_result(result):
-                    yield event
-
-                if result.action == MiddlewareAction.STOP:
-                    return
-
-                self.stats.steps += 1
-                user_cancelled = False
-                
-                # Track if we yielded a ContinueableUserMessageEvent (e.g., for image messages)
-                yielded_continueable_event = False
-                async for event in self._perform_llm_turn():
-                    if is_user_cancellation_event(event):
-                        user_cancelled = True
-                    # Check if this is a ContinueableUserMessageEvent (used for image messages)
-                    if isinstance(event, ContinueableUserMessageEvent):
-                        yielded_continueable_event = True
-                    yield event
-                    await self._save_messages()
-
-                last_message = self.messages[-1]
-                
-                # Special handling for tools that yield ContinueableUserMessageEvent
-                # If we just yielded a ContinueableUserMessageEvent, continue the conversation
-                should_break_loop = not yielded_continueable_event and last_message.role != Role.tool
-
-                if user_cancelled:
-                    return
-
-        finally:
-            await self._save_messages()
-
-    async def _conversation_loop_without_adding_message(
-        self,
+    async def _conversation_loop(
+        self, user_msg: str | None = None
     ) -> AsyncGenerator[BaseEvent]:
-        """Run the conversation loop without adding a new message to history.
+        """Run the conversation loop.
         
-        This is used when the message has already been added to history
-        (e.g., after editing a previous message).
+        Args:
+            user_msg: New user message to add. If None, extracts last user message
+                from history (used for edit operations).
         """
         from vibe.core.conversation_loop import extract_last_user_message
 
-        # Extract last user message
-        content, message_id = extract_last_user_message(self.messages)
-        if content is None or message_id is None:
-            raise AgentLoopError("No user message found in history")
+        # Determine message source: new message or existing from history
+        if user_msg is not None:
+            # New message: create and append to history
+            user_message = LLMMessage(role=Role.user, content=user_msg)
+            self.messages.append(user_message)
+            self.stats.steps += 1
+            message_id = user_message.message_id
+            content = user_msg
+            
+            if message_id is None:
+                raise AgentLoopError("User message must have a message_id")
+        else:
+            # Existing message: extract from history (e.g., after editing)
+            content, message_id = extract_last_user_message(self.messages)
+            if content is None or message_id is None:
+                raise AgentLoopError("No user message found in history")
 
         # Set the current user message ID
         self._current_user_message_id = message_id
 
-        # Yield a UserMessageEvent for the existing message
+        # Yield a UserMessageEvent
         yield UserMessageEvent(content=content, message_id=message_id)
 
         try:
@@ -557,7 +521,7 @@ class AgentLoop:
 
                 self.stats.steps += 1
                 user_cancelled = False
-
+                
                 # Track if we yielded a ContinueableUserMessageEvent (e.g., for image messages)
                 yielded_continueable_event = False
                 async for event in self._perform_llm_turn():
@@ -569,7 +533,7 @@ class AgentLoop:
                     await self._save_messages()
 
                 last_message = self.messages[-1]
-
+                
                 # Special handling for tools that yield ContinueableUserMessageEvent
                 should_break_loop = not yielded_continueable_event and last_message.role != Role.tool
 
