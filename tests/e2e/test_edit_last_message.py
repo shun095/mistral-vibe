@@ -334,3 +334,43 @@ async def test_edit_last_message_preserves_earlier_messages(
 
         # Exit the app
         app.exit()
+
+
+@pytest.mark.asyncio
+async def test_edit_command_args_saved_to_history(edit_test_app: VibeApp) -> None:
+    """Test that /edit command arguments are saved to history (not the full command).
+
+    This tests the UI integration: when user types /edit <args>, only <args>
+    should be saved to vibehistory for later recall via up/down arrows.
+    """
+    async with edit_test_app.run_test() as pilot:
+        app = edit_test_app
+        chat_input = app.query_one(ChatInputBody)
+
+        # Send first message
+        await pilot.press(*"original prompt")
+        await pilot.press("enter")
+        await pilot.pause()
+
+        # Send /edit command
+        await pilot.press(*"/edit modified prompt")
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause()  # Wait for edit to complete
+
+        # Check that history contains the edit argument, not the full command
+        history = chat_input.history
+        assert history is not None
+
+        # The last entry should be "modified prompt" (not "/edit modified prompt")
+        assert history._entries[-1] == "modified prompt"
+        assert not any(entry.startswith("/edit") for entry in history._entries)
+
+        # Verify we can navigate back to it
+        await pilot.press("up")
+        await pilot.pause()
+        assert chat_input.input_widget is not None
+        assert chat_input.input_widget.text == "modified prompt"
+
+        # Exit the app
+        app.exit()
