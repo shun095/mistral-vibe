@@ -7,6 +7,7 @@ from vibe.cli.textual_ui.widgets.compact import CompactMessage
 from vibe.cli.textual_ui.widgets.messages import (
     AssistantMessage,
     CompactSummaryMessage,
+    ImageMessage,
     ReasoningMessage,
 )
 from vibe.cli.textual_ui.widgets.no_markup_static import NoMarkupStatic
@@ -17,6 +18,7 @@ from vibe.core.types import (
     BaseEvent,
     CompactEndEvent,
     CompactStartEvent,
+    ContinueableUserMessageEvent,
     ReasoningEvent,
     ToolCallEvent,
     ToolResultEvent,
@@ -68,6 +70,9 @@ class EventHandler:
                 await self._handle_compact_end(event)
             case UserMessageEvent():
                 await self.finalize_streaming()
+            case ContinueableUserMessageEvent():
+                await self.finalize_streaming()
+                await self._handle_continueable_user_message(event)
             case _:
                 await self.finalize_streaming()
                 await self._handle_unknown_event(event)
@@ -175,6 +180,28 @@ class EventHandler:
         if event.summary_content:
             summary_widget = CompactSummaryMessage(event.summary_content)
             await self.mount_callback(summary_widget)
+
+    async def _handle_continueable_user_message(
+        self, event: ContinueableUserMessageEvent
+    ) -> None:
+        """Handle ContinueableUserMessageEvent by displaying [image] placeholder.
+        
+        The event content is a list with text and image_url items.
+        We extract the text content and display it with [image] placeholder.
+        The actual image data is sent to LLM via the tool's get_llm_message_constructor().
+        """
+        if isinstance(event.content, list):
+            # Extract text content from the list
+            text_parts = []
+            for item in event.content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    text_parts.append(item.get("text", ""))
+            text_content = " ".join(text_parts)
+        else:
+            text_content = str(event.content) if event.content else ""
+
+        widget = ImageMessage(text_content)
+        await self.mount_callback(widget)
 
     async def _handle_unknown_event(self, event: BaseEvent) -> None:
         await self.mount_callback(NoMarkupStatic(str(event), classes="unknown-event"))
