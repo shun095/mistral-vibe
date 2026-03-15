@@ -62,6 +62,20 @@ class UserMessage(Static):
         self.remove_class("pending")
 
 
+class ImageMessage(Static):
+    """Widget for displaying image messages with [image] placeholder."""
+
+    def __init__(self, text_content: str) -> None:
+        super().__init__()
+        self.add_class("user-message")
+        self._text_content = text_content
+
+    def compose(self) -> ComposeResult:
+        with Horizontal(classes="user-message-container"):
+            content = f"{self._text_content}\n[image]" if self._text_content else "[image]"
+            yield NoMarkupStatic(content, classes="user-message-content")
+
+
 class StreamingMessageBase(Static):
     def __init__(self, content: str) -> None:
         super().__init__()
