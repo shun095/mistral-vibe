@@ -464,6 +464,39 @@ type UserInputCallback = Callable[[BaseModel], Awaitable[BaseModel]]
 type SwitchAgentCallback = Callable[[str], Awaitable[None]]
 
 
+class ApprovalPopupEvent(BaseEvent):
+    """Event broadcast when approval popup is shown."""
+
+    popup_id: str = Field(description="Unique ID for this popup instance")
+    tool_name: str = Field(description="Name of the tool requiring approval")
+    tool_args: dict = Field(description="Serialized tool arguments")
+    timestamp: float = Field(description="Timestamp when popup was created")
+
+
+class QuestionPopupEvent(BaseEvent):
+    """Event broadcast when question popup is shown."""
+
+    popup_id: str = Field(description="Unique ID for this popup instance")
+    questions: list[dict] = Field(
+        description="Serialized AskUserQuestionArgs.questions"
+    )
+    content_preview: str | None = Field(
+        default=None, description="Optional preview content"
+    )
+    timestamp: float = Field(description="Timestamp when popup was created")
+
+
+class PopupResponseEvent(BaseEvent):
+    """Event broadcast when popup is answered."""
+
+    popup_id: str = Field(description="Unique ID of the popup being answered")
+    response_type: Literal["approval", "question"] = Field(
+        description="Type of popup response"
+    )
+    response_data: dict = Field(description="Serialized response data")
+    cancelled: bool = Field(description="Whether the popup was cancelled")
+
+
 class MessageList(Sequence[LLMMessage]):
     def __init__(
         self,
