@@ -327,3 +327,125 @@ body {
     color: #666;
     cursor: not-allowed;
 }
+
+/* Markdown Styles */
+.message.assistant .content {
+    white-space: normal;
+}
+
+.message.assistant .content p {
+    margin: 0.5em 0;
+    line-height: 1.6;
+}
+
+.message.assistant .content p:first-child {
+    margin-top: 0;
+}
+
+.message.assistant .content p:last-child {
+    margin-bottom: 0;
+}
+
+.message.assistant .content code {
+    background-color: #1a1a2e;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.9em;
+    color: #4ecca3;
+}
+
+.message.assistant .content pre {
+    background-color: #1a1a2e;
+    padding: 12px;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 0.5em 0;
+}
+
+.message.assistant .content pre code {
+    background-color: transparent;
+    padding: 0;
+    color: inherit;
+}
+
+.message.assistant .content pre code.hljs {
+    padding: 0;
+    background-color: transparent;
+}
+
+.message.assistant .content ul,
+.message.assistant .content ol {
+    margin: 0.5em 0;
+    padding-left: 2em;
+}
+
+.message.assistant .content li {
+    margin: 0.25em 0;
+}
+
+.message.assistant .content blockquote {
+    border-left: 3px solid #4ecca3;
+    margin: 0.5em 0;
+    padding: 0.5em 1em;
+    background-color: #1a1a2e;
+    border-radius: 0 4px 4px 0;
+}
+
+.message.assistant .content blockquote p {
+    margin: 0;
+}
+
+.message.assistant .content h1,
+.message.assistant .content h2,
+.message.assistant .content h3,
+.message.assistant .content h4,
+.message.assistant .content h5,
+.message.assistant .content h6 {
+    margin: 1em 0 0.5em 0;
+    font-weight: 600;
+    color: #4ecca3;
+}
+
+.message.assistant .content h1 { font-size: 1.5em; }
+.message.assistant .content h2 { font-size: 1.3em; }
+.message.assistant .content h3 { font-size: 1.1em; }
+
+.message.assistant .content a {
+    color: #4ecca3;
+    text-decoration: underline;
+}
+
+.message.assistant .content a:hover {
+    color: #6df0c2;
+}
+
+.message.assistant .content hr {
+    border: none;
+    border-top: 1px solid #1a4a7a;
+    margin: 1em 0;
+}
+
+.message.assistant .content table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0.5em 0;
+}
+
+.message.assistant .content th,
+.message.assistant .content td {
+    border: 1px solid #1a4a7a;
+    padding: 8px;
+    text-align: left;
+}
+
+.message.assistant .content th {
+    background-color: #1a1a2e;
+    font-weight: 600;
+}
+
+.message.assistant .content img {
+    max-width: 100%;
+    border-radius: 8px;
+    margin: 0.5em 0;
+}
