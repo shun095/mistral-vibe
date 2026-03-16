@@ -445,6 +445,7 @@ def create_app(
                     popup_id = message.get("popup_id")
                     response = message.get("response")
                     feedback = message.get("feedback")
+                    approval_type = message.get("approval_type", "once")
                     if (
                         popup_id
                         and response
@@ -455,7 +456,7 @@ def create_app(
                         
                         approval_resp = ApprovalResponse(response)
                         app.state.tui_app.handle_web_approval_response(
-                            popup_id, approval_resp, feedback
+                            popup_id, approval_resp, feedback, approval_type
                         )
                 
                 # Handle question responses
