@@ -439,6 +439,41 @@ def create_app(
                     if content and hasattr(app.state, "tui_app") and app.state.tui_app:
                         # Submit message to TUI
                         app.state.tui_app.submit_message_from_web(content)
+                
+                # Handle approval responses
+                elif message.get("type") == "approval_response":
+                    popup_id = message.get("popup_id")
+                    response = message.get("response")
+                    feedback = message.get("feedback")
+                    if (
+                        popup_id
+                        and response
+                        and hasattr(app.state, "tui_app")
+                        and app.state.tui_app
+                    ):
+                        from vibe.core.types import ApprovalResponse
+                        
+                        approval_resp = ApprovalResponse(response)
+                        app.state.tui_app.handle_web_approval_response(
+                            popup_id, approval_resp, feedback
+                        )
+                
+                # Handle question responses
+                elif message.get("type") == "question_response":
+                    popup_id = message.get("popup_id")
+                    answers_data = message.get("answers", [])
+                    cancelled = message.get("cancelled", False)
+                    if (
+                        popup_id
+                        and hasattr(app.state, "tui_app")
+                        and app.state.tui_app
+                    ):
+                        from vibe.core.tools.builtins.ask_user_question import Answer
+                        
+                        answers = [Answer(**a) for a in answers_data]
+                        app.state.tui_app.handle_web_question_response(
+                            popup_id, answers, cancelled
+                        )
         except WebSocketDisconnect:
             app.state.websocket_clients.discard(websocket)
         except Exception:

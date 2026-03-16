@@ -20,6 +20,10 @@ class VibeClient {
         this.isProcessing = false;
         this.statusPollInterval = null;
 
+        // Popup state
+        this.currentPopupId = null;
+        this.currentPopupElement = null;
+
         this.elements = {
             status: document.getElementById('status'),
             messages: document.getElementById('messages'),
@@ -254,9 +258,270 @@ class VibeClient {
                     this.addMessage('user', event.content);
                 }
                 break;
+            case 'ApprovalPopupEvent':
+                console.log('Received ApprovalPopupEvent:', event);
+                this.showApprovalPopup(event);
+                break;
+            case 'QuestionPopupEvent':
+                console.log('Received QuestionPopupEvent:', event);
+                this.showQuestionPopup(event);
+                break;
+            case 'PopupResponseEvent':
+                console.log('Received PopupResponseEvent:', event);
+                // Hide popup when response is received (from TUI or web)
+                this.hidePopup(event);
+                break;
             default:
                 console.log('Unhandled event type:', eventType);
         }
+    }
+
+    showApprovalPopup(event) {
+        console.log('showApprovalPopup called with event:', event);
+        this.currentPopupId = event.popup_id;
+        
+        // Create popup element
+        const popupDiv = document.createElement('div');
+        popupDiv.className = 'popup-card approval-popup';
+        popupDiv.id = `popup-${event.popup_id}`;
+        console.log('Created popup element:', popupDiv);
+        
+        popupDiv.innerHTML = `
+            <div class="popup-header">
+                <span class="popup-icon">⚠️</span>
+                <span class="popup-title">${this.escapeHtml(`${event.tool_name} command`)}</span>
+            </div>
+            <div class="popup-content">
+                <pre>${this.escapeHtml(JSON.stringify(event.tool_args, null, 2))}</pre>
+            </div>
+            <div class="popup-options">
+                <button class="popup-btn yes" data-option="0">Yes</button>
+                <button class="popup-btn yes" data-option="1">Yes (This Session)</button>
+                <button class="popup-btn yes" data-option="2">Enable Auto-Approve</button>
+                <button class="popup-btn no" data-option="3">No</button>
+            </div>
+        `;
+        
+        // Setup button handlers
+        popupDiv.querySelectorAll('.popup-btn').forEach(btn => {
+            btn.onclick = () => {
+                const option = parseInt(btn.dataset.option);
+                this.handleApprovalOption(option);
+            };
+        });
+        
+        // Append to messages and show
+        this.currentPopupElement = popupDiv;
+        console.log('Appending popup to messages container:', this.elements.messages);
+        this.elements.messages.appendChild(popupDiv);
+        this.elements.input.disabled = true;
+        this.scrollToBottom();
+        console.log('Popup appended successfully');
+    }
+
+    handleApprovalOption(option) {
+        if (!this.currentPopupId) return;
+        
+        let response, feedback;
+        
+        switch (option) {
+            case 0: // Yes
+                response = 'y';
+                feedback = null;
+                break;
+            case 1: // Yes (session)
+                response = 'y';
+                feedback = null;
+                break;
+            case 2: // Auto-approve
+                response = 'y';
+                feedback = null;
+                break;
+            case 3: // No
+                response = 'n';
+                feedback = 'User denied approval via web UI';
+                break;
+        }
+        
+        this.sendApprovalResponse(this.currentPopupId, response, feedback);
+        this.currentPopupId = null;
+    }
+
+    sendApprovalResponse(popupId, response, feedback) {
+        this.ws.send(JSON.stringify({
+            type: 'approval_response',
+            popup_id: popupId,
+            response: response,
+            feedback: feedback
+        }));
+    }
+
+    showQuestionPopup(event) {
+        this.currentPopupId = event.popup_id;
+        
+        const questions = event.questions;
+        const currentQuestion = questions[0]; // Handle first question for now
+        
+        // Build options HTML
+        let optionsHtml = '';
+        currentQuestion.options.forEach((opt, idx) => {
+            optionsHtml += `<button class="popup-btn" data-option="${idx}">
+                <strong>${this.escapeHtml(opt.label)}</strong><br>
+                <small>${this.escapeHtml(opt.description)}</small>
+            </button>`;
+        });
+        
+        // Build other option HTML if enabled
+        const hasOther = !currentQuestion.hide_other;
+        let otherHtml = '';
+        if (hasOther) {
+            otherHtml = `
+                <div class="popup-other">
+                    <input type="text" id="question-other-input" placeholder="Type your answer...">
+                </div>
+                <button class="popup-btn other-btn">Other (custom answer)</button>
+            `;
+        }
+        
+        // Create popup element
+        const popupDiv = document.createElement('div');
+        popupDiv.className = 'popup-card question-popup';
+        popupDiv.id = `popup-${event.popup_id}`;
+        
+        const headerText = currentQuestion.header || 'Question';
+        popupDiv.innerHTML = `
+            <div class="popup-header">
+                <span class="popup-icon">❓</span>
+                <span class="popup-title">${this.escapeHtml(headerText)}</span>
+            </div>
+            <div class="popup-content">
+                ${this.escapeHtml(currentQuestion.question)}
+            </div>
+            <div class="popup-options">
+                ${optionsHtml}
+                ${hasOther ? '<button class="popup-btn other-btn">Other (custom answer)</button>' : ''}
+            </div>
+            ${hasOther ? '<div class="popup-other" style="display:none;"><input type="text" id="question-other-input" placeholder="Type your answer..."></div>' : ''}
+            <div class="popup-actions">
+                <button class="popup-btn submit" id="question-submit">Submit</button>
+                <button class="popup-btn cancel" id="question-cancel">Cancel</button>
+            </div>
+        `;
+        
+        // Setup option button handlers
+        popupDiv.querySelectorAll('.popup-btn[data-option]').forEach(btn => {
+            btn.onclick = () => {
+                if (currentQuestion.multi_select) {
+                    // Toggle selection for multi-select
+                    btn.classList.toggle('selected');
+                } else {
+                    // Single-select: remove all, add to clicked
+                    popupDiv.querySelectorAll('.popup-btn[data-option]').forEach(b => b.classList.remove('selected'));
+                    btn.classList.add('selected');
+                    // Auto-submit for single-select
+                    const optionIdx = parseInt(btn.dataset.option);
+                    this.handleQuestionOption(optionIdx, false);
+                }
+            };
+        });
+        
+        // Setup other button handler
+        if (hasOther) {
+            const otherBtn = popupDiv.querySelector('.other-btn');
+            const otherContainer = popupDiv.querySelector('.popup-other');
+            otherBtn.onclick = () => {
+                otherContainer.style.display = 'block';
+                otherContainer.querySelector('input').focus();
+            };
+        }
+        
+        // Setup submit handler
+        popupDiv.querySelector('#question-submit').onclick = () => {
+            // Collect all selected options
+            const selectedBtns = popupDiv.querySelectorAll('.popup-btn[data-option].selected');
+            
+            if (hasOther) {
+                const otherInput = popupDiv.querySelector('#question-other-input');
+                if (otherInput && otherInput.value.trim()) {
+                    // Handle "Other" answer
+                    const questionText = popupDiv.querySelector('.popup-content').textContent;
+                    const answers = [{
+                        question: questionText,
+                        answer: otherInput.value.trim(),
+                        is_other: true
+                    }];
+                    this.sendQuestionResponse(this.currentPopupId, answers, false);
+                    this.hidePopup({popup_id: this.currentPopupId});
+                    return;
+                }
+            }
+            
+            // Submit selected options (supports multi-select)
+            if (selectedBtns.length > 0) {
+                const questionText = popupDiv.querySelector('.popup-content').textContent;
+                const answers = Array.from(selectedBtns).map(btn => {
+                    const optionIdx = parseInt(btn.dataset.option);
+                    return {
+                        question: questionText,
+                        answer: optionIdx.toString(),
+                        is_other: false
+                    };
+                });
+                this.sendQuestionResponse(this.currentPopupId, answers, false);
+                this.hidePopup({popup_id: this.currentPopupId});
+            }
+        };
+        
+        // Setup cancel handler
+        popupDiv.querySelector('#question-cancel').onclick = () => {
+            this.sendQuestionResponse(this.currentPopupId, [], true);
+            this.currentPopupId = null;
+            this.currentPopupElement = null;
+            this.elements.input.disabled = false;
+        };
+        
+        // Append to messages and show
+        this.currentPopupElement = popupDiv;
+        this.elements.messages.appendChild(popupDiv);
+        this.elements.input.disabled = true;
+        this.scrollToBottom();
+    }
+
+    handleQuestionOption(optionIdx, isOther, otherText = '') {
+        if (!this.currentPopupId || !this.currentPopupElement) return;
+        
+        const questionText = this.currentPopupElement.querySelector('.popup-content').textContent;
+        const answers = [{
+            question: questionText,
+            answer: isOther ? otherText : optionIdx.toString(),
+            is_other: isOther
+        }];
+        
+        this.sendQuestionResponse(this.currentPopupId, answers, false);
+        this.currentPopupId = null;
+    }
+
+    sendQuestionResponse(popupId, answers, cancelled) {
+        this.ws.send(JSON.stringify({
+            type: 'question_response',
+            popup_id: popupId,
+            answers: answers,
+            cancelled: cancelled
+        }));
+    }
+
+    hidePopup(event) {
+        // Remove popup element from DOM if it exists
+        if (this.currentPopupElement && this.currentPopupElement.parentNode) {
+            this.currentPopupElement.parentNode.removeChild(this.currentPopupElement);
+        }
+        
+        // Re-enable input
+        this.elements.input.disabled = false;
+        
+        // Clear state
+        this.currentPopupId = null;
+        this.currentPopupElement = null;
     }
 
     handleToolCallEvent(event) {

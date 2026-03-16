@@ -8,6 +8,7 @@ import signal
 import subprocess
 import time
 from typing import Any, ClassVar, assert_never, cast
+from uuid import uuid4
 from weakref import WeakKeyDictionary
 
 from pydantic import BaseModel
@@ -107,6 +108,7 @@ from vibe.core.teleport.types import (
 )
 from vibe.core.tools.base import ToolPermission
 from vibe.core.tools.builtins.ask_user_question import (
+    Answer,
     AskUserQuestionArgs,
     AskUserQuestionResult,
     Choice,
@@ -114,8 +116,11 @@ from vibe.core.tools.builtins.ask_user_question import (
 )
 from vibe.core.types import (
     AgentStats,
+    ApprovalPopupEvent,
     ApprovalResponse,
     LLMMessage,
+    PopupResponseEvent,
+    QuestionPopupEvent,
     RateLimitError,
     Role,
 )
@@ -260,7 +265,9 @@ class VibeApp(App):  # noqa: PLR0904
 
         self._loading_widget: LoadingWidget | None = None
         self._pending_approval: asyncio.Future | None = None
+        self._pending_approval_id: str | None = None
         self._pending_question: asyncio.Future | None = None
+        self._pending_question_id: str | None = None
         self._queued_message: str | None = None
 
         self.event_handler: EventHandler | None = None
@@ -753,6 +760,138 @@ class VibeApp(App):  # noqa: PLR0904
         # Set the interrupt flag - this will be checked by the TUI
         self._interrupt_requested = True
 
+    def _broadcast_approval_popup(
+        self, popup_id: str, tool: str, args: BaseModel
+    ) -> None:
+        """Broadcast approval popup event to web UI.
+
+        Args:
+            popup_id: Unique ID for this popup instance.
+            tool: Name of the tool requiring approval.
+            args: Tool arguments to serialize.
+        """
+        try:
+            event = ApprovalPopupEvent(
+                popup_id=popup_id,
+                tool_name=tool,
+                tool_args=args.model_dump(mode="json", exclude_none=True),
+                timestamp=time.time(),
+            )
+            self.agent_loop._notify_event_listeners(event)
+        except Exception:
+            pass
+
+    def _broadcast_approval_response(
+        self, popup_id: str, result: tuple[ApprovalResponse, str | None]
+    ) -> None:
+        """Broadcast approval response event to web UI.
+
+        Args:
+            popup_id: Unique ID of the popup being answered.
+            result: Tuple of (ApprovalResponse, feedback).
+        """
+        try:
+            response, feedback = result
+            event = PopupResponseEvent(
+                popup_id=popup_id,
+                response_type="approval",
+                response_data={
+                    "response": response.value,
+                    "feedback": feedback,
+                },
+                cancelled=False,
+            )
+            self.agent_loop._notify_event_listeners(event)
+        except Exception:
+            pass
+
+    def _broadcast_question_popup(
+        self, popup_id: str, args: AskUserQuestionArgs
+    ) -> None:
+        """Broadcast question popup event to web UI.
+
+        Args:
+            popup_id: Unique ID for this popup instance.
+            args: AskUserQuestionArgs to serialize.
+        """
+        try:
+            event = QuestionPopupEvent(
+                popup_id=popup_id,
+                questions=[
+                    q.model_dump(mode="json", exclude_none=True)
+                    for q in args.questions
+                ],
+                content_preview=args.content_preview,
+                timestamp=time.time(),
+            )
+            self.agent_loop._notify_event_listeners(event)
+        except Exception:
+            pass
+
+    def _broadcast_question_response(
+        self, popup_id: str, result: AskUserQuestionResult
+    ) -> None:
+        """Broadcast question response event to web UI.
+
+        Args:
+            popup_id: Unique ID of the popup being answered.
+            result: AskUserQuestionResult to serialize.
+        """
+        try:
+            event = PopupResponseEvent(
+                popup_id=popup_id,
+                response_type="question",
+                response_data={
+                    "answers": [
+                        a.model_dump(mode="json", exclude_none=True)
+                        for a in result.answers
+                    ],
+                },
+                cancelled=result.cancelled,
+            )
+            self.agent_loop._notify_event_listeners(event)
+        except Exception:
+            pass
+
+    def handle_web_approval_response(
+        self, popup_id: str, response: ApprovalResponse, feedback: str | None
+    ) -> None:
+        """Handle approval response from web UI.
+
+        Args:
+            popup_id: Unique ID of the popup.
+            response: Approval response (YES or NO).
+            feedback: Optional feedback from user.
+        """
+        if (
+            self._pending_approval
+            and not self._pending_approval.done()
+            and self._pending_approval_id == popup_id
+        ):
+            self._pending_approval.set_result((response, feedback))
+            # Schedule cleanup to switch back to input
+            self.call_later(self._switch_to_input_app)
+
+    def handle_web_question_response(
+        self, popup_id: str, answers: list[Answer], cancelled: bool
+    ) -> None:
+        """Handle question response from web UI.
+
+        Args:
+            popup_id: Unique ID of the popup.
+            answers: List of answers from user.
+            cancelled: Whether the popup was cancelled.
+        """
+        if (
+            self._pending_question
+            and not self._pending_question.done()
+            and self._pending_question_id == popup_id
+        ):
+            result = AskUserQuestionResult(answers=answers, cancelled=cancelled)
+            self._pending_question.set_result(result)
+            # Schedule cleanup to switch back to input
+            self.call_later(self._switch_to_input_app)
+
     async def _process_web_messages(self) -> None:
         """Process messages from the web UI queue and interrupt requests."""
         # Process interrupt requests first
@@ -837,25 +976,53 @@ class VibeApp(App):  # noqa: PLR0904
             if self._is_tool_enabled_in_main_agent(tool):
                 return (ApprovalResponse.YES, None)
 
+        # Generate unique popup ID
+        popup_id = f"approval_{tool_call_id}_{time.time()}"
+        
+        # Broadcast approval popup event to web UI
+        self._broadcast_approval_popup(popup_id, tool, args)
+        
         self._pending_approval = asyncio.Future()
+        self._pending_approval_id = popup_id
         self._terminal_notifier.notify(NotificationContext.ACTION_REQUIRED)
-        with paused_timer(self._loading_widget):
-            await self._switch_to_approval_app(tool, args)
-            result = await self._pending_approval
+        try:
+            with paused_timer(self._loading_widget):
+                await self._switch_to_approval_app(tool, args)
+                result = await self._pending_approval
 
-        self._pending_approval = None
-        return result
+            # Broadcast approval response event
+            self._broadcast_approval_response(popup_id, result)
+            
+            self._pending_approval = None
+            self._pending_approval_id = None
+            return result
+        except asyncio.CancelledError:
+            # Clean up on cancellation
+            self._pending_approval = None
+            self._pending_approval_id = None
+            raise
 
     async def _user_input_callback(self, args: BaseModel) -> BaseModel:
         question_args = cast(AskUserQuestionArgs, args)
 
+        # Generate unique popup ID
+        popup_id = f"question_{time.time()}_{uuid4()}"
+        
+        # Broadcast question popup event to web UI
+        self._broadcast_question_popup(popup_id, question_args)
+        
         self._pending_question = asyncio.Future()
+        self._pending_question_id = popup_id
         self._terminal_notifier.notify(NotificationContext.ACTION_REQUIRED)
         with paused_timer(self._loading_widget):
             await self._switch_to_question_app(question_args)
             result = await self._pending_question
 
+        # Broadcast question response event
+        self._broadcast_question_response(popup_id, result)
+        
         self._pending_question = None
+        self._pending_question_id = None
         return result
 
     async def _handle_agent_loop_turn(self, prompt: str) -> None:
@@ -1017,6 +1184,31 @@ class VibeApp(App):  # noqa: PLR0904
 
         # Don't set _interrupt_requested here - it's set by the caller
         # (request_interrupt_from_web or Escape key handler)
+
+        # Clean up pending approvals/questions
+        if self._pending_approval and not self._pending_approval.done():
+            self._pending_approval.cancel()
+            self._pending_approval = None
+            self._pending_approval_id = None
+            # Remove approval app widget if present
+            try:
+                approval_app = self.query_one("#approval-app")
+                if approval_app.parent:
+                    await approval_app.remove()
+            except Exception:
+                pass
+
+        if self._pending_question and not self._pending_question.done():
+            self._pending_question.cancel()
+            self._pending_question = None
+            self._pending_question_id = None
+            # Remove question app widget if present
+            try:
+                question_app = self.query_one("#question-app")
+                if question_app.parent:
+                    await question_app.remove()
+            except Exception:
+                pass
 
         if self._agent_task and not self._agent_task.done():
             self._agent_task.cancel()
