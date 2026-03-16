@@ -13,6 +13,7 @@ class VibeClient {
         // Streaming state
         this.currentReasoningMessage = null;
         this.currentAssistantMessage = null;
+        this.currentToolCall = null;
 
         this.elements = {
             status: document.getElementById('status'),
@@ -140,15 +141,11 @@ class VibeClient {
                 break;
             case 'ToolCallEvent':
                 this.stopStreaming();
-                this.addMessage('system', `🔧 Tool: ${event.tool_name}`);
+                this.handleToolCallEvent(event);
                 break;
             case 'ToolResultEvent':
                 this.stopStreaming();
-                if (event.error) {
-                    this.addMessage('system', `❌ Tool error: ${event.error}`);
-                } else if (event.result) {
-                    this.addMessage('system', `✅ Tool completed: ${event.tool_name}`);
-                }
+                this.handleToolResultEvent(event);
                 break;
             case 'ContinueableUserMessageEvent':
                 this.stopStreaming();
@@ -167,6 +164,72 @@ class VibeClient {
                 break;
             default:
                 console.log('Unhandled event type:', eventType);
+        }
+    }
+
+    handleToolCallEvent(event) {
+        const toolCallDiv = document.createElement('div');
+        toolCallDiv.className = 'message tool-call';
+        
+        // Build args display - handle both object and null cases
+        let argsHtml = '';
+        if (event.args) {
+            try {
+                argsHtml = `<pre class="tool-args">${this.escapeHtml(JSON.stringify(event.args, null, 2))}</pre>`;
+            } catch (e) {
+                argsHtml = `<pre class="tool-args">${this.escapeHtml(String(event.args))}</pre>`;
+            }
+        } else {
+            // Show command name or placeholder if no args
+            argsHtml = `<div class="tool-args">Executing tool...</div>`;
+        }
+        
+        toolCallDiv.innerHTML = `
+            <div class="content">
+                <div class="tool-header">
+                    <span class="tool-icon">🔧</span>
+                    <span class="tool-name">${this.escapeHtml(event.tool_name)}</span>
+                    <span class="tool-status">⏳ Running...</span>
+                </div>
+                ${argsHtml}
+            </div>
+        `;
+        this.elements.messages.appendChild(toolCallDiv);
+        this.currentToolCall = toolCallDiv;
+        this.scrollToBottom();
+    }
+
+    handleToolResultEvent(event) {
+        // If we have a pending tool call, update it
+        if (this.currentToolCall) {
+            const statusSpan = this.currentToolCall.querySelector('.tool-status');
+            const contentDiv = this.currentToolCall.querySelector('.content');
+            
+            if (event.error) {
+                // Tool failed
+                if (statusSpan) statusSpan.textContent = '❌ Failed';
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'tool-error';
+                errorDiv.innerHTML = `<pre>${this.escapeHtml(event.error)}</pre>`;
+                contentDiv.appendChild(errorDiv);
+            } else if (event.result) {
+                // Tool succeeded
+                if (statusSpan) statusSpan.textContent = '✅ Completed';
+                const resultDiv = document.createElement('div');
+                resultDiv.className = 'tool-result';
+                resultDiv.innerHTML = `<pre>${this.escapeHtml(JSON.stringify(event.result, null, 2))}</pre>`;
+                contentDiv.appendChild(resultDiv);
+            } else if (event.skipped) {
+                // Tool was skipped
+                if (statusSpan) statusSpan.textContent = '⏭️ Skipped';
+                const skipDiv = document.createElement('div');
+                skipDiv.className = 'tool-skip';
+                skipDiv.textContent = event.skip_reason || 'Tool was skipped';
+                contentDiv.appendChild(skipDiv);
+            }
+            
+            this.currentToolCall = null;
+            this.scrollToBottom();
         }
     }
 
@@ -320,11 +383,51 @@ class VibeClient {
                     this.addMessage('user', msg.content);
                 } else if (msg.role === 'assistant') {
                     this.addMessage('assistant', msg.content);
+                    
+                    // Display tool calls if present
+                    if (msg.tool_calls && msg.tool_calls.length > 0) {
+                        for (const toolCall of msg.tool_calls) {
+                            this.addHistoricalToolCall(toolCall);
+                        }
+                    }
                 }
             }
         } catch (error) {
             console.error('Failed to load history:', error);
         }
+    }
+
+    addHistoricalToolCall(toolCall) {
+        // Add a historical tool call to the message list
+        const toolCallDiv = document.createElement('div');
+        toolCallDiv.className = 'message tool-call';
+        
+        // Build args display
+        let argsHtml = '';
+        if (toolCall.arguments) {
+            try {
+                // arguments might be a string or object
+                const argsObj = typeof toolCall.arguments === 'string' 
+                    ? JSON.parse(toolCall.arguments) 
+                    : toolCall.arguments;
+                argsHtml = `<pre class="tool-args">${this.escapeHtml(JSON.stringify(argsObj, null, 2))}</pre>`;
+            } catch (e) {
+                argsHtml = `<pre class="tool-args">${this.escapeHtml(String(toolCall.arguments))}</pre>`;
+            }
+        }
+        
+        toolCallDiv.innerHTML = `
+            <div class="content">
+                <div class="tool-header">
+                    <span class="tool-icon">🔧</span>
+                    <span class="tool-name">${this.escapeHtml(toolCall.name)}</span>
+                    <span class="tool-status">✅ Completed</span>
+                </div>
+                ${argsHtml}
+            </div>
+        `;
+        this.elements.messages.appendChild(toolCallDiv);
+        this.scrollToBottom();
     }
 }
 
