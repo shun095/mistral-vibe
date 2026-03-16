@@ -224,6 +224,40 @@ def create_app(
 
         return JSONResponse({"messages": messages})
 
+    @app.get("/api/status")
+    def get_status(token: str = Security(verify_token)) -> JSONResponse:
+        """Get the current agent status.
+
+        Args:
+            token: Authentication token.
+
+        Returns:
+            Agent status including whether it's running.
+        """
+        tui_app = getattr(app.state, "tui_app", None)
+        if tui_app is None:
+            return JSONResponse({"running": False})
+
+        running = tui_app.is_agent_running()
+        return JSONResponse({"running": running})
+
+    @app.post("/api/interrupt")
+    def interrupt_agent(token: str = Security(verify_token)) -> JSONResponse:
+        """Request an interrupt of the current agent operation.
+
+        Args:
+            token: Authentication token.
+
+        Returns:
+            Status of the interrupt request.
+        """
+        tui_app = getattr(app.state, "tui_app", None)
+        if tui_app is None:
+            return JSONResponse({"success": False, "error": "No TUI app available"})
+
+        tui_app.request_interrupt_from_web()
+        return JSONResponse({"success": True})
+
     @app.websocket("/ws")
     async def websocket_endpoint(
         websocket: WebSocket,

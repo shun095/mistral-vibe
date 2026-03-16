@@ -14,12 +14,16 @@ class VibeClient {
         this.currentReasoningMessage = null;
         this.currentAssistantMessage = null;
         this.currentToolCall = null;
+        this.isProcessing = false;
+        this.statusPollInterval = null;
 
         this.elements = {
             status: document.getElementById('status'),
             messages: document.getElementById('messages'),
             input: document.getElementById('message-input'),
             sendBtn: document.getElementById('send-btn'),
+            interruptBtn: document.getElementById('interrupt-btn'),
+            processingIndicator: document.getElementById('processing-indicator'),
         };
 
         this.init();
@@ -30,15 +34,10 @@ class VibeClient {
         return params.get('token') || '';
     }
 
-    init() {
-        this.bindEvents();
-        this.connect();
-        // Load history after connection is established
-        this.loadHistory();
-    }
-
     bindEvents() {
         this.elements.sendBtn.addEventListener('click', () => this.sendMessage());
+        
+        this.elements.interruptBtn.addEventListener('click', () => this.requestInterrupt());
         
         this.elements.input.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -50,6 +49,79 @@ class VibeClient {
         this.elements.input.addEventListener('input', () => {
             this.elements.sendBtn.disabled = !this.elements.input.value.trim();
         });
+    }
+
+    init() {
+        this.bindEvents();
+        this.connect();
+        // Start polling for agent status
+        this.startStatusPolling();
+        // Load history after connection is established
+        this.loadHistory();
+    }
+
+    startStatusPolling() {
+        // Poll status every 500ms
+        this.statusPollInterval = setInterval(() => this.pollStatus(), 500);
+    }
+
+    async pollStatus() {
+        try {
+            const response = await fetch('/api/status', {
+                headers: {
+                    'Authorization': `Bearer ${this.token}`
+                }
+            });
+            if (!response.ok) {
+                return;
+            }
+
+            const data = await response.json();
+            this.updateProcessingState(data.running);
+        } catch (error) {
+            console.error('Failed to poll status:', error);
+        }
+    }
+
+    updateProcessingState(isRunning) {
+        if (isRunning === this.isProcessing) {
+            return;
+        }
+
+        this.isProcessing = isRunning;
+
+        if (isRunning) {
+            // Show processing indicator and interrupt button
+            this.elements.processingIndicator.style.display = 'flex';
+            this.elements.interruptBtn.style.display = 'inline-flex';
+            this.elements.sendBtn.style.display = 'none';
+            this.elements.input.disabled = true;
+        } else {
+            // Hide processing indicator and interrupt button
+            this.elements.processingIndicator.style.display = 'none';
+            this.elements.interruptBtn.style.display = 'none';
+            this.elements.sendBtn.style.display = 'inline-block';
+            this.elements.input.disabled = false;
+        }
+    }
+
+    async requestInterrupt() {
+        try {
+            const response = await fetch('/api/interrupt', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            if (response.ok) {
+                // Add a visual feedback message
+                this.addMessage('system', '⏹️ Interrupt requested...');
+            }
+        } catch (error) {
+            console.error('Failed to request interrupt:', error);
+            this.addMessage('system', '❌ Failed to request interrupt');
+        }
     }
 
     connect() {

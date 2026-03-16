@@ -732,8 +732,35 @@ class VibeApp(App):  # noqa: PLR0904
         # Store message for processing in TUI event loop
         self._web_message_queue.append(message)
 
+    def is_agent_running(self) -> bool:
+        """Check if the agent is currently running/processing.
+
+        Returns:
+            True if the agent is running, False otherwise.
+        """
+        return self._agent_running
+
+    def request_interrupt_from_web(self) -> None:
+        """Request an interrupt from the web UI.
+
+        This method is called from the web server thread and schedules
+        the interrupt in the TUI's event loop.
+        """
+        # Only process interrupts if TUI is ready
+        if not self._tui_ready:
+            return
+
+        # Set the interrupt flag - this will be checked by the TUI
+        self._interrupt_requested = True
+
     async def _process_web_messages(self) -> None:
-        """Process messages from the web UI queue."""
+        """Process messages from the web UI queue and interrupt requests."""
+        # Process interrupt requests first
+        if self._interrupt_requested and self._agent_running:
+            await self._interrupt_agent_loop()
+            return
+        
+        # Process queued messages
         while self._web_message_queue:
             message = self._web_message_queue.pop(0)
             await self._handle_user_message(message)
@@ -985,10 +1012,11 @@ class VibeApp(App):  # noqa: PLR0904
         return TeleportPushResponseEvent(approved=ok)
 
     async def _interrupt_agent_loop(self) -> None:
-        if not self._agent_running or self._interrupt_requested:
+        if not self._agent_running:
             return
 
-        self._interrupt_requested = True
+        # Don't set _interrupt_requested here - it's set by the caller
+        # (request_interrupt_from_web or Escape key handler)
 
         if self._agent_task and not self._agent_task.done():
             self._agent_task.cancel()

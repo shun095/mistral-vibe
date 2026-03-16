@@ -240,3 +240,61 @@ body {
     background-color: #0f3460;
     cursor: not-allowed;
 }
+
+/* Processing Indicator */
+.processing-indicator {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background-color: #16213e;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    color: #4ecca3;
+    font-size: 0.9rem;
+}
+
+.processing-spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid #1a1a2e;
+    border-top-color: #4ecca3;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Interrupt Button */
+.interrupt-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 24px;
+    background-color: #e94560;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: background-color 0.2s;
+}
+
+.interrupt-btn:hover {
+    background-color: #ff6b6b;
+}
+
+.interrupt-btn span {
+    font-size: 1.1rem;
+}
+
+/* Disabled input */
+#message-input:disabled {
+    background-color: #1a1a2e;
+    color: #666;
+    cursor: not-allowed;
+}
