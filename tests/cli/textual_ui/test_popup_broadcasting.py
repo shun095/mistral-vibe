@@ -171,8 +171,10 @@ class TestWebResponseHandlers:
         try:
             # Create mock app with pending approval
             app = MagicMock(spec=VibeApp)
-            app._pending_approval = loop.create_future()
+            future = loop.create_future()
+            app._pending_approval = future
             app._pending_approval_id = "approval_123"
+            app._pending_approval_tool = "bash"
 
             # Call the handler
             VibeApp.handle_web_approval_response(
@@ -183,11 +185,16 @@ class TestWebResponseHandlers:
             )
 
             # Verify future was set (not cancelled)
-            assert not app._pending_approval.cancelled()
-            assert app._pending_approval.done()
-            result = app._pending_approval.result()
+            assert not future.cancelled()
+            assert future.done()
+            result = future.result()
             assert result[0] == ApprovalResponse.YES
             assert result[1] == "Approved via web"
+            
+            # Verify cleanup happened
+            assert app._pending_approval is None
+            assert app._pending_approval_id is None
+            assert app._pending_approval_tool is None
         finally:
             loop.close()
 
@@ -256,5 +263,115 @@ class TestWebResponseHandlers:
             assert len(result.answers) == 1
             assert result.answers[0].answer == "Alice"
             assert result.cancelled is False
+        finally:
+            loop.close()
+
+    def test_handle_web_approval_response_session_type(self) -> None:
+        """Test that 'session' approval_type sets tool permission for session."""
+        from vibe.cli.textual_ui.app import VibeApp
+        from vibe.core.types import ApprovalResponse
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        try:
+            app = MagicMock(spec=VibeApp)
+            future = loop.create_future()
+            app._pending_approval = future
+            app._pending_approval_id = "approval_123"
+            app._pending_approval_tool = "bash"
+            app._set_tool_permission_always = MagicMock()
+            app.call_later = MagicMock()
+
+            VibeApp.handle_web_approval_response(
+                app,
+                popup_id="approval_123",
+                response=ApprovalResponse.YES,
+                feedback="Approved",
+                approval_type="session",
+            )
+
+            # Verify tool permission was set for session
+            app._set_tool_permission_always.assert_called_once_with(
+                "bash", save_permanently=False
+            )
+            assert future.done()
+            
+            # Verify cleanup happened
+            assert app._pending_approval is None
+            assert app._pending_approval_id is None
+            assert app._pending_approval_tool is None
+        finally:
+            loop.close()
+
+    def test_handle_web_approval_response_auto_approve_type(self) -> None:
+        """Test that 'auto-approve' approval_type switches agent to auto-approve mode."""
+        from vibe.cli.textual_ui.app import VibeApp
+        from vibe.core.types import ApprovalResponse
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        try:
+            app = MagicMock(spec=VibeApp)
+            future = loop.create_future()
+            app._pending_approval = future
+            app._pending_approval_id = "approval_123"
+            app._pending_approval_tool = "bash"
+            app.agent_loop = MagicMock()
+            app.call_later = MagicMock()
+
+            VibeApp.handle_web_approval_response(
+                app,
+                popup_id="approval_123",
+                response=ApprovalResponse.YES,
+                feedback="Approved",
+                approval_type="auto-approve",
+            )
+
+            # Verify call_later was called to switch agent
+            assert app.call_later.called
+            assert future.done()
+            
+            # Verify cleanup happened
+            assert app._pending_approval is None
+            assert app._pending_approval_id is None
+            assert app._pending_approval_tool is None
+        finally:
+            loop.close()
+
+    def test_handle_web_approval_response_once_type_default(self) -> None:
+        """Test that 'once' approval_type (default) does not set tool permission."""
+        from vibe.cli.textual_ui.app import VibeApp
+        from vibe.core.types import ApprovalResponse
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        try:
+            app = MagicMock(spec=VibeApp)
+            future = loop.create_future()
+            app._pending_approval = future
+            app._pending_approval_id = "approval_123"
+            app._pending_approval_tool = "bash"
+            app._set_tool_permission_always = MagicMock()
+            app.call_later = MagicMock()
+
+            VibeApp.handle_web_approval_response(
+                app,
+                popup_id="approval_123",
+                response=ApprovalResponse.YES,
+                feedback="Approved",
+                approval_type="once",
+            )
+
+            # Verify tool permission was NOT set
+            app._set_tool_permission_always.assert_not_called()
+            assert future.done()
+            
+            # Verify cleanup happened
+            assert app._pending_approval is None
+            assert app._pending_approval_id is None
+            assert app._pending_approval_tool is None
         finally:
             loop.close()

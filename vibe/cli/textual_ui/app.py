@@ -7,7 +7,7 @@ from pathlib import Path
 import signal
 import subprocess
 import time
-from typing import Any, ClassVar, assert_never, cast
+from typing import Any, ClassVar, Literal, assert_never, cast
 from uuid import uuid4
 from weakref import WeakKeyDictionary
 
@@ -266,6 +266,7 @@ class VibeApp(App):  # noqa: PLR0904
         self._loading_widget: LoadingWidget | None = None
         self._pending_approval: asyncio.Future | None = None
         self._pending_approval_id: str | None = None
+        self._pending_approval_tool: str | None = None
         self._pending_question: asyncio.Future | None = None
         self._pending_question_id: str | None = None
         self._queued_message: str | None = None
@@ -854,7 +855,11 @@ class VibeApp(App):  # noqa: PLR0904
             pass
 
     def handle_web_approval_response(
-        self, popup_id: str, response: ApprovalResponse, feedback: str | None
+        self,
+        popup_id: str,
+        response: ApprovalResponse,
+        feedback: str | None,
+        approval_type: Literal["once", "session", "auto-approve"] = "once",
     ) -> None:
         """Handle approval response from web UI.
 
@@ -862,13 +867,27 @@ class VibeApp(App):  # noqa: PLR0904
             popup_id: Unique ID of the popup.
             response: Approval response (YES or NO).
             feedback: Optional feedback from user.
+            approval_type: Type of approval ('once', 'session', 'auto-approve').
         """
         if (
             self._pending_approval
             and not self._pending_approval.done()
             and self._pending_approval_id == popup_id
         ):
+            # Handle different approval types
+            if approval_type == "session" and self._pending_approval_tool:
+                # Set tool permission for this session (not permanent)
+                self._set_tool_permission_always(self._pending_approval_tool, save_permanently=False)
+            elif approval_type == "auto-approve":
+                # Switch to auto-approve mode
+                if self.agent_loop:
+                    self.call_later(lambda: self.agent_loop.switch_agent(BuiltinAgentName.AUTO_APPROVE))
+
             self._pending_approval.set_result((response, feedback))
+            # Clean up pending approval state
+            self._pending_approval = None
+            self._pending_approval_id = None
+            self._pending_approval_tool = None
             # Schedule cleanup to switch back to input
             self.call_later(self._switch_to_input_app)
 
@@ -984,6 +1003,7 @@ class VibeApp(App):  # noqa: PLR0904
         
         self._pending_approval = asyncio.Future()
         self._pending_approval_id = popup_id
+        self._pending_approval_tool = tool  # Store tool name for web response handling
         self._terminal_notifier.notify(NotificationContext.ACTION_REQUIRED)
         try:
             with paused_timer(self._loading_widget):

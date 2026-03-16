@@ -322,37 +322,42 @@ class VibeClient {
     handleApprovalOption(option) {
         if (!this.currentPopupId) return;
         
-        let response, feedback;
+        let response, feedback, approvalType;
         
         switch (option) {
             case 0: // Yes
                 response = 'y';
                 feedback = null;
+                approvalType = 'once';
                 break;
             case 1: // Yes (session)
                 response = 'y';
                 feedback = null;
+                approvalType = 'session';
                 break;
             case 2: // Auto-approve
                 response = 'y';
                 feedback = null;
+                approvalType = 'auto-approve';
                 break;
             case 3: // No
                 response = 'n';
                 feedback = 'User denied approval via web UI';
+                approvalType = 'once';
                 break;
         }
         
-        this.sendApprovalResponse(this.currentPopupId, response, feedback);
+        this.sendApprovalResponse(this.currentPopupId, response, feedback, approvalType);
         this.currentPopupId = null;
     }
 
-    sendApprovalResponse(popupId, response, feedback) {
+    sendApprovalResponse(popupId, response, feedback, approvalType = 'once') {
         this.ws.send(JSON.stringify({
             type: 'approval_response',
             popup_id: popupId,
             response: response,
-            feedback: feedback
+            feedback: feedback,
+            approval_type: approvalType
         }));
     }
 
