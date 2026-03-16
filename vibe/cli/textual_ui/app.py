@@ -252,6 +252,8 @@ class VibeApp(App):  # noqa: PLR0904
         self._agent_running = False
         self._interrupt_requested = False
         self._agent_task: asyncio.Task | None = None
+        self._tui_ready = False
+        self._web_message_queue: list[str] = []
 
         self._enhancement_running = False
         self._enhancement_task: asyncio.Task | None = None
@@ -340,6 +342,12 @@ class VibeApp(App):  # noqa: PLR0904
 
         self._chat_input_container = self.query_one(ChatInputContainer)
         context_progress = self.query_one(ContextProgress)
+
+          # Mark TUI as ready to accept messages from web UI
+        self._tui_ready = True
+
+        # Start timer to process web messages
+        self.set_interval(0.1, self._process_web_messages)
 
         def update_context_progress(stats: AgentStats) -> None:
             context_progress.tokens = TokenState(
@@ -707,6 +715,28 @@ class VibeApp(App):  # noqa: PLR0904
             self._agent_task = asyncio.create_task(
                 self._handle_agent_loop_turn(message)
             )
+
+    def submit_message_from_web(self, message: str) -> None:
+        """Submit a message from the web UI to the TUI.
+
+        This method is called from the web server thread and schedules
+        the message handling in the TUI's event loop.
+
+        Args:
+            message: The user message to submit.
+        """
+        # Only process messages if TUI is ready
+        if not self._tui_ready:
+            return
+
+        # Store message for processing in TUI event loop
+        self._web_message_queue.append(message)
+
+    async def _process_web_messages(self) -> None:
+        """Process messages from the web UI queue."""
+        while self._web_message_queue:
+            message = self._web_message_queue.pop(0)
+            await self._handle_user_message(message)
 
     def _reset_ui_state(self) -> None:
         self._windowing.reset()
@@ -1946,7 +1976,17 @@ def run_textual_ui(
     agent_loop: AgentLoop,
     initial_prompt: str | None = None,
     teleport_on_start: bool = False,
-) -> None:
+) -> VibeApp:
+    """Run the Textual UI and return the app instance.
+
+    Args:
+        agent_loop: The AgentLoop instance to use.
+        initial_prompt: Optional initial prompt to send.
+        teleport_on_start: Whether to teleport on start.
+
+    Returns:
+        The VibeApp instance.
+    """
     update_notifier = PyPIUpdateGateway(project_name="mistral-vibe")
     update_cache_repository = FileSystemUpdateCacheRepository()
     plan_offer_gateway = HttpWhoAmIGateway()
@@ -1960,3 +2000,4 @@ def run_textual_ui(
     )
     session_id = app.run()
     _print_session_resume_message(session_id)
+    return app

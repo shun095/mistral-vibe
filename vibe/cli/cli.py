@@ -204,11 +204,58 @@ def run_cli(args: argparse.Namespace) -> None:
             if loaded_session:
                 _resume_previous_session(agent_loop, *loaded_session)
 
-            run_textual_ui(
-                agent_loop=agent_loop,
-                initial_prompt=args.initial_prompt or stdin_prompt,
-                teleport_on_start=args.teleport,
-            )
+            # Start web server if --web flag is provided
+            web_server_thread = None
+            tui_app = None
+
+            if args.web:
+                import os
+                from vibe.cli.textual_ui.app import VibeApp, _print_session_resume_message
+                from vibe.cli.update_notifier import (
+                    FileSystemUpdateCacheRepository,
+                    PyPIUpdateGateway,
+                )
+                from vibe.cli.web_ui.run_server import run_web_server_in_background
+                from vibe.cli.plan_offer.adapters.http_whoami_gateway import HttpWhoAmIGateway
+
+                token = os.environ.get("VIBE_WEB_TOKEN", "")
+
+                # Create TUI app instance
+                update_notifier = PyPIUpdateGateway(project_name="mistral-vibe")
+                update_cache_repository = FileSystemUpdateCacheRepository()
+                plan_offer_gateway = HttpWhoAmIGateway()
+                tui_app = VibeApp(
+                    agent_loop=agent_loop,
+                    initial_prompt=args.initial_prompt or stdin_prompt,
+                    teleport_on_start=args.teleport,
+                    update_notifier=update_notifier,
+                    update_cache_repository=update_cache_repository,
+                    plan_offer_gateway=plan_offer_gateway,
+                )
+
+                # Start web server with TUI app (before running TUI)
+                rprint(f"\n[green]Starting Web UI on port {args.web_port}...[/]\n")
+                web_server_thread = run_web_server_in_background(
+                    port=args.web_port,
+                    token=token,
+                    agent_loop=agent_loop,
+                    tui_app=tui_app,
+                )
+                rprint(f"[green]Web UI started at http://localhost:{args.web_port}/?token={token}[/]\n")
+
+                # Run TUI (this blocks until TUI exits)
+                session_id = tui_app.run()
+                _print_session_resume_message(session_id)
+
+                # Clean up web server thread
+                web_server_thread.join(timeout=2)
+            else:
+                # Run TUI without web server
+                run_textual_ui(
+                    agent_loop=agent_loop,
+                    initial_prompt=args.initial_prompt or stdin_prompt,
+                    teleport_on_start=args.teleport,
+                )
 
     except (KeyboardInterrupt, EOFError):
         rprint("\n[dim]Bye![/]")
