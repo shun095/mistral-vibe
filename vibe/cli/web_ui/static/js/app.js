@@ -12,8 +12,11 @@ class VibeClient {
 
         // Streaming state
         this.currentReasoningMessage = null;
+        this.currentReasoningText = '';
         this.currentAssistantMessage = null;
+        this.currentAssistantText = '';
         this.currentToolCall = null;
+        this.currentToolCallId = null;
         this.isProcessing = false;
         this.statusPollInterval = null;
 
@@ -25,6 +28,8 @@ class VibeClient {
             interruptBtn: document.getElementById('interrupt-btn'),
             processingIndicator: document.getElementById('processing-indicator'),
         };
+
+        this.historyLoaded = false;
 
         this.init();
     }
@@ -39,8 +44,9 @@ class VibeClient {
         
         this.elements.interruptBtn.addEventListener('click', () => this.requestInterrupt());
         
+        // Enable Shift+Enter to submit, plain Enter for newlines
         this.elements.input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
+            if (e.key === 'Enter' && e.shiftKey) {
                 e.preventDefault();
                 this.sendMessage();
             }
@@ -48,7 +54,21 @@ class VibeClient {
 
         this.elements.input.addEventListener('input', () => {
             this.elements.sendBtn.disabled = !this.elements.input.value.trim();
+            this.autoResizeTextarea();
         });
+
+        // Auto-resize textarea based on content
+        this.elements.input.addEventListener('scroll', () => {
+            this.autoResizeTextarea();
+        });
+    }
+
+    autoResizeTextarea() {
+        const textarea = this.elements.input;
+        textarea.style.height = 'auto';
+        const scrollHeight = textarea.scrollHeight;
+        const maxHeight = 200;
+        textarea.style.height = Math.min(scrollHeight, maxHeight) + 'px';
     }
 
     init() {
@@ -56,8 +76,7 @@ class VibeClient {
         this.connect();
         // Start polling for agent status
         this.startStatusPolling();
-        // Load history after connection is established
-        this.loadHistory();
+        // History will be streamed via WebSocket after connection
     }
 
     startStatusPolling() {
@@ -184,6 +203,7 @@ class VibeClient {
         switch (message.type) {
             case 'connected':
                 this.updateStatus('Connected', true);
+                this.historyLoaded = true;
                 break;
             case 'event':
                 this.handleEvent(message.event);
@@ -240,8 +260,8 @@ class VibeClient {
     }
 
     handleToolCallEvent(event) {
-        // If we already have a pending tool call, update it instead of creating a new one
-        if (this.currentToolCall) {
+        // Check if this is the same tool call we're already tracking
+        if (this.currentToolCall && this.currentToolCallId === event.tool_call_id) {
             const contentDiv = this.currentToolCall.querySelector('.content');
             const toolNameSpan = this.currentToolCall.querySelector('.tool-name');
             
@@ -267,38 +287,17 @@ class VibeClient {
             return;
         }
         
-        // Create new tool call widget
-        const toolCallDiv = document.createElement('div');
-        toolCallDiv.className = 'message tool-call';
-        
-        // Build args display - handle both object and null cases
-        let argsHtml = '';
-        if (event.args) {
-            try {
-                argsHtml = `<pre class="tool-args">${this.escapeHtml(JSON.stringify(event.args, null, 2))}</pre>`;
-            } catch (e) {
-                argsHtml = `<pre class="tool-args">${this.escapeHtml(String(event.args))}</pre>`;
-            }
-        }
-        
-        toolCallDiv.innerHTML = `
-            <div class="content">
-                <div class="tool-header">
-                    <span class="tool-icon">🔧</span>
-                    <span class="tool-name">${this.escapeHtml(event.tool_name)}</span>
-                    <span class="tool-status">⏳ Running...</span>
-                </div>
-                ${argsHtml}
-            </div>
-        `;
+        // Create new tool call widget using createToolCallElement
+        const toolCallDiv = this.createToolCallElement(event.tool_name, event.args, '⏳ Running...');
         this.elements.messages.appendChild(toolCallDiv);
         this.currentToolCall = toolCallDiv;
+        this.currentToolCallId = event.tool_call_id;
         this.scrollToBottom();
     }
 
     handleToolResultEvent(event) {
-        // If we have a pending tool call, update it
-        if (this.currentToolCall) {
+        // Only update if this result matches the current pending tool call
+        if (this.currentToolCall && this.currentToolCallId === event.tool_call_id) {
             const statusSpan = this.currentToolCall.querySelector('.tool-status');
             const contentDiv = this.currentToolCall.querySelector('.content');
             
@@ -310,12 +309,10 @@ class VibeClient {
                 errorDiv.innerHTML = `<pre>${this.escapeHtml(event.error)}</pre>`;
                 contentDiv.appendChild(errorDiv);
             } else if (event.result) {
-                // Tool succeeded
+                // Tool succeeded - use formatted display
                 if (statusSpan) statusSpan.textContent = '✅ Completed';
-                const resultDiv = document.createElement('div');
-                resultDiv.className = 'tool-result';
-                resultDiv.innerHTML = `<pre>${this.escapeHtml(JSON.stringify(event.result, null, 2))}</pre>`;
-                contentDiv.appendChild(resultDiv);
+                const resultCard = this.formatToolResult(event.tool_name, event.result);
+                contentDiv.appendChild(resultCard);
             } else if (event.skipped) {
                 // Tool was skipped
                 if (statusSpan) statusSpan.textContent = '⏭️ Skipped';
@@ -326,6 +323,7 @@ class VibeClient {
             }
             
             this.currentToolCall = null;
+            this.currentToolCallId = null;
             this.scrollToBottom();
         }
     }
@@ -376,21 +374,26 @@ class VibeClient {
     }
 
     appendReasoningContent(content) {
+        // Accumulate raw text
+        this.currentReasoningText += content;
+        
         if (this.currentReasoningMessage) {
             const textSpan = this.currentReasoningMessage.querySelector('.text');
             if (textSpan) {
-                textSpan.textContent += content;
+                textSpan.textContent = this.currentReasoningText;
             }
         }
     }
 
     appendAssistantContent(content) {
+        // Accumulate raw text separately
+        this.currentAssistantText += content;
+        
         if (this.currentAssistantMessage) {
             const contentDiv = this.currentAssistantMessage.querySelector('.content');
             if (contentDiv) {
-                // Store raw text, render markdown
-                contentDiv.textContent += content;
-                this.renderMarkdown(contentDiv);
+                // Render markdown from accumulated text
+                this.renderMarkdownFromText(contentDiv, this.currentAssistantText);
             }
         }
     }
@@ -400,9 +403,11 @@ class VibeClient {
         this.currentReasoningMessage = null;
     }
 
-    stopStreaming() {
+   stopStreaming() {
         this.currentReasoningMessage = null;
+        this.currentReasoningText = '';
         this.currentAssistantMessage = null;
+        this.currentAssistantText = '';
     }
 
     addMessage(type, content) {
@@ -437,12 +442,27 @@ class VibeClient {
         return div.innerHTML;
     }
 
-    scrollToBottom() {
+     scrollToBottom() {
         this.elements.messages.scrollTop = this.elements.messages.scrollHeight;
     }
 
     renderMarkdown(element) {
         const text = element.textContent;
+        if (!text.trim()) {
+            return;
+        }
+        
+        // Use marked.js to parse markdown
+        const html = marked.parse(text);
+        element.innerHTML = html;
+        
+        // Apply syntax highlighting to code blocks
+        element.querySelectorAll('pre code').forEach((block) => {
+            hljs.highlightElement(block);
+        });
+    }
+
+    renderMarkdownFromText(element, text) {
         if (!text.trim()) {
             return;
         }
@@ -481,92 +501,421 @@ class VibeClient {
         }
     }
 
-    async loadHistory() {
-        if (this.historyLoaded) {
-            return;
-        }
-
-        try {
-            const response = await fetch('/api/history', {
-                headers: {
-                    'Authorization': `Bearer ${this.token}`
-                }
-            });
-            if (!response.ok) {
-                return;
-            }
-
-            const data = await response.json();
-            this.historyLoaded = true;
-
-            // Clear welcome message
-            this.elements.messages.innerHTML = '';
-
-            // Display historical messages
-            for (const msg of data.messages) {
-                if (msg.role === 'user') {
-                    this.addMessage('user', msg.content);
-                } else if (msg.role === 'assistant') {
-                    this.addMessage('assistant', msg.content);
-                    
-                    // Display tool calls if present
-                    if (msg.tool_calls && msg.tool_calls.length > 0) {
-                        for (const toolCall of msg.tool_calls) {
-                            this.addHistoricalToolCall(toolCall);
-                        }
-                    }
-                }
-            }
-        } catch (error) {
-            console.error('Failed to load history:', error);
-        }
-    }
-
-    addHistoricalToolCall(toolCall) {
-        // Add a historical tool call to the message list
+    // Create a tool call element (used for both streaming and historical)
+    createToolCallElement(toolName, args, statusText) {
         const toolCallDiv = document.createElement('div');
         toolCallDiv.className = 'message tool-call';
         
-        // Build args display
-        let argsHtml = '';
-        if (toolCall.arguments) {
-            try {
-                // arguments might be a string or object
-                const argsObj = typeof toolCall.arguments === 'string' 
-                    ? JSON.parse(toolCall.arguments) 
-                    : toolCall.arguments;
-                argsHtml = `<pre class="tool-args">${this.escapeHtml(JSON.stringify(argsObj, null, 2))}</pre>`;
-            } catch (e) {
-                argsHtml = `<pre class="tool-args">${this.escapeHtml(String(toolCall.arguments))}</pre>`;
-            }
-        }
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'content';
         
-        // Build result display if available
-        let resultHtml = '';
-        if (toolCall.result) {
-            const resultContent = toolCall.result.result;
-            if (resultContent) {
-                try {
-                    resultHtml = `<pre class="tool-result">${this.escapeHtml(JSON.stringify(JSON.parse(resultContent), null, 2))}</pre>`;
-                } catch (e) {
-                    resultHtml = `<pre class="tool-result">${this.escapeHtml(String(resultContent))}</pre>`;
-                }
-            }
-        }
-        
-        toolCallDiv.innerHTML = `
-            <div class="content">
-                <div class="tool-header">
-                    <span class="tool-icon">🔧</span>
-                    <span class="tool-name">${this.escapeHtml(toolCall.name)}</span>
-                    <span class="tool-status">✅ Completed</span>
-                </div>
-                ${argsHtml}
-                ${resultHtml}
-            </div>
+        // Build tool header
+        const headerDiv = document.createElement('div');
+        headerDiv.className = 'tool-header';
+        headerDiv.innerHTML = `
+            <span class="tool-icon">🔧</span>
+            <span class="tool-name">${this.escapeHtml(toolName)}</span>
+            <span class="tool-status">${this.escapeHtml(statusText)}</span>
         `;
-        this.elements.messages.appendChild(toolCallDiv);
-        this.scrollToBottom();
+        contentDiv.appendChild(headerDiv);
+        
+        // Build args display if available
+        if (args) {
+            try {
+                const argsPre = document.createElement('pre');
+                argsPre.className = 'tool-args';
+                argsPre.textContent = JSON.stringify(args, null, 2);
+                contentDiv.appendChild(argsPre);
+            } catch (e) {
+                const argsPre = document.createElement('pre');
+                argsPre.className = 'tool-args';
+                argsPre.textContent = String(args);
+                contentDiv.appendChild(argsPre);
+            }
+        }
+        
+        toolCallDiv.appendChild(contentDiv);
+        return toolCallDiv;
+    }
+
+    // Format tool result based on tool name
+    formatToolResult(toolName, result) {
+        const card = document.createElement('div');
+        card.className = 'tool-result-card';
+        
+        switch (toolName) {
+            case 'bash':
+                return this.formatBashResult(card, result);
+            case 'websearch':
+                return this.formatWebSearchResult(card, result);
+            case 'webfetch':
+                return this.formatWebFetchResult(card, result);
+            case 'grep':
+                return this.formatGrepResult(card, result);
+            case 'read_file':
+                return this.formatReadFileResult(card, result);
+            case 'edit_file':
+                return this.formatEditFileResult(card, result);
+            case 'lsp':
+                return this.formatLspResult(card, result);
+            case 'todo':
+                return this.formatTodoResult(card, result);
+            case 'ask_user_question':
+                return this.formatAskUserQuestionResult(card, result);
+            default:
+                return this.formatGenericResult(card, result);
+        }
+    }
+
+    createCardHeader(card, title, icon, summary) {
+        const header = document.createElement('div');
+        header.className = 'card-header';
+        header.innerHTML = `
+            <div class="card-title">
+                <span class="card-icon">${icon}</span>
+                <span>${this.escapeHtml(title)}</span>
+            </div>
+            <span class="card-toggle">▼</span>
+        `;
+        
+        // Add collapse functionality
+        header.addEventListener('click', () => {
+            card.classList.toggle('collapsed');
+        });
+        
+        const content = document.createElement('div');
+        content.className = 'card-content';
+        
+        if (summary) {
+            const summaryPre = document.createElement('pre');
+            summaryPre.textContent = summary;
+            content.appendChild(summaryPre);
+        }
+        
+        card.appendChild(header);
+        card.appendChild(content);
+        return card;
+    }
+
+    formatBashResult(card, result) {
+        const returncode = result.returncode || 0;
+        const isSuccess = returncode === 0;
+        
+        const headerTitle = `bash: ${result.command || 'command'}`;
+        const headerIcon = isSuccess ? '✅' : '❌';
+        const summary = `Return code: ${returncode}`;
+        
+        this.createCardHeader(card, headerTitle, headerIcon, summary);
+        const content = card.querySelector('.card-content');
+        
+        // Add stdout if present
+        if (result.stdout) {
+            const stdoutSection = document.createElement('div');
+            stdoutSection.className = 'bash-output-section stdout';
+            stdoutSection.innerHTML = `
+                <div class="output-label">STDOUT</div>
+                <div class="output-content"><pre>${this.escapeHtml(result.stdout)}</pre></div>
+            `;
+            content.appendChild(stdoutSection);
+        }
+        
+        // Add stderr if present
+        if (result.stderr) {
+            const stderrSection = document.createElement('div');
+            stderrSection.className = 'bash-output-section stderr';
+            stderrSection.innerHTML = `
+                <div class="output-label">STDERR</div>
+                <div class="output-content"><pre>${this.escapeHtml(result.stderr)}</pre></div>
+            `;
+            content.appendChild(stderrSection);
+        }
+        
+        // Add return code badge
+        const returncodeBadge = document.createElement('div');
+        returncodeBadge.className = `bash-returncode ${isSuccess ? 'success' : 'failure'}`;
+        returncodeBadge.textContent = `Return code: ${returncode}`;
+        content.appendChild(returncodeBadge);
+        
+        return card;
+    }
+
+    formatWebSearchResult(card, result) {
+        const sourceCount = result.sources?.length || 0;
+        const headerTitle = `Web search: ${result.answer?.substring(0, 50) || 'search'}...`;
+        const headerIcon = '🔍';
+        const summary = `${sourceCount} sources found`;
+        
+        this.createCardHeader(card, headerTitle, headerIcon, summary);
+        const content = card.querySelector('.card-content');
+        
+        // Add answer
+        if (result.answer) {
+            const answerPre = document.createElement('pre');
+            answerPre.textContent = result.answer;
+            content.appendChild(answerPre);
+        }
+        
+        // Add sources as list
+        if (result.sources && result.sources.length > 0) {
+            const sourcesDiv = document.createElement('div');
+            sourcesDiv.style.marginTop = '12px';
+            
+            result.sources.forEach(source => {
+                const sourceItem = document.createElement('div');
+                sourceItem.className = 'search-source-item';
+                sourceItem.innerHTML = `
+                    <div class="source-title">${this.escapeHtml(source.title)}</div>
+                    <div class="source-url">${this.escapeHtml(source.url)}</div>
+                `;
+                sourcesDiv.appendChild(sourceItem);
+            });
+            
+            content.appendChild(sourcesDiv);
+        }
+        
+        return card;
+    }
+
+    formatWebFetchResult(card, result) {
+        const headerTitle = `Fetch: ${result.url || 'URL'}`;
+        const headerIcon = '📄';
+        const linesRead = result.lines_read || 0;
+        const totalLines = result.total_lines || 0;
+        const wasTruncated = result.was_truncated ? ' (truncated)' : '';
+        const summary = `Fetched ${linesRead}/${totalLines} lines${wasTruncated}`;
+        
+        this.createCardHeader(card, headerTitle, headerIcon, summary);
+        const content = card.querySelector('.card-content');
+        
+        // Add content preview (first 100 lines)
+        if (result.content) {
+            const previewLines = result.content.split('\n').slice(0, 100);
+            const previewPre = document.createElement('pre');
+            previewPre.textContent = previewLines.join('\n');
+            content.appendChild(previewPre);
+            
+            if (result.content.split('\n').length > 100) {
+                const moreDiv = document.createElement('div');
+                moreDiv.style.padding = '8px 12px';
+                moreDiv.style.color = '#a0a0a0';
+                moreDiv.style.fontStyle = 'italic';
+                moreDiv.textContent = `... and ${result.content.split('\n').length - 100} more lines`;
+                content.appendChild(moreDiv);
+            }
+        }
+        
+        return card;
+    }
+
+    formatGrepResult(card, result) {
+        const headerTitle = `Grep: ${result.pattern || 'pattern'}`;
+        const headerIcon = '🔎';
+        const matchCount = result.match_count || 0;
+        const wasTruncated = result.was_truncated ? ' (truncated)' : '';
+        const summary = `${matchCount} matches found${wasTruncated}`;
+        
+        this.createCardHeader(card, headerTitle, headerIcon, summary);
+        const content = card.querySelector('.card-content');
+        
+        // Add matches
+        if (result.matches) {
+            const matchesPre = document.createElement('pre');
+            matchesPre.textContent = result.matches;
+            content.appendChild(matchesPre);
+        }
+        
+        return card;
+    }
+
+    formatReadFileResult(card, result) {
+        const headerTitle = `Read: ${result.path || 'file'}`;
+        const headerIcon = '📖';
+        const linesRead = result.lines_read || 0;
+        const wasTruncated = result.was_truncated ? ' (truncated)' : '';
+        const summary = `Read ${linesRead} lines${wasTruncated}`;
+        
+        this.createCardHeader(card, headerTitle, headerIcon, summary);
+        const content = card.querySelector('.card-content');
+        
+        // Add content preview (first 100 lines)
+        if (result.content) {
+            const previewLines = result.content.split('\n').slice(0, 100);
+            const previewPre = document.createElement('pre');
+            previewPre.textContent = previewLines.join('\n');
+            content.appendChild(previewPre);
+            
+            if (result.content.split('\n').length > 100) {
+                const moreDiv = document.createElement('div');
+                moreDiv.style.padding = '8px 12px';
+                moreDiv.style.color = '#a0a0a0';
+                moreDiv.style.fontStyle = 'italic';
+                moreDiv.textContent = `... and ${result.content.split('\n').length - 100} more lines`;
+                content.appendChild(moreDiv);
+            }
+        }
+        
+        // Add LSP diagnostics if present
+        if (result.lsp_diagnostics) {
+            const diagnosticsDiv = document.createElement('div');
+            diagnosticsDiv.style.marginTop = '12px';
+            diagnosticsDiv.style.padding = '8px 12px';
+            diagnosticsDiv.style.backgroundColor = '#3a2a1a';
+            diagnosticsDiv.style.borderRadius = '4px';
+            diagnosticsDiv.innerHTML = `
+                <div style="font-weight: 600; color: #f0ad4e; margin-bottom: 4px;">LSP Diagnostics</div>
+                <pre style="margin: 0; font-size: 0.85rem;">${this.escapeHtml(result.lsp_diagnostics)}</pre>
+            `;
+            content.appendChild(diagnosticsDiv);
+        }
+        
+        return card;
+    }
+
+    formatEditFileResult(card, result) {
+        const headerTitle = `Edit: ${result.file || 'file'}`;
+        const headerIcon = '✏️';
+        const blocksApplied = result.blocks_applied || 0;
+        const linesChanged = result.lines_changed || 0;
+        const summary = `${blocksApplied} block(s) applied, ${linesChanged} line(s) changed`;
+        
+        this.createCardHeader(card, headerTitle, headerIcon, summary);
+        const content = card.querySelector('.card-content');
+        
+        // Add warnings if present
+        if (result.warnings && result.warnings.length > 0) {
+            const warningsDiv = document.createElement('div');
+            warningsDiv.style.padding = '8px 12px';
+            warningsDiv.style.backgroundColor = '#3a2a1a';
+            warningsDiv.style.borderRadius = '4px';
+            warningsDiv.style.marginBottom = '8px';
+            warningsDiv.innerHTML = `
+                <div style="font-weight: 600; color: #f0ad4e; margin-bottom: 4px;">Warnings</div>
+                <ul style="margin: 0; padding-left: 20px; font-size: 0.85rem;">
+                    ${result.warnings.map(w => `<li>${this.escapeHtml(w)}</li>`).join('')}
+                </ul>
+            `;
+            content.appendChild(warningsDiv);
+        }
+        
+        // Add content preview
+        if (result.content) {
+            const previewLines = result.content.split('\n').slice(0, 50);
+            const previewPre = document.createElement('pre');
+            previewPre.textContent = previewLines.join('\n');
+            content.appendChild(previewPre);
+            
+            if (result.content.split('\n').length > 50) {
+                const moreDiv = document.createElement('div');
+                moreDiv.style.padding = '8px 12px';
+                moreDiv.style.color = '#a0a0a0';
+                moreDiv.style.fontStyle = 'italic';
+                moreDiv.textContent = `... and ${result.content.split('\n').length - 50} more lines`;
+                content.appendChild(moreDiv);
+            }
+        }
+        
+        return card;
+    }
+
+    formatLspResult(card, result) {
+        const diagnostics = result.diagnostics || [];
+        const errors = diagnostics.filter(d => d.severity === 1).length;
+        const warnings = diagnostics.filter(d => d.severity === 2).length;
+        
+        let headerTitle = 'LSP Diagnostics';
+        let headerIcon = errors > 0 ? '❌' : (warnings > 0 ? '⚠️' : '✅');
+        let summary = '';
+        
+        if (errors === 0 && warnings === 0) {
+            summary = 'No issues found';
+        } else {
+            summary = `${errors} error(s), ${warnings} warning(s)`;
+        }
+        
+        this.createCardHeader(card, headerTitle, headerIcon, summary);
+        const content = card.querySelector('.card-content');
+        
+        // Add formatted diagnostics
+        if (result.formatted_output) {
+            const outputPre = document.createElement('pre');
+            outputPre.textContent = result.formatted_output;
+            content.appendChild(outputPre);
+        }
+        
+        return card;
+    }
+
+    formatTodoResult(card, result) {
+        const total = result.total_count || 0;
+        const headerTitle = 'Todo List';
+        const headerIcon = '✅';
+        const summary = `${total} total tasks`;
+        
+        this.createCardHeader(card, headerTitle, headerIcon, summary);
+        const content = card.querySelector('.card-content');
+        
+        // Add todos as table
+        if (result.todos && result.todos.length > 0) {
+            const table = document.createElement('table');
+            table.className = 'tool-table';
+            table.innerHTML = `
+                <thead>
+                    <tr>
+                        <th>Status</th>
+                        <th>Priority</th>
+                        <th>Content</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${result.todos.map(todo => `
+                        <tr>
+                            <td>${this.escapeHtml(todo.status || 'pending')}</td>
+                            <td>${this.escapeHtml(todo.priority || 'medium')}</td>
+                            <td>${this.escapeHtml(todo.content || '')}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            `;
+            content.appendChild(table);
+        }
+        
+        return card;
+    }
+
+    formatAskUserQuestionResult(card, result) {
+        const answerCount = result.answers?.length || 0;
+        const cancelled = result.cancelled ? ' (cancelled)' : '';
+        const headerTitle = 'User Answers';
+        const headerIcon = '💬';
+        const summary = `${answerCount} answer(s)${cancelled}`;
+        
+        this.createCardHeader(card, headerTitle, headerIcon, summary);
+        const content = card.querySelector('.card-content');
+        
+        // Add answers
+        if (result.answers && result.answers.length > 0) {
+            result.answers.forEach(answer => {
+                const answerItem = document.createElement('div');
+                answerItem.className = 'answer-item';
+                answerItem.innerHTML = `
+                    <div class="answer-question">${this.escapeHtml(answer.question)}</div>
+                    <div class="answer-text">${this.escapeHtml(answer.answer)}</div>
+                    ${answer.is_other ? '<div class="answer-other">(Custom answer)</div>' : ''}
+                `;
+                content.appendChild(answerItem);
+            });
+        }
+        
+        return card;
+    }
+
+    formatGenericResult(card, result) {
+        const headerTitle = 'Result';
+        const headerIcon = '📊';
+        const summary = JSON.stringify(result, null, 2);
+        
+        this.createCardHeader(card, headerTitle, headerIcon, summary);
+        return card;
     }
 }
 

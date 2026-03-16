@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, HTTPException, Security, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -100,6 +101,165 @@ async def broadcast_to_clients(app: FastAPI, message: str) -> None:
             clients.discard(websocket)
 
 
+def _create_pydantic_model_from_dict(data: dict) -> Any:
+    """Create a Pydantic model from a dictionary with extra fields allowed.
+
+    Args:
+        data: Dictionary to convert to a Pydantic model.
+
+    Returns:
+        A Pydantic model instance with the data.
+    """
+    from pydantic import BaseModel
+
+    class DynamicModel(BaseModel):
+        model_config = {"extra": "allow"}
+
+    return DynamicModel(**data)
+
+
+def messages_to_events(messages, tool_manager) -> list[BaseEvent]:
+    """Convert a list of LLMMessage objects to equivalent BaseEvent objects.
+
+    This function iterates through the message history and generates the
+    corresponding events that would have been emitted during normal processing.
+
+    Args:
+        messages: List of LLMMessage objects from agent_loop.messages.
+        tool_manager: The ToolManager to look up tool classes.
+
+    Returns:
+        List of BaseEvent objects in chronological order.
+    """
+    from vibe.core.types import (
+        UserMessageEvent,
+        AssistantEvent,
+        ReasoningEvent,
+        ToolCallEvent,
+        ToolResultEvent,
+        Role,
+    )
+
+    events: list[BaseEvent] = []
+
+    # Build a map of tool_call_id -> tool_name from assistant messages
+    tool_call_to_name: dict[str, str] = {}
+    for msg in messages:
+        if msg.role == Role.assistant and msg.tool_calls:
+            for tc in msg.tool_calls:
+                if tc.id:
+                    tool_call_to_name[tc.id] = tc.function.name
+
+    for msg in messages:
+        # Skip system messages
+        if msg.role == Role.system:
+            continue
+
+        # User messages
+        if msg.role == Role.user:
+            user_content = msg.content if isinstance(msg.content, str) else ""
+            events.append(
+                UserMessageEvent(
+                    content=user_content,
+                    message_id=msg.message_id or "",
+                )
+            )
+
+        # Assistant messages
+        elif msg.role == Role.assistant:
+            # Add reasoning content if present
+            if msg.reasoning_content:
+                reasoning_content = msg.reasoning_content if isinstance(msg.reasoning_content, str) else ""
+                events.append(
+                    ReasoningEvent(
+                        content=reasoning_content,
+                        message_id=msg.message_id,
+                    )
+                )
+
+            # Add assistant content if present
+            if msg.content and isinstance(msg.content, str):
+                events.append(
+                    AssistantEvent(
+                        content=msg.content,
+                        message_id=msg.message_id,
+                    )
+                )
+
+            # Add tool call events if present
+            if msg.tool_calls:
+                for tc in msg.tool_calls:
+                    tool_name = tc.function.name
+                    tool_class = None
+
+                    # Look up the tool class from tool_manager
+                    try:
+                        tool_instance = tool_manager.get(tool_name)
+                        tool_class = type(tool_instance)
+                    except Exception:
+                        pass
+
+                    # Parse arguments if they're a string
+                    args = tc.function.arguments
+                    args_model: Any = None
+                    if isinstance(args, str):
+                        try:
+                            args_dict = json.loads(args)
+                            args_model = _create_pydantic_model_from_dict(args_dict)
+                        except (json.JSONDecodeError, ValueError):
+                            pass
+                    elif isinstance(args, dict):
+                        args_model = _create_pydantic_model_from_dict(args)
+
+                    # Send tool call event with args if available
+                    events.append(
+                        ToolCallEvent(
+                            tool_call_id=tc.id or "",
+                            tool_name=tool_name,
+                            tool_class=tool_class if tool_class else type(tool_manager),
+                            args=args_model,
+                            tool_call_index=tc.index,
+                        )
+                    )
+
+        # Tool messages (results)
+        elif msg.role == Role.tool and msg.tool_call_id:
+            # Get the tool name from the map
+            tool_name = tool_call_to_name.get(msg.tool_call_id, "")
+
+            # Parse the result content
+            result_obj: dict | None = None
+
+            try:
+                result_obj = json.loads(msg.content or "{}")
+            except (json.JSONDecodeError, ValueError):
+                # Fall back to text format parsing
+                for line in (msg.content or "").strip().split("\n"):
+                    if ": " in line:
+                        key, value = line.split(": ", 1)
+                        if result_obj is None:
+                            result_obj = {}
+                        result_obj[key.strip()] = value.strip()
+
+            # Create a result model if we have result data
+            result_model: Any = None
+            if result_obj:
+                result_model = _create_pydantic_model_from_dict(result_obj)
+
+            events.append(
+                ToolResultEvent(
+                    tool_name=tool_name,
+                    tool_class=None,
+                    result=result_model,
+                    error=None,
+                    skipped=False,
+                    tool_call_id=msg.tool_call_id,
+                )
+            )
+
+    return events
+
+
 def create_app(
     port: int = 9092,
     token: str | None = None,
@@ -184,57 +344,6 @@ def create_app(
     def get_stats(token: str = Security(verify_token)) -> JSONResponse:
         return JSONResponse({"stats": {}})
 
-    @app.get("/api/history")
-    def get_history(token: str = Security(verify_token)) -> JSONResponse:
-        """Get conversation history from AgentLoop.
-
-        Args:
-            token: Authentication token.
-
-        Returns:
-            List of conversation messages.
-        """
-        agent_loop = getattr(app.state, "agent_loop", None)
-        if agent_loop is None:
-            return JSONResponse({"messages": []})
-
-        # Build a map of tool_call_id -> result for tool messages
-        tool_results = {}
-        for msg in agent_loop.messages:
-            if msg.role == "tool" and msg.tool_call_id:
-                tool_results[msg.tool_call_id] = {
-                    "result": msg.content,
-                    "error": None,
-                    "skipped": False,
-                }
-
-        messages = []
-        for msg in agent_loop.messages:
-            # Skip system and tool messages (tool results are attached to tool calls)
-            if msg.role in ("system", "tool"):
-                continue
-            
-            message_data = {
-                "role": msg.role,
-                "content": msg.content,
-            }
-            
-            # Include tool calls if present
-            if msg.tool_calls:
-                message_data["tool_calls"] = [
-                    {
-                        "id": tc.id,
-                        "name": tc.function.name,
-                        "arguments": tc.function.arguments,
-                        "result": tool_results.get(tc.id),
-                    }
-                    for tc in msg.tool_calls
-                ]
-            
-            messages.append(message_data)
-
-        return JSONResponse({"messages": messages})
-
     @app.get("/api/status")
     def get_status(token: str = Security(verify_token)) -> JSONResponse:
         """Get the current agent status.
@@ -294,7 +403,28 @@ def create_app(
         await websocket.accept()
         app.state.websocket_clients.add(websocket)
 
-        # Send initial connected message
+        # Stream historical events from agent_loop before sending connected message
+        agent_loop = getattr(app.state, "agent_loop", None)
+        if agent_loop is not None:
+            try:
+                # Convert messages to events
+                historical_events = messages_to_events(
+                    agent_loop.messages, agent_loop.tool_manager
+                )
+
+                # Stream each event to the client
+                for event in historical_events:
+                    serialized = serialize_event(event)
+                    message = json.dumps({"type": "event", "event": serialized})
+                    await websocket.send_text(message)
+            except (json.JSONDecodeError, TypeError, AttributeError) as e:
+                # Log specific errors but continue anyway
+                logging.debug("Error streaming history: %s", e)
+            except Exception as e:
+                # Catch any unexpected errors but don't fail the connection
+                logging.warning("Unexpected error streaming history: %s", e)
+
+        # Send connected message after history is streamed
         await websocket.send_json({"type": "connected"})
 
         try:
