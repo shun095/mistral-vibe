@@ -240,6 +240,34 @@ class VibeClient {
     }
 
     handleToolCallEvent(event) {
+        // If we already have a pending tool call, update it instead of creating a new one
+        if (this.currentToolCall) {
+            const contentDiv = this.currentToolCall.querySelector('.content');
+            const toolNameSpan = this.currentToolCall.querySelector('.tool-name');
+            
+            // Update tool name if it changed
+            if (toolNameSpan) {
+                toolNameSpan.textContent = this.escapeHtml(event.tool_name);
+            }
+            
+            // Add args if they're available now
+            if (event.args) {
+                try {
+                    const argsPre = document.createElement('pre');
+                    argsPre.className = 'tool-args';
+                    argsPre.textContent = JSON.stringify(event.args, null, 2);
+                    contentDiv.appendChild(argsPre);
+                } catch (e) {
+                    const argsDiv = document.createElement('div');
+                    argsDiv.className = 'tool-args';
+                    argsDiv.textContent = String(event.args);
+                    contentDiv.appendChild(argsDiv);
+                }
+            }
+            return;
+        }
+        
+        // Create new tool call widget
         const toolCallDiv = document.createElement('div');
         toolCallDiv.className = 'message tool-call';
         
@@ -251,9 +279,6 @@ class VibeClient {
             } catch (e) {
                 argsHtml = `<pre class="tool-args">${this.escapeHtml(String(event.args))}</pre>`;
             }
-        } else {
-            // Show command name or placeholder if no args
-            argsHtml = `<div class="tool-args">Executing tool...</div>`;
         }
         
         toolCallDiv.innerHTML = `
@@ -488,6 +513,19 @@ class VibeClient {
             }
         }
         
+        // Build result display if available
+        let resultHtml = '';
+        if (toolCall.result) {
+            const resultContent = toolCall.result.result;
+            if (resultContent) {
+                try {
+                    resultHtml = `<pre class="tool-result">${this.escapeHtml(JSON.stringify(JSON.parse(resultContent), null, 2))}</pre>`;
+                } catch (e) {
+                    resultHtml = `<pre class="tool-result">${this.escapeHtml(String(resultContent))}</pre>`;
+                }
+            }
+        }
+        
         toolCallDiv.innerHTML = `
             <div class="content">
                 <div class="tool-header">
@@ -496,6 +534,7 @@ class VibeClient {
                     <span class="tool-status">✅ Completed</span>
                 </div>
                 ${argsHtml}
+                ${resultHtml}
             </div>
         `;
         this.elements.messages.appendChild(toolCallDiv);

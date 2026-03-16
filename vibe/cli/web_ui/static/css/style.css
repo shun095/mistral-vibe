@@ -113,36 +113,46 @@ body {
     color: #eaeaea;
     border-bottom-left-radius: 4px;
     border: 1px solid #1a4a7a;
+    padding: 0;
+}
+
+.message.tool-call .content {
+    padding: 8px 12px;
+    white-space: normal;
 }
 
 .message.tool-call .tool-header {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-bottom: 12px;
-    padding-bottom: 8px;
+    gap: 6px;
+    margin-bottom: 0;
+    padding-bottom: 0;
     border-bottom: 1px solid #1a4a7a;
+    line-height: 1.2;
 }
 
 .message.tool-call .tool-icon {
     font-size: 1.2rem;
+    line-height: 1;
 }
 
 .message.tool-call .tool-name {
     font-weight: 600;
     color: #4ecca3;
+    line-height: 1;
 }
 
 .message.tool-call .tool-status {
     font-size: 0.85rem;
     color: #a0a0a0;
+    line-height: 1;
 }
 
 .message.tool-call .tool-args {
     background-color: #16213e;
-    padding: 12px;
-    border-radius: 6px;
-    margin: 8px 0;
+    padding: 8px;
+    border-radius: 4px;
+    margin: 8px 0 0 0;
     overflow-x: auto;
     font-size: 0.85rem;
     color: #b8b8b8;
@@ -150,10 +160,29 @@ body {
 
 .message.tool-call .tool-result {
     background-color: #16213e;
-    padding: 12px;
-    border-radius: 6px;
-    margin: 8px 0;
+    padding: 8px;
+    border-radius: 4px;
+    margin: 8px 0 0 0;
     overflow-x: auto;
+    font-size: 0.85rem;
+    color: #4ecca3;
+}
+
+.message.tool-call .tool-error {
+    background-color: #2a1a1a;
+    padding: 8px;
+    border-radius: 4px;
+    margin: 8px 0 0 0;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    color: #e94560;
+}
+
+.message.tool-call .tool-skip {
+    background-color: #1a2a1a;
+    padding: 8px;
+    border-radius: 4px;
+    margin: 8px 0 0 0;
     font-size: 0.85rem;
     color: #4ecca3;
 }

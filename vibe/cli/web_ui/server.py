@@ -198,10 +198,20 @@ def create_app(
         if agent_loop is None:
             return JSONResponse({"messages": []})
 
+        # Build a map of tool_call_id -> result for tool messages
+        tool_results = {}
+        for msg in agent_loop.messages:
+            if msg.role == "tool" and msg.tool_call_id:
+                tool_results[msg.tool_call_id] = {
+                    "result": msg.content,
+                    "error": None,
+                    "skipped": False,
+                }
+
         messages = []
         for msg in agent_loop.messages:
-            # Skip system messages
-            if msg.role == "system":
+            # Skip system and tool messages (tool results are attached to tool calls)
+            if msg.role in ("system", "tool"):
                 continue
             
             message_data = {
@@ -216,6 +226,7 @@ def create_app(
                         "id": tc.id,
                         "name": tc.function.name,
                         "arguments": tc.function.arguments,
+                        "result": tool_results.get(tc.id),
                     }
                     for tc in msg.tool_calls
                 ]
