@@ -155,6 +155,7 @@ class AgentLoop:
         backend: BackendLike | None = None,
         enable_streaming: bool = False,
         entrypoint_metadata: EntrypointMetadata | None = None,
+        event_listeners: list[Callable[[BaseEvent], None]] | None = None,
     ) -> None:
         self._base_config = config
         self._max_turns = max_turns
@@ -179,6 +180,7 @@ class AgentLoop:
 
         self.message_observer = message_observer
         self.enable_streaming = enable_streaming
+        self._event_listeners: list[Callable[[BaseEvent], None]] = event_listeners or []
         self.middleware_pipeline = MiddlewarePipeline()
         self._setup_middleware()
 
@@ -220,6 +222,18 @@ class AgentLoop:
             name="migrate_sessions",
         )
         thread.start()
+
+    def _notify_event_listeners(self, event: BaseEvent) -> None:
+        """Notify all event listeners of an event.
+
+        Args:
+            event: The event to broadcast.
+        """
+        for listener in self._event_listeners:
+            try:
+                listener(event)
+            except Exception:
+                pass
 
     @property
     def agent_profile(self) -> AgentProfile:
@@ -497,7 +511,9 @@ class AgentLoop:
         self._current_user_message_id = message_id
 
         # Yield a UserMessageEvent
-        yield UserMessageEvent(content=content, message_id=message_id)
+        user_msg_event = UserMessageEvent(content=content, message_id=message_id)
+        self._notify_event_listeners(user_msg_event)
+        yield user_msg_event
 
         try:
             should_break_loop = False
@@ -506,6 +522,7 @@ class AgentLoop:
                     self._get_context()
                 )
                 async for event in self._handle_middleware_result(result):
+                    self._notify_event_listeners(event)
                     yield event
 
                 if result.action == MiddlewareAction.STOP:
@@ -521,6 +538,7 @@ class AgentLoop:
                         user_cancelled = True
                     if isinstance(event, ContinueableUserMessageEvent):
                         yielded_continueable_event = True
+                    self._notify_event_listeners(event)
                     yield event
                     await self._save_messages()
 
