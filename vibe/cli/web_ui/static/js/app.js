@@ -388,7 +388,9 @@ class VibeClient {
         if (this.currentAssistantMessage) {
             const contentDiv = this.currentAssistantMessage.querySelector('.content');
             if (contentDiv) {
-                contentDiv.innerHTML = this.escapeHtml(contentDiv.textContent + content);
+                // Store raw text, render markdown
+                contentDiv.textContent += content;
+                this.renderMarkdown(contentDiv);
             }
         }
     }
@@ -406,7 +408,17 @@ class VibeClient {
     addMessage(type, content) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${type}`;
-        messageDiv.innerHTML = `<div class="content">${this.escapeHtml(content)}</div>`;
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'content';
+        
+        if (type === 'assistant') {
+            contentDiv.textContent = content;
+            this.renderMarkdown(contentDiv);
+        } else {
+            contentDiv.innerHTML = this.escapeHtml(content);
+        }
+        
+        messageDiv.appendChild(contentDiv);
         this.elements.messages.appendChild(messageDiv);
         this.scrollToBottom();
     }
@@ -427,6 +439,22 @@ class VibeClient {
 
     scrollToBottom() {
         this.elements.messages.scrollTop = this.elements.messages.scrollHeight;
+    }
+
+    renderMarkdown(element) {
+        const text = element.textContent;
+        if (!text.trim()) {
+            return;
+        }
+        
+        // Use marked.js to parse markdown
+        const html = marked.parse(text);
+        element.innerHTML = html;
+        
+        // Apply syntax highlighting to code blocks
+        element.querySelectorAll('pre code').forEach((block) => {
+            hljs.highlightElement(block);
+        });
     }
 
     sendMessage() {
