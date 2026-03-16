@@ -49,8 +49,36 @@ def serialize_event(event: BaseEvent) -> dict:
     Returns:
         Dictionary representation of the event.
     """
+    from vibe.core.types import ToolCallEvent, ToolResultEvent
+    
+    # Determine which fields to exclude (tool_class can't be serialized)
+    exclude_fields: set[str] = set()
+    if isinstance(event, (ToolCallEvent, ToolResultEvent)):
+        exclude_fields.add("tool_class")
+    
     # Get event data without private attributes
-    data = event.model_dump(mode="json", exclude_none=True)
+    if exclude_fields:
+        data = event.model_dump(mode="json", exclude_none=True, exclude=exclude_fields)
+    else:
+        data = event.model_dump(mode="json", exclude_none=True)
+    
+    # Handle ToolCallEvent args serialization
+    if isinstance(event, ToolCallEvent):
+        if event.args is not None:
+            try:
+                data['args'] = event.args.model_dump(mode="json", exclude_none=True)
+            except Exception:
+                data['args'] = str(event.args)
+    
+    # Handle ToolResultEvent serialization
+    elif isinstance(event, ToolResultEvent):
+        # Serialize result if present
+        if event.result is not None:
+            try:
+                data['result'] = event.result.model_dump(mode="json", exclude_none=True)
+            except Exception:
+                data['result'] = str(event.result)
+    
     # Add event type for client-side deserialization
     data["__type"] = event.__class__.__name__
     return data
@@ -175,10 +203,24 @@ def create_app(
             # Skip system messages
             if msg.role == "system":
                 continue
-            messages.append({
+            
+            message_data = {
                 "role": msg.role,
                 "content": msg.content,
-            })
+            }
+            
+            # Include tool calls if present
+            if msg.tool_calls:
+                message_data["tool_calls"] = [
+                    {
+                        "id": tc.id,
+                        "name": tc.function.name,
+                        "arguments": tc.function.arguments,
+                    }
+                    for tc in msg.tool_calls
+                ]
+            
+            messages.append(message_data)
 
         return JSONResponse({"messages": messages})
 
