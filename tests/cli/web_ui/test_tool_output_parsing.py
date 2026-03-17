@@ -124,3 +124,78 @@ class TestParseToolOutput:
         assert result["file"] == "test.py"
         assert result["bytes_written"] == "100"
         assert result["returncode"] == "0"
+
+    def test_multi_line_fields_are_excluded(self) -> None:
+        """Test that known multi-line fields result in multi-line parsing."""
+        from vibe.core.tools.base import BaseToolState
+        from vibe.core.tools.builtins.bash import Bash, BashToolConfig
+        from vibe.core.tools.builtins.grep import Grep, GrepToolConfig
+
+        class MockToolManager:
+            def get(self, name: str):
+                if name == "bash":
+                    return Bash(config=BashToolConfig(), state=BaseToolState())
+                elif name == "grep":
+                    return Grep(config=GrepToolConfig(), state=BaseToolState())
+                raise ValueError(f"Unknown tool: {name}")
+
+        mock_tm = MockToolManager()
+
+        # Test bash - stdout should be parsed as multi-line
+        bash_output = (
+            "command: ls -la\n"
+            "stdout: total 12\n"
+            "drwxr-xr-x 1 user user 4096 .\n"
+            "returncode: 0"
+        )
+        result = _parse_tool_output(bash_output, tool_name="bash", tool_manager=mock_tm)
+        assert result["command"] == "ls -la"
+        assert "total 12" in result["stdout"]
+        assert "drwxr-xr-x" in result["stdout"]  # Multi-line value captured
+        assert result["returncode"] == "0"
+
+        # Test grep - matches should be parsed as multi-line
+        grep_output = (
+            "matches: /path/to/file.py:10:found pattern\n"
+            "/another/file.py:20:also found\n"
+            "match_count: 2\n"
+            "was_truncated: false"
+        )
+        result = _parse_tool_output(grep_output, tool_name="grep", tool_manager=mock_tm)
+        assert "found pattern" in result["matches"]
+        assert "also found" in result["matches"]  # Multi-line value captured
+        assert result["match_count"] == "2"
+        assert result["was_truncated"] == "false"
+
+    def test_parse_with_tool_name_and_manager(self) -> None:
+        """Test parsing with tool_name to use dynamic field detection."""
+        from vibe.cli.web_ui.server import _parse_tool_output
+        from vibe.core.tools.base import BaseToolState
+        from vibe.core.tools.builtins.bash import Bash, BashToolConfig
+
+        # Create a mock tool manager
+        class MockToolManager:
+            def get(self, name: str):
+                return Bash(config=BashToolConfig(), state=BaseToolState())
+
+        mock_tm = MockToolManager()
+
+        # Bash output with multi-line stdout
+        content = (
+            "command: ls -la\n"
+            "stdout: total 12\n"
+            "drwxr-xr-x 1 user user 4096 Mar 17 10:00 .\n"
+            "-rw-r--r-- 1 user user 1234 Mar 17 10:00 file.txt\n"
+            "stderr: \n"
+            "returncode: 0"
+        )
+
+        result = _parse_tool_output(
+            content, tool_name="bash", tool_manager=mock_tm
+        )
+
+        assert result["command"] == "ls -la"
+        assert "total 12" in result["stdout"]
+        assert "drwxr-xr-x" in result["stdout"]
+        assert result["stderr"] == ""
+        assert result["returncode"] == "0"

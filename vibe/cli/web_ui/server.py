@@ -118,51 +118,70 @@ def _create_pydantic_model_from_dict(data: dict) -> Any:
     return DynamicModel(**data)
 
 
-def _parse_tool_output(content: str) -> dict:
+# Multi-line fields: text blobs that span multiple lines
+# All other fields are treated as single-line by default
+MULTI_LINE_FIELDS: set[str] = {
+    "content",   # read_file, write_file, edit_file, search_replace, webfetch
+    "stdout",    # bash
+    "stderr",    # bash
+    "text",      # mcp
+    "body",      # generic
+    "data",      # generic
+    "matches",   # grep - multi-line grep output
+    "response",  # task - subagent accumulated response
+    "answer",    # websearch - joined text parts
+}
+
+
+def _parse_tool_output(
+    content: str,
+    tool_name: str | None = None,
+    tool_manager: Any = None,
+) -> dict:
     """Parse tool output text into a dictionary, handling multi-line values.
 
     Tool output format is typically:
         key1: value1
         key2: value2 (may span multiple lines)
 
-    Known keys that typically have single-line values are tracked, and all
-    other keys (especially 'content') may have multi-line values.
+    A field is multi-line if it's in MULTI_LINE_FIELDS. All other fields are
+    treated as single-line (key delimiters).
 
     Args:
         content: The tool output text to parse.
+        tool_name: Optional tool name to look up Result model fields.
+        tool_manager: Optional ToolManager to look up the tool class.
 
     Returns:
         Dictionary with parsed key-value pairs.
     """
     result: dict = {}
 
-    # Known single-line keys (keys after which a new key is expected)
-    # Note: stdout and stderr are NOT in this list as they can be multi-line
-    single_line_keys = {
-        "file",
-        "path",
-        "bytes_written",
-        "file_existed",
-        "blocks_applied",
-        "lines_changed",
-        "warnings",
-        "match_count",
-        "was_truncated",
-        "returncode",
-        "answers",
-        "cancelled",
-        "lsp_diagnostics",
-        "max_displayed",
-        "original_count",
-        "diagnostics",
-        "severity",
-        "location",
-        "message",
-        "details",
-        "code",
-        "source",
-        "note",
-    }
+    # Get known field names from tool's Result model if available
+    known_fields: set[str] | None = None
+    if tool_name and tool_manager:
+        try:
+            tool_instance = tool_manager.get(tool_name)
+            tool_class = type(tool_instance)
+            _, result_class = tool_class._get_tool_args_results()
+            if hasattr(result_class, "model_fields"):
+                known_fields = set(result_class.model_fields.keys())
+        except Exception:
+            pass
+
+    def is_single_line_key(key: str) -> bool:
+        """Check if a key should be treated as single-line (key delimiter).
+
+        A key is single-line if:
+        1. It's not in MULTI_LINE_FIELDS, AND
+        2. It's a known field from the tool's Result model (if available)
+        """
+        if key in MULTI_LINE_FIELDS:
+            return False
+        if known_fields is not None:
+            return key in known_fields
+        # Unknown tool: treat all non-multi-line keys as single-line
+        return True
 
     lines = content.strip().split("\n")
     current_key: str | None = None
@@ -182,8 +201,8 @@ def _parse_tool_output(content: str) -> dict:
             value_start = line[colon_idx + 2 :]
 
             if value_start:
-                # Check if this is a single-line key
-                if current_key in single_line_keys:
+                # Check if this is a single-line key using the helper function
+                if is_single_line_key(current_key):
                     result[current_key] = value_start.strip()
                     current_key = None
                     current_value_lines = []
@@ -318,7 +337,10 @@ def messages_to_events(messages, tool_manager) -> list[BaseEvent]:
                 result_obj = json.loads(msg.content or "{}")
             except (json.JSONDecodeError, ValueError):
                 # Fall back to text format parsing with multi-line value support
-                result_obj = _parse_tool_output(msg.content or "")
+                # Pass tool_name and tool_manager for dynamic field detection
+                result_obj = _parse_tool_output(
+                    msg.content or "", tool_name=tool_name, tool_manager=tool_manager
+                )
 
             # Create a result model if we have result data
             result_model: Any = None
