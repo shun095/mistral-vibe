@@ -118,6 +118,90 @@ def _create_pydantic_model_from_dict(data: dict) -> Any:
     return DynamicModel(**data)
 
 
+def _parse_tool_output(content: str) -> dict:
+    """Parse tool output text into a dictionary, handling multi-line values.
+
+    Tool output format is typically:
+        key1: value1
+        key2: value2 (may span multiple lines)
+
+    Known keys that typically have single-line values are tracked, and all
+    other keys (especially 'content') may have multi-line values.
+
+    Args:
+        content: The tool output text to parse.
+
+    Returns:
+        Dictionary with parsed key-value pairs.
+    """
+    result: dict = {}
+
+    # Known single-line keys (keys after which a new key is expected)
+    # Note: stdout and stderr are NOT in this list as they can be multi-line
+    single_line_keys = {
+        "file",
+        "path",
+        "bytes_written",
+        "file_existed",
+        "blocks_applied",
+        "lines_changed",
+        "warnings",
+        "match_count",
+        "was_truncated",
+        "returncode",
+        "answers",
+        "cancelled",
+        "lsp_diagnostics",
+        "max_displayed",
+        "original_count",
+        "diagnostics",
+        "severity",
+        "location",
+        "message",
+        "details",
+        "code",
+        "source",
+        "note",
+    }
+
+    lines = content.strip().split("\n")
+    current_key: str | None = None
+    current_value_lines: list[str] = []
+
+    for line in lines:
+        # Check if this line starts a new key-value pair
+        # A new key starts with a word followed by ": " at the beginning of the line
+        if line and not line.startswith(" ") and not line.startswith("\t") and ": " in line:
+            # Save previous key-value pair if exists
+            if current_key is not None:
+                result[current_key] = "\n".join(current_value_lines).strip()
+
+            # Extract key and start of value
+            colon_idx = line.index(": ")
+            current_key = line[:colon_idx].strip()
+            value_start = line[colon_idx + 2 :]
+
+            if value_start:
+                # Check if this is a single-line key
+                if current_key in single_line_keys:
+                    result[current_key] = value_start.strip()
+                    current_key = None
+                    current_value_lines = []
+                else:
+                    current_value_lines = [value_start]
+            else:
+                current_value_lines = []
+        elif current_key is not None:
+            # Continue multi-line value
+            current_value_lines.append(line)
+
+    # Save last key-value pair
+    if current_key is not None:
+        result[current_key] = "\n".join(current_value_lines).strip()
+
+    return result
+
+
 def messages_to_events(messages, tool_manager) -> list[BaseEvent]:
     """Convert a list of LLMMessage objects to equivalent BaseEvent objects.
 
@@ -233,13 +317,8 @@ def messages_to_events(messages, tool_manager) -> list[BaseEvent]:
             try:
                 result_obj = json.loads(msg.content or "{}")
             except (json.JSONDecodeError, ValueError):
-                # Fall back to text format parsing
-                for line in (msg.content or "").strip().split("\n"):
-                    if ": " in line:
-                        key, value = line.split(": ", 1)
-                        if result_obj is None:
-                            result_obj = {}
-                        result_obj[key.strip()] = value.strip()
+                # Fall back to text format parsing with multi-line value support
+                result_obj = _parse_tool_output(msg.content or "")
 
             # Create a result model if we have result data
             result_model: Any = None

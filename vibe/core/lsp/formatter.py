@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import yaml
+import json
 from pathlib import Path
 from typing import Any, cast
 
@@ -14,7 +14,7 @@ class LSPDiagnosticFormatter:
         file_path: Path | None = None,
         max_diagnostics: int = 10,
     ) -> str:
-        """Format LSP diagnostics specifically for LLM consumption in YAML format.
+        """Format LSP diagnostics specifically for LLM consumption as single-line JSON.
         
         Args:
             diagnostics: List of diagnostic dictionaries from LSP
@@ -22,7 +22,7 @@ class LSPDiagnosticFormatter:
             max_diagnostics: Maximum number of diagnostics to display
             
         Returns:
-            YAML formatted string with diagnostics organized by severity
+            Single-line JSON string with diagnostics organized by severity
         """
         if not diagnostics:
             data = {
@@ -30,12 +30,12 @@ class LSPDiagnosticFormatter:
                 "max_displayed": max_diagnostics,
                 "diagnostics": []
             }
-            return yaml.dump(data, default_flow_style=False, sort_keys=False, allow_unicode=True).strip()
+            return json.dumps(data, separators=(',', ':'))
 
         original_count = len(diagnostics)
         diagnostics = diagnostics[:max_diagnostics]
         
-        # Build the structure for YAML output (flat structure without nested lsp_diagnostics)
+        # Build the structure for JSON output
         data = {
             "source": f"LSP{f' in {file_path}' if file_path else ''}",
             "max_displayed": max_diagnostics,
@@ -50,8 +50,8 @@ class LSPDiagnosticFormatter:
         if original_count > max_diagnostics:
             data["note"] = f"{original_count - max_diagnostics} more issue(s) not shown"
         
-        # Use PyYAML to format as YAML
-        return yaml.dump(data, default_flow_style=False, sort_keys=False, allow_unicode=True).strip()
+        # Output as single-line JSON
+        return json.dumps(data, separators=(',', ':'))
 
     @staticmethod
     def _build_diagnostic_dict(diag: dict[str, Any]) -> LSPDiagnosticDict:
@@ -107,25 +107,25 @@ class LSPDiagnosticFormatter:
         return result
 
     @staticmethod
-    def format_yaml_to_markdown(yaml_content: str) -> str:
-        """Convert YAML formatted diagnostics to Markdown format for UI display.
+    def format_json_to_markdown(json_content: str) -> str:
+        """Convert JSON formatted diagnostics to Markdown format for UI display.
         
         Args:
-            yaml_content: YAML formatted diagnostic string
+            json_content: JSON formatted diagnostic string
             
         Returns:
             Markdown formatted diagnostic string
         """
-        import yaml as yaml_module
+        import json as json_module
         
-        # Parse YAML using PyYAML
+        # Parse JSON
         try:
-            data = yaml_module.safe_load(yaml_content)
-        except yaml_module.YAMLError:
-            return yaml_content
+            data = json_module.loads(json_content)
+        except json_module.JSONDecodeError:
+            return json_content
         
         if not data:
-            return yaml_content
+            return json_content
         
         # Handle both flat structure (new) and nested structure (legacy)
         if "lsp_diagnostics" in data:
@@ -137,7 +137,7 @@ class LSPDiagnosticFormatter:
             diagnostics = data.get("diagnostics", [])
         
         if not diagnostics:
-            return yaml_content
+            return json_content
         
         # Convert to markdown format
         entries = []
@@ -158,7 +158,7 @@ class LSPDiagnosticFormatter:
             entries.append(f"- {severity_text} at {location}: {message}")
         
         if not entries:
-            return yaml_content
+            return json_content
         
         return "LSP diagnostics:\n\n" + "\n".join(entries)
 

@@ -92,18 +92,17 @@ async def test_write_file_formats_lsp_diagnostics():
     
     formatted = LSPDiagnosticFormatter.format_diagnostics_for_llm(diagnostics)
     
-    # Verify complete YAML structure for LLM backends
-    expected_yaml = """source: LSP
-max_displayed: 10
-original_count: 2
-diagnostics:
-- severity: error
-  location: line 3, columns 12-13
-  message: Name 'x' is not defined
-- severity: warning
-  location: line 6, columns 8-9
-  message: Unused variable 'y'"""
-    assert formatted == expected_yaml
+    # Verify complete JSON structure for LLM backends (single-line)
+    import json
+    expected_json = '{"source":"LSP","max_displayed":10,"original_count":2,"diagnostics":[{"severity":"error","location":"line 3, columns 12-13","message":"Name \'x\' is not defined"},{"severity":"warning","location":"line 6, columns 8-9","message":"Unused variable \'y\'"}]}'
+    assert formatted == expected_json
+    
+    # Verify it's valid JSON
+    data = json.loads(formatted)
+    assert data["source"] == "LSP"
+    assert data["max_displayed"] == 10
+    assert data["original_count"] == 2
+    assert len(data["diagnostics"]) == 2
 
 
 @pytest.mark.asyncio
@@ -164,15 +163,17 @@ async def test_search_replace_formats_lsp_diagnostics():
     
     formatted = LSPDiagnosticFormatter.format_diagnostics_for_llm(diagnostics)
     
-    # Verify complete YAML structure for LLM backends
-    expected_yaml = """source: LSP
-max_displayed: 10
-original_count: 1
-diagnostics:
-- severity: error
-  location: line 1, columns 6-11
-  message: Syntax error"""
-    assert formatted == expected_yaml
+    # Verify complete JSON structure for LLM backends (single-line)
+    import json
+    expected_json = '{"source":"LSP","max_displayed":10,"original_count":1,"diagnostics":[{"severity":"error","location":"line 1, columns 6-11","message":"Syntax error"}]}'
+    assert formatted == expected_json
+    
+    # Verify it's valid JSON
+    data = json.loads(formatted)
+    assert data["source"] == "LSP"
+    assert data["max_displayed"] == 10
+    assert data["original_count"] == 1
+    assert len(data["diagnostics"]) == 1
 
 
 @pytest.mark.asyncio
