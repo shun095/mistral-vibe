@@ -223,9 +223,6 @@ You behave adhering this guidelines strictly.
     - Do NOT place textual_ui things in acp directory. The opposite is also prohibited.
   - **IMPORTANT**: NEVER rely on the new code in `custom-fix-*` branch as your existing coding style. Only `main` branch code is a reliable reference for your existing coding style.
 
-**You MUST pass all pyright check**
-- You MUST solve all errors of `uv run pyright` command. You will maintain this codebase very long. The dirtiness of the code will make confused in the future.
-
 **Always write code that is highly cohesive and has low coupling**
 - Thoroughly read your existing code and make sure to reuse any logic that meets your purpose and can be reused. This is code that you will maintain for a long time. Write highly cohesive code now. Otherwise, you will run into issues with horizontal expansion in the future.
 
@@ -240,11 +237,11 @@ You behave adhering this guidelines strictly.
 
 #### **1. Unit Tests (MANDATORY FOR ALL CODE)**
 - All Python code changes MUST pass all existing pytest tests
-- Run `uv run pytest` before claiming completion
+- Run `uv run pytest tests/` before claiming completion
 - Fix any failing tests related to the task
 
-#### **2. UI Tests (MANDATORY FOR UI CHANGES)**
-- All UI changes MUST be tested with `terminalcp` CLI tool.
+#### **2. TUI Tests (MANDATORY FOR UI CHANGES)**
+- All TUI changes MUST be tested with `terminalcp` skill.
 
 **Why terminalcp is Required:**
 - Tests actual user interaction in a real terminal environment
@@ -272,44 +269,4 @@ You behave adhering this guidelines strictly.
 
 ## Project Specific Tool Usage Guidelines
 
-### Essential Tools
-
 Always use dedicated tools instead of `bash` when available. Use `bash` only for system information, git operations, and package management.
-
-**File Operations (PREFERRED OVER bash cat/head/tail):**
-- `read_file(path="file.py", offset=0, limit=100)` - Read files with line offsets
-- `write_file(path="file.py", content="...", overwrite=True)` - Create/overwrite files
-- `search_replace(file_path="file.py", content="<<<<<<< SEARCH\n...\n=======\n...\n>>>>>>> REPLACE")` - Search and replace
-- `grep(pattern="TODO", path="src/")` - Search for patterns (PREFERRED OVER bash grep)
-
-**Task Management:**
-- `todo({"action": "read"})` - Read current todo list
-- `todo({"action": "write", "todos": [...]})` - Create/update todo items
-
-**Task Delegation:**
-- `task({"task": "Analyze the codebase and create a refactoring plan", "agent": "explore"})` - Delegate work to a subagent
-
-**Web Research:**
-- `fetch_fetch({"url": "https://example.com", "max_length": 5000})` - Fetch web pages
-- `web_search_search({"query": "Python best practices", "max_results": 10})` - Search the web
-
-**System Operations (USE bash ONLY WHEN NECESSARY):**
-- `bash({"command": "pwd", "timeout": 5})` - System information (pwd, whoami, date)
-- `bash({"command": "git status", "timeout": 10})` - Git operations
-- `bash({"command": "ls -la", "timeout": 10})` - Directory listings
-- `bash({"command": "uv run pytest", "timeout": 60})` - Run tests (PREFER uv directly when possible)
-
-### terminalcp
-
-#### Overview
-`terminalcp` is the mandatory tool for testing terminal UI. It provides a virtual terminal environment to interact with your application.
-
-#### Installations
-
-```bash
-npm i -g @mariozechner/terminalcp@latest
-```
-
-#### Basic Usage
-
-Refer `~/.vibe/skills/terminalcp/SKILL.md`
