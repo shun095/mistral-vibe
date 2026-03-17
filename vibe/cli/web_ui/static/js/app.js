@@ -48,9 +48,9 @@ class VibeClient {
         
         this.elements.interruptBtn.addEventListener('click', () => this.requestInterrupt());
         
-        // Enable Shift+Enter to submit, plain Enter for newlines
+        // Enable Ctrl+Enter/Cmd+Enter to submit, plain Enter for newlines
         this.elements.input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && e.shiftKey) {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                 e.preventDefault();
                 this.sendMessage();
             }
@@ -71,7 +71,9 @@ class VibeClient {
         const textarea = this.elements.input;
         textarea.style.height = 'auto';
         const scrollHeight = textarea.scrollHeight;
-        const maxHeight = 200;
+        const lineHeight = 27; // Approximate line height (font-size 1rem * line-height 1.5 + padding)
+        const maxLines = 5;
+        const maxHeight = lineHeight * maxLines;
         textarea.style.height = Math.min(scrollHeight, maxHeight) + 'px';
     }
 
