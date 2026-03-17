@@ -1,5 +1,11 @@
 // Mistral Vibe Web UI - WebSocket Client
 
+// Import QuestionHandler module (ES6 module)
+import { QuestionHandler } from './question-handler.js';
+
+/**
+ * @typedef {Object} VibeClient
+ */
 class VibeClient {
     constructor() {
         this.ws = null;
@@ -9,6 +15,9 @@ class VibeClient {
         this.maxReconnectAttempts = 5;
         this.reconnectDelay = 1000;
         this.historyLoaded = false;
+        
+        // Initialize QuestionHandler
+        this.questionHandler = new QuestionHandler();
 
         // Streaming state
         this.currentReasoningMessage = null;
@@ -265,7 +274,6 @@ class VibeClient {
                 this.showApprovalPopup(event);
                 break;
             case 'QuestionPopupEvent':
-                console.log('Received QuestionPopupEvent:', event);
                 this.showQuestionPopup(event);
                 break;
             case 'PopupResponseEvent':
@@ -363,18 +371,17 @@ class VibeClient {
         }));
     }
 
-    showQuestionPopup(event) {
-        this.currentPopupId = event.popup_id;
+       showQuestionPopup(event) {
+        // Use questionHandler to manage state
+        const currentQuestion = this.questionHandler.showQuestionPopup(event);
         
-        // Only reset state if this is the first question (from server event)
-        // For subsequent questions (from submitCurrentQuestionOrNext), preserve state
-        if (this.currentQuestions === null || this.currentQuestions.length === 0) {
-            this.currentQuestions = event.questions;
-            this.currentQuestionIndex = 0;
-            this.currentQuestionAnswers = [];
+        if (!currentQuestion) {
+            console.error('showQuestionPopup: No questions provided');
+            return;
         }
         
-        const currentQuestion = this.currentQuestions[this.currentQuestionIndex];
+        // Sync popup state with questionHandler
+        this.currentPopupId = this.questionHandler.currentPopupId;
         
         // Build options HTML
         let optionsHtml = '';
@@ -403,7 +410,7 @@ class VibeClient {
         popupDiv.id = `popup-${event.popup_id}`;
         
         const headerText = currentQuestion.header || 'Question';
-        const isLastQuestion = this.currentQuestions.length === 1 || this.currentQuestionIndex === this.currentQuestions.length - 1;
+        const isLastQuestion = this.questionHandler.currentQuestions.length === 1 || this.questionHandler.currentQuestionIndex === this.questionHandler.currentQuestions.length - 1;
         const submitButtonText = isLastQuestion ? 'Submit' : 'Next';
         
         popupDiv.innerHTML = `
@@ -439,7 +446,7 @@ class VibeClient {
                     const optionIdx = parseInt(btn.dataset.option);
                     const optionLabel = currentQuestion.options[optionIdx].label;
                     const questionText = popupDiv.querySelector('.popup-content').textContent;
-                    this.currentQuestionAnswers.push({
+                    this.questionHandler.currentQuestionAnswers.push({
                         question: questionText,
                         answer: optionLabel,
                         is_other: false
@@ -469,7 +476,7 @@ class VibeClient {
                 if (otherInput && otherInput.value.trim()) {
                     // Handle "Other" answer
                     const questionText = popupDiv.querySelector('.popup-content').textContent;
-                    this.currentQuestionAnswers.push({
+                    this.questionHandler.currentQuestionAnswers.push({
                         question: questionText,
                         answer: otherInput.value.trim(),
                         is_other: true
@@ -491,7 +498,7 @@ class VibeClient {
                         is_other: false
                     };
                 });
-                this.currentQuestionAnswers.push(...answers);
+                this.questionHandler.currentQuestionAnswers.push(...answers);
                 this.submitCurrentQuestionOrNext();
             }
         };
@@ -500,9 +507,7 @@ class VibeClient {
         popupDiv.querySelector('#question-cancel').onclick = () => {
             this.sendQuestionResponse(this.currentPopupId, [], true);
             this.hidePopup({popup_id: this.currentPopupId});
-            this.currentQuestions = null;
-            this.currentQuestionIndex = 0;
-            this.currentQuestionAnswers = [];
+            this.questionHandler.reset();
         };
         
         // Append to messages and show
@@ -513,35 +518,28 @@ class VibeClient {
     }
     
     submitCurrentQuestionOrNext() {
-        // Check if there are more questions to answer
-        if (this.currentQuestionIndex < this.currentQuestions.length - 1) {
-            // Move to next question
-            this.currentQuestionIndex++;
-            this.hidePopup({popup_id: this.currentPopupId});
-            // Show next question popup with updated popup_id
-            const nextEvent = {
-                popup_id: this.currentPopupId + '_q' + (this.currentQuestionIndex + 1),
-                questions: this.currentQuestions,
-                content_preview: null
-            };
-            this.showQuestionPopup(nextEvent);
-        } else {
-            // All questions answered, send final response
-            this.sendQuestionResponse(this.currentPopupId, this.currentQuestionAnswers, false);
-            this.hidePopup({popup_id: this.currentPopupId});
-            this.currentQuestions = null;
-            this.currentQuestionIndex = 0;
-            this.currentQuestionAnswers = [];
+        // Delegate to questionHandler
+        const result = this.questionHandler.submitCurrentQuestionOrNext();
+        
+        if (result.hasMore && result.nextEvent) {
+            // Hide current popup and show next question
+            this.hidePopup({ popup_id: this.currentPopupId });
+            this.showQuestionPopup(result.nextEvent);
+        } else if (!result.hasMore && result.message) {
+            // Send final response via WebSocket and hide popup
+            this.ws.send(JSON.stringify(result.message));
+            this.hidePopup({ popup_id: this.currentPopupId });
         }
     }
 
     sendQuestionResponse(popupId, answers, cancelled) {
-        this.ws.send(JSON.stringify({
+        const message = {
             type: 'question_response',
             popup_id: popupId,
             answers: answers,
             cancelled: cancelled
-        }));
+        };
+        this.ws.send(JSON.stringify(message));
     }
 
     hidePopup(event) {
@@ -553,12 +551,9 @@ class VibeClient {
         // Re-enable input
         this.elements.input.disabled = false;
         
-        // Clear all state
+        // Clear popup state (questionHandler manages question state)
         this.currentPopupId = null;
         this.currentPopupElement = null;
-        this.currentQuestions = null;
-        this.currentQuestionIndex = 0;
-        this.currentQuestionAnswers = [];
     }
 
     handleToolCallEvent(event) {
