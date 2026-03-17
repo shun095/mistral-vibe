@@ -366,8 +366,15 @@ class VibeClient {
     showQuestionPopup(event) {
         this.currentPopupId = event.popup_id;
         
-        const questions = event.questions;
-        const currentQuestion = questions[0]; // Handle first question for now
+        // Only reset state if this is the first question (from server event)
+        // For subsequent questions (from submitCurrentQuestionOrNext), preserve state
+        if (this.currentQuestions === null || this.currentQuestions.length === 0) {
+            this.currentQuestions = event.questions;
+            this.currentQuestionIndex = 0;
+            this.currentQuestionAnswers = [];
+        }
+        
+        const currentQuestion = this.currentQuestions[this.currentQuestionIndex];
         
         // Build options HTML
         let optionsHtml = '';
@@ -396,6 +403,9 @@ class VibeClient {
         popupDiv.id = `popup-${event.popup_id}`;
         
         const headerText = currentQuestion.header || 'Question';
+        const isLastQuestion = this.currentQuestions.length === 1 || this.currentQuestionIndex === this.currentQuestions.length - 1;
+        const submitButtonText = isLastQuestion ? 'Submit' : 'Next';
+        
         popupDiv.innerHTML = `
             <div class="popup-header">
                 <span class="popup-icon">❓</span>
@@ -410,7 +420,7 @@ class VibeClient {
             </div>
             ${hasOther ? '<div class="popup-other" style="display:none;"><input type="text" id="question-other-input" placeholder="Type your answer..."></div>' : ''}
             <div class="popup-actions">
-                <button class="popup-btn submit" id="question-submit">Submit</button>
+                <button class="popup-btn submit" id="question-submit">${submitButtonText}</button>
                 <button class="popup-btn cancel" id="question-cancel">Cancel</button>
             </div>
         `;
@@ -427,7 +437,14 @@ class VibeClient {
                     btn.classList.add('selected');
                     // Auto-submit for single-select
                     const optionIdx = parseInt(btn.dataset.option);
-                    this.handleQuestionOption(optionIdx, false);
+                    const optionLabel = currentQuestion.options[optionIdx].label;
+                    const questionText = popupDiv.querySelector('.popup-content').textContent;
+                    this.currentQuestionAnswers.push({
+                        question: questionText,
+                        answer: optionLabel,
+                        is_other: false
+                    });
+                    this.submitCurrentQuestionOrNext();
                 }
             };
         });
@@ -452,13 +469,12 @@ class VibeClient {
                 if (otherInput && otherInput.value.trim()) {
                     // Handle "Other" answer
                     const questionText = popupDiv.querySelector('.popup-content').textContent;
-                    const answers = [{
+                    this.currentQuestionAnswers.push({
                         question: questionText,
                         answer: otherInput.value.trim(),
                         is_other: true
-                    }];
-                    this.sendQuestionResponse(this.currentPopupId, answers, false);
-                    this.hidePopup({popup_id: this.currentPopupId});
+                    });
+                    this.submitCurrentQuestionOrNext();
                     return;
                 }
             }
@@ -468,23 +484,25 @@ class VibeClient {
                 const questionText = popupDiv.querySelector('.popup-content').textContent;
                 const answers = Array.from(selectedBtns).map(btn => {
                     const optionIdx = parseInt(btn.dataset.option);
+                    const optionLabel = currentQuestion.options[optionIdx].label;
                     return {
                         question: questionText,
-                        answer: optionIdx.toString(),
+                        answer: optionLabel,
                         is_other: false
                     };
                 });
-                this.sendQuestionResponse(this.currentPopupId, answers, false);
-                this.hidePopup({popup_id: this.currentPopupId});
+                this.currentQuestionAnswers.push(...answers);
+                this.submitCurrentQuestionOrNext();
             }
         };
         
         // Setup cancel handler
         popupDiv.querySelector('#question-cancel').onclick = () => {
             this.sendQuestionResponse(this.currentPopupId, [], true);
-            this.currentPopupId = null;
-            this.currentPopupElement = null;
-            this.elements.input.disabled = false;
+            this.hidePopup({popup_id: this.currentPopupId});
+            this.currentQuestions = null;
+            this.currentQuestionIndex = 0;
+            this.currentQuestionAnswers = [];
         };
         
         // Append to messages and show
@@ -493,19 +511,28 @@ class VibeClient {
         this.elements.input.disabled = true;
         this.scrollToBottom();
     }
-
-    handleQuestionOption(optionIdx, isOther, otherText = '') {
-        if (!this.currentPopupId || !this.currentPopupElement) return;
-        
-        const questionText = this.currentPopupElement.querySelector('.popup-content').textContent;
-        const answers = [{
-            question: questionText,
-            answer: isOther ? otherText : optionIdx.toString(),
-            is_other: isOther
-        }];
-        
-        this.sendQuestionResponse(this.currentPopupId, answers, false);
-        this.currentPopupId = null;
+    
+    submitCurrentQuestionOrNext() {
+        // Check if there are more questions to answer
+        if (this.currentQuestionIndex < this.currentQuestions.length - 1) {
+            // Move to next question
+            this.currentQuestionIndex++;
+            this.hidePopup({popup_id: this.currentPopupId});
+            // Show next question popup with updated popup_id
+            const nextEvent = {
+                popup_id: this.currentPopupId + '_q' + (this.currentQuestionIndex + 1),
+                questions: this.currentQuestions,
+                content_preview: null
+            };
+            this.showQuestionPopup(nextEvent);
+        } else {
+            // All questions answered, send final response
+            this.sendQuestionResponse(this.currentPopupId, this.currentQuestionAnswers, false);
+            this.hidePopup({popup_id: this.currentPopupId});
+            this.currentQuestions = null;
+            this.currentQuestionIndex = 0;
+            this.currentQuestionAnswers = [];
+        }
     }
 
     sendQuestionResponse(popupId, answers, cancelled) {
@@ -526,9 +553,12 @@ class VibeClient {
         // Re-enable input
         this.elements.input.disabled = false;
         
-        // Clear state
+        // Clear all state
         this.currentPopupId = null;
         this.currentPopupElement = null;
+        this.currentQuestions = null;
+        this.currentQuestionIndex = 0;
+        this.currentQuestionAnswers = [];
     }
 
     handleToolCallEvent(event) {
