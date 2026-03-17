@@ -1217,6 +1217,8 @@ class VibeApp(App):  # noqa: PLR0904
                     await approval_app.remove()
             except Exception:
                 pass
+            # Restore input form
+            await self._switch_to_input_app()
 
         if self._pending_question and not self._pending_question.done():
             self._pending_question.cancel()
@@ -1229,6 +1231,8 @@ class VibeApp(App):  # noqa: PLR0904
                     await question_app.remove()
             except Exception:
                 pass
+            # Restore input form
+            await self._switch_to_input_app()
 
         if self._agent_task and not self._agent_task.done():
             self._agent_task.cancel()
