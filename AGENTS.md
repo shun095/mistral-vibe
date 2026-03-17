@@ -249,6 +249,28 @@ You behave adhering this guidelines strictly.
 - Validates complex UI behavior (widget lifecycle, async operations, config loading)
 - Specifically designed for comprehensive UI testing
 
+### 🧪 Testing Commands
+
+```bash
+# Install dependencies
+uv sync              # Python dependencies
+npm install          # JavaScript dependencies (Jest)
+
+# Run all tests
+uv run pytest tests/ # Python tests
+npm test             # JavaScript tests
+
+# Run with debug logging
+uv run pytest tests/ --log-cli-level=DEBUG
+
+# Run specific test file
+uv run pytest tests/cli/textual_ui/test_interrupt_question_popup.py
+npm test -- vibe-client.test.js
+
+# JavaScript coverage
+npm run test:coverage
+```
+
 **Custom test scripts are unacceptable** - they cannot reproduce real user interaction.
 
 ### Writing Unit Tests
