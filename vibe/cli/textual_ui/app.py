@@ -267,8 +267,10 @@ class VibeApp(App):  # noqa: PLR0904
         self._pending_approval: asyncio.Future | None = None
         self._pending_approval_id: str | None = None
         self._pending_approval_tool: str | None = None
+        self._pending_approval_args: dict | None = None
         self._pending_question: asyncio.Future | None = None
         self._pending_question_id: str | None = None
+        self._pending_question_args: dict | None = None
         self._queued_message: str | None = None
 
         self.event_handler: EventHandler | None = None
@@ -888,6 +890,7 @@ class VibeApp(App):  # noqa: PLR0904
             self._pending_approval = None
             self._pending_approval_id = None
             self._pending_approval_tool = None
+            self._pending_approval_args = None
             # Schedule cleanup to switch back to input
             self.call_later(self._switch_to_input_app)
 
@@ -1004,6 +1007,7 @@ class VibeApp(App):  # noqa: PLR0904
         self._pending_approval = asyncio.Future()
         self._pending_approval_id = popup_id
         self._pending_approval_tool = tool  # Store tool name for web response handling
+        self._pending_approval_args = args.model_dump(mode="json", exclude_none=True)
         self._terminal_notifier.notify(NotificationContext.ACTION_REQUIRED)
         try:
             with paused_timer(self._loading_widget):
@@ -1015,11 +1019,13 @@ class VibeApp(App):  # noqa: PLR0904
             
             self._pending_approval = None
             self._pending_approval_id = None
+            self._pending_approval_args = None
             return result
         except asyncio.CancelledError:
             # Clean up on cancellation
             self._pending_approval = None
             self._pending_approval_id = None
+            self._pending_approval_args = None
             raise
 
     async def _user_input_callback(self, args: BaseModel) -> BaseModel:
@@ -1033,6 +1039,7 @@ class VibeApp(App):  # noqa: PLR0904
         
         self._pending_question = asyncio.Future()
         self._pending_question_id = popup_id
+        self._pending_question_args = question_args.model_dump(mode="json", exclude_none=True)
         self._terminal_notifier.notify(NotificationContext.ACTION_REQUIRED)
         with paused_timer(self._loading_widget):
             await self._switch_to_question_app(question_args)
@@ -1043,6 +1050,7 @@ class VibeApp(App):  # noqa: PLR0904
         
         self._pending_question = None
         self._pending_question_id = None
+        self._pending_question_args = None
         return result
 
     async def _handle_agent_loop_turn(self, prompt: str) -> None:
@@ -1210,6 +1218,7 @@ class VibeApp(App):  # noqa: PLR0904
             self._pending_approval.cancel()
             self._pending_approval = None
             self._pending_approval_id = None
+            self._pending_approval_args = None
             # Remove approval app widget if present
             try:
                 approval_app = self.query_one("#approval-app")
@@ -1224,6 +1233,7 @@ class VibeApp(App):  # noqa: PLR0904
             self._pending_question.cancel()
             self._pending_question = None
             self._pending_question_id = None
+            self._pending_question_args = None
             # Remove question app widget if present
             try:
                 question_app = self.query_one("#question-app")

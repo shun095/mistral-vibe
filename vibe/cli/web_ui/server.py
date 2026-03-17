@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, HTTPException, Security, WebSocket, WebSocketDisconnect
@@ -527,6 +528,46 @@ def create_app(
 
         # Send connected message after history is streamed
         await websocket.send_json({"type": "connected"})
+
+        # Re-emit pending popups if any
+        tui_app = getattr(app.state, "tui_app", None)
+        if tui_app:
+            # Re-emit pending approval popup
+            if (
+                hasattr(tui_app, "_pending_approval_id")
+                and tui_app._pending_approval_id
+                and tui_app._pending_approval_tool
+                and tui_app._pending_approval_args
+            ):
+                from vibe.core.types import ApprovalPopupEvent
+
+                event = ApprovalPopupEvent(
+                    popup_id=tui_app._pending_approval_id,
+                    tool_name=tui_app._pending_approval_tool,
+                    tool_args=tui_app._pending_approval_args,
+                    timestamp=time.time(),
+                )
+                serialized = serialize_event(event)
+                message = json.dumps({"type": "event", "event": serialized})
+                await websocket.send_text(message)
+
+            # Re-emit pending question popup
+            if (
+                hasattr(tui_app, "_pending_question_id")
+                and tui_app._pending_question_id
+                and tui_app._pending_question_args
+            ):
+                from vibe.core.types import QuestionPopupEvent
+
+                event = QuestionPopupEvent(
+                    popup_id=tui_app._pending_question_id,
+                    questions=tui_app._pending_question_args.get("questions", []),
+                    content_preview=None,
+                    timestamp=time.time(),
+                )
+                serialized = serialize_event(event)
+                message = json.dumps({"type": "event", "event": serialized})
+                await websocket.send_text(message)
 
         try:
             while True:
