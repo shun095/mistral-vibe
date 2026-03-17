@@ -152,11 +152,15 @@ class TestDiagnosticStorageAndRetrieval:
         # Format with default limit (10)
         formatted = LSPDiagnosticFormatter.format_diagnostics_for_llm(diagnostics)
 
-        # Should only include first 10 (in YAML format)
-        assert "Error 0" in formatted
-        assert "Error 9" in formatted
-        assert "Error 10" not in formatted
-        assert 'note: 20 more issue(s) not shown' in formatted
+        # Should only include first 10 (in JSON format)
+        import json
+        data = json.loads(formatted)
+        assert data["max_displayed"] == 10
+        assert data["original_count"] == 30
+        assert len(data["diagnostics"]) == 10
+        assert data["note"] == "20 more issue(s) not shown"
+        assert any("Error 0" in d.get("message", "") for d in data["diagnostics"])
+        assert any("Error 9" in d.get("message", "") for d in data["diagnostics"])
 
 
 @pytest.mark.asyncio

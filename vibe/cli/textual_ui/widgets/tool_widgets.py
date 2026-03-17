@@ -201,8 +201,8 @@ class WriteFileResultWidget(ToolResultWidget[WriteFileResult]):
         # Display LSP diagnostics if available
         if self.result and self.result.lsp_diagnostics:
             yield NoMarkupStatic("")
-            # Convert YAML to Markdown for UI display
-            markdown_content = LSPDiagnosticFormatter.format_yaml_to_markdown(self.result.lsp_diagnostics)
+            # Convert JSON to Markdown for UI display
+            markdown_content = LSPDiagnosticFormatter.format_json_to_markdown(self.result.lsp_diagnostics)
             yield Markdown(markdown_content)
         
         if self.result.content:
@@ -240,8 +240,8 @@ class EditFileResultWidget(ToolResultWidget[EditFileResult]):
         # Display LSP diagnostics if available
         if self.result and self.result.lsp_diagnostics:
             yield NoMarkupStatic("")
-            # Convert YAML to Markdown for UI display
-            markdown_content = LSPDiagnosticFormatter.format_yaml_to_markdown(self.result.lsp_diagnostics)
+            # Convert JSON to Markdown for UI display
+            markdown_content = LSPDiagnosticFormatter.format_json_to_markdown(self.result.lsp_diagnostics)
             yield Markdown(markdown_content)
         
         if self.result.content:
@@ -274,8 +274,8 @@ class SearchReplaceResultWidget(ToolResultWidget[SearchReplaceResult]):
         # Display LSP diagnostics if available
         if self.result and self.result.lsp_diagnostics:
             yield NoMarkupStatic("")
-            # Convert YAML to Markdown for UI display
-            markdown_content = LSPDiagnosticFormatter.format_yaml_to_markdown(self.result.lsp_diagnostics)
+            # Convert JSON to Markdown for UI display
+            markdown_content = LSPDiagnosticFormatter.format_json_to_markdown(self.result.lsp_diagnostics)
             yield Markdown(markdown_content)
         
         if self.result.content:
@@ -354,8 +354,8 @@ class ReadFileResultWidget(ToolResultWidget[ReadFileResult]):
         # Display LSP diagnostics if available
         if self.result and self.result.lsp_diagnostics:
             yield NoMarkupStatic("")
-            # Convert YAML to Markdown for UI display
-            markdown_content = LSPDiagnosticFormatter.format_yaml_to_markdown(self.result.lsp_diagnostics)
+            # Convert JSON to Markdown for UI display
+            markdown_content = LSPDiagnosticFormatter.format_json_to_markdown(self.result.lsp_diagnostics)
             yield Markdown(markdown_content)
         
         if self.result and self.result.content:

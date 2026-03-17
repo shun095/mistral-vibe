@@ -868,7 +868,7 @@ class VibeClient {
     }
 
     formatBashResult(card, result) {
-        const returncode = result.returncode || 0;
+        const returncode = parseInt(result.returncode) || 0;
         const isSuccess = returncode === 0;
         
         const headerTitle = `bash: ${result.command || 'command'}`;
@@ -1052,19 +1052,31 @@ class VibeClient {
         const content = card.querySelector('.card-content');
         
         // Add warnings if present
-        if (result.warnings && result.warnings.length > 0) {
-            const warningsDiv = document.createElement('div');
-            warningsDiv.style.padding = '8px 12px';
-            warningsDiv.style.backgroundColor = '#3a2a1a';
-            warningsDiv.style.borderRadius = '4px';
-            warningsDiv.style.marginBottom = '8px';
-            warningsDiv.innerHTML = `
-                <div style="font-weight: 600; color: #f0ad4e; margin-bottom: 4px;">Warnings</div>
-                <ul style="margin: 0; padding-left: 20px; font-size: 0.85rem;">
-                    ${result.warnings.map(w => `<li>${this.escapeHtml(w)}</li>`).join('')}
-                </ul>
-            `;
-            content.appendChild(warningsDiv);
+        if (result.warnings) {
+            // Parse warnings as JSON if it's a string (from history replay)
+            let warningsArray = result.warnings;
+            if (typeof warningsArray === 'string') {
+                try {
+                    warningsArray = JSON.parse(warningsArray);
+                } catch (e) {
+                    warningsArray = [warningsArray];
+                }
+            }
+            
+            if (Array.isArray(warningsArray) && warningsArray.length > 0) {
+                const warningsDiv = document.createElement('div');
+                warningsDiv.style.padding = '8px 12px';
+                warningsDiv.style.backgroundColor = '#3a2a1a';
+                warningsDiv.style.borderRadius = '4px';
+                warningsDiv.style.marginBottom = '8px';
+                warningsDiv.innerHTML = `
+                    <div style="font-weight: 600; color: #f0ad4e; margin-bottom: 4px;">Warnings</div>
+                    <ul style="margin: 0; padding-left: 20px; font-size: 0.85rem;">
+                        ${warningsArray.map(w => `<li>${this.escapeHtml(w)}</li>`).join('')}
+                    </ul>
+                `;
+                content.appendChild(warningsDiv);
+            }
         }
         
         // Add content preview
