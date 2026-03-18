@@ -480,6 +480,60 @@ def create_app(
         tui_app.request_interrupt_from_web()
         return JSONResponse({"success": True})
 
+    @app.get("/api/commands")
+    def list_commands(token: str = Security(verify_token)) -> JSONResponse:
+        """List available slash commands.
+
+        Args:
+            token: Authentication token.
+
+        Returns:
+            List of commands with descriptions and aliases.
+        """
+        tui_app = getattr(app.state, "tui_app", None)
+        if tui_app is None:
+            return JSONResponse({"commands": []})
+
+        commands = []
+        for cmd_name, cmd in tui_app.commands.commands.items():
+            commands.append({
+                "name": cmd_name,
+                "aliases": sorted(list(cmd.aliases)),
+                "description": cmd.description,
+                "enabled": True,
+            })
+
+        return JSONResponse({"commands": commands})
+
+    @app.post("/api/command/execute")
+    async def execute_command(
+        command_data: dict,
+        token: str = Security(verify_token),
+    ) -> JSONResponse:
+        """Execute a slash command via the TUI app.
+
+        Args:
+            command_data: Command name and arguments.
+            token: Authentication token.
+
+        Returns:
+            Execution result.
+        """
+        tui_app = getattr(app.state, "tui_app", None)
+        if tui_app is None:
+            return JSONResponse({"success": False, "error": "No TUI app available"})
+
+        command_name = command_data.get("command", "")
+        command_args = command_data.get("args", "")
+
+        # Submit to TUI for processing - it will handle slash commands properly
+        command_text = f"/{command_name}"
+        if command_args:
+            command_text = f"{command_text} {command_args}"
+        
+        tui_app.submit_message_from_web(command_text)
+        return JSONResponse({"success": True})
+
     @app.websocket("/ws")
     async def websocket_endpoint(
         websocket: WebSocket,

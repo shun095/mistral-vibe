@@ -188,3 +188,7 @@ filterwarnings = [
     # (e2e) streaming mock server is started in a thread; and the cli is spawn in a fork
     "ignore:This process \\(pid=.*\\) is multi-threaded, use of forkpty\\(\\) may lead to deadlocks in the child\\.:DeprecationWarning",
 ]
+
+[tool.pytest-playwright]
+# Disable playwright's base_url fixture to avoid conflict with pytest-base-url
+base_url = ""

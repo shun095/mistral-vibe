@@ -995,3 +995,54 @@ body {
 .fab-btn:active {
     transform: scale(0.95);
 }
+
+/* Slash Command Autocomplete */
+.slash-autocomplete {
+    position: absolute;
+    z-index: 1000;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    max-height: 300px;
+    overflow-y: auto;
+    display: none;
+    margin-bottom: 4px;
+}
+
+.slash-autocomplete .suggestions {
+    list-style: none;
+    margin: 0;
+    padding: 4px 0;
+    display: flex;
+    flex-direction: column-reverse;
+}
+
+.slash-autocomplete .suggestions li {
+    padding: 8px 12px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: background-color 0.15s ease;
+}
+
+.slash-autocomplete .suggestions li:hover,
+.slash-autocomplete .suggestions li.selected {
+    background-color: var(--blue);
+    color: white;
+}
+
+.slash-autocomplete .suggestions li strong {
+    font-weight: 600;
+}
+
+.slash-autocomplete .suggestions li span {
+    color: var(--text-muted);
+    font-size: 0.9em;
+    margin-left: 8px;
+}
+
+.slash-autocomplete .suggestions li.selected span {
+    color: rgba(255, 255, 255, 0.8);
+}
