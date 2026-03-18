@@ -39,6 +39,7 @@ class VibeClient {
         // Popup state
         this.currentPopupId = null;
         this.currentPopupElement = null;
+        this.wasAtBottomBeforePopup = false;
 
         this.elements = {
             status: document.getElementById('status'),
@@ -314,6 +315,9 @@ class VibeClient {
         console.log('showApprovalPopup called with event:', event);
         this.currentPopupId = event.popup_id;
         
+        // Track if user was at bottom before showing popup
+        this.wasAtBottomBeforePopup = scrollUtils.isAtBottom(this.elements.messages);
+        
         // Create popup element
         const popupDiv = document.createElement('div');
         popupDiv.className = 'popup-card approval-popup';
@@ -349,7 +353,7 @@ class VibeClient {
         console.log('Appending popup to messages container:', this.elements.messages);
         this.elements.messages.appendChild(popupDiv);
         this.elements.input.disabled = true;
-        this.scrollToBottom();
+        this.forceScrollToBottom();
         console.log('Popup appended successfully');
     }
 
@@ -403,6 +407,9 @@ class VibeClient {
             console.error('showQuestionPopup: No questions provided');
             return;
         }
+        
+        // Track if user was at bottom before showing popup
+        this.wasAtBottomBeforePopup = scrollUtils.isAtBottom(this.elements.messages);
         
         // Sync popup state with questionHandler
         this.currentPopupId = this.questionHandler.currentPopupId;
@@ -538,7 +545,7 @@ class VibeClient {
         this.currentPopupElement = popupDiv;
         this.elements.messages.appendChild(popupDiv);
         this.elements.input.disabled = true;
-        this.scrollToBottom();
+        this.forceScrollToBottom();
     }
     
     submitCurrentQuestionOrNext() {
@@ -575,9 +582,15 @@ class VibeClient {
         // Re-enable input
         this.elements.input.disabled = false;
         
+        // Force scroll to bottom if user was at bottom before popup
+        if (this.wasAtBottomBeforePopup) {
+            this.forceScrollToBottom();
+        }
+        
         // Clear popup state (questionHandler manages question state)
         this.currentPopupId = null;
         this.currentPopupElement = null;
+        this.wasAtBottomBeforePopup = false;
     }
 
     handleToolCallEvent(event) {
