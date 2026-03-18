@@ -92,7 +92,7 @@ class TestExcludeDefaults:
         config_dict = {
             "project_context": {
                 "default_commit_count": 5,  # default value
-                "max_doc_bytes": 100000,  # non-default value
+                "timeout_seconds": 5.0,  # non-default value (default is 2.0)
             }
         }
 
@@ -100,15 +100,14 @@ class TestExcludeDefaults:
 
         assert "project_context" in result
         assert "default_commit_count" not in result["project_context"]
-        assert "max_doc_bytes" in result["project_context"]
-        assert result["project_context"]["max_doc_bytes"] == 100000
+        assert "timeout_seconds" in result["project_context"]
+        assert result["project_context"]["timeout_seconds"] == 5.0
 
     def test_excludes_empty_nested_dicts(self) -> None:
         """Test that nested dicts that become empty after exclusion are removed."""
         config_dict = {
             "project_context": {
                 "default_commit_count": 5,  # default value
-                "max_doc_bytes": 32 * 1024,  # default value
                 "timeout_seconds": 2.0,  # default value
             }
         }
@@ -210,12 +209,12 @@ auto_approve = true
     def test_preserves_comment_out_nested_values(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test that comment-out lines in nested sections are preserved."""
         config_content = """[project_context]
-default_commit_count = 5
+# default_commit_count = 5
 
 # This is a comment-out nested value
-# max_doc_bytes = 100000
+# timeout_seconds = 2.0
 
-timeout_seconds = 2.0
+default_commit_count = 10
 """
         config_file = tmp_path / "config.toml"
         config_file.write_text(config_content)
@@ -224,14 +223,14 @@ timeout_seconds = 2.0
         monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
 
         # Save some updates
-        VibeConfig.save_updates({"project_context": {"timeout_seconds": 5.0}})
+        VibeConfig.save_updates({"project_context": {"default_commit_count": 10}})
 
         result = config_file.read_text()
 
         # Verify comment-out nested values are preserved
         assert "# This is a comment-out nested value" in result
-        assert "# max_doc_bytes = 100000" in result
-        assert "timeout_seconds = 5.0" in result
+        assert "# timeout_seconds = 2.0" in result
+        assert "default_commit_count = 10" in result
 
     def test_preserves_comments_on_new_file(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test that new config files work correctly."""
@@ -288,11 +287,11 @@ auto_approve = true
 # Default commit count is 5
 default_commit_count = 10
 
-# This is a custom max_doc_bytes setting
-max_doc_bytes = 50000
+# This is a custom timeout setting
+timeout_seconds = 5.0
 
-# Comment for timeout_seconds
-# timeout_seconds = 2.0
+# Comment for default_commit_count
+# default_commit_count = 5
 """
         config_file = tmp_path / "config.toml"
         config_file.write_text(config_content)
@@ -305,16 +304,17 @@ max_doc_bytes = 50000
 
         result = config_file.read_text()
 
-        # Default value should be removed
-        assert "default_commit_count" not in result
+        # Default value should be removed (check for active config line, not comments)
+        import re
+        assert not re.search(r'^(?!#)\s*default_commit_count\s*=', result, re.MULTILINE)
         # Non-default values should remain
-        assert "max_doc_bytes = 50000" in result
+        assert "timeout_seconds = 5.0" in result
         # Comment-out lines should be preserved
         assert "# Project context settings" in result
         assert "# Default commit count is 5" in result
-        assert "# This is a custom max_doc_bytes setting" in result
-        assert "# Comment for timeout_seconds" in result
-        assert "# timeout_seconds = 2.0" in result
+        assert "# This is a custom timeout setting" in result
+        assert "# Comment for default_commit_count" in result
+        assert "# default_commit_count = 5" in result
 
     def test_removes_session_logging_default_values_preserves_comments(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test that session_logging section default values are removed while preserving comments."""
@@ -360,16 +360,15 @@ session_prefix = "session"
         monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
 
         # Save config with nested section
-        VibeConfig.save_updates({"project_context": {"max_doc_bytes": 50000}})
+        VibeConfig.save_updates({"project_context": {"timeout_seconds": 5.0}})
 
         result = config_file.read_text()
 
         # Non-default value should be in the file
         assert "[project_context]" in result
-        assert "max_doc_bytes = 50000" in result
+        assert "timeout_seconds = 5.0" in result
         # Default values should not be in the file
         assert "default_commit_count" not in result
-        assert "timeout_seconds" not in result
 
     def test_preserves_all_comments_in_nested_sections(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test that all comments in nested sections are preserved after multiple saves."""
@@ -381,11 +380,11 @@ auto_approve = true
 # Commit count comment
 default_commit_count = 10
 
-# Max doc bytes comment
-max_doc_bytes = 50000
-
 # Timeout comment
-# timeout_seconds = 2.0
+timeout_seconds = 5.0
+
+# Default commit count comment
+# default_commit_count = 5
 
 # Session logging section
 [session_logging]
@@ -413,9 +412,9 @@ save_dir = "/custom/logs"
         assert "# Main config" in result
         assert "# Project context section" in result
         assert "# Commit count comment" in result
-        assert "# Max doc bytes comment" in result
         assert "# Timeout comment" in result
-        assert "# timeout_seconds = 2.0" in result
+        assert "# Default commit count comment" in result
+        assert "# default_commit_count = 5" in result
         assert "# Session logging section" in result
         assert "# Save dir comment" in result
         assert "# Session prefix comment" in result
@@ -430,7 +429,7 @@ save_dir = "/custom/logs"
 
         # Non-default values should remain
         assert "auto_approve = true" in result
-        assert "max_doc_bytes = 50000" in result
+        assert "timeout_seconds = 5.0" in result
         assert 'save_dir = "/custom/logs"' in result
 
     def test_removes_empty_string_from_config_file(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
