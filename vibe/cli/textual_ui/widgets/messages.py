@@ -152,15 +152,7 @@ class StreamingMessageBase(Static):
             self._to_write_buffer = ""
 
     async def stop_stream(self) -> None:
-        if self._to_write_buffer and self._should_write_content():
-            stream = self._ensure_stream()
-            await stream.write(self._to_write_buffer)
-        self._to_write_buffer = ""
-
-        if self._stream is None:
-            return
-
-        # Cancel periodic flush
+        # Cancel periodic flush and flush any remaining batch content
         if self._flush_task and not self._flush_task.done():
             self._flush_task.cancel()
             try:
@@ -168,8 +160,17 @@ class StreamingMessageBase(Static):
             except asyncio.CancelledError:
                 pass
 
-        # Immediate flush of remaining content
+        # Immediate flush of remaining batch content
         await self._flush_batch()
+
+        # Write any remaining to_write_buffer content (for backward compatibility)
+        if self._to_write_buffer and self._should_write_content():
+            stream = self._ensure_stream()
+            await stream.write(self._to_write_buffer)
+        self._to_write_buffer = ""
+
+        if self._stream is None:
+            return
 
         await self._stream.stop()
         self._stream = None
