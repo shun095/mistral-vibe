@@ -18,6 +18,7 @@ from pydantic_settings import (
     SettingsConfigDict,
 )
 import tomlkit
+from tomlkit.exceptions import TOMLKitError
 
 from vibe.core.config.harness_files import get_harness_files_manager
 from vibe.core.paths import GLOBAL_ENV_FILE, SESSION_LOG_DIR
@@ -1171,17 +1172,21 @@ class VibeConfig(BaseSettings):
             return
         try:
             with file.open("rb") as f:
-                data = tomllib.load(f)
-        except (FileNotFoundError, tomllib.TOMLDecodeError, OSError):
+                doc = tomlkit.load(f)
+        except (FileNotFoundError, tomllib.TOMLDecodeError, OSError, TOMLKitError):
             return
 
-        bash_tools = data.get("tools", {}).get("bash", {})
-        allowlist = bash_tools.get("allowlist")
-        if allowlist is None or "find" not in allowlist:
-            return
-
-        allowlist.remove("find")
-        cls.dump_config(data)
+        bash_tools = doc.get("tools", {})
+        if isinstance(bash_tools, dict):
+            bash_config = bash_tools.get("bash", {})
+            if isinstance(bash_config, dict):
+                allowlist = bash_config.get("allowlist")
+                if allowlist is not None and "find" in allowlist:
+                    allowlist.remove("find")
+                    # Write back directly using tomlkit to preserve document structure
+                    with file.open("wb") as f:
+                        f.write(tomlkit.dumps(doc).encode("utf-8"))
+                    return
 
     @classmethod
     def load(cls, **overrides: Any) -> VibeConfig:
