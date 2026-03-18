@@ -931,9 +931,25 @@ class VibeApp(App):  # noqa: PLR0904
             await self._interrupt_agent_loop()
             return
         
-        # Process queued messages
+        # Process queued messages - same flow as TUI input
         while self._web_message_queue:
             message = self._web_message_queue.pop(0)
+            
+            # Check for teleport command first
+            if message.startswith("&"):
+                if self.config.nuage_enabled:
+                    await self._handle_teleport_command(message[1:])
+                    continue
+            
+            # Check for slash commands
+            if await self._handle_command(message):
+                continue
+            
+            # Check for skills
+            if await self._handle_skill(message):
+                continue
+            
+            # Regular user message
             await self._handle_user_message(message)
 
     def _reset_ui_state(self) -> None:

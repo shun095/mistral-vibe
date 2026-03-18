@@ -1,5 +1,5 @@
 module.exports = {
-  testEnvironment: 'node',
+  testEnvironment: 'jsdom',
   roots: ['<rootDir>/tests/js'],
   testMatch: ['**/*.test.js'],
   verbose: true,
@@ -10,4 +10,7 @@ module.exports = {
     'vibe/cli/web_ui/static/js/**/*.js',
     '!**/node_modules/**',
   ],
+  testEnvironmentOptions: {
+    customExportConditions: ['node', 'node-addons'],
+  },
 };

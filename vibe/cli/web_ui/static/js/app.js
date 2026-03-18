@@ -3,6 +3,7 @@
 // Import modules (ES6 modules for browser)
 import { QuestionHandler } from './question-handler.js';
 import * as scrollUtils from './scroll-utils.js';
+import { SlashCommandRegistry, SlashAutocomplete } from './slash-commands.js';
 
 /**
  * @typedef {Object} VibeClient
@@ -19,6 +20,11 @@ class VibeClient {
         
         // Initialize QuestionHandler
         this.questionHandler = new QuestionHandler();
+
+        // Initialize slash command system
+        this.slashRegistry = new SlashCommandRegistry();
+        this.slashRegistry.token = this.token;
+        this.slashAutocomplete = null; // Will be initialized in init()
 
         // Streaming state
         this.currentReasoningMessage = null;
@@ -92,6 +98,18 @@ class VibeClient {
 
     init() {
         this.bindEvents();
+        
+        // Initialize autocomplete after input element is available
+        if (this.elements.input && !this.slashAutocomplete) {
+            this.slashAutocomplete = new SlashAutocomplete(
+                this.elements.input,
+                this.slashRegistry
+            );
+        }
+        
+        // Load commands for autocomplete
+        this.slashRegistry.loadCommands();
+        
         this.connect();
         // Start polling for agent status
         this.startStatusPolling();
@@ -885,9 +903,31 @@ class VibeClient {
         });
     }
 
-    sendMessage() {
+    async sendMessage() {
         const content = this.elements.input.value.trim();
-        if (!content || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        if (!content) {
+            return;
+        }
+
+        // Check for slash command
+        const command = this.slashRegistry.getCommand(content);
+        if (command) {
+            // Execute command
+            const result = await this.slashRegistry.execute(command.name, command.args);
+            
+            if (result.success) {
+                // Clear input on success
+                this.elements.input.value = '';
+                this.elements.sendBtn.disabled = true;
+            } else {
+                // Show error message
+                this.addMessage('system', `❌ Command error: ${result.error}`);
+            }
+            return;
+        }
+
+        // Regular message handling
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
             return;
         }
 
