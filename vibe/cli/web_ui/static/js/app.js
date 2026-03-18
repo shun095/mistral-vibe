@@ -1,7 +1,8 @@
 // Mistral Vibe Web UI - WebSocket Client
 
-// Import QuestionHandler module (ES6 module)
+// Import modules (ES6 modules for browser)
 import { QuestionHandler } from './question-handler.js';
+import * as scrollUtils from './scroll-utils.js';
 
 /**
  * @typedef {Object} VibeClient
@@ -74,6 +75,9 @@ class VibeClient {
         this.elements.input.addEventListener('scroll', () => {
             this.autoResizeTextarea();
         });
+
+        // Bind scroll navigation buttons
+        this.bindScrollNavigationEvents();
     }
 
     autoResizeTextarea() {
@@ -219,6 +223,8 @@ class VibeClient {
             case 'connected':
                 this.updateStatus('Connected', true);
                 this.historyLoaded = true;
+                // Scroll to bottom after history is loaded
+                setTimeout(() => this.forceScrollToBottom(), 0);
                 break;
             case 'event':
                 this.handleEvent(message.event);
@@ -561,6 +567,7 @@ class VibeClient {
         if (this.currentToolCall && this.currentToolCallId === event.tool_call_id) {
             const contentDiv = this.currentToolCall.querySelector('.content');
             const toolNameSpan = this.currentToolCall.querySelector('.tool-name');
+            const previousScrollHeight = this.elements.messages.scrollHeight;
             
             // Update tool name if it changed
             if (toolNameSpan) {
@@ -580,6 +587,7 @@ class VibeClient {
                     argsDiv.textContent = String(event.args);
                     contentDiv.appendChild(argsDiv);
                 }
+                this.scrollToBottomIfWasAtBottom(previousScrollHeight);
             }
             return;
         }
@@ -597,6 +605,7 @@ class VibeClient {
         if (this.currentToolCall && this.currentToolCallId === event.tool_call_id) {
             const statusSpan = this.currentToolCall.querySelector('.tool-status');
             const contentDiv = this.currentToolCall.querySelector('.content');
+            const previousScrollHeight = this.elements.messages.scrollHeight;
             
             if (event.error) {
                 // Tool failed
@@ -605,11 +614,13 @@ class VibeClient {
                 errorDiv.className = 'tool-error';
                 errorDiv.innerHTML = `<pre>${this.escapeHtml(event.error)}</pre>`;
                 contentDiv.appendChild(errorDiv);
+                this.scrollToBottomIfWasAtBottom(previousScrollHeight);
             } else if (event.result) {
                 // Tool succeeded - use formatted display
                 if (statusSpan) statusSpan.textContent = '✅ Completed';
                 const resultCard = this.formatToolResult(event.tool_name, event.result);
                 contentDiv.appendChild(resultCard);
+                this.scrollToBottomIfWasAtBottom(previousScrollHeight);
             } else if (event.skipped) {
                 // Tool was skipped
                 if (statusSpan) statusSpan.textContent = '⏭️ Skipped';
@@ -617,11 +628,11 @@ class VibeClient {
                 skipDiv.className = 'tool-skip';
                 skipDiv.textContent = event.skip_reason || 'Tool was skipped';
                 contentDiv.appendChild(skipDiv);
+                this.scrollToBottomIfWasAtBottom(previousScrollHeight);
             }
             
             this.currentToolCall = null;
             this.currentToolCallId = null;
-            this.scrollToBottom();
         }
     }
 
@@ -636,8 +647,9 @@ class VibeClient {
             this.currentReasoningMessage = this.createReasoningMessage();
             this.elements.messages.appendChild(this.currentReasoningMessage);
         }
+        const previousScrollHeight = this.elements.messages.scrollHeight;
         this.appendReasoningContent(event.content);
-        this.scrollToBottom();
+        this.scrollToBottomIfWasAtBottom(previousScrollHeight);
     }
 
     handleAssistantEvent(event) {
@@ -652,8 +664,9 @@ class VibeClient {
             this.currentAssistantMessage = this.createAssistantMessage();
             this.elements.messages.appendChild(this.currentAssistantMessage);
         }
+        const previousScrollHeight = this.elements.messages.scrollHeight;
         this.appendAssistantContent(event.content);
-        this.scrollToBottom();
+        this.scrollToBottomIfWasAtBottom(previousScrollHeight);
     }
 
     createReasoningMessage() {
@@ -739,8 +752,106 @@ class VibeClient {
         return div.innerHTML;
     }
 
-     scrollToBottom() {
-        this.elements.messages.scrollTop = this.elements.messages.scrollHeight;
+    /**
+     * Scroll to bottom only if already at the bottom.
+     * This prevents disrupting the user's reading position.
+     */
+    scrollToBottom() {
+        scrollUtils.scrollToBottomIfNeeded(this.elements.messages);
+    }
+
+    /**
+     * Scroll to bottom if user was at bottom before the update.
+     * This handles expanding content that pushes the bottom down.
+     */
+    scrollToBottomIfWasAtBottom(previousScrollHeight) {
+        scrollUtils.scrollToBottomIfWasAtBottom(this.elements.messages, previousScrollHeight);
+    }
+
+    /**
+     * Force scroll to bottom regardless of current position.
+     */
+    forceScrollToBottom() {
+        scrollUtils.scrollToBottom(this.elements.messages);
+    }
+
+    /**
+     * Scroll to top of messages.
+     */
+    scrollToTop() {
+        scrollUtils.scrollToTop(this.elements.messages);
+    }
+
+    /**
+     * Scroll to previous user message.
+     */
+    scrollToPreviousUserMessage() {
+        scrollUtils.scrollToPreviousUserMessage(this.elements.messages);
+    }
+
+    /**
+     * Scroll to next user message.
+     */
+    scrollToNextUserMessage() {
+        scrollUtils.scrollToNextUserMessage(this.elements.messages);
+    }
+
+    /**
+     * Bind scroll navigation button events.
+     */
+    bindScrollNavigationEvents() {
+        const scrollTopBtn = document.getElementById('scroll-top-btn');
+        const scrollPrevUserBtn = document.getElementById('scroll-prev-user-btn');
+        const scrollNextUserBtn = document.getElementById('scroll-next-user-btn');
+        const scrollBottomBtn = document.getElementById('scroll-bottom-btn');
+
+        if (scrollTopBtn) {
+            scrollTopBtn.addEventListener('click', () => this.scrollToTop());
+        }
+
+        if (scrollPrevUserBtn) {
+            scrollPrevUserBtn.addEventListener('click', () => this.scrollToPreviousUserMessage());
+        }
+
+        if (scrollNextUserBtn) {
+            scrollNextUserBtn.addEventListener('click', () => this.scrollToNextUserMessage());
+        }
+
+        if (scrollBottomBtn) {
+            scrollBottomBtn.addEventListener('click', () => this.forceScrollToBottom());
+        }
+
+        // Position FAB buttons above the input area
+        this.updateFabPosition();
+
+        // Update position on window resize
+        window.addEventListener('resize', () => this.updateFabPosition());
+
+        // Watch for input area height changes using ResizeObserver
+        const inputArea = document.querySelector('.input-area');
+        if (inputArea && typeof ResizeObserver !== 'undefined') {
+            const resizeObserver = new ResizeObserver(() => this.updateFabPosition());
+            resizeObserver.observe(inputArea);
+        }
+    }
+
+    /**
+     * Update FAB position to be above the input area.
+     */
+    updateFabPosition() {
+        const fabContainer = document.querySelector('.fab-container');
+        const inputArea = document.querySelector('.input-area');
+        const chatContainer = document.querySelector('.chat-container');
+
+        if (!fabContainer || !inputArea || !chatContainer) return;
+
+        // Calculate position: bottom of chat container minus input area height minus padding
+        const chatContainerHeight = chatContainer.clientHeight;
+        const inputAreaHeight = inputArea.clientHeight;
+        const padding = 16; // Padding above input area
+
+        const bottomOffset = inputAreaHeight + padding;
+        fabContainer.style.bottom = `${bottomOffset}px`;
     }
 
     renderMarkdown(element) {
