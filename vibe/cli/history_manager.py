@@ -55,6 +55,9 @@ class HistoryManager:
             else:
                 return  # Command with no arguments
 
+        # Reload history from disk to ensure consistency across processes
+        self._load_history()
+
         if self._entries and self._entries[-1] == text:
             return
 

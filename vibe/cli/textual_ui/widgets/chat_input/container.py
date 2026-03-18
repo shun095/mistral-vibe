@@ -11,6 +11,7 @@ from textual.message import Message
 from vibe.cli.autocompletion.path_completion import PathCompletionController
 from vibe.cli.autocompletion.slash_command import SlashCommandController
 from vibe.cli.commands import CommandRegistry
+from vibe.cli.history_manager import HistoryManager
 from vibe.cli.textual_ui.widgets.chat_input.body import ChatInputBody
 from vibe.cli.textual_ui.widgets.chat_input.completion_manager import (
     MultiCompletionManager,
@@ -116,6 +117,10 @@ class ChatInputContainer(Vertical):
     @property
     def input_widget(self) -> ChatTextArea | None:
         return self._body.input_widget if self._body else None
+
+    @property
+    def history(self) -> HistoryManager | None:
+        return self._body.history if self._body else None
 
     @property
     def value(self) -> str:

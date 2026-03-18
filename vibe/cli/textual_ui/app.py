@@ -727,6 +727,10 @@ class VibeApp(App):  # noqa: PLR0904
 
         await self._mount_and_scroll(user_message)
 
+        # Save to history if available
+        if self._chat_input_container and self._chat_input_container.history:
+            self._chat_input_container.history.add(message)
+
         if not self._agent_running:
             self._agent_task = asyncio.create_task(
                 self._handle_agent_loop_turn(message)
