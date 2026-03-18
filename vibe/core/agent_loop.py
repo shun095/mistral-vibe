@@ -656,15 +656,6 @@ class AgentLoop:
     async def _process_one_tool_call(
         self, tool_call: ResolvedToolCall
     ) -> AsyncGenerator[ToolResultEvent | ToolStreamEvent]:
-        # Check for tool call loop before processing (only if enabled)
-        if self._loop_handler is not None:
-            is_loop, event = self._loop_handler.check_and_handle_loop_for_agent_loop(
-                tool_call, TOOL_ERROR_TAG, tool_call.tool_class, tool_call.call_id, self._handle_tool_response
-            )
-            if is_loop:
-                yield event
-                return
-
         try:
             tool_instance = self.tool_manager.get(tool_call.tool_name)
         except Exception as exc:
@@ -777,6 +768,34 @@ class AgentLoop:
         if not resolved.tool_calls:
             return
 
+        # Check for loop on the first tool call of this turn
+        first_tool_call = resolved.tool_calls[0]
+        if self._loop_handler is not None:
+            is_loop, error_msg = self._loop_handler.check_first_call(
+                first_tool_call, TOOL_ERROR_TAG
+            )
+            if is_loop:
+                from vibe.core.llm.format import FailedToolCall
+                
+                yield ToolResultEvent(
+                    tool_name=first_tool_call.tool_name,
+                    tool_class=first_tool_call.tool_class,
+                    error=error_msg,
+                    tool_call_id=first_tool_call.call_id,
+                )
+                self.stats.tool_calls_failed += 1
+                failed_call = FailedToolCall(
+                    tool_name=first_tool_call.tool_name,
+                    call_id=first_tool_call.call_id,
+                    error=error_msg or "",
+                )
+                self.messages.append(
+                    self.format_handler.create_failed_tool_response_message(
+                        failed_call, error_msg or ""
+                    )
+                )
+                return
+
         for tool_call in resolved.tool_calls:
             yield ToolCallEvent(
                 tool_name=tool_call.tool_name,
@@ -787,6 +806,11 @@ class AgentLoop:
 
         async for event in self._run_tools_concurrently(resolved.tool_calls):
             yield event
+
+        # Record the last tool call of this turn for future loop detection
+        last_tool_call = resolved.tool_calls[-1]
+        if self._loop_handler is not None:
+            self._loop_handler.record_last_call(last_tool_call)
 
     async def _execute_tool_to_queue(
         self,
