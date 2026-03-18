@@ -185,7 +185,10 @@ def test_detector_initializes_with_custom_threshold() -> None:
 
 
 def test_detector_detects_loop_when_threshold_exceeded() -> None:
-    """Test that detector detects a loop when threshold is exceeded."""
+    """Test that detector detects a loop when threshold is exceeded across turns.
+    
+    The detector tracks consecutive turns with identical tool calls.
+    """
     detector = ToolCallLoopDetector(threshold=3)
     
     sig = ToolCallSignature(
@@ -194,16 +197,20 @@ def test_detector_detects_loop_when_threshold_exceeded() -> None:
         call_id="call_1"
     )
     
-    # First call - no loop
-    assert not detector.detect_loop(sig)
-    # Second call - still no loop (2 consecutive, threshold is 3)
-    assert not detector.detect_loop(sig)
-    # Third call - loop detected (3 consecutive equals threshold)
-    assert detector.detect_loop(sig)
+    # Turn 1: First call - no loop
+    assert not detector.check_first_call_of_turn(sig)
+    detector.record_last_call_of_turn(sig)
+    
+    # Turn 2: First call - still no loop (2 consecutive turns, threshold is 3)
+    assert not detector.check_first_call_of_turn(sig)
+    detector.record_last_call_of_turn(sig)
+    
+    # Turn 3: First call - loop detected (3 consecutive turns equals threshold)
+    assert detector.check_first_call_of_turn(sig)
 
 
 def test_detector_resets_on_different_signature() -> None:
-    """Test that detector resets when a different signature is detected."""
+    """Test that detector resets when a different signature is detected across turns."""
     detector = ToolCallLoopDetector(threshold=3)
     
     sig1 = ToolCallSignature(
@@ -217,21 +224,32 @@ def test_detector_resets_on_different_signature() -> None:
         call_id="call_2"
     )
     
-    # 2 consecutive calls to sig1
-    detector.detect_loop(sig1)
-    detector.detect_loop(sig1)
+    # Turn 1: sig1
+    detector.check_first_call_of_turn(sig1)
+    detector.record_last_call_of_turn(sig1)
     
-    # Different signature - resets counter
-    detector.detect_loop(sig2)
+    # Turn 2: sig1 again
+    detector.check_first_call_of_turn(sig1)
+    detector.record_last_call_of_turn(sig1)
     
-    # Back to sig1 - counter starts fresh
-    assert not detector.detect_loop(sig1)
-    assert not detector.detect_loop(sig1)
-    assert detector.detect_loop(sig1)
+    # Turn 3: Different signature - resets counter
+    detector.check_first_call_of_turn(sig2)
+    detector.record_last_call_of_turn(sig2)
+    
+    # Turn 4: Back to sig1 - counter starts fresh
+    assert not detector.check_first_call_of_turn(sig1)
+    detector.record_last_call_of_turn(sig1)
+    
+    # Turn 5: sig1 again
+    assert not detector.check_first_call_of_turn(sig1)
+    detector.record_last_call_of_turn(sig1)
+    
+    # Turn 6: sig1 again - loop detected
+    assert detector.check_first_call_of_turn(sig1)
 
 
 def test_detector_with_threshold_2() -> None:
-    """Test detector with threshold of 2."""
+    """Test detector with threshold of 2 (loop detected after 2 consecutive turns)."""
     detector = ToolCallLoopDetector(threshold=2)
     
     sig = ToolCallSignature(
@@ -240,12 +258,16 @@ def test_detector_with_threshold_2() -> None:
         call_id="call_1"
     )
     
-    assert not detector.detect_loop(sig)
-    assert detector.detect_loop(sig)
+    # Turn 1: no loop
+    assert not detector.check_first_call_of_turn(sig)
+    detector.record_last_call_of_turn(sig)
+    
+    # Turn 2: loop detected (2 consecutive turns equals threshold)
+    assert detector.check_first_call_of_turn(sig)
 
 
 def test_detector_with_threshold_1() -> None:
-    """Test detector with threshold of 1 (detect on first occurrence)."""
+    """Test detector with threshold of 1 (loop detected on first turn)."""
     detector = ToolCallLoopDetector(threshold=1)
     
     sig = ToolCallSignature(
@@ -254,13 +276,12 @@ def test_detector_with_threshold_1() -> None:
         call_id="call_1"
     )
     
-    # With threshold=1, any repeated call is detected
-    assert not detector.detect_loop(sig)
-    assert detector.detect_loop(sig)
+    # With threshold=1, even the first call is detected as a loop
+    assert detector.check_first_call_of_turn(sig)
 
 
 def test_detector_handles_normalized_args_correctly() -> None:
-    """Test that detector correctly handles normalized arguments."""
+    """Test that detector correctly handles normalized arguments across turns."""
     detector = ToolCallLoopDetector(threshold=2)
     
     # Create signatures with same content but different key orders
@@ -276,14 +297,16 @@ def test_detector_handles_normalized_args_correctly() -> None:
     )
     
     # These should be treated as the same signature after normalization
-    # First call to sig1 (or sig2) - no loop
-    assert not detector.detect_loop(sig1)
-    # Second call to sig2 (same normalized content) - loop detected
-    assert detector.detect_loop(sig2)  # Same normalized content
+    # Turn 1: sig1 - no loop
+    assert not detector.check_first_call_of_turn(sig1)
+    detector.record_last_call_of_turn(sig1)
+    
+    # Turn 2: sig2 (same normalized content) - loop detected
+    assert detector.check_first_call_of_turn(sig2)  # Same normalized content
 
 
 def test_detector_multiple_different_signatures() -> None:
-    """Test detector with multiple different signatures."""
+    """Test detector with multiple different signatures across turns."""
     detector = ToolCallLoopDetector(threshold=3)
     
     sig1 = ToolCallSignature(
@@ -302,26 +325,40 @@ def test_detector_multiple_different_signatures() -> None:
         call_id="call_3"
     )
     
-    # Call sig1 twice - no loop yet
-    detector.detect_loop(sig1)
-    detector.detect_loop(sig1)
+    # Turn 1: sig1
+    detector.check_first_call_of_turn(sig1)
+    detector.record_last_call_of_turn(sig1)
     
-    # Switch to different signature - resets counter
-    detector.detect_loop(sig2)
+    # Turn 2: sig1 again
+    detector.check_first_call_of_turn(sig1)
+    detector.record_last_call_of_turn(sig1)
     
-    # Call sig2 once more - still no loop (2 consecutive)
-    assert not detector.detect_loop(sig2)
+    # Turn 3: Switch to different signature - resets counter
+    detector.check_first_call_of_turn(sig2)
+    detector.record_last_call_of_turn(sig2)
     
-    # Switch to sig3 - resets counter
-    detector.detect_loop(sig3)
+    # Turn 4: sig2 again - still no loop (2 consecutive)
+    assert not detector.check_first_call_of_turn(sig2)
+    detector.record_last_call_of_turn(sig2)
     
-    # Call sig3 once more - still no loop (2 consecutive)
-    assert not detector.detect_loop(sig3)
+    # Turn 5: Switch to sig3 - resets counter
+    detector.check_first_call_of_turn(sig3)
+    detector.record_last_call_of_turn(sig3)
     
-    # After switching back to sig1, it takes 3 calls to trigger loop
-    detector.detect_loop(sig1)
-    assert not detector.detect_loop(sig1)
-    assert detector.detect_loop(sig1)
+    # Turn 6: sig3 again - still no loop (2 consecutive)
+    assert not detector.check_first_call_of_turn(sig3)
+    detector.record_last_call_of_turn(sig3)
+    
+    # Turn 7: After switching back to sig1, counter starts fresh
+    detector.check_first_call_of_turn(sig1)
+    detector.record_last_call_of_turn(sig1)
+    
+    # Turn 8: sig1 again - still no loop (2 consecutive)
+    assert not detector.check_first_call_of_turn(sig1)
+    detector.record_last_call_of_turn(sig1)
+    
+    # Turn 9: sig1 again - loop detected (3 consecutive)
+    assert detector.check_first_call_of_turn(sig1)
 
 
 # ============ Integration tests (with agent_loop) ============
