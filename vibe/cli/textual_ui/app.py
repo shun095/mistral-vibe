@@ -1717,6 +1717,17 @@ Enhanced prompt:"""
     async def _exit_app(self) -> None:
         self.exit(result=self._get_session_resume_info())
 
+    def _restart_app(self) -> None:
+        """Restart the application using os.execv.
+        
+        This replaces the current process with a new instance,
+        preserving TTY attachment and process ID.
+        """
+        import os
+        import sys
+
+        os.execv(sys.executable, [sys.executable, "-m", "vibe.cli.entrypoint"] + sys.argv[1:])
+
     async def _setup_terminal(self) -> None:
         result = setup_terminal()
 
