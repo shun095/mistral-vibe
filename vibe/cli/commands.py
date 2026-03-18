@@ -52,6 +52,12 @@ class CommandRegistry:
                 handler="_exit_app",
                 exits=True,
             ),
+            "restart": Command(
+                aliases=frozenset(["/restart"]),
+                description="Restart the application",
+                handler="_restart_app",
+                exits=True,
+            ),
             "terminal-setup": Command(
                 aliases=frozenset(["/terminal-setup"]),
                 description="Configure Shift+Enter for newlines",
