@@ -29,6 +29,33 @@
     --hover-bg: #c5c9d8;
 }
 
+/* Dark Mode Colors - Iceberg Dark Palette */
+[data-theme="dark"] {
+    --bg-primary: #161821;
+    --bg-secondary: #1e2132;
+    --bg-tertiary: #272c42;
+    
+    --text-primary: #c6c8d1;
+    --text-secondary: #d2d4de;
+    --text-muted: #6b7089;
+    
+    --red: #e27878;
+    --red-dark: #e98989;
+    --green: #b4be82;
+    --green-dark: #c0ca8e;
+    --yellow: #e2a478;
+    --yellow-dark: #e9b189;
+    --blue: #84a0c6;
+    --blue-dark: #91acd1;
+    --purple: #a093c7;
+    --purple-dark: #ada0d3;
+    --cyan: #89b8c2;
+    --cyan-dark: #95c4ce;
+    
+    --border-color: #272c42;
+    --hover-bg: #272c42;
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -56,7 +83,9 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid var(--border-color);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
+    z-index: 10;
+    position: relative;
 }
 
 .header h1 {
@@ -74,6 +103,34 @@ body {
 
 .status.connected {
     background-color: var(--green);
+}
+
+.theme-toggle-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.theme-toggle-btn:hover {
+    background-color: var(--hover-bg);
+}
+
+.theme-toggle-btn .material-symbols-rounded {
+    font-size: 24px;
+}
+
+.header-actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
 }
 
 .chat-container {
@@ -123,7 +180,6 @@ body {
     background-color: var(--bg-secondary);
     color: var(--text-primary);
     border-bottom-left-radius: 4px;
-    border: 1px solid var(--border-color);
 }
 
 .message.reasoning {
@@ -132,7 +188,6 @@ body {
     color: var(--text-secondary);
     border-bottom-left-radius: 4px;
     font-style: italic;
-    border: 1px solid var(--border-color);
 }
 
 .message.reasoning .label {
@@ -146,7 +201,6 @@ body {
     background-color: var(--bg-secondary);
     color: var(--text-primary);
     border-bottom-left-radius: 4px;
-    border: 1px solid var(--blue);
     padding: 0;
 }
 
@@ -158,15 +212,16 @@ body {
 .message.tool-call .tool-header {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     margin-bottom: 0;
     padding-bottom: 0;
-    border-bottom: 1px solid var(--blue);
     line-height: 1.2;
 }
 
-.message.tool-call .tool-icon {
-    font-size: 1.2rem;
+.message.tool-call .tool-icon,
+.message.tool-call .tool-status .material-symbols-outlined,
+.message.tool-call .tool-status .material-symbols-rounded {
+    font-size: 1rem;
     line-height: 1;
 }
 
@@ -177,6 +232,9 @@ body {
 }
 
 .message.tool-call .tool-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: 0.85rem;
     color: var(--text-muted);
     line-height: 1;
@@ -246,7 +304,6 @@ body {
     border-radius: 6px;
     margin: 8px 0;
     overflow: hidden;
-    border: 1px solid var(--border-color);
 }
 
 .tool-result-card .card-header {
@@ -272,7 +329,7 @@ body {
 }
 
 .tool-result-card .card-header .card-icon {
-    font-size: 1.1rem;
+    font-size: 1rem;
 }
 
 .tool-result-card .card-header .card-toggle {
@@ -289,7 +346,6 @@ body {
     padding: 0;
     max-height: 500px;
     overflow-y: auto;
-    border-top: 1px solid var(--border-color);
 }
 
 .tool-result-card.collapsed .card-content {
@@ -362,12 +418,7 @@ body {
 /* Search result styles */
 .search-source-item {
     padding: 10px 12px;
-    border-bottom: 1px solid var(--border-color);
     transition: background-color 0.2s ease;
-}
-
-.search-source-item:last-child {
-    border-bottom: none;
 }
 
 .search-source-item:hover {
@@ -422,11 +473,6 @@ body {
     align-items: center;
     gap: 10px;
     padding: 8px 12px;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.todo-item:last-child {
-    border-bottom: none;
 }
 
 .todo-item .todo-status {
@@ -481,21 +527,15 @@ body {
 /* LSP diagnostic styles */
 .lsp-diagnostic {
     padding: 10px 12px;
-    border-bottom: 1px solid var(--border-color);
-    border-left: 3px solid;
-}
-
-.lsp-diagnostic:last-child {
-    border-bottom: none;
+    border-radius: 4px;
+    margin: 4px 0;
 }
 
 .lsp-diagnostic.error {
-    border-left-color: var(--red);
     background-color: #f5d5dc;
 }
 
 .lsp-diagnostic.warning {
-    border-left-color: var(--yellow);
     background-color: #fae5d3;
 }
 
@@ -539,7 +579,6 @@ body {
     background-color: var(--bg-tertiary);
     border-radius: 6px;
     margin: 8px 12px;
-    border: 1px solid var(--border-color);
 }
 
 .answer-item .answer-question {
@@ -570,7 +609,6 @@ body {
     color: var(--text-secondary);
     font-size: 0.875rem;
     text-align: center;
-    border: 1px solid var(--border-color);
 }
 
 .message .content {
@@ -581,15 +619,16 @@ body {
 .input-area {
     padding: 16px 24px;
     background-color: var(--bg-secondary);
-    border-top: 1px solid var(--border-color);
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.16), 0 3px 6px rgba(0, 0, 0, 0.23);
     display: flex;
+    align-items: center;
     gap: 12px;
 }
 
 #message-input {
     flex: 1;
     padding: 12px 16px;
-    border: 1px solid var(--border-color);
+    border: none;
     border-radius: 8px;
     background-color: var(--bg-primary);
     color: var(--text-primary);
@@ -603,7 +642,6 @@ body {
 
 #message-input:focus {
     outline: none;
-    border-color: var(--blue);
 }
 
 #send-btn {
@@ -615,6 +653,10 @@ body {
     cursor: pointer;
     font-size: 1rem;
     transition: background-color 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 42px;
 }
 
 #send-btn:hover:not(:disabled) {
@@ -631,14 +673,8 @@ body {
 .processing-indicator {
     display: flex;
     align-items: center;
-    gap: 12px;
+    justify-content: center;
     padding: 12px 16px;
-    background-color: var(--bg-secondary);
-    border-radius: 8px;
-    margin-bottom: 8px;
-    color: var(--green);
-    font-size: 0.9rem;
-    border: 1px solid var(--border-color);
 }
 
 .processing-spinner {
@@ -660,7 +696,7 @@ body {
 .interrupt-btn {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     padding: 12px 24px;
     background-color: var(--blue);
     color: white;
@@ -669,6 +705,7 @@ body {
     cursor: pointer;
     font-size: 1rem;
     transition: background-color 0.2s;
+    height: 42px;
 }
 
 .interrupt-btn:hover {
@@ -711,7 +748,6 @@ body {
     font-family: 'Courier New', Courier, monospace;
     font-size: 0.9em;
     color: var(--cyan);
-    border: 1px solid var(--border-color);
 }
 
 .message.assistant .content pre {
@@ -720,7 +756,6 @@ body {
     border-radius: 8px;
     overflow-x: auto;
     margin: 0.5em 0;
-    border: 1px solid var(--border-color);
 }
 
 .message.assistant .content pre code {
@@ -746,13 +781,11 @@ body {
 }
 
 .message.assistant .content blockquote {
-    border-left: 3px solid var(--cyan);
+    border-left: 4px solid var(--cyan);
     margin: 0.5em 0;
     padding: 0.5em 1em;
     background-color: var(--bg-primary);
     border-radius: 0 4px 4px 0;
-    border: 1px solid var(--border-color);
-    border-left-width: 3px;
 }
 
 .message.assistant .content blockquote p {
@@ -816,11 +849,9 @@ body {
 /* Popup Cards */
 .popup-card {
     background: var(--bg-secondary);
-    border: 2px solid var(--red);
     border-radius: 12px;
     padding: 20px;
     margin: 16px 24px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
     animation: popupSlideIn 0.3s ease-out;
 }
 
@@ -840,8 +871,6 @@ body {
     align-items: center;
     gap: 10px;
     margin-bottom: 16px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid var(--border-color);
 }
 
 .popup-icon {
@@ -862,7 +891,6 @@ body {
     font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Mono', 'Droid Sans Mono', 'Source Code Pro', monospace;
     font-size: 0.9em;
     overflow-x: auto;
-    border: 1px solid var(--border-color);
 }
 
 .popup-options {
@@ -994,6 +1022,10 @@ body {
 
 .fab-btn:active {
     transform: scale(0.95);
+}
+
+.fab-btn .material-symbols-rounded {
+    font-size: 24px;
 }
 
 /* Slash Command Autocomplete */
