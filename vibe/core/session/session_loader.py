@@ -246,8 +246,20 @@ class SessionLoader:
         return text or "(empty message)"
 
     @staticmethod
-    def _extract_text_from_content(content: str | None) -> str | None:
+    def _extract_text_from_content(content: str | list | None) -> str | None:
         if not content:
+            return None
+        if isinstance(content, list):
+            # Extract text from list of content items (e.g., mixed text and image_url)
+            texts = []
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    texts.append(item.get("text", ""))
+                elif isinstance(item, str):
+                    texts.append(item)
+            combined = " ".join(texts)
+            if combined:
+                return SessionLoader._clean_text(combined)
             return None
         return SessionLoader._clean_text(content)
 
