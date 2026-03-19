@@ -534,6 +534,30 @@ def create_app(
         tui_app.submit_message_from_web(command_text)
         return JSONResponse({"success": True})
 
+    @app.get("/api/messages")
+    def get_messages(token: str = Security(verify_token)) -> JSONResponse:
+        """Get current message history as events.
+
+        Args:
+            token: Authentication token.
+
+        Returns:
+            List of events representing the message history.
+        """
+        agent_loop = getattr(app.state, "agent_loop", None)
+        if agent_loop is None:
+            return JSONResponse({"events": []})
+
+        try:
+            events = messages_to_events(
+                agent_loop.messages, agent_loop.tool_manager
+            )
+            serialized_events = [serialize_event(event) for event in events]
+            return JSONResponse({"events": serialized_events})
+        except Exception as e:
+            logging.warning("Error converting messages to events: %s", e)
+            return JSONResponse({"events": []})
+
     @app.websocket("/ws")
     async def websocket_endpoint(
         websocket: WebSocket,

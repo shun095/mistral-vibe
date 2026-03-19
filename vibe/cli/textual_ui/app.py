@@ -124,6 +124,7 @@ from vibe.core.types import (
     ApprovalPopupEvent,
     ApprovalResponse,
     LLMMessage,
+    MessageResetEvent,
     PopupResponseEvent,
     QuestionPopupEvent,
     RateLimitError,
@@ -1487,6 +1488,11 @@ Enhanced prompt:"""
             await messages_area.remove_children()
 
             await self._resume_history_from_messages()
+
+            # Notify listeners that history was reset (resume)
+            self.agent_loop._notify_event_listeners(
+                MessageResetEvent(reason="resume")
+            )
 
             await self._mount_and_scroll(
                 UserCommandMessage(f"Resumed session `{event.session_id[:8]}`")

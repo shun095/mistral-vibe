@@ -317,8 +317,58 @@ class VibeClient {
                 // Hide popup when response is received (from TUI or web)
                 this.hidePopup(event);
                 break;
+            case 'MessageResetEvent':
+                console.log('Received MessageResetEvent:', event.reason);
+                this.handleMessageReset(event.reason);
+                break;
             default:
                 console.log('Unhandled event type:', eventType);
+        }
+    }
+
+    async handleMessageReset(reason) {
+        console.log(`Handling message reset (reason: ${reason})`);
+        
+        // Stop any ongoing streaming
+        this.stopStreaming();
+        
+        // Fetch fresh history from server
+        try {
+            const response = await fetch('/api/messages', {
+                headers: {
+                    'Authorization': `Bearer ${this.token}`
+                }
+            });
+            
+            if (!response.ok) {
+                console.error('Failed to fetch messages:', response.status);
+                return;
+            }
+            
+            const data = await response.json();
+            
+            // Clear only dynamic messages (not the welcome message)
+            const welcomeMessageDiv = Array.from(
+                this.elements.messages.querySelectorAll('.message.system')
+            ).find(div => div.textContent?.includes('Welcome to Mistral Vibe'));
+            
+            this.elements.messages.innerHTML = '';
+            
+            // Restore welcome message if it existed
+            if (welcomeMessageDiv) {
+                this.elements.messages.appendChild(welcomeMessageDiv);
+            }
+            
+            // Rebuild messages from events
+            for (const event of data.events) {
+                this.handleEvent(event);
+            }
+            
+            // Scroll to bottom after rebuilding
+            setTimeout(() => this.forceScrollToBottom(), 0);
+            
+        } catch (error) {
+            console.error('Error reloading messages:', error);
         }
     }
 
