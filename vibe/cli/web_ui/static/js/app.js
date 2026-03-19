@@ -48,6 +48,7 @@ class VibeClient {
             sendBtn: document.getElementById('send-btn'),
             interruptBtn: document.getElementById('interrupt-btn'),
             processingIndicator: document.getElementById('processing-indicator'),
+            themeToggle: document.getElementById('theme-toggle'),
         };
 
         this.historyLoaded = false;
@@ -85,6 +86,9 @@ class VibeClient {
 
         // Bind scroll navigation buttons
         this.bindScrollNavigationEvents();
+        
+        // Bind theme toggle button
+        this.elements.themeToggle.addEventListener('click', () => this.toggleTheme());
     }
 
     autoResizeTextarea() {
@@ -110,6 +114,13 @@ class VibeClient {
         
         // Load commands for autocomplete
         this.slashRegistry.loadCommands();
+        
+        // Set placeholder based on viewport width
+        this.updatePlaceholder();
+        window.addEventListener('resize', () => this.updatePlaceholder());
+        
+        // Load saved theme
+        this.loadTheme();
         
         this.connect();
         // Start polling for agent status
@@ -157,7 +168,7 @@ class VibeClient {
             // Hide processing indicator and interrupt button
             this.elements.processingIndicator.style.display = 'none';
             this.elements.interruptBtn.style.display = 'none';
-            this.elements.sendBtn.style.display = 'inline-block';
+            this.elements.sendBtn.style.display = 'flex';
             this.elements.input.disabled = false;
         }
     }
@@ -177,7 +188,7 @@ class VibeClient {
             }
         } catch (error) {
             console.error('Failed to request interrupt:', error);
-            this.addMessage('system', '❌ Failed to request interrupt');
+            this.addMessage('system', 'Failed to request interrupt');
         }
     }
 
@@ -326,7 +337,7 @@ class VibeClient {
         
         popupDiv.innerHTML = `
             <div class="popup-header">
-                <span class="popup-icon">⚠️</span>
+                <span class="popup-icon material-symbols-rounded">warning</span>
                 <span class="popup-title">${this.escapeHtml(`${event.tool_name} command`)}</span>
             </div>
             <div class="popup-content">
@@ -446,7 +457,7 @@ class VibeClient {
         
         popupDiv.innerHTML = `
             <div class="popup-header">
-                <span class="popup-icon">❓</span>
+                <span class="popup-icon material-symbols-rounded">help</span>
                 <span class="popup-title">${this.escapeHtml(headerText)}</span>
             </div>
             <div class="popup-content">
@@ -624,7 +635,7 @@ class VibeClient {
         }
         
         // Create new tool call widget using createToolCallElement
-        const toolCallDiv = this.createToolCallElement(event.tool_name, event.args, '⏳ Running...');
+        const toolCallDiv = this.createToolCallElement(event.tool_name, event.args, 'hourglass_empty', 'Running...');
         this.elements.messages.appendChild(toolCallDiv);
         this.currentToolCall = toolCallDiv;
         this.currentToolCallId = event.tool_call_id;
@@ -640,7 +651,7 @@ class VibeClient {
             
             if (event.error) {
                 // Tool failed
-                if (statusSpan) statusSpan.textContent = '❌ Failed';
+                if (statusSpan) statusSpan.innerHTML = '<span class="material-symbols-rounded">error</span> Failed';
                 const errorDiv = document.createElement('div');
                 errorDiv.className = 'tool-error';
                 errorDiv.innerHTML = `<pre>${this.escapeHtml(event.error)}</pre>`;
@@ -648,13 +659,13 @@ class VibeClient {
                 this.scrollToBottomIfWasAtBottom(previousScrollHeight);
             } else if (event.result) {
                 // Tool succeeded - use formatted display
-                if (statusSpan) statusSpan.textContent = '✅ Completed';
+                if (statusSpan) statusSpan.innerHTML = '<span class="material-symbols-rounded">check_circle</span> Completed';
                 const resultCard = this.formatToolResult(event.tool_name, event.result);
                 contentDiv.appendChild(resultCard);
                 this.scrollToBottomIfWasAtBottom(previousScrollHeight);
             } else if (event.skipped) {
                 // Tool was skipped
-                if (statusSpan) statusSpan.textContent = '⏭️ Skipped';
+                if (statusSpan) statusSpan.innerHTML = '<span class="material-symbols-rounded">skip_next</span> Skipped';
                 const skipDiv = document.createElement('div');
                 skipDiv.className = 'tool-skip';
                 skipDiv.textContent = event.skip_reason || 'Tool was skipped';
@@ -931,10 +942,11 @@ class VibeClient {
             if (result.success) {
                 // Clear input on success
                 this.elements.input.value = '';
+                this.autoResizeTextarea();
                 this.elements.sendBtn.disabled = true;
             } else {
                 // Show error message
-                this.addMessage('system', `❌ Command error: ${result.error}`);
+                this.addMessage('system', `Command error: ${result.error}`);
             }
             return;
         }
@@ -950,6 +962,7 @@ class VibeClient {
         }));
 
         this.elements.input.value = '';
+        this.autoResizeTextarea();
         this.elements.sendBtn.disabled = true;
     }
 
@@ -963,7 +976,7 @@ class VibeClient {
     }
 
     // Create a tool call element (used for both streaming and historical)
-    createToolCallElement(toolName, args, statusText) {
+    createToolCallElement(toolName, args, statusIcon, statusText) {
         const toolCallDiv = document.createElement('div');
         toolCallDiv.className = 'message tool-call';
         
@@ -974,9 +987,12 @@ class VibeClient {
         const headerDiv = document.createElement('div');
         headerDiv.className = 'tool-header';
         headerDiv.innerHTML = `
-            <span class="tool-icon">🔧</span>
+            <span class="material-symbols-rounded tool-icon">settings</span>
             <span class="tool-name">${this.escapeHtml(toolName)}</span>
-            <span class="tool-status">${this.escapeHtml(statusText)}</span>
+            <span class="tool-status">
+                <span class="material-symbols-outlined">${this.escapeHtml(statusIcon || 'check_circle')}</span>
+                ${this.escapeHtml(statusText || '')}
+            </span>
         `;
         contentDiv.appendChild(headerDiv);
         
@@ -1063,7 +1079,7 @@ class VibeClient {
         const isSuccess = returncode === 0;
         
         const headerTitle = `bash: ${result.command || 'command'}`;
-        const headerIcon = isSuccess ? '✅' : '❌';
+        const headerIcon = isSuccess ? '<span class="material-symbols-rounded">check_circle</span>' : '<span class="material-symbols-rounded">error</span>';
         const summary = `Return code: ${returncode}`;
         
         this.createCardHeader(card, headerTitle, headerIcon, summary);
@@ -1103,7 +1119,7 @@ class VibeClient {
     formatWebSearchResult(card, result) {
         const sourceCount = result.sources?.length || 0;
         const headerTitle = `Web search: ${result.answer?.substring(0, 50) || 'search'}...`;
-        const headerIcon = '🔍';
+        const headerIcon = '<span class="material-symbols-rounded">search</span>';
         const summary = `${sourceCount} sources found`;
         
         this.createCardHeader(card, headerTitle, headerIcon, summary);
@@ -1139,7 +1155,7 @@ class VibeClient {
 
     formatWebFetchResult(card, result) {
         const headerTitle = `Fetch: ${result.url || 'URL'}`;
-        const headerIcon = '📄';
+        const headerIcon = '<span class="material-symbols-rounded">description</span>';
         const linesRead = result.lines_read || 0;
         const totalLines = result.total_lines || 0;
         const wasTruncated = result.was_truncated ? ' (truncated)' : '';
@@ -1170,7 +1186,7 @@ class VibeClient {
 
     formatGrepResult(card, result) {
         const headerTitle = `Grep: ${result.pattern || 'pattern'}`;
-        const headerIcon = '🔎';
+        const headerIcon = '<span class="material-symbols-rounded">search</span>';
         const matchCount = result.match_count || 0;
         const wasTruncated = result.was_truncated ? ' (truncated)' : '';
         const summary = `${matchCount} matches found${wasTruncated}`;
@@ -1190,7 +1206,7 @@ class VibeClient {
 
     formatReadFileResult(card, result) {
         const headerTitle = `Read: ${result.path || 'file'}`;
-        const headerIcon = '📖';
+        const headerIcon = '<span class="material-symbols-rounded">description</span>';
         const linesRead = result.lines_read || 0;
         const wasTruncated = result.was_truncated ? ' (truncated)' : '';
         const summary = `Read ${linesRead} lines${wasTruncated}`;
@@ -1234,7 +1250,7 @@ class VibeClient {
 
     formatEditFileResult(card, result) {
         const headerTitle = `Edit: ${result.file || 'file'}`;
-        const headerIcon = '✏️';
+        const headerIcon = '<span class="material-symbols-rounded">edit</span>';
         const blocksApplied = result.blocks_applied || 0;
         const linesChanged = result.lines_changed || 0;
         const summary = `${blocksApplied} block(s) applied, ${linesChanged} line(s) changed`;
@@ -1296,7 +1312,11 @@ class VibeClient {
         const warnings = diagnostics.filter(d => d.severity === 2).length;
         
         let headerTitle = 'LSP Diagnostics';
-        let headerIcon = errors > 0 ? '❌' : (warnings > 0 ? '⚠️' : '✅');
+        let headerIcon = errors > 0 
+            ? '<span class="material-symbols-rounded">error</span>' 
+            : (warnings > 0 
+                ? '<span class="material-symbols-rounded">warning</span>' 
+                : '<span class="material-symbols-rounded">check_circle</span>');
         let summary = '';
         
         if (errors === 0 && warnings === 0) {
@@ -1321,7 +1341,7 @@ class VibeClient {
     formatTodoResult(card, result) {
         const total = result.total_count || 0;
         const headerTitle = 'Todo List';
-        const headerIcon = '✅';
+        const headerIcon = '<span class="material-symbols-rounded">check_circle</span>';
         const summary = `${total} total tasks`;
         
         this.createCardHeader(card, headerTitle, headerIcon, summary);
@@ -1359,7 +1379,7 @@ class VibeClient {
         const answerCount = result.answers?.length || 0;
         const cancelled = result.cancelled ? ' (cancelled)' : '';
         const headerTitle = 'User Answers';
-        const headerIcon = '💬';
+        const headerIcon = '<span class="material-symbols-rounded">chat_outgoing</span>';
         const summary = `${answerCount} answer(s)${cancelled}`;
         
         this.createCardHeader(card, headerTitle, headerIcon, summary);
@@ -1384,11 +1404,50 @@ class VibeClient {
 
     formatGenericResult(card, result) {
         const headerTitle = 'Result';
-        const headerIcon = '📊';
+        const headerIcon = '<span class="material-symbols-rounded">analytics</span>';
         const summary = JSON.stringify(result, null, 2);
         
         this.createCardHeader(card, headerTitle, headerIcon, summary);
         return card;
+    }
+
+    updatePlaceholder() {
+        const mobilePlaceholder = 'Type your message...';
+        const desktopPlaceholder = 'Type your message... (Ctrl+Enter/Cmd+Enter to send)';
+        
+        if (window.innerWidth <= 480) {
+            this.elements.input.placeholder = mobilePlaceholder;
+        } else {
+            this.elements.input.placeholder = desktopPlaceholder;
+        }
+    }
+
+    toggleTheme() {
+        const currentTheme = document.documentElement.getAttribute('data-theme');
+        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+        const icon = this.elements.themeToggle.querySelector('.material-symbols-rounded');
+        
+        document.documentElement.setAttribute('data-theme', newTheme);
+        localStorage.setItem('theme', newTheme);
+        
+        if (newTheme === 'dark') {
+            icon.textContent = 'light_mode';
+        } else {
+            icon.textContent = 'dark_mode';
+        }
+    }
+
+    loadTheme() {
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        const icon = this.elements.themeToggle.querySelector('.material-symbols-rounded');
+        
+        document.documentElement.setAttribute('data-theme', savedTheme);
+        
+        if (savedTheme === 'dark') {
+            icon.textContent = 'light_mode';
+        } else {
+            icon.textContent = 'dark_mode';
+        }
     }
 }
 

@@ -5,13 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mistral Vibe Web UI</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
     <link rel="stylesheet" href="/static/css/style.css?v=20260318j">
 </head>
 <body>
     <div class="container">
         <header class="header">
             <h1>Mistral Vibe</h1>
-            <div class="status" id="status">Disconnected</div>
+            <div class="header-actions">
+                <button id="theme-toggle" class="theme-toggle-btn" title="Toggle dark mode">
+                    <span class="material-symbols-rounded">dark_mode</span>
+                </button>
+                <div class="status" id="status">Disconnected</div>
+            </div>
         </header>
 
         <main class="chat-container">
@@ -21,25 +28,24 @@
                 </div>
             </div>
             <div class="fab-container">
-                <button class="fab-btn" id="scroll-top-btn" title="Scroll to top">⬆️</button>
-                <button class="fab-btn" id="scroll-prev-user-btn" title="Scroll to previous user message">⬅️</button>
-                <button class="fab-btn" id="scroll-next-user-btn" title="Scroll to next user message">➡️</button>
-                <button class="fab-btn" id="scroll-bottom-btn" title="Scroll to bottom">⬇️</button>
+                <button class="fab-btn" id="scroll-top-btn" title="Scroll to top"><span class="material-symbols-rounded">keyboard_arrow_up</span></button>
+                <button class="fab-btn" id="scroll-prev-user-btn" title="Scroll to previous user message"><span class="material-symbols-rounded">keyboard_arrow_left</span></button>
+                <button class="fab-btn" id="scroll-next-user-btn" title="Scroll to next user message"><span class="material-symbols-rounded">keyboard_arrow_right</span></button>
+                <button class="fab-btn" id="scroll-bottom-btn" title="Scroll to bottom"><span class="material-symbols-rounded">keyboard_arrow_down</span></button>
             </div>
 
             <div class="input-area">
                 <div id="processing-indicator" class="processing-indicator" style="display: none;">
                     <div class="processing-spinner"></div>
-                    <span>Processing...</span>
                 </div>
                 <textarea
                     id="message-input"
                     placeholder="Type your message... (Ctrl+Enter/Cmd+Enter to send)"
                     rows="1"
                 ></textarea>
-                <button id="send-btn" disabled>Send</button>
+                <button id="send-btn" disabled><span class="material-symbols-rounded">send</span> Send</button>
                 <button id="interrupt-btn" class="interrupt-btn" style="display: none;">
-                    <span>⏹️</span> Interrupt
+                    <span class="material-symbols-rounded">stop</span> Interrupt
                 </button>
             </div>
         </main>
