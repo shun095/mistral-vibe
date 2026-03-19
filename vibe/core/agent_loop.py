@@ -1253,6 +1253,8 @@ class AgentLoop:
                 self.messages.append(
                     LLMMessage(role=Role.user, content=summary_request)
                 )
+                # Sleep to prevent the Llama.cpp server from becoming busy and crashing
+                await asyncio.sleep(1)
                 summary_result = await self._chat(
                     model_override=self.config.get_compaction_model()
                 )
