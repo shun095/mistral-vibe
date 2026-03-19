@@ -18,7 +18,7 @@ def run_web_server_in_background(
     port: int = 9092,
     token: str | None = None,
     agent_loop: AgentLoop | None = None,
-    tui_app: "VibeApp | None" = None,
+    tui_app: VibeApp | None = None,
 ) -> threading.Thread:
     """Start the web UI server in a background thread.
 
