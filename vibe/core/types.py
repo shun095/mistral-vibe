@@ -366,13 +366,13 @@ class BaseEvent(BaseModel, ABC):
 
 
 class UserMessageEvent(BaseEvent):
-    content: str
+    content: Content
     message_id: str
 
 
 class ContinueableUserMessageEvent(BaseEvent):
     """Event for user messages that require the conversation to continue."""
-    content: str | list
+    content: Content
     message_id: str | None = None
 
 

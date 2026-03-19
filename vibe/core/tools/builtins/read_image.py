@@ -165,7 +165,7 @@ class ReadImage(
         return cls._construct_events
     
     @classmethod
-    def get_llm_message_constructor(cls) -> "LLMMessageConstructor | None":
+    def get_llm_message_constructor(cls) -> LLMMessageConstructor | None:
         """Return LLM message constructor for read_image tool."""
         return cls._construct_llm_message
     

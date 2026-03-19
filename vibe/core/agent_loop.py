@@ -10,6 +10,9 @@ from pathlib import Path
 from threading import Thread
 import time
 from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from vibe.core.types import Content
 from uuid import uuid4
 
 from pydantic import BaseModel
@@ -309,7 +312,14 @@ class AgentLoop:
             self.agent_profile,
         )
 
-    async def act(self, msg: str) -> AsyncGenerator[BaseEvent]:
+    async def act(
+        self, msg: Content
+    ) -> AsyncGenerator[BaseEvent]:
+        """Process a user message (text or multi-part content).
+        
+        Args:
+            msg: User message as string or multi-part content list (e.g., for images).
+        """
         self._clean_message_history()
         async for event in self._conversation_loop(msg):
             yield event
@@ -494,13 +504,13 @@ class AgentLoop:
         return headers
 
     async def _conversation_loop(
-        self, user_msg: str | None = None
+        self, user_msg: Content | None = None
     ) -> AsyncGenerator[BaseEvent]:
         """Run the conversation loop.
         
         Args:
-            user_msg: New user message to add. If None, extracts last user message
-                from history (used for edit operations).
+            user_msg: New user message to add (string or multi-part content).
+                If None, extracts last user message from history (used for edit operations).
         """
         # Use strategy pattern to handle message preparation
         handler = create_message_handler(user_msg)
