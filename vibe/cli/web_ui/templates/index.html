@@ -38,11 +38,21 @@
                 <div id="processing-indicator" class="processing-indicator" style="display: none;">
                     <div class="processing-spinner"></div>
                 </div>
+                <div id="image-preview-container" class="image-preview-container" style="display: none;">
+                    <div class="image-preview">
+                        <img id="image-preview-img" src="" alt="Image preview">
+                        <button id="image-preview-remove" class="image-preview-remove" title="Remove image">
+                            <span class="material-symbols-rounded">close</span>
+                        </button>
+                    </div>
+                </div>
                 <textarea
                     id="message-input"
-                    placeholder="Type your message... (Ctrl+Enter/Cmd+Enter to send)"
+                    placeholder="Type your message... (Ctrl+Enter/Cmd+Enter to send, Ctrl+V to paste image)"
                     rows="1"
                 ></textarea>
+                <input type="file" id="image-file-input" accept="image/png,image/jpeg,image/webp" style="display: none;">
+                <button id="attach-image-btn" title="Attach image from file"><span class="material-symbols-rounded">add_photo_alternate</span></button>
                 <button id="send-btn" disabled><span class="material-symbols-rounded">send</span> Send</button>
                 <button id="interrupt-btn" class="interrupt-btn" style="display: none;">
                     <span class="material-symbols-rounded">stop</span> Interrupt

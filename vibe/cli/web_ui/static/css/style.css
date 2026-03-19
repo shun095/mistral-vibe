@@ -1078,3 +1078,85 @@ body {
 .slash-autocomplete .suggestions li.selected span {
     color: rgba(255, 255, 255, 0.8);
 }
+
+/* Image Preview Styles */
+.image-preview-container {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    background-color: var(--bg-tertiary);
+    border-radius: 8px;
+    margin-bottom: 8px;
+}
+
+.image-preview {
+    position: relative;
+    display: inline-block;
+}
+
+.image-preview img {
+    display: block;
+    max-width: 150px;
+    max-height: 100px;
+    border-radius: 6px;
+    border: 2px solid var(--border-color);
+    object-fit: cover;
+}
+
+.image-preview-remove {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background-color: var(--red);
+    color: white;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+}
+
+.image-preview-remove:hover {
+    background-color: var(--red-dark);
+}
+
+.image-preview-remove .material-symbols-rounded {
+    font-size: 16px;
+}
+
+/* Dark mode adjustments */
+[data-theme="dark"] .image-preview-container {
+    background-color: var(--bg-tertiary);
+}
+
+[data-theme="dark"] .image-preview img {
+    border-color: var(--border-color);
+}
+
+/* Attach Image Button */
+#attach-image-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 6px;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+#attach-image-btn:hover {
+    background-color: var(--hover-bg);
+    color: var(--text-primary);
+}
+
+#attach-image-btn .material-symbols-rounded {
+    font-size: 24px;
+}
