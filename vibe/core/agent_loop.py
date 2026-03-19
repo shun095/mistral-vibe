@@ -79,6 +79,7 @@ from vibe.core.types import (
     LLMMessage,
     LLMUsage,
     MessageList,
+    MessageResetEvent,
     RateLimitError,
     ReasoningEvent,
     Role,
@@ -446,7 +447,7 @@ class AgentLoop:
                 self.telemetry_client.send_auto_compact_triggered()
 
                 try:
-                    summary = await self.compact()
+                    summary = await self.compact(reason="auto_compact")
 
                     yield CompactEndEvent(
                         tool_call_id=tool_call_id,
@@ -1170,6 +1171,9 @@ class AgentLoop:
         self.middleware_pipeline.reset()
         self.tool_manager.reset_all()
         self._reset_session()
+        
+        # Notify listeners that history was cleared
+        self._notify_event_listeners(MessageResetEvent(reason="clear"))
 
     async def edit_last_message(self, new_content: str) -> None:
         """Edit the last user message and remove all subsequent messages.
@@ -1219,7 +1223,7 @@ class AgentLoop:
         # Update the current user message ID for tracking
         self._current_user_message_id = edited_message_id
 
-    async def compact(self) -> str:
+    async def compact(self, reason: Literal["compact", "auto_compact"] = "compact") -> str:
         try:
             with self.messages.silent():
                 self._clean_message_history()
@@ -1279,6 +1283,9 @@ class AgentLoop:
             )
 
             self.middleware_pipeline.reset(reset_reason=ResetReason.COMPACT)
+
+            # Notify listeners that history was compacted
+            self._notify_event_listeners(MessageResetEvent(reason=reason))
 
             return summary_content or ""
 

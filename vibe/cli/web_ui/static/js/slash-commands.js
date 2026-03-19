@@ -159,6 +159,15 @@ export class SlashAutocomplete {
                 <span>${this.escapeHtml(sug.description)}</span>
             </li>
         `).join('');
+        
+        // Add click handlers to suggestions
+        const items = list.querySelectorAll('li');
+        items.forEach((item, idx) => {
+            item.addEventListener('click', () => {
+                this.selectedIndex = idx;
+                this.complete(this.suggestions[idx].label);
+            });
+        });
     }
 
     position() {

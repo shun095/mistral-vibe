@@ -492,6 +492,17 @@ class PopupResponseEvent(BaseEvent):
     cancelled: bool = Field(description="Whether the popup was cancelled")
 
 
+class MessageResetEvent(BaseEvent):
+    """Event broadcast when message history is reset.
+    
+    Triggered by /clear, /compact, /resume, or auto-compact operations.
+    """
+
+    reason: Literal["clear", "compact", "resume", "auto_compact"] = Field(
+        description="Reason for the message reset"
+    )
+
+
 class MessageList(Sequence[LLMMessage]):
     def __init__(
         self,
