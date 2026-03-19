@@ -273,7 +273,7 @@ class VibeApp(App):  # noqa: PLR0904
         self._interrupt_requested = False
         self._agent_task: asyncio.Task | None = None
         self._tui_ready = False
-        self._web_message_queue: list[str] = []
+        self._web_message_queue: list[dict[str, str | dict[str, str] | None]] = []
 
         self._enhancement_running = False
         self._enhancement_task: asyncio.Task | None = None
@@ -737,7 +737,107 @@ class VibeApp(App):  # noqa: PLR0904
                 self._handle_agent_loop_turn(message)
             )
 
-    def submit_message_from_web(self, message: str) -> None:
+    async def _handle_user_message_with_image(
+        self, message: str, image_data: dict
+    ) -> None:
+        """Handle a user message with an attached image from web UI.
+
+        Args:
+            message: The user text message.
+            image_data: Dictionary with 'data' (base64) and 'mime_type' keys.
+        """
+        # Build multi-part content for LLM
+        base64_data = image_data.get("data", "")
+        mime_type = image_data.get("mime_type", "image/png")
+        
+        # Create content list with text and image
+        content: list[dict] = []
+        if message:
+            content.append({"type": "text", "text": message})
+        content.append(
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:{mime_type};base64,{base64_data}"}
+            }
+        )
+
+        # Add combined message with image placeholder to the display
+        from vibe.cli.textual_ui.widgets.messages import ImageMessage
+        image_message = ImageMessage(message if message else "")
+        await self._mount_and_scroll(image_message)
+
+        # Save to history if available
+        if self._chat_input_container and self._chat_input_container.history:
+            self._chat_input_container.history.add(message)
+
+        # Add message with image to agent loop history and process
+        if not self._agent_running:
+            self._agent_task = asyncio.create_task(
+                self._handle_agent_loop_turn_with_content(content)
+            )
+
+    async def _handle_agent_loop_turn_with_content(
+        self, content: list[dict]
+    ) -> None:
+        """Handle agent loop turn with multi-part content (text + image).
+
+        Args:
+            content: Multi-part content list for the LLM.
+        """
+        self._agent_running = True
+
+        loading_area = self._cached_loading_area or self.query_one(
+            "#loading-area-content"
+        )
+
+        loading = LoadingWidget()
+        self._loading_widget = loading
+        await loading_area.mount(loading)
+
+        try:
+            # Use act() with multi-part content
+            async for event in self.agent_loop.act(content):
+                if self.event_handler:
+                    await self.event_handler.handle_event(
+                        event,
+                        loading_active=self._loading_widget is not None,
+                        loading_widget=self._loading_widget,
+                    )
+
+        except asyncio.CancelledError:
+            if self._loading_widget and self._loading_widget.parent:
+                await self._loading_widget.remove()
+            if self.event_handler:
+                self.event_handler.stop_current_tool_call(success=False)
+            raise
+        except Exception as e:
+            if self._loading_widget and self._loading_widget.parent:
+                await self._loading_widget.remove()
+            if self.event_handler:
+                self.event_handler.stop_current_tool_call(success=False)
+
+            error_message = str(e)
+            if isinstance(e, RateLimitError):
+                error_message = self._rate_limit_message()
+
+            await self._mount_and_scroll(
+                ErrorMessage(error_message, collapsed=self._tools_collapsed)
+            )
+        finally:
+            self._agent_running = False
+            self._interrupt_requested = False
+            self._agent_task = None
+            if self._loading_widget:
+                await self._loading_widget.remove()
+            self._loading_widget = None
+            if self.event_handler:
+                await self.event_handler.finalize_streaming()
+            await self._refresh_windowing_from_history()
+            self._terminal_notifier.notify(NotificationContext.COMPLETE)
+
+    def submit_message_from_web(
+        self, message: str, image_data: dict | None = None
+    ) -> None:
         """Submit a message from the web UI to the TUI.
 
         This method is called from the web server thread and schedules
@@ -745,13 +845,16 @@ class VibeApp(App):  # noqa: PLR0904
 
         Args:
             message: The user message to submit.
+            image_data: Optional image attachment with 'data' (base64) and 'mime_type' keys.
         """
         # Only process messages if TUI is ready
         if not self._tui_ready:
             return
 
         # Store message for processing in TUI event loop
-        self._web_message_queue.append(message)
+        self._web_message_queue.append(
+            {"message": message, "image": image_data}
+        )
 
     def is_agent_running(self) -> bool:
         """Check if the agent is currently running/processing.
@@ -934,7 +1037,14 @@ class VibeApp(App):  # noqa: PLR0904
         
         # Process queued messages - same flow as TUI input
         while self._web_message_queue:
-            message = self._web_message_queue.pop(0)
+            item = self._web_message_queue.pop(0)
+            message = item.get("message", "")
+            image_data = item.get("image")
+            
+            # Handle messages with image attachments
+            if image_data:
+                await self._handle_user_message_with_image(message, image_data)
+                continue
             
             # Check for teleport command first
             if message.startswith("&"):

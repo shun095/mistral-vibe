@@ -52,12 +52,12 @@ class SpecialToolBehavior(Protocol):
     """Interface for tools that require special handling in the agent loop."""
 
     @classmethod
-    def get_event_constructor(cls) -> "EventConstructor | None":
+    def get_event_constructor(cls) -> EventConstructor | None:
         """Return event constructor for tools that need custom UI events."""
         return None
 
     @classmethod
-    def get_llm_message_constructor(cls) -> "LLMMessageConstructor | None":
+    def get_llm_message_constructor(cls) -> LLMMessageConstructor | None:
         """Return LLM message constructor for tools that need to add context to LLM."""
         return None
 

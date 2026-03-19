@@ -366,7 +366,7 @@ def create_app(
     port: int = 9092,
     token: str | None = None,
     agent_loop: AgentLoop | None = None,
-    tui_app: "VibeApp | None" = None,
+    tui_app: VibeApp | None = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application.
 
@@ -656,9 +656,10 @@ def create_app(
                 # Handle user messages
                 if message.get("type") == "user_message":
                     content = message.get("content", "")
-                    if content and hasattr(app.state, "tui_app") and app.state.tui_app:
+                    image_data = message.get("image")
+                    if (content or image_data) and hasattr(app.state, "tui_app") and app.state.tui_app:
                         # Submit message to TUI
-                        app.state.tui_app.submit_message_from_web(content)
+                        app.state.tui_app.submit_message_from_web(content, image_data)
                 
                 # Handle approval responses
                 elif message.get("type") == "approval_response":

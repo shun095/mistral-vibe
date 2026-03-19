@@ -166,7 +166,7 @@ async def test_process_web_messages_continues_when_no_interrupt() -> None:
     app = VibeApp(agent_loop=mock_agent_loop)
     app._agent_running = False
     app._interrupt_requested = False
-    app._web_message_queue = ["test message"]
+    app._web_message_queue = [{"message": "test message", "image": None}]
 
     # Track if message was processed
     message_processed = False

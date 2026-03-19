@@ -4,6 +4,7 @@
 import { QuestionHandler } from './question-handler.js';
 import * as scrollUtils from './scroll-utils.js';
 import { SlashCommandRegistry, SlashAutocomplete } from './slash-commands.js';
+import { ImageAttachmentHandler } from './image-attachment.js';
 
 /**
  * @typedef {Object} VibeClient
@@ -25,6 +26,9 @@ class VibeClient {
         this.slashRegistry = new SlashCommandRegistry();
         this.slashRegistry.token = this.token;
         this.slashAutocomplete = null; // Will be initialized in init()
+
+        // Image attachment handler (initialized in init() after DOM elements are ready)
+        this.imageAttachment = null;
 
         // Streaming state
         this.currentReasoningMessage = null;
@@ -49,6 +53,11 @@ class VibeClient {
             interruptBtn: document.getElementById('interrupt-btn'),
             processingIndicator: document.getElementById('processing-indicator'),
             themeToggle: document.getElementById('theme-toggle'),
+            imagePreviewContainer: document.getElementById('image-preview-container'),
+            imagePreviewImg: document.getElementById('image-preview-img'),
+            imagePreviewRemove: document.getElementById('image-preview-remove'),
+            attachImageBtn: document.getElementById('attach-image-btn'),
+            imageFileInput: document.getElementById('image-file-input'),
         };
 
         this.historyLoaded = false;
@@ -74,8 +83,8 @@ class VibeClient {
             }
         });
 
-        this.elements.input.addEventListener('input', () => {
-            this.elements.sendBtn.disabled = !this.elements.input.value.trim();
+       this.elements.input.addEventListener('input', () => {
+            this.updateSendButtonState();
             this.autoResizeTextarea();
         });
 
@@ -89,6 +98,28 @@ class VibeClient {
         
         // Bind theme toggle button
         this.elements.themeToggle.addEventListener('click', () => this.toggleTheme());
+        
+        // Initialize image attachment handler
+        this.imageAttachment = new ImageAttachmentHandler({
+            previewContainer: this.elements.imagePreviewContainer,
+            previewImg: this.elements.imagePreviewImg,
+            fileInput: this.elements.imageFileInput,
+            onImageAttached: () => this.updateSendButtonState(),
+            onImageRemoved: () => this.updateSendButtonState(),
+            onError: (msg) => this.addMessage('system', msg)
+        });
+        
+        // Bind paste event for image attachment
+        this.elements.input.addEventListener('paste', (e) => this.imageAttachment.handlePaste(e));
+        
+        // Bind image preview remove button
+        this.elements.imagePreviewRemove.addEventListener('click', () => this.imageAttachment.removeImage());
+        
+        // Bind attach image button
+        this.elements.attachImageBtn.addEventListener('click', () => this.elements.imageFileInput.click());
+        
+        // Bind file input change event
+        this.elements.imageFileInput.addEventListener('change', (e) => this.imageAttachment.handleFileSelect(e));
     }
 
     autoResizeTextarea() {
@@ -272,7 +303,19 @@ class VibeClient {
             case 'UserMessageEvent':
                 // Stop any ongoing streaming
                 this.stopStreaming();
-                this.addMessage('user', event.content);
+                // Handle multi-part content (text + images)
+                if (Array.isArray(event.content)) {
+                    event.content.forEach(item => {
+                        if (item.type === 'image_url') {
+                            const imageUrl = item.image_url?.url || '';
+                            this.addImageMessage(imageUrl);
+                        } else if (item.type === 'text') {
+                            this.addMessage('user', item.text);
+                        }
+                    });
+                } else {
+                    this.addMessage('user', event.content);
+                }
                 break;
             case 'AssistantEvent':
                 // Handle streaming assistant message
@@ -293,10 +336,12 @@ class VibeClient {
             case 'ContinueableUserMessageEvent':
                 this.stopStreaming();
                 if (Array.isArray(event.content)) {
-                    // Handle image content
+                    // Handle multi-part content (text + images)
                     event.content.forEach(item => {
-                        if (item.type === 'image') {
-                            this.addImageMessage(item.source?.data || '');
+                        if (item.type === 'image_url') {
+                            // Extract base64 data from full data URL
+                            const imageUrl = item.image_url?.url || '';
+                            this.addImageMessage(imageUrl);
                         } else if (item.type === 'text') {
                             this.addMessage('user', item.text);
                         }
@@ -833,9 +878,26 @@ class VibeClient {
     addImageMessage(imageData) {
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message user';
-        messageDiv.innerHTML = `<div class="content"><img src="data:image/jpeg;base64,${imageData}" style="max-width: 100%; border-radius: 8px;"></div>`;
+        
+        // Handle both full data URLs and raw base64
+        let imageUrl = imageData;
+        if (imageData && !imageData.startsWith('data:')) {
+            // Assume it's raw base64, add default jpeg prefix
+            imageUrl = `data:image/jpeg;base64,${imageData}`;
+        }
+        
+        messageDiv.innerHTML = `<div class="content"><img src="${imageUrl}" style="max-width: 100%; border-radius: 8px;"></div>`;
         this.elements.messages.appendChild(messageDiv);
         this.scrollToBottom();
+    }
+
+    /**
+     * Update send button state based on input and image attachment.
+     */
+    updateSendButtonState() {
+        const hasText = this.elements.input.value.trim();
+        const hasImage = this.imageAttachment?.getImageData() !== null;
+        this.elements.sendBtn.disabled = !(hasText || hasImage);
     }
 
     escapeHtml(text) {
@@ -978,27 +1040,32 @@ class VibeClient {
     }
 
     async sendMessage() {
-        const content = this.elements.input.value.trim();
-        if (!content) {
+       const content = this.elements.input.value.trim();
+        const imageData = this.imageAttachment?.getImageData();
+        
+        // Allow sending image-only messages
+        if (!content && !imageData) {
             return;
         }
 
-        // Check for slash command
-        const command = this.slashRegistry.getCommand(content);
-        if (command) {
-            // Execute command
-            const result = await this.slashRegistry.execute(command.name, command.args);
-            
-            if (result.success) {
-                // Clear input on success
-                this.elements.input.value = '';
-                this.autoResizeTextarea();
-                this.elements.sendBtn.disabled = true;
-            } else {
-                // Show error message
-                this.addMessage('system', `Command error: ${result.error}`);
+        // Check for slash command (only if there's text content and no image)
+        if (content && !imageData) {
+            const command = this.slashRegistry.getCommand(content);
+            if (command) {
+                // Execute command
+                const result = await this.slashRegistry.execute(command.name, command.args);
+                
+                if (result.success) {
+                    // Clear input on success
+                    this.elements.input.value = '';
+                    this.autoResizeTextarea();
+                    this.updateSendButtonState();
+                } else {
+                    // Show error message
+                    this.addMessage('system', `Command error: ${result.error}`);
+                }
+                return;
             }
-            return;
         }
 
         // Regular message handling
@@ -1006,14 +1073,22 @@ class VibeClient {
             return;
         }
 
-        this.ws.send(JSON.stringify({
+        const message = {
             type: 'user_message',
             content: content
-        }));
+        };
+        
+        // Include image data if attached
+        if (imageData) {
+            message.image = imageData;
+        }
 
+        this.ws.send(JSON.stringify(message));
+
+        // Clear input and image attachment
         this.elements.input.value = '';
         this.autoResizeTextarea();
-        this.elements.sendBtn.disabled = true;
+        this.imageAttachment?.clear();
     }
 
     updateStatus(text, connected = false) {

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from vibe.core.types import LLMMessage, MessageList, Role
+from vibe.core.types import Content, LLMMessage, MessageList, Role
 
 
 class MessageHandlerStrategy(ABC):
@@ -16,13 +16,13 @@ class MessageHandlerStrategy(ABC):
 
     @abstractmethod
     def prepare_message(
-        self, messages: MessageList, user_msg: str | None
-    ) -> tuple[str, str]:
+        self, messages: MessageList, user_msg: Content | None
+    ) -> tuple[Content, str]:
         """Prepare the message content and ID for the conversation loop.
 
         Args:
             messages: The message history.
-            user_msg: New user message (if any).
+            user_msg: New user message (if any), can be string or multi-part content.
 
         Returns:
             Tuple of (content, message_id).
@@ -42,8 +42,8 @@ class NewMessageHandler(MessageHandlerStrategy):
     """Handler for new user messages that should be added to history."""
 
     def prepare_message(
-        self, messages: MessageList, user_msg: str | None
-    ) -> tuple[str, str]:
+        self, messages: MessageList, user_msg: Content | None
+    ) -> tuple[Content, str]:
         if user_msg is None:
             raise ValueError("NewMessageHandler requires a user message")
 
@@ -63,8 +63,8 @@ class HistoryReplayHandler(MessageHandlerStrategy):
     """Handler for replaying existing messages from history (e.g., after editing)."""
 
     def prepare_message(
-        self, messages: MessageList, user_msg: str | None
-    ) -> tuple[str, str]:
+        self, messages: MessageList, user_msg: Content | None
+    ) -> tuple[Content, str]:
         if user_msg is not None:
             raise ValueError("HistoryReplayHandler should not receive a new message")
 
@@ -81,11 +81,9 @@ class HistoryReplayHandler(MessageHandlerStrategy):
         if last_user_message is None:
             raise ValueError("No user message found in history")
 
-        # Get content from the last user message
+        # Get content from the last user message (preserve type)
         msg_content = last_user_message.content
-        if isinstance(msg_content, list):
-            msg_content = "".join(str(item) for item in msg_content)
-        elif msg_content is None:
+        if msg_content is None:
             msg_content = ""
 
         return msg_content, last_user_message.message_id  # type: ignore[return-value]
@@ -95,12 +93,13 @@ class HistoryReplayHandler(MessageHandlerStrategy):
 
 
 def create_message_handler(
-    user_msg: str | None,
+    user_msg: Content | None,
 ) -> MessageHandlerStrategy:
     """Factory function to create the appropriate message handler.
 
     Args:
-        user_msg: New user message (if any). If None, uses history replay.
+        user_msg: New user message (if any), can be string or multi-part content.
+            If None, uses history replay.
 
     Returns:
         The appropriate MessageHandlerStrategy instance.
