@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import ClassVar
 
 from vibe.core.config import LSPServerConfig
 from vibe.core.lsp.client import LSPClient
@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 # Type alias for diagnostics (from LSP servers)
 # Using object type since diagnostics come from external sources
 DiagnosticsList = list[dict[str, object]]
+
 
 class LSPClientManager:
     # Class-level fields to share state across instances
@@ -34,7 +35,7 @@ class LSPClientManager:
             for server_config in config:
                 if server_config.enabled:
                     self.config[server_config.name] = server_config
-        
+
         # Initialize detector after config is populated
         self.detector = LSPServerDetector(self.config)
 
@@ -68,7 +69,9 @@ class LSPClientManager:
 
             # FIXME: What is the case of "get_command is unavailable"? All server should inherit LSPServer. Should be removed unnecessary if branch.
             # Use get_command if available, otherwise use the static command
-            if hasattr(server_class, 'get_command') and callable(server_class.get_command):
+            if hasattr(server_class, "get_command") and callable(
+                server_class.get_command
+            ):
                 server_instance = server_class()
                 command = await server_instance.get_command()
             else:
@@ -78,7 +81,9 @@ class LSPClientManager:
         else:
             # FIXME: What is the case of "get_command is unavailable"? All server should inherit LSPServer. Should be removed unnecessary if branch.
             # Use get_command if available, otherwise use the static command
-            if hasattr(server_class, 'get_command') and callable(server_class.get_command):
+            if hasattr(server_class, "get_command") and callable(
+                server_class.get_command
+            ):
                 server_instance = server_class()
                 command = await server_instance.get_command()
             else:
@@ -100,7 +105,9 @@ class LSPClientManager:
 
         # Get initialization parameters from server class if available
         init_params = {}
-        if hasattr(server_class, 'get_initialization_params') and callable(server_class.get_initialization_params):
+        if hasattr(server_class, "get_initialization_params") and callable(
+            server_class.get_initialization_params
+        ):
             server_instance = server_class()
             init_params = server_instance.get_initialization_params()
 
@@ -124,7 +131,7 @@ class LSPClientManager:
     async def _restart_server(self, server_name: str) -> None:
         """Restart an LSP server that has exited."""
         logger.info(f"Restarting LSP server: {server_name}")
-        
+
         # Stop the existing server if it's still running
         if server_name in self.clients:
             client = self.clients[server_name]
@@ -133,89 +140,95 @@ class LSPClientManager:
                     await client.shutdown()
                     await client.exit()
                 except Exception as e:
-                    logger.warning(f"Error shutting down LSP server '{server_name}' before restart: {e}")
-            
+                    logger.warning(
+                        f"Error shutting down LSP server '{server_name}' before restart: {e}"
+                    )
+
             try:
                 client.process.terminate()
                 await client.process.wait()
             except Exception as e:
-                logger.warning(f"Error terminating LSP server '{server_name}' before restart: {e}")
-        
+                logger.warning(
+                    f"Error terminating LSP server '{server_name}' before restart: {e}"
+                )
+
         # Clean up old client
         if server_name in self.clients:
             del self.clients[server_name]
         if server_name in self.handles:
             del self.handles[server_name]
-        
+
         # Start a new instance
         await self.start_server(server_name)
 
-
-
-    async def get_diagnostics_from_all_servers(self, file_path: Path) -> DiagnosticsList:
+    async def get_diagnostics_from_all_servers(
+        self, file_path: Path
+    ) -> DiagnosticsList:
         """Get diagnostics from all applicable LSP servers for a file.
-        
+
         This method retrieves diagnostics from all servers that can handle
         the file (e.g., both pyright and ruff for Python files) and combines
         them into a single list.
-        
+
         Args:
             file_path: Path to the file to analyze
-            
+
         Returns:
             Combined list of diagnostics from all applicable servers
         """
         if file_path is None:
             raise ValueError("file_path is required")
-        
+
         if not file_path.exists():
             logger.debug(f"File does not exist: {file_path}")
             return []
-        
+
         # Get all applicable servers for this file
         server_names = self.detector.get_all_servers_for_file(file_path)
-        
+
         if not server_names:
             logger.debug(f"No LSP servers configured for file: {file_path}")
             return []
-        
+
         all_diagnostics: DiagnosticsList = []
-        
-        for server_name in server_names:
+
+        for server_name in server_names:  # noqa: PLR1702
             try:
                 # Start server (this will restart if it has exited)
                 client = await self.start_server(server_name)
-                
+
                 uri = file_path.as_uri()
                 text = file_path.read_text()
-                
+
                 # Get the language ID from the server class
                 server_class = LSPServerRegistry.get_server(server_name)
                 if server_class is None:
                     logger.warning(f"LSP server '{server_name}' not found")
                     continue
-                
+
                 language_id = self._get_language_id(server_class)
-                
+
                 # Notify the server about the document
                 await client.text_document_did_open(uri, text, language_id)
                 await client.text_document_did_change(uri, text)
                 await client.text_document_did_save(uri)
-                
+
                 # Get diagnostics from this server
                 diagnostics = await client.document_diagnostics(uri)
-                
+
                 # Add source information to each diagnostic
                 if isinstance(diagnostics, list):
                     for diagnostic in diagnostics:
                         if "source" not in diagnostic:
                             diagnostic["source"] = server_name
                     all_diagnostics.extend(diagnostics)
-                
+
             except Exception as e:
-                logger.warning(f"Error getting diagnostics from server '{server_name}' for file '{file_path}': {e}")
+                logger.warning(
+                    f"Error getting diagnostics from server '{server_name}' for file '{file_path}': {e}"
+                )
                 continue
-        
+
         return all_diagnostics
 
     def _get_language_id(self, server_class: type[LSPServer]) -> str:
@@ -227,5 +240,3 @@ class LSPClientManager:
             "deno": "typescript",
         }
         return language_map.get(server_class.name, "text")
-
-

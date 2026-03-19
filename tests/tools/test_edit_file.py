@@ -131,9 +131,7 @@ async def test_requires_absolute_path(tmp_path, monkeypatch):
         await collect_result(
             edit_file_tool.run(
                 EditFileArgs(
-                    file_path="relative/path.py",
-                    old_string="old",
-                    new_string="new",
+                    file_path="relative/path.py", old_string="old", new_string="new"
                 )
             )
         )
@@ -172,9 +170,7 @@ async def test_fails_for_directory(tmp_path, monkeypatch):
         await collect_result(
             edit_file_tool.run(
                 EditFileArgs(
-                    file_path=str(tmp_path),
-                    old_string="old",
-                    new_string="new",
+                    file_path=str(tmp_path), old_string="old", new_string="new"
                 )
             )
         )
@@ -192,9 +188,7 @@ async def test_fails_with_empty_old_string(tmp_path, monkeypatch):
         await collect_result(
             edit_file_tool.run(
                 EditFileArgs(
-                    file_path=str(tmp_path / "test.py"),
-                    old_string="",
-                    new_string="new",
+                    file_path=str(tmp_path / "test.py"), old_string="", new_string="new"
                 )
             )
         )
@@ -205,7 +199,7 @@ async def test_fails_with_empty_old_string(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_fails_with_empty_new_string(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    config = EditFileConfig()
+    EditFileConfig()
     edit_file_tool = EditFile(config=EditFileConfig(), state=EditFileState())
 
     # Create test file first
@@ -215,11 +209,7 @@ async def test_fails_with_empty_new_string(tmp_path, monkeypatch):
     with pytest.raises(ToolError) as err:
         await collect_result(
             edit_file_tool.run(
-                EditFileArgs(
-                    file_path=str(test_file),
-                    old_string="old",
-                    new_string="",
-                )
+                EditFileArgs(file_path=str(test_file), old_string="old", new_string="")
             )
         )
 
@@ -228,9 +218,7 @@ async def test_fails_with_empty_new_string(tmp_path, monkeypatch):
 
 def test_check_allowlist_denylist(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    config = EditFileConfig(
-        allowlist=["/tmp/*"], denylist=["/etc/*"]
-    )
+    config = EditFileConfig(allowlist=["/tmp/*"], denylist=["/etc/*"])
     edit_file_tool = EditFile(config=config, state=EditFileState())
 
     # Allowlisted
@@ -276,8 +264,8 @@ def function_two():
         edit_file_tool.run(
             EditFileArgs(
                 file_path=str(test_file),
-                old_string='def function_one():\n    # Some comment\n    old_value = 1\n    return old_value',
-                new_string='def function_one():\n    # Updated comment\n    new_value = 10\n    return new_value',
+                old_string="def function_one():\n    # Some comment\n    old_value = 1\n    return old_value",
+                new_string="def function_one():\n    # Updated comment\n    new_value = 10\n    return new_value",
             )
         )
     )
@@ -407,7 +395,9 @@ value = 1
     # Verify only first occurrence was replaced
     content = test_file.read_text()
     assert "new_value = 10" in content  # First occurrence replaced
-    assert content.count("value = 1\n") == 2  # Two occurrences remain (original 3 - 1 replaced = 2)
+    assert (
+        content.count("value = 1\n") == 2
+    )  # Two occurrences remain (original 3 - 1 replaced = 2)
 
 
 @pytest.mark.asyncio
@@ -438,7 +428,9 @@ async def test_create_backup_config_option(tmp_path, monkeypatch):
 
     # Test with create_backup=True
     config_with_backup = EditFileConfig(create_backup=True)
-    edit_file_tool_with_backup = EditFile(config=config_with_backup, state=EditFileState())
+    edit_file_tool_with_backup = EditFile(
+        config=config_with_backup, state=EditFileState()
+    )
 
     test_file2 = tmp_path / "test_with_backup.py"
     original2 = "old content 2\n"
@@ -480,15 +472,15 @@ async def test_fuzzy_match_with_enabled_config(tmp_path, monkeypatch):
         edit_file_tool.run(
             EditFileArgs(
                 file_path=str(test_file),
-                old_string='def function():\n    # Old comment\n    value = 1\n    return value',
-                new_string='def function():\n    # New comment\n    value = 10\n    return value',
+                old_string="def function():\n    # Old comment\n    value = 1\n    return value",
+                new_string="def function():\n    # New comment\n    value = 10\n    return value",
             )
         )
     )
 
     assert result.blocks_applied == 1
     assert len(result.warnings) == 0
-    
+
     # Verify file was updated
     updated_content = test_file.read_text()
     assert "# New comment" in updated_content

@@ -3,12 +3,15 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 import difflib
 from pathlib import Path
+import shutil
 from typing import ClassVar, NamedTuple, final
 
 import anyio
 from pydantic import BaseModel, Field
 
 from vibe.core.lsp import LSPClientManager, LSPDiagnosticFormatter
+
+STRING_PREVIEW_LENGTH = 100
 from vibe.core.tools.base import (
     BaseTool,
     BaseToolConfig,
@@ -19,7 +22,6 @@ from vibe.core.tools.base import (
 )
 from vibe.core.tools.ui import ToolCallDisplay, ToolResultDisplay, ToolUIData
 from vibe.core.types import ToolResultEvent, ToolStreamEvent
-import shutil
 
 
 class EditFileArgs(BaseModel):
@@ -54,7 +56,7 @@ class EditFileResult(BaseModel):
     content: str
     lsp_diagnostics: str | None = Field(
         default=None,
-        description="Formatted LSP diagnostics for the modified file, if available"
+        description="Formatted LSP diagnostics for the modified file, if available",
     )
 
 
@@ -93,7 +95,7 @@ class EditFile(
         occurrences = "all" if args.replace_all else "single"
         return ToolCallDisplay(
             summary=f"Patching {args.file_path} ({occurrences} occurrence)",
-            content=f"old_string: {args.old_string[:100]}{'...' if len(args.old_string) > 100 else ''}",
+            content=f"old_string: {args.old_string[:STRING_PREVIEW_LENGTH]}{'...' if len(args.old_string) > STRING_PREVIEW_LENGTH else ''}",
         )
 
     @classmethod
@@ -130,7 +132,7 @@ class EditFile(
         return None
 
     @final
-    async def run(
+    async def run(  # noqa: PLR0914
         self, args: EditFileArgs, ctx: InvokeContext | None = None
     ) -> AsyncGenerator[ToolStreamEvent | EditFileResult, None]:
         file_path = self._prepare_and_validate_args(args)
@@ -146,7 +148,7 @@ class EditFile(
             fuzzy_context = EditFile._find_fuzzy_match_context(
                 original_content, args.old_string, self.config.fuzzy_threshold
             )
-            
+
             error_msg = (
                 f"old_string not found in file: {file_path}\n"
                 "Make sure the exact literal text (including all whitespace, indentation, "
@@ -157,12 +159,12 @@ class EditFile(
                 "3. Ensure the old_string hasn't been modified by previous tool calls\n"
                 "4. Check for typos or case sensitivity issues"
             )
-            
+
             error_msg += f"\n\nContext analysis:\n{context}"
-            
+
             if fuzzy_context:
                 error_msg += f"\n\n{fuzzy_context}"
-            
+
             raise ToolError(error_msg)
 
         # Warn if multiple occurrences (unless replace_all is True)
@@ -179,10 +181,14 @@ class EditFile(
 
         # Perform replacement
         if args.replace_all:
-            modified_content = original_content.replace(args.old_string, args.new_string)
+            modified_content = original_content.replace(
+                args.old_string, args.new_string
+            )
             occurrences_replaced = occurrences
         else:
-            modified_content = original_content.replace(args.old_string, args.new_string, 1)
+            modified_content = original_content.replace(
+                args.old_string, args.new_string, 1
+            )
             occurrences_replaced = 1
 
         # Calculate line changes
@@ -203,7 +209,9 @@ class EditFile(
         lsp_diagnostics = None
         try:
             client_manager = LSPClientManager()
-            diagnostics_list = await client_manager.get_diagnostics_from_all_servers(file_path)
+            diagnostics_list = await client_manager.get_diagnostics_from_all_servers(
+                file_path
+            )
 
             # Format diagnostics for LLM consumption if available
             if diagnostics_list:
@@ -229,18 +237,14 @@ class EditFile(
         )
 
     @final
-    def _prepare_and_validate_args(
-        self, args: EditFileArgs
-    ) -> Path:
+    def _prepare_and_validate_args(self, args: EditFileArgs) -> Path:
         file_path_str = args.file_path.strip()
         old_string = args.old_string
         new_string = args.new_string
 
         # Validate file_path is absolute
         if not file_path_str.startswith("/"):
-            raise ToolError(
-                f"file_path must be an absolute path, got: {file_path_str}"
-            )
+            raise ToolError(f"file_path must be an absolute path, got: {file_path_str}")
 
         content_bytes = len((old_string + new_string).encode("utf-8"))
         if content_bytes > self.config.max_content_size:
@@ -296,9 +300,7 @@ class EditFile(
             raise ToolError(f"Unexpected error writing to {file_path}: {e}") from e
 
     @staticmethod
-    def _find_context(
-        content: str, target_text: str, max_context: int = 5
-    ) -> str:
+    def _find_context(content: str, target_text: str, max_context: int = 5) -> str:
         """Find lines containing target_text and return context around each match."""
         lines = content.split("\n")
         target_lines = target_text.split("\n")
@@ -426,7 +428,9 @@ class EditFile(
         diff_lines = list(diff)
 
         # Ensure all diff lines end with newline for proper formatting
-        diff_lines = [line if line.endswith("\n") else line + "\n" for line in diff_lines]
+        diff_lines = [
+            line if line.endswith("\n") else line + "\n" for line in diff_lines
+        ]
 
         result = "".join(diff_lines)
 

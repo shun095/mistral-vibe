@@ -50,7 +50,9 @@ class TestHistoryManagerAdd:
         history_manager.add("first")
         assert history_manager._entries == ["first"]
 
-    def test_add_command_with_no_args_ignored(self, history_manager: HistoryManager) -> None:
+    def test_add_command_with_no_args_ignored(
+        self, history_manager: HistoryManager
+    ) -> None:
         """Test that slash commands with no arguments are ignored."""
         history_manager.add("/edit")
         assert history_manager._entries == []
@@ -58,7 +60,9 @@ class TestHistoryManagerAdd:
         history_manager.add("/compact")
         assert history_manager._entries == []
 
-    def test_add_command_with_args_saves_args(self, history_manager: HistoryManager) -> None:
+    def test_add_command_with_args_saves_args(
+        self, history_manager: HistoryManager
+    ) -> None:
         """Test that slash commands save only their arguments."""
         history_manager.add("/edit my edited prompt")
         assert history_manager._entries == ["my edited prompt"]
@@ -66,17 +70,23 @@ class TestHistoryManagerAdd:
         history_manager.add("/compact summary")
         assert history_manager._entries == ["my edited prompt", "summary"]
 
-    def test_add_command_preserves_multiple_spaces(self, history_manager: HistoryManager) -> None:
+    def test_add_command_preserves_multiple_spaces(
+        self, history_manager: HistoryManager
+    ) -> None:
         """Test that multiple spaces in command args are preserved."""
         history_manager.add("/edit hello   world")
         assert history_manager._entries == ["hello   world"]
 
-    def test_add_command_with_special_chars(self, history_manager: HistoryManager) -> None:
+    def test_add_command_with_special_chars(
+        self, history_manager: HistoryManager
+    ) -> None:
         """Test that special characters in command args are preserved."""
         history_manager.add("/edit test with $VAR and `command`")
         assert history_manager._entries == ["test with $VAR and `command`"]
 
-    def test_add_command_duplicate_args_ignored(self, history_manager: HistoryManager) -> None:
+    def test_add_command_duplicate_args_ignored(
+        self, history_manager: HistoryManager
+    ) -> None:
         """Test that duplicate command arguments are not added."""
         history_manager.add("/edit same text")
         history_manager.add("/edit same text")

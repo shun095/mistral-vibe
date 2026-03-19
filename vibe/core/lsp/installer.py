@@ -3,7 +3,6 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from vibe.core.lsp.mason_paths import MasonPaths
 from vibe.core.paths._vibe_home import VIBE_HOME
 
 
@@ -23,7 +22,7 @@ class LSPServerInstaller(ABC):
         mason_path = self.get_executable_path_from_mason()
         if mason_path:
             return mason_path
-        
+
         # Fallback to default installation
         return self._get_default_executable_path()
 

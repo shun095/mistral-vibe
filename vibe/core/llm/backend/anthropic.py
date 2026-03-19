@@ -31,10 +31,13 @@ class AnthropicMapper:
         for msg in messages:
             match msg.role:
                 case Role.system:
-                    system_prompt = msg.content or ""
+                    if isinstance(msg.content, str):
+                        system_prompt = msg.content or None
+                    else:
+                        system_prompt = None
                 case Role.user:
                     user_content: list[dict[str, Any]] = []
-                    if msg.content:
+                    if isinstance(msg.content, str):
                         user_content.append({"type": "text", "text": msg.content})
                     converted.append({"role": "user", "content": user_content or ""})
                 case Role.assistant:

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import logging
-import subprocess
 from pathlib import Path
+import subprocess
 
 from vibe.core.lsp.installer import LSPServerInstaller
 
 logger = logging.getLogger(__name__)
+
 
 # TODO: should be implemented properly.
 class DenoLSPInstaller(LSPServerInstaller):
@@ -23,22 +24,14 @@ class DenoLSPInstaller(LSPServerInstaller):
 
     def is_installed(self) -> bool:
         try:
-            result = subprocess.run(
-                ["which", "deno"],
-                capture_output=True,
-                text=True,
-            )
+            result = subprocess.run(["which", "deno"], capture_output=True, text=True)
             return result.returncode == 0
         except FileNotFoundError:
             return False
 
     def get_executable_path(self) -> Path | None:
         try:
-            result = subprocess.run(
-                ["which", "deno"],
-                capture_output=True,
-                text=True,
-            )
+            result = subprocess.run(["which", "deno"], capture_output=True, text=True)
             if result.returncode == 0:
                 return Path(result.stdout.strip())
         except FileNotFoundError:

@@ -22,8 +22,7 @@ from vibe.core.tools.base import (
     ToolPermission,
 )
 from vibe.core.tools.ui import ToolCallDisplay, ToolResultDisplay, ToolUIData
-from vibe.core.types import ToolStreamEvent, ToolCallEvent, ToolResultEvent
-
+from vibe.core.types import ToolCallEvent, ToolResultEvent, ToolStreamEvent
 
 _HONEST_USER_AGENT = "vibe-cli"
 _HTTP_FORBIDDEN = 403
@@ -49,8 +48,7 @@ class WebFetchArgs(BaseModel):
         description="Number of lines to skip from the start (0-indexed). Default: 0.",
     )
     limit: int = Field(
-        default=1000,
-        description="Maximum number of lines to read. Default: 1000.",
+        default=1000, description="Maximum number of lines to read. Default: 1000."
     )
 
 
@@ -58,9 +56,7 @@ class WebFetchResult(BaseModel):
     url: str
     content: str
     content_type: str
-    lines_read: int = Field(
-        description="Number of lines returned in the result."
-    )
+    lines_read: int = Field(description="Number of lines returned in the result.")
     total_lines: int = Field(
         description="Total number of lines in the original content."
     )
@@ -199,8 +195,7 @@ class WebFetch(
 
         # Add line numbers
         filtered_lines = [
-            f"{start + i + 1}: {line}"
-            for i, line in enumerate(filtered_lines)
+            f"{start + i + 1}: {line}" for i, line in enumerate(filtered_lines)
         ]
 
         return (
@@ -210,9 +205,7 @@ class WebFetch(
             was_truncated,
         )
 
-    async def _fetch_url_bytes(
-        self, url: str, timeout: int
-    ) -> tuple[bytes, str]:
+    async def _fetch_url_bytes(self, url: str, timeout: int) -> tuple[bytes, str]:
         headers = {
             "User-Agent": self.config.user_agent,
             "Accept": (
@@ -278,9 +271,7 @@ class WebFetch(
                 success=False, message=event.error or event.skip_reason or "No result"
             )
 
-        message = (
-            f"Fetched {event.result.lines_read:,}/{event.result.total_lines:,} lines ({event.result.content_type.split(';')[0]})"
-        )
+        message = f"Fetched {event.result.lines_read:,}/{event.result.total_lines:,} lines ({event.result.content_type.split(';')[0]})"
 
         return ToolResultDisplay(success=True, message=message)
 

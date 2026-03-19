@@ -19,7 +19,9 @@ def unlock_config_paths() -> None:
     init_harness_files_manager("user")
 
 
-def setup_config_file_for_test(tmp_path: Path, config_file_name: str = "config.toml") -> Path:
+def setup_config_file_for_test(
+    tmp_path: Path, config_file_name: str = "config.toml"
+) -> Path:
     """Helper to create a config file path for tests."""
     return tmp_path / config_file_name
 
@@ -54,10 +56,7 @@ class TestExcludeDefaults:
 
     def test_excludes_none_values(self) -> None:
         """Test that None values are excluded (not TOML serializable)."""
-        config_dict = {
-            "active_model": "custom-model",
-            "vim_keybindings": None,
-        }
+        config_dict = {"active_model": "custom-model", "vim_keybindings": None}
 
         result = VibeConfig._exclude_defaults(config_dict)
 
@@ -79,7 +78,9 @@ class TestExcludeDefaults:
     def test_keeps_non_empty_lists(self) -> None:
         """Test that non-empty lists are kept."""
         config_dict = {
-            "mcp_servers": [{"name": "test_server", "transport": "stdio", "command": "test"}],
+            "mcp_servers": [
+                {"name": "test_server", "transport": "stdio", "command": "test"}
+            ]
         }
 
         result = VibeConfig._exclude_defaults(config_dict)
@@ -119,9 +120,7 @@ class TestExcludeDefaults:
 
     def test_excludes_none_from_nested_lists(self) -> None:
         """Test that None values in nested lists are filtered out."""
-        config_dict = {
-            "tool_paths": [None, "/path/to/tools"],
-        }
+        config_dict = {"tool_paths": [None, "/path/to/tools"]}
 
         result = VibeConfig._exclude_defaults(config_dict)
 
@@ -144,9 +143,7 @@ class TestExcludeDefaults:
 
     def test_keeps_non_empty_string(self) -> None:
         """Test that non-empty strings are kept."""
-        config_dict = {
-            "displayed_workdir": "/custom/path",
-        }
+        config_dict = {"displayed_workdir": "/custom/path"}
 
         result = VibeConfig._exclude_defaults(config_dict)
 
@@ -173,7 +170,9 @@ class TestExcludeDefaults:
 class TestConfigCommentPreservation:
     """Tests for preserving comment-out lines in config.toml."""
 
-    def test_preserves_comment_out_lines(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_preserves_comment_out_lines(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test that comment-out lines in config.toml are preserved after save."""
         # Create a temporary config file with comment-out lines
         config_content = """# This is a comment
@@ -190,7 +189,10 @@ auto_approve = true
 
         # Patch CONFIG_FILE to use the temporary file
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
+        monkeypatch.setattr(
+            "vibe.core.config._settings.get_harness_files_manager",
+            lambda: mock_harness_manager_for_config_file(config_file),
+        )
 
         # Save updates
         VibeConfig.save_updates({"active_model": "custom-model"})
@@ -201,12 +203,14 @@ auto_approve = true
         # Verify comment-out lines are preserved
         assert "# This is a comment" in result
         assert "# This is a comment-out line that should be preserved" in result
-        assert "# active_model = \"some-other-model\"" in result
+        assert '# active_model = "some-other-model"' in result
         assert "# Another comment" in result
         assert 'active_model = "custom-model"' in result
         assert "auto_approve = true" in result
 
-    def test_preserves_comment_out_nested_values(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_preserves_comment_out_nested_values(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test that comment-out lines in nested sections are preserved."""
         config_content = """[project_context]
 # default_commit_count = 5
@@ -220,7 +224,10 @@ default_commit_count = 10
         config_file.write_text(config_content)
 
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
+        monkeypatch.setattr(
+            "vibe.core.config._settings.get_harness_files_manager",
+            lambda: mock_harness_manager_for_config_file(config_file),
+        )
 
         # Save some updates
         VibeConfig.save_updates({"project_context": {"default_commit_count": 10}})
@@ -232,13 +239,18 @@ default_commit_count = 10
         assert "# timeout_seconds = 2.0" in result
         assert "default_commit_count = 10" in result
 
-    def test_preserves_comments_on_new_file(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_preserves_comments_on_new_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test that new config files work correctly."""
         config_file = tmp_path / "config.toml"
         # Don't create the file - test new file creation
 
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
+        monkeypatch.setattr(
+            "vibe.core.config._settings.get_harness_files_manager",
+            lambda: mock_harness_manager_for_config_file(config_file),
+        )
 
         # Save config for a new file
         VibeConfig.save_updates({"active_model": "custom-model"})
@@ -248,7 +260,9 @@ default_commit_count = 10
         # Verify the config was written
         assert 'active_model = "custom-model"' in result
 
-    def test_removes_default_values_from_existing_config(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_removes_default_values_from_existing_config(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test that default values are removed while preserving comments."""
         config_content = """# My config file
 active_model = "some-other-model"
@@ -263,7 +277,10 @@ auto_approve = true
         config_file.write_text(config_content)
 
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
+        monkeypatch.setattr(
+            "vibe.core.config._settings.get_harness_files_manager",
+            lambda: mock_harness_manager_for_config_file(config_file),
+        )
 
         # Set vim_keybindings back to default (False)
         VibeConfig.save_updates({"vim_keybindings": False})
@@ -278,9 +295,11 @@ auto_approve = true
         # Comment-out lines should be preserved
         assert "# My config file" in result
         assert "# Comment-out line" in result
-        assert "# some_setting = \"value\"" in result
+        assert '# some_setting = "value"' in result
 
-    def test_removes_nested_default_values_preserves_comments(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_removes_nested_default_values_preserves_comments(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test that nested section default values are removed while preserving comments."""
         config_content = """# Project context settings
 [project_context]
@@ -297,7 +316,10 @@ timeout_seconds = 5.0
         config_file.write_text(config_content)
 
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
+        monkeypatch.setattr(
+            "vibe.core.config._settings.get_harness_files_manager",
+            lambda: mock_harness_manager_for_config_file(config_file),
+        )
 
         # Set default_commit_count back to default (5)
         VibeConfig.save_updates({"project_context": {"default_commit_count": 5}})
@@ -306,7 +328,8 @@ timeout_seconds = 5.0
 
         # Default value should be removed (check for active config line, not comments)
         import re
-        assert not re.search(r'^(?!#)\s*default_commit_count\s*=', result, re.MULTILINE)
+
+        assert not re.search(r"^(?!#)\s*default_commit_count\s*=", result, re.MULTILINE)
         # Non-default values should remain
         assert "timeout_seconds = 5.0" in result
         # Comment-out lines should be preserved
@@ -316,7 +339,9 @@ timeout_seconds = 5.0
         assert "# Comment for default_commit_count" in result
         assert "# default_commit_count = 5" in result
 
-    def test_removes_session_logging_default_values_preserves_comments(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_removes_session_logging_default_values_preserves_comments(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test that session_logging section default values are removed while preserving comments."""
         config_content = """# Session logging settings
 [session_logging]
@@ -333,7 +358,10 @@ session_prefix = "session"
         config_file.write_text(config_content)
 
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
+        monkeypatch.setattr(
+            "vibe.core.config._settings.get_harness_files_manager",
+            lambda: mock_harness_manager_for_config_file(config_file),
+        )
 
         # Set session_prefix back to default ("session")
         VibeConfig.save_updates({"session_logging": {"session_prefix": "session"}})
@@ -351,13 +379,18 @@ session_prefix = "session"
         assert "# This is a comment-out line" in result
         assert "# enabled = false" in result
 
-    def test_creates_nested_section_with_non_default_values(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_creates_nested_section_with_non_default_values(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test that nested sections are created with only non-default values."""
         config_file = tmp_path / "config.toml"
         # Don't create the file - test new file creation
 
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
+        monkeypatch.setattr(
+            "vibe.core.config._settings.get_harness_files_manager",
+            lambda: mock_harness_manager_for_config_file(config_file),
+        )
 
         # Save config with nested section
         VibeConfig.save_updates({"project_context": {"timeout_seconds": 5.0}})
@@ -370,7 +403,9 @@ session_prefix = "session"
         # Default values should not be in the file
         assert "default_commit_count" not in result
 
-    def test_preserves_all_comments_in_nested_sections(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_preserves_all_comments_in_nested_sections(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test that all comments in nested sections are preserved after multiple saves."""
         config_content = """# Main config
 auto_approve = true
@@ -398,12 +433,15 @@ save_dir = "/custom/logs"
         config_file.write_text(config_content)
 
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
+        monkeypatch.setattr(
+            "vibe.core.config._settings.get_harness_files_manager",
+            lambda: mock_harness_manager_for_config_file(config_file),
+        )
 
         # Save with default values
         VibeConfig.save_updates({
             "project_context": {"default_commit_count": 5},
-            "session_logging": {"session_prefix": "session"}
+            "session_logging": {"session_prefix": "session"},
         })
 
         result = config_file.read_text()
@@ -418,21 +456,24 @@ save_dir = "/custom/logs"
         assert "# Session logging section" in result
         assert "# Save dir comment" in result
         assert "# Session prefix comment" in result
-        assert "# session_prefix = \"session\"" in result
+        assert '# session_prefix = "session"' in result
 
         # Default values should be removed (check for actual config lines, not comments)
         # default_commit_count should not appear as an active config line
         import re
-        assert not re.search(r'^(?!#)\s*default_commit_count\s*=', result, re.MULTILINE)
+
+        assert not re.search(r"^(?!#)\s*default_commit_count\s*=", result, re.MULTILINE)
         # session_prefix should not appear as an active config line (only in comment)
-        assert not re.search(r'^(?!#)\s*session_prefix\s*=', result, re.MULTILINE)
+        assert not re.search(r"^(?!#)\s*session_prefix\s*=", result, re.MULTILINE)
 
         # Non-default values should remain
         assert "auto_approve = true" in result
         assert "timeout_seconds = 5.0" in result
         assert 'save_dir = "/custom/logs"' in result
 
-    def test_removes_empty_string_from_config_file(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_removes_empty_string_from_config_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test that empty string values are removed from config file."""
         config_content = """# Config with empty string
 displayed_workdir = "/some/path"
@@ -442,7 +483,10 @@ auto_approve = true
         config_file.write_text(config_content)
 
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
+        monkeypatch.setattr(
+            "vibe.core.config._settings.get_harness_files_manager",
+            lambda: mock_harness_manager_for_config_file(config_file),
+        )
 
         # Set displayed_workdir back to default (empty string)
         VibeConfig.save_updates({"displayed_workdir": ""})
@@ -455,7 +499,9 @@ auto_approve = true
         assert "auto_approve = true" in result
         assert "# Config with empty string" in result
 
-    def test_removes_session_prefix_default_from_session_logging(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_removes_session_prefix_default_from_session_logging(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test that session_prefix default value is removed from session_logging section."""
         config_content = """[session_logging]
 session_prefix = "custom_prefix"
@@ -465,7 +511,10 @@ enabled = false
         config_file.write_text(config_content)
 
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
+        monkeypatch.setattr(
+            "vibe.core.config._settings.get_harness_files_manager",
+            lambda: mock_harness_manager_for_config_file(config_file),
+        )
 
         # Set session_prefix back to default ("session")
         VibeConfig.save_updates({"session_logging": {"session_prefix": "session"}})
@@ -477,7 +526,9 @@ enabled = false
         # Other values should remain
         assert "enabled = false" in result
 
-    def test_removes_all_defaults_not_just_updated(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_removes_all_defaults_not_just_updated(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test that ALL default values are removed, not just the ones being updated."""
         # Create a config with multiple default values
         config_content = """active_model = "custom-model"
@@ -489,7 +540,10 @@ enabled_tools = []
         config_file.write_text(config_content)
 
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
+        monkeypatch.setattr(
+            "vibe.core.config._settings.get_harness_files_manager",
+            lambda: mock_harness_manager_for_config_file(config_file),
+        )
 
         # Update only active_model - but ALL defaults should be removed
         VibeConfig.save_updates({"active_model": "another-model"})
@@ -503,7 +557,9 @@ enabled_tools = []
         assert "lsp_servers" not in result
         assert "enabled_tools" not in result
 
-    def test_removes_empty_nested_section(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_removes_empty_nested_section(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test that empty nested sections are removed entirely."""
         config_content = """[[models]]
 name = "local_mock"
@@ -518,7 +574,10 @@ save_dir = "/custom/logs"
         config_file.write_text(config_content)
 
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
+        monkeypatch.setattr(
+            "vibe.core.config._settings.get_harness_files_manager",
+            lambda: mock_harness_manager_for_config_file(config_file),
+        )
 
         # Save with any update to trigger cleanup
         VibeConfig.save_updates({"active_model": "devstral-2"})
@@ -531,7 +590,9 @@ save_dir = "/custom/logs"
         assert "[session_logging]" in result
         assert 'save_dir = "/custom/logs"' in result
 
-    def test_preserves_comments_in_models_array(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_preserves_comments_in_models_array(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test that comments inside [[models]] array are preserved."""
         config_content = """# Comment before models
 [[models]]
@@ -548,7 +609,10 @@ save_dir = "/custom/logs"
         config_file.write_text(config_content)
 
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
+        monkeypatch.setattr(
+            "vibe.core.config._settings.get_harness_files_manager",
+            lambda: mock_harness_manager_for_config_file(config_file),
+        )
 
         # Save with any update to trigger cleanup
         VibeConfig.save_updates({"active_model": "devstral-2"})
@@ -561,7 +625,9 @@ save_dir = "/custom/logs"
         # Model should remain
         assert 'name = "local_mock"' in result
 
-    def test_removes_default_values_from_models_array(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_removes_default_values_from_models_array(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test that default values are removed from [[models]] array items."""
         config_content = """[[models]]
 name = "test_model"
@@ -576,7 +642,10 @@ auto_compact_threshold = 200000
         config_file.write_text(config_content)
 
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
+        monkeypatch.setattr(
+            "vibe.core.config._settings.get_harness_files_manager",
+            lambda: mock_harness_manager_for_config_file(config_file),
+        )
 
         # Save with any update to trigger cleanup
         VibeConfig.save_updates({"active_model": "devstral-2"})
@@ -593,7 +662,9 @@ auto_compact_threshold = 200000
         assert "thinking" not in result
         assert "auto_compact_threshold" not in result
 
-    def test_removes_default_values_from_providers_array(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_removes_default_values_from_providers_array(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test that default values are removed from [[providers]] array items."""
         config_content = """[[providers]]
 name = "custom_provider"
@@ -609,7 +680,10 @@ region = ""
         config_file.write_text(config_content)
 
         unlock_config_paths()
-        monkeypatch.setattr("vibe.core.config._settings.get_harness_files_manager", lambda: mock_harness_manager_for_config_file(config_file))
+        monkeypatch.setattr(
+            "vibe.core.config._settings.get_harness_files_manager",
+            lambda: mock_harness_manager_for_config_file(config_file),
+        )
 
         # Save with any update to trigger cleanup
         VibeConfig.save_updates({"active_model": "devstral-2"})
@@ -634,7 +708,7 @@ class TestMCPServersEnvRemoval:
     def test_removes_empty_mcp_servers_env(self, tmp_path):
         """Test that empty [mcp_servers.env] sections are removed."""
         import tomlkit
-        
+
         config_content = """
 active_model = "test"
 
@@ -648,19 +722,19 @@ args = ["duckduckgo-mcp-server"]
 """
         config_file = tmp_path / "config.toml"
         config_file.write_text(config_content)
-        
+
         doc = tomlkit.parse(config_content)
         VibeConfig._remove_defaults_from_doc(doc)
         output = tomlkit.dumps(doc)
-        
-        assert '[mcp_servers.env]' not in output
-        assert '[[mcp_servers]]' in output
+
+        assert "[mcp_servers.env]" not in output
+        assert "[[mcp_servers]]" in output
         assert 'name = "web_search"' in output
 
     def test_keeps_non_empty_mcp_servers_env(self, tmp_path):
         """Test that non-empty [mcp_servers.env] sections are preserved."""
         import tomlkit
-        
+
         config_content = """
 active_model = "test"
 
@@ -675,10 +749,10 @@ MY_VAR = "value"
 """
         config_file = tmp_path / "config.toml"
         config_file.write_text(config_content)
-        
+
         doc = tomlkit.parse(config_content)
         VibeConfig._remove_defaults_from_doc(doc)
         output = tomlkit.dumps(doc)
-        
-        assert '[mcp_servers.env]' in output
+
+        assert "[mcp_servers.env]" in output
         assert 'MY_VAR = "value"' in output

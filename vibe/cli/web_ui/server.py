@@ -6,20 +6,27 @@ import asyncio
 import json
 import logging
 import os
+from pathlib import Path
 import time
 from typing import TYPE_CHECKING, Any
 
-from fastapi import FastAPI, HTTPException, Security, WebSocket, WebSocketDisconnect
+from fastapi import (
+    Depends,
+    FastAPI,
+    HTTPException,
+    Security,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pathlib import Path
 
 if TYPE_CHECKING:
     from vibe.core.agent_loop import AgentLoop
-    from vibe.core.types import BaseEvent
-    from vibe.cli.textual_ui.app import VibeApp
+    from vibe.core.tools.base import BaseTool
+    from vibe.core.types import BaseEvent, LLMMessage
 
 
 def get_token_from_env_or_arg(token: str | None) -> str:
@@ -52,35 +59,35 @@ def serialize_event(event: BaseEvent) -> dict:
         Dictionary representation of the event.
     """
     from vibe.core.types import ToolCallEvent, ToolResultEvent
-    
+
     # Determine which fields to exclude (tool_class can't be serialized)
     exclude_fields: set[str] = set()
     if isinstance(event, (ToolCallEvent, ToolResultEvent)):
         exclude_fields.add("tool_class")
-    
+
     # Get event data without private attributes
     if exclude_fields:
         data = event.model_dump(mode="json", exclude_none=True, exclude=exclude_fields)
     else:
         data = event.model_dump(mode="json", exclude_none=True)
-    
+
     # Handle ToolCallEvent args serialization
     if isinstance(event, ToolCallEvent):
         if event.args is not None:
             try:
-                data['args'] = event.args.model_dump(mode="json", exclude_none=True)
+                data["args"] = event.args.model_dump(mode="json", exclude_none=True)
             except Exception:
-                data['args'] = str(event.args)
-    
+                data["args"] = str(event.args)
+
     # Handle ToolResultEvent serialization
     elif isinstance(event, ToolResultEvent):
         # Serialize result if present
         if event.result is not None:
             try:
-                data['result'] = event.result.model_dump(mode="json", exclude_none=True)
+                data["result"] = event.result.model_dump(mode="json", exclude_none=True)
             except Exception:
-                data['result'] = str(event.result)
-    
+                data["result"] = str(event.result)
+
     # Add event type for client-side deserialization
     data["__type"] = event.__class__.__name__
     return data
@@ -122,22 +129,20 @@ def _create_pydantic_model_from_dict(data: dict) -> Any:
 # Multi-line fields: text blobs that span multiple lines
 # All other fields are treated as single-line by default
 MULTI_LINE_FIELDS: set[str] = {
-    "content",   # read_file, write_file, edit_file, search_replace, webfetch
-    "stdout",    # bash
-    "stderr",    # bash
-    "text",      # mcp
-    "body",      # generic
-    "data",      # generic
-    "matches",   # grep - multi-line grep output
+    "content",  # read_file, write_file, edit_file, search_replace, webfetch
+    "stdout",  # bash
+    "stderr",  # bash
+    "text",  # mcp
+    "body",  # generic
+    "data",  # generic
+    "matches",  # grep - multi-line grep output
     "response",  # task - subagent accumulated response
-    "answer",    # websearch - joined text parts
+    "answer",  # websearch - joined text parts
 }
 
 
 def _parse_tool_output(
-    content: str,
-    tool_name: str | None = None,
-    tool_manager: Any = None,
+    content: str, tool_name: str | None = None, tool_manager: Any = None
 ) -> dict:
     """Parse tool output text into a dictionary, handling multi-line values.
 
@@ -191,7 +196,12 @@ def _parse_tool_output(
     for line in lines:
         # Check if this line starts a new key-value pair
         # A new key starts with a word followed by ": " at the beginning of the line
-        if line and not line.startswith(" ") and not line.startswith("\t") and ": " in line:
+        if (
+            line
+            and not line.startswith(" ")
+            and not line.startswith("\t")
+            and ": " in line
+        ):
             # Save previous key-value pair if exists
             if current_key is not None:
                 result[current_key] = "\n".join(current_value_lines).strip()
@@ -222,7 +232,9 @@ def _parse_tool_output(
     return result
 
 
-def messages_to_events(messages, tool_manager) -> list[BaseEvent]:
+def messages_to_events(  # noqa: PLR0912, PLR0915
+    messages: list[LLMMessage], tool_manager: Any
+) -> list[BaseEvent]:
     """Convert a list of LLMMessage objects to equivalent BaseEvent objects.
 
     This function iterates through the message history and generates the
@@ -236,12 +248,12 @@ def messages_to_events(messages, tool_manager) -> list[BaseEvent]:
         List of BaseEvent objects in chronological order.
     """
     from vibe.core.types import (
-        UserMessageEvent,
         AssistantEvent,
         ReasoningEvent,
+        Role,
         ToolCallEvent,
         ToolResultEvent,
-        Role,
+        UserMessageEvent,
     )
 
     events: list[BaseEvent] = []
@@ -251,10 +263,10 @@ def messages_to_events(messages, tool_manager) -> list[BaseEvent]:
     for msg in messages:
         if msg.role == Role.assistant and msg.tool_calls:
             for tc in msg.tool_calls:
-                if tc.id:
+                if tc.id and tc.function.name:
                     tool_call_to_name[tc.id] = tc.function.name
 
-    for msg in messages:
+    for msg in messages:  # noqa: PLR1702
         # Skip system messages
         if msg.role == Role.system:
             continue
@@ -263,38 +275,39 @@ def messages_to_events(messages, tool_manager) -> list[BaseEvent]:
         if msg.role == Role.user:
             user_content = msg.content if isinstance(msg.content, str) else ""
             events.append(
-                UserMessageEvent(
-                    content=user_content,
-                    message_id=msg.message_id or "",
-                )
+                UserMessageEvent(content=user_content, message_id=msg.message_id or "")
             )
 
         # Assistant messages
         elif msg.role == Role.assistant:
             # Add reasoning content if present
             if msg.reasoning_content:
-                reasoning_content = msg.reasoning_content if isinstance(msg.reasoning_content, str) else ""
-                events.append(
-                    ReasoningEvent(
-                        content=reasoning_content,
-                        message_id=msg.message_id,
-                    )
+                reasoning_content = (
+                    msg.reasoning_content
+                    if isinstance(msg.reasoning_content, str)
+                    else ""
                 )
+                if msg.message_id:
+                    events.append(
+                        ReasoningEvent(
+                            content=reasoning_content, message_id=msg.message_id
+                        )
+                    )
 
             # Add assistant content if present
             if msg.content and isinstance(msg.content, str):
-                events.append(
-                    AssistantEvent(
-                        content=msg.content,
-                        message_id=msg.message_id,
+                if msg.message_id:
+                    events.append(
+                        AssistantEvent(content=msg.content, message_id=msg.message_id)
                     )
-                )
 
             # Add tool call events if present
             if msg.tool_calls:
                 for tc in msg.tool_calls:
                     tool_name = tc.function.name
-                    tool_class = None
+                    if not tool_name:
+                        continue
+                    tool_class: type[BaseTool] | None = None
 
                     # Look up the tool class from tool_manager
                     try:
@@ -316,15 +329,29 @@ def messages_to_events(messages, tool_manager) -> list[BaseEvent]:
                         args_model = _create_pydantic_model_from_dict(args)
 
                     # Send tool call event with args if available
-                    events.append(
-                        ToolCallEvent(
-                            tool_call_id=tc.id or "",
-                            tool_name=tool_name,
-                            tool_class=tool_class if tool_class else type(tool_manager),
-                            args=args_model,
-                            tool_call_index=tc.index,
+                    if tool_class is None:
+                        try:
+                            tool_class = type(tool_manager.get("bash"))
+                        except Exception:
+                            # Fallback: use the first available tool class
+                            try:
+                                first_tool = next(
+                                    iter(tool_manager._available.values())
+                                )
+                                tool_class = first_tool
+                            except StopIteration:
+                                pass  # No tools available, will fail below
+
+                    if tool_class is not None:
+                        events.append(
+                            ToolCallEvent(
+                                tool_call_id=tc.id or "",
+                                tool_name=tool_name,
+                                tool_class=tool_class,
+                                args=args_model,
+                                tool_call_index=tc.index,
+                            )
                         )
-                    )
 
         # Tool messages (results)
         elif msg.role == Role.tool and msg.tool_call_id:
@@ -334,13 +361,15 @@ def messages_to_events(messages, tool_manager) -> list[BaseEvent]:
             # Parse the result content
             result_obj: dict | None = None
 
+            # Convert content to string for json.loads
+            content_str = msg.content if isinstance(msg.content, str) else "{}"
             try:
-                result_obj = json.loads(msg.content or "{}")
+                result_obj = json.loads(content_str)
             except (json.JSONDecodeError, ValueError):
                 # Fall back to text format parsing with multi-line value support
                 # Pass tool_name and tool_manager for dynamic field detection
                 result_obj = _parse_tool_output(
-                    msg.content or "", tool_name=tool_name, tool_manager=tool_manager
+                    content_str, tool_name=tool_name, tool_manager=tool_manager
                 )
 
             # Create a result model if we have result data
@@ -348,25 +377,26 @@ def messages_to_events(messages, tool_manager) -> list[BaseEvent]:
             if result_obj:
                 result_model = _create_pydantic_model_from_dict(result_obj)
 
-            events.append(
-                ToolResultEvent(
-                    tool_name=tool_name,
-                    tool_class=None,
-                    result=result_model,
-                    error=None,
-                    skipped=False,
-                    tool_call_id=msg.tool_call_id,
+            if msg.tool_call_id:
+                events.append(
+                    ToolResultEvent(
+                        tool_name=tool_name,
+                        tool_class=None,
+                        result=result_model,
+                        error=None,
+                        skipped=False,
+                        tool_call_id=msg.tool_call_id,
+                    )
                 )
-            )
 
     return events
 
 
-def create_app(
+def create_app(  # noqa: PLR0915
     port: int = 9092,
     token: str | None = None,
     agent_loop: AgentLoop | None = None,
-    tui_app: VibeApp | None = None,
+    tui_app: Any = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application.
 
@@ -405,6 +435,7 @@ def create_app(
 
     # Set up event listener if agent_loop is provided
     if agent_loop is not None:
+
         def event_listener(event: BaseEvent) -> None:
             """Broadcast events to all connected WebSocket clients."""
             try:
@@ -416,18 +447,18 @@ def create_app(
                 pass
 
         # Add event listener to agent loop
-        if hasattr(agent_loop, '_event_listeners'):
+        if hasattr(agent_loop, "_event_listeners"):
             agent_loop._event_listeners.append(event_listener)
 
     @app.get("/", response_class=HTMLResponse)
-    def index():
+    def index() -> HTMLResponse:
         """Serve the main chat interface."""
         return templates.TemplateResponse("index.html", {"request": {}})
 
     security = HTTPBearer(auto_error=False)
 
     async def verify_token(
-        credentials: HTTPAuthorizationCredentials | None = Security(security),
+        credentials: HTTPAuthorizationCredentials | None = Depends(security),  # noqa: B008
     ) -> str:
         """Verify the Bearer token."""
         if auth_token is None:
@@ -507,8 +538,7 @@ def create_app(
 
     @app.post("/api/command/execute")
     async def execute_command(
-        command_data: dict,
-        token: str = Security(verify_token),
+        command_data: dict, token: str = Security(verify_token)
     ) -> JSONResponse:
         """Execute a slash command via the TUI app.
 
@@ -530,7 +560,7 @@ def create_app(
         command_text = f"/{command_name}"
         if command_args:
             command_text = f"{command_text} {command_args}"
-        
+
         tui_app.submit_message_from_web(command_text)
         return JSONResponse({"success": True})
 
@@ -549,9 +579,7 @@ def create_app(
             return JSONResponse({"events": []})
 
         try:
-            events = messages_to_events(
-                agent_loop.messages, agent_loop.tool_manager
-            )
+            events = messages_to_events(agent_loop.messages, agent_loop.tool_manager)
             serialized_events = [serialize_event(event) for event in events]
             return JSONResponse({"events": serialized_events})
         except Exception as e:
@@ -559,7 +587,7 @@ def create_app(
             return JSONResponse({"events": []})
 
     @app.websocket("/ws")
-    async def websocket_endpoint(
+    async def websocket_endpoint(  # noqa: PLR0914, PLR0912, PLR0915
         websocket: WebSocket,
     ) -> None:
         """WebSocket endpoint for real-time communication.
@@ -657,10 +685,14 @@ def create_app(
                 if message.get("type") == "user_message":
                     content = message.get("content", "")
                     image_data = message.get("image")
-                    if (content or image_data) and hasattr(app.state, "tui_app") and app.state.tui_app:
+                    if (
+                        (content or image_data)
+                        and hasattr(app.state, "tui_app")
+                        and app.state.tui_app
+                    ):
                         # Submit message to TUI
                         app.state.tui_app.submit_message_from_web(content, image_data)
-                
+
                 # Handle approval responses
                 elif message.get("type") == "approval_response":
                     popup_id = message.get("popup_id")
@@ -674,24 +706,20 @@ def create_app(
                         and app.state.tui_app
                     ):
                         from vibe.core.types import ApprovalResponse
-                        
+
                         approval_resp = ApprovalResponse(response)
                         app.state.tui_app.handle_web_approval_response(
                             popup_id, approval_resp, feedback, approval_type
                         )
-                
+
                 # Handle question responses
                 elif message.get("type") == "question_response":
                     popup_id = message.get("popup_id")
                     answers_data = message.get("answers", [])
                     cancelled = message.get("cancelled", False)
-                    if (
-                        popup_id
-                        and hasattr(app.state, "tui_app")
-                        and app.state.tui_app
-                    ):
+                    if popup_id and hasattr(app.state, "tui_app") and app.state.tui_app:
                         from vibe.core.tools.builtins.ask_user_question import Answer
-                        
+
                         answers = [Answer(**a) for a in answers_data]
                         app.state.tui_app.handle_web_question_response(
                             popup_id, answers, cancelled

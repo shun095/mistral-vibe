@@ -142,7 +142,9 @@ class TestTaskToolExecution:
         ]
 
         async def mock_act(task: str):
-            yield AssistantEvent(content="Hello from subagent!\n\nThis is a comprehensive response with multiple lines.")
+            yield AssistantEvent(
+                content="Hello from subagent!\n\nThis is a comprehensive response with multiple lines."
+            )
             yield AssistantEvent(content="\nAdditional details and findings.")
 
         with patch("vibe.core.tools.builtins.task.AgentLoop") as mock_agent_loop_class:
@@ -156,7 +158,10 @@ class TestTaskToolExecution:
             result = await collect_result(task_tool.run(args, ctx))
 
             assert isinstance(result, TaskResult)
-            assert result.response == "Hello from subagent!\n\nThis is a comprehensive response with multiple lines.\nAdditional details and findings."
+            assert (
+                result.response
+                == "Hello from subagent!\n\nThis is a comprehensive response with multiple lines.\nAdditional details and findings."
+            )
             assert result.turns_used == 2  # 2 assistant messages in mock_messages
             assert result.completed is True
 
@@ -226,13 +231,15 @@ class TestTaskToolExecution:
         async def mock_act(task: str):
             nonlocal attempt_count
             attempt_count += 1
-            
+
             # First attempt: single line (insufficient)
             if attempt_count == 1:
                 yield AssistantEvent(content="Single line response")
             # Second attempt: multi-line (sufficient)
             elif attempt_count == 2:
-                yield AssistantEvent(content="Comprehensive response\n\nWith multiple lines")
+                yield AssistantEvent(
+                    content="Comprehensive response\n\nWith multiple lines"
+                )
             # Third attempt: still insufficient
             else:
                 yield AssistantEvent(content="Another single line")
@@ -245,7 +252,7 @@ class TestTaskToolExecution:
             mock_agent_loop_class.return_value = mock_agent_loop
 
             args = TaskArgs(task="analyze code", agent="explore")
-            
+
             # Collect all events (not just the result)
             events = []
             async for event in task_tool.run(args, ctx):
@@ -253,7 +260,7 @@ class TestTaskToolExecution:
                 # Stop after getting ToolStreamEvent feedback
                 if len(events) == 1 and isinstance(event, ToolStreamEvent):
                     break
-            
+
             # Should have received feedback about insufficient response
             assert len(events) == 1
             assert isinstance(events[0], ToolStreamEvent)

@@ -14,6 +14,7 @@ from vibe.core.types import (
     AssistantEvent,
     CompactEndEvent,
     CompactStartEvent,
+    Content,
     LLMMessage,
     Role,
     UserMessageEvent,
@@ -61,7 +62,7 @@ async def test_auto_compact_observer_sees_user_msg_not_summary() -> None:
     Compact internals (summary request, LLM summary) are invisible
     to the observer because they happen inside silent() / reset().
     """
-    observed: list[tuple[Role, str | None]] = []
+    observed: list[tuple[Role, Content | None]] = []
 
     def observer(msg: LLMMessage) -> None:
         observed.append((msg.role, msg.content))
@@ -87,7 +88,7 @@ async def test_auto_compact_observer_sees_user_msg_not_summary() -> None:
 @pytest.mark.asyncio
 async def test_auto_compact_observer_does_not_see_summary_request() -> None:
     """The compact summary request and LLM response must not leak to observer."""
-    observed: list[tuple[Role, str | None]] = []
+    observed: list[tuple[Role, Content | None]] = []
 
     def observer(msg: LLMMessage) -> None:
         observed.append((msg.role, msg.content))
@@ -106,7 +107,7 @@ async def test_auto_compact_observer_does_not_see_summary_request() -> None:
 
     contents = [c for _, c in observed]
     assert "<summary>" not in contents
-    assert all("compact" not in (c or "").lower() for c in contents)
+    assert all("compact" not in (str(c) if c else "").lower() for c in contents)
 
 
 @pytest.mark.asyncio

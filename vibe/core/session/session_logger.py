@@ -262,7 +262,9 @@ class SessionLogger:
             # Check if we need to rewrite the file (message count decreased due to edit)
             if total_messages < old_total_messages:
                 # Rewrite the entire file with the new message history
-                messages_data = [m.model_dump(exclude_none=True) for m in non_system_messages]
+                messages_data = [
+                    m.model_dump(exclude_none=True) for m in non_system_messages
+                ]
                 await SessionLogger.rewrite_messages(messages_data, self.session_dir)
             else:
                 # Append new messages

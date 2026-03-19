@@ -82,7 +82,9 @@ class TestTelemetryClient:
 
         client._client.post.assert_not_called()
 
-    @pytest.mark.skip(reason="Telemetry is disabled in this fork to improve privacy and security")
+    @pytest.mark.skip(
+        reason="Telemetry is disabled in this fork to improve privacy and security"
+    )
     @pytest.mark.asyncio
     async def test_send_telemetry_event_posts_when_enabled(
         self, monkeypatch: pytest.MonkeyPatch
@@ -274,7 +276,9 @@ class TestTelemetryClient:
         assert properties["terminal_emulator"] == "vscode"
         assert "version" in properties
 
-    @pytest.mark.skip(reason="Telemetry is disabled in this fork to improve privacy and security")
+    @pytest.mark.skip(
+        reason="Telemetry is disabled in this fork to improve privacy and security"
+    )
     @pytest.mark.asyncio
     async def test_session_id_added_when_getter_provided(
         self, monkeypatch: pytest.MonkeyPatch
@@ -312,7 +316,9 @@ class TestTelemetryClient:
             },
         )
 
-    @pytest.mark.skip(reason="Telemetry is disabled in this fork to improve privacy and security")
+    @pytest.mark.skip(
+        reason="Telemetry is disabled in this fork to improve privacy and security"
+    )
     @pytest.mark.asyncio
     async def test_session_id_absent_when_no_getter(
         self, monkeypatch: pytest.MonkeyPatch
@@ -344,7 +350,9 @@ class TestTelemetryClient:
             },
         )
 
-    @pytest.mark.skip(reason="Telemetry is disabled in this fork to improve privacy and security")
+    @pytest.mark.skip(
+        reason="Telemetry is disabled in this fork to improve privacy and security"
+    )
     @pytest.mark.asyncio
     async def test_session_id_getter_reflects_latest_value(
         self, monkeypatch: pytest.MonkeyPatch

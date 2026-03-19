@@ -39,6 +39,7 @@ class ChatInputContainer(Vertical):
 
     class PromptEnhancementRequested(Message):
         """Message sent when user requests prompt enhancement."""
+
         def __init__(self, original_text: str) -> None:
             self.original_text = original_text
             super().__init__()

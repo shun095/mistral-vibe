@@ -102,11 +102,15 @@ class MockCommandRegistry:
         self.commands = {
             "clean": MockCommand("clean", "Clear conversation history", ["/clean"]),
             "clear": MockCommand("clear", "Clear conversation history", ["/clear"]),
-            "compact": MockCommand("compact", "Compact conversation history", ["/compact"]),
+            "compact": MockCommand(
+                "compact", "Compact conversation history", ["/compact"]
+            ),
             "config": MockCommand("config", "Edit configuration", ["/config"]),
             "help": MockCommand("help", "Show help message", ["/help"]),
             "restart": MockCommand("restart", "Restart the application", ["/restart"]),
-            "resume": MockCommand("resume", "Resume the last interrupted task", ["/resume"]),
+            "resume": MockCommand(
+                "resume", "Resume the last interrupted task", ["/resume"]
+            ),
             "edit": MockCommand("edit", "Edit the last user message", ["/edit"]),
         }
 
@@ -142,11 +146,14 @@ class WebUIServer:
 
         # Create a mock TUI app with commands
         tui_app = MockTUIApp()
-        app = create_app(port=self.port, token=self.token, agent_loop=None, tui_app=tui_app)
+        app = create_app(
+            port=self.port, token=self.token, agent_loop=None, tui_app=tui_app
+        )
         config = Config(app, host="127.0.0.1", port=self.port, log_level="error")
         self.server = uvicorn.Server(config)
 
         def run_server() -> None:
+            assert self.server is not None
             self.server.run()
 
         self.thread = threading.Thread(target=run_server, daemon=True)
@@ -157,7 +164,10 @@ class WebUIServer:
         while time.time() - start_time < max_wait:
             try:
                 import urllib.request
-                urllib.request.urlopen(f"http://127.0.0.1:{self.port}/health", timeout=1)
+
+                urllib.request.urlopen(
+                    f"http://127.0.0.1:{self.port}/health", timeout=1
+                )
                 return
             except Exception:
                 time.sleep(0.1)

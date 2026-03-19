@@ -41,10 +41,7 @@ class OpenAIAdapter(APIAdapter):
         max_tokens: int | None,
         tool_choice: StrToolChoice | AvailableTool | None,
     ) -> dict[str, Any]:
-        payload = {
-            "model": model_name,
-            "messages": converted_messages,
-        }
+        payload = {"model": model_name, "messages": converted_messages}
 
         if temperature is not None:
             payload["temperature"] = temperature
@@ -233,7 +230,9 @@ class GenericBackend:
         adapter = ADAPTERS[api_style]
 
         # Use model's temperature if not explicitly provided
-        effective_temperature = temperature if temperature is not None else model.temperature
+        effective_temperature = (
+            temperature if temperature is not None else model.temperature
+        )
 
         req = adapter.prepare_request(
             model_name=model.name,
@@ -305,7 +304,9 @@ class GenericBackend:
         adapter = ADAPTERS[api_style]
 
         # Use model's temperature if not explicitly provided
-        effective_temperature = temperature if temperature is not None else model.temperature
+        effective_temperature = (
+            temperature if temperature is not None else model.temperature
+        )
 
         req = adapter.prepare_request(
             model_name=model.name,
@@ -363,12 +364,15 @@ class GenericBackend:
     async def _make_request(
         self, url: str, data: bytes, headers: dict[str, str]
     ) -> HTTPResponse:
-        
+
         logger.debug(
             "LLM Backend Request: %s",
-            json.dumps({"url": url, "headers": headers, "body": json.loads(data)}, ensure_ascii=False),
+            json.dumps(
+                {"url": url, "headers": headers, "body": json.loads(data)},
+                ensure_ascii=False,
+            ),
         )
-        
+
         client = self._get_client()
         response = await client.post(url, content=data, headers=headers)
         response.raise_for_status()
@@ -376,8 +380,7 @@ class GenericBackend:
         response_headers = dict(response.headers.items())
         response_body = response.json()
         logger.debug(
-            "LLM Backend Response: %s",
-            json.dumps(response_body, ensure_ascii=False),
+            "LLM Backend Response: %s", json.dumps(response_body, ensure_ascii=False)
         )
         return self.HTTPResponse(response_body, response_headers)
 
@@ -387,9 +390,12 @@ class GenericBackend:
     ) -> AsyncGenerator[dict[str, Any]]:
         logger.debug(
             "LLM Backend Streaming Request: %s",
-            json.dumps({"url": url, "headers": headers, "body": json.loads(data)}, ensure_ascii=False),
+            json.dumps(
+                {"url": url, "headers": headers, "body": json.loads(data)},
+                ensure_ascii=False,
+            ),
         )
-        
+
         client = self._get_client()
         async with client.stream(
             method="POST", url=url, content=data, headers=headers
@@ -397,7 +403,7 @@ class GenericBackend:
             if not response.is_success:
                 await response.aread()
             response.raise_for_status()
-            
+
             async for line in response.aiter_lines():
                 if line.strip() == "":
                     continue

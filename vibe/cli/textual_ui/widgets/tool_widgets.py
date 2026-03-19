@@ -4,6 +4,9 @@ import difflib
 from pathlib import Path
 
 from pydantic import BaseModel
+
+# Constants
+STRING_PREVIEW_LENGTH = 200
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
@@ -13,9 +16,9 @@ from vibe.cli.textual_ui.widgets.no_markup_static import NoMarkupStatic
 from vibe.core.lsp import LSPDiagnosticFormatter
 from vibe.core.tools.builtins.ask_user_question import AskUserQuestionResult
 from vibe.core.tools.builtins.bash import BashArgs, BashResult
+from vibe.core.tools.builtins.edit_file import EditFileArgs, EditFileResult
 from vibe.core.tools.builtins.grep import GrepArgs, GrepResult
 from vibe.core.tools.builtins.lsp import LSPToolResult
-from vibe.core.tools.builtins.edit_file import EditFileArgs, EditFileResult
 from vibe.core.tools.builtins.read_file import ReadFileArgs, ReadFileResult
 from vibe.core.tools.builtins.search_replace import (
     SEARCH_REPLACE_BLOCK_RE,
@@ -137,7 +140,9 @@ class BashApprovalWidget(ToolApprovalWidget[BashArgs]):
     def compose(self) -> ComposeResult:
         yield Markdown(f"```bash\n{self.args.command}\n```")
         if self.args.timeout is not None:
-            yield NoMarkupStatic(f"timeout: {self.args.timeout}s", classes="approval-description")
+            yield NoMarkupStatic(
+                f"timeout: {self.args.timeout}s", classes="approval-description"
+            )
 
 
 class BashResultWidget(ToolResultWidget[BashResult]):
@@ -197,14 +202,16 @@ class WriteFileResultWidget(ToolResultWidget[WriteFileResult]):
         yield NoMarkupStatic(
             f"Bytes: {self.result.bytes_written}", classes="tool-result-detail"
         )
-        
+
         # Display LSP diagnostics if available
         if self.result and self.result.lsp_diagnostics:
             yield NoMarkupStatic("")
             # Convert JSON to Markdown for UI display
-            markdown_content = LSPDiagnosticFormatter.format_json_to_markdown(self.result.lsp_diagnostics)
+            markdown_content = LSPDiagnosticFormatter.format_json_to_markdown(
+                self.result.lsp_diagnostics
+            )
             yield Markdown(markdown_content)
-        
+
         if self.result.content:
             yield NoMarkupStatic("")
             content, _ = _truncate_lines(self.result.content, 10)
@@ -218,15 +225,19 @@ class EditFileApprovalWidget(ToolApprovalWidget[EditFileArgs]):
             f"File: {self.args.file_path}", classes="approval-description"
         )
         yield NoMarkupStatic("")
-        old_string = self.args.old_string[:200]
-        if len(self.args.old_string) > 200:
+        old_string = self.args.old_string[:STRING_PREVIEW_LENGTH]
+        if len(self.args.old_string) > STRING_PREVIEW_LENGTH:
             old_string += "…"
-        yield NoMarkupStatic(f"old_string: {old_string}", classes="approval-description")
+        yield NoMarkupStatic(
+            f"old_string: {old_string}", classes="approval-description"
+        )
         yield NoMarkupStatic("")
-        new_string = self.args.new_string[:200]
-        if len(self.args.new_string) > 200:
+        new_string = self.args.new_string[:STRING_PREVIEW_LENGTH]
+        if len(self.args.new_string) > STRING_PREVIEW_LENGTH:
             new_string += "…"
-        yield NoMarkupStatic(f"new_string: {new_string}", classes="approval-description")
+        yield NoMarkupStatic(
+            f"new_string: {new_string}", classes="approval-description"
+        )
 
 
 class EditFileResultWidget(ToolResultWidget[EditFileResult]):
@@ -236,14 +247,16 @@ class EditFileResultWidget(ToolResultWidget[EditFileResult]):
             return
         for warning in self.warnings:
             yield NoMarkupStatic(f"⚠ {warning}", classes="tool-result-warning")
-        
+
         # Display LSP diagnostics if available
         if self.result and self.result.lsp_diagnostics:
             yield NoMarkupStatic("")
             # Convert JSON to Markdown for UI display
-            markdown_content = LSPDiagnosticFormatter.format_json_to_markdown(self.result.lsp_diagnostics)
+            markdown_content = LSPDiagnosticFormatter.format_json_to_markdown(
+                self.result.lsp_diagnostics
+            )
             yield Markdown(markdown_content)
-        
+
         if self.result.content:
             # Parse and render the unified diff
             for line in parse_search_replace_to_diff(self.result.content):
@@ -270,14 +283,16 @@ class SearchReplaceResultWidget(ToolResultWidget[SearchReplaceResult]):
             return
         for warning in self.warnings:
             yield NoMarkupStatic(f"⚠ {warning}", classes="tool-result-warning")
-        
+
         # Display LSP diagnostics if available
         if self.result and self.result.lsp_diagnostics:
             yield NoMarkupStatic("")
             # Convert JSON to Markdown for UI display
-            markdown_content = LSPDiagnosticFormatter.format_json_to_markdown(self.result.lsp_diagnostics)
+            markdown_content = LSPDiagnosticFormatter.format_json_to_markdown(
+                self.result.lsp_diagnostics
+            )
             yield Markdown(markdown_content)
-        
+
         if self.result.content:
             for line in parse_search_replace_to_diff(self.result.content):
                 yield render_diff_line(line)
@@ -355,9 +370,11 @@ class ReadFileResultWidget(ToolResultWidget[ReadFileResult]):
         if self.result and self.result.lsp_diagnostics:
             yield NoMarkupStatic("")
             # Convert JSON to Markdown for UI display
-            markdown_content = LSPDiagnosticFormatter.format_json_to_markdown(self.result.lsp_diagnostics)
+            markdown_content = LSPDiagnosticFormatter.format_json_to_markdown(
+                self.result.lsp_diagnostics
+            )
             yield Markdown(markdown_content)
-        
+
         if self.result and self.result.content:
             yield NoMarkupStatic("")
             ext = Path(self.result.path).suffix.lstrip(".") or "text"
@@ -398,7 +415,7 @@ class LSPResultWidget(ToolResultWidget[LSPToolResult]):
     def compose(self) -> ComposeResult:
         if self.collapsed or not self.result:
             return
-        
+
         # Display diagnostics in a readable format
         if self.result.formatted_output:
             yield NoMarkupStatic("")

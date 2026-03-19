@@ -43,9 +43,7 @@ def extract_edit_content(user_input: str) -> str:
     return user_input[6:].strip()
 
 
-def get_last_user_message(
-    messages: MessageList,
-) -> LLMMessage | None:
+def get_last_user_message(messages: MessageList) -> LLMMessage | None:
     """Get the last user message from history.
 
     Args:
@@ -60,10 +58,7 @@ def get_last_user_message(
     return None
 
 
-def validate_edit_preconditions(
-    app: VibeApp,
-    messages: MessageList,
-) -> None:
+def validate_edit_preconditions(app: VibeApp, messages: MessageList) -> None:
     """Validate that editing is possible.
 
     Args:
@@ -74,14 +69,10 @@ def validate_edit_preconditions(
         EditValidationError: If editing is not possible.
     """
     if app._agent_running:
-        raise EditValidationError(
-            "Cannot edit while agent is processing. Please wait."
-        )
+        raise EditValidationError("Cannot edit while agent is processing. Please wait.")
 
     if len(messages) <= 1:
-        raise EditValidationError(
-            "No messages to edit. Start a conversation first."
-        )
+        raise EditValidationError("No messages to edit. Start a conversation first.")
 
 
 class EditHandler:
@@ -106,9 +97,8 @@ class EditHandler:
         """
         self.app._agent_running = True
 
-        loading_area = (
-            self.app._cached_loading_area
-            or self.app.query_one("#loading-area-content")
+        loading_area = self.app._cached_loading_area or self.app.query_one(
+            "#loading-area-content"
         )
 
         loading = LoadingWidget()
@@ -122,9 +112,7 @@ class EditHandler:
                     self.agent_loop.messages
                     and self.agent_loop.messages[-1].role == Role.user
                 ):
-                    self.agent_loop.messages.reset(
-                        self.agent_loop.messages[:-1]
-                    )
+                    self.agent_loop.messages.reset(self.agent_loop.messages[:-1])
 
             # Edit the last message in the agent loop
             await self.agent_loop.edit_last_message(self.new_content)
@@ -133,9 +121,8 @@ class EditHandler:
             self.app._reset_ui_state()
 
             # Remove old message widgets and rebuild
-            messages_area = (
-                self.app._cached_messages_area
-                or self.app.query_one("#messages")
+            messages_area = self.app._cached_messages_area or self.app.query_one(
+                "#messages"
             )
             await messages_area.remove_children()
 

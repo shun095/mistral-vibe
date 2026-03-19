@@ -36,7 +36,7 @@ class WriteFileResult(BaseModel):
     content: str
     lsp_diagnostics: str | None = Field(
         default=None,
-        description="Formatted LSP diagnostics for the written file, if available"
+        description="Formatted LSP diagnostics for the written file, if available",
     )
 
 
@@ -95,8 +95,10 @@ class WriteFile(
         diagnostics = None
         try:
             client_manager = LSPClientManager()
-            diagnostics_list = await client_manager.get_diagnostics_from_all_servers(file_path)
-            
+            diagnostics_list = await client_manager.get_diagnostics_from_all_servers(
+                file_path
+            )
+
             # Format diagnostics for LLM consumption if available
             if diagnostics_list:
                 diagnostics = LSPDiagnosticFormatter.format_diagnostics_for_llm(

@@ -1,36 +1,59 @@
 from __future__ import annotations
 
-import asyncio
+from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import Any, AsyncGenerator
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 from vibe.core.lsp import LSPClientManager
+
+# LSP diagnostic severity levels
+LSP_SEVERITY_ERROR = 1
+LSP_SEVERITY_WARNING = 2
+
+# Max diagnostics to display
+MAX_DIAGNOSTICS_DISPLAY = 10
 from vibe.core.lsp.formatter import LSPDiagnosticFormatter
 from vibe.core.lsp.server import LSPServerRegistry
-from vibe.core.tools.base import BaseTool, BaseToolConfig, BaseToolState, InvokeContext, ToolStreamEvent
+from vibe.core.tools.base import (
+    BaseTool,
+    BaseToolConfig,
+    BaseToolState,
+    InvokeContext,
+    ToolStreamEvent,
+)
 from vibe.core.tools.ui import ToolCallDisplay, ToolResultDisplay, ToolUIData
 from vibe.core.types import ToolCallEvent, ToolResultEvent
+
 
 class LSPToolArgs(BaseModel):
     file_path: Path = Field(description="Path to the file to check for diagnostics")
     server_name: str | None = Field(
         default=None,
-        description="Name of the LSP server to use (auto-detected if not specified)"
+        description="Name of the LSP server to use (auto-detected if not specified)",
     )
 
+
 class LSPToolResult(BaseModel):
-    diagnostics: list[dict[str, Any]] = Field(description="List of diagnostics from the LSP server")
+    diagnostics: list[dict[str, Any]] = Field(
+        description="List of diagnostics from the LSP server"
+    )
     formatted_output: str = Field(description="Formatted diagnostics for display")
+
 
 class LSPToolConfig(BaseToolConfig):
     pass
 
+
 class LSPToolState(BaseToolState):
     pass
 
-class LSP(BaseTool[LSPToolArgs, LSPToolResult, LSPToolConfig, LSPToolState], ToolUIData[LSPToolArgs, LSPToolResult]):
+
+class LSP(
+    BaseTool[LSPToolArgs, LSPToolResult, LSPToolConfig, LSPToolState],
+    ToolUIData[LSPToolArgs, LSPToolResult],
+):
     description = "Interact with Language Server Protocol (LSP) servers to get diagnostics and feedback on code."
     prompt_path = Path(__file__).parent / "prompts" / "lsp.md"
 
@@ -40,11 +63,11 @@ class LSP(BaseTool[LSPToolArgs, LSPToolResult, LSPToolConfig, LSPToolState], Too
 
     @classmethod
     def get_call_display(cls, event: ToolCallEvent) -> ToolCallDisplay:
-        file_path = getattr(event.args, 'file_path', None)
+        file_path = getattr(event.args, "file_path", None)
         if file_path:
             return ToolCallDisplay(
                 summary=f"Checking {file_path} for diagnostics",
-                content=f"Analyzing {file_path} with LSP server"
+                content=f"Analyzing {file_path} with LSP server",
             )
         return ToolCallDisplay(summary="Checking file for diagnostics")
 
@@ -56,14 +79,12 @@ class LSP(BaseTool[LSPToolArgs, LSPToolResult, LSPToolConfig, LSPToolState], Too
         diagnostics = result.diagnostics
 
         # Count by severity
-        errors = [d for d in diagnostics if d.get("severity") == 1]
-        warnings = [d for d in diagnostics if d.get("severity") == 2]
+        errors = [d for d in diagnostics if d.get("severity") == LSP_SEVERITY_ERROR]
+        warnings = [d for d in diagnostics if d.get("severity") == LSP_SEVERITY_WARNING]
 
         if not diagnostics:
             return ToolResultDisplay(
-                success=True,
-                message="No issues found",
-                warnings=[]
+                success=True, message="No issues found", warnings=[]
             )
 
         message_parts = []
@@ -72,15 +93,15 @@ class LSP(BaseTool[LSPToolArgs, LSPToolResult, LSPToolConfig, LSPToolState], Too
         if warnings:
             message_parts.append(f"{len(warnings)} warning(s)")
 
-        if len(diagnostics) <= 10:
+        if len(diagnostics) <= MAX_DIAGNOSTICS_DISPLAY:
             message = f"Found {len(diagnostics)} issue(s)"
         else:
-            message = f"Found {len(diagnostics)} issue(s) (showing first 10)"
+            message = f"Found {len(diagnostics)} issue(s) (showing first {MAX_DIAGNOSTICS_DISPLAY})"
 
         return ToolResultDisplay(
             success=len(errors) == 0,
             message=message,
-            warnings=[result.formatted_output] if result.formatted_output else []
+            warnings=[result.formatted_output] if result.formatted_output else [],
         )
 
     @classmethod
@@ -101,42 +122,40 @@ class LSP(BaseTool[LSPToolArgs, LSPToolResult, LSPToolConfig, LSPToolState], Too
 
             # Detect server if not specified
             if args.server_name is None:
-                args.server_name = LSPServerRegistry.detect_server_for_file(args.file_path)
+                args.server_name = LSPServerRegistry.detect_server_for_file(
+                    args.file_path
+                )
                 if args.server_name is None:
                     result = LSPToolResult(
                         diagnostics=[],
-                        formatted_output="No supported LSP server found for this file type."
+                        formatted_output="No supported LSP server found for this file type.",
                     )
                     yield result
                     return
 
             # Get diagnostics from all applicable LSP servers
             # This will automatically restart servers if they have exited
-            diagnostics = await client_manager.get_diagnostics_from_all_servers(args.file_path)
+            diagnostics = await client_manager.get_diagnostics_from_all_servers(
+                args.file_path
+            )
 
             # Format diagnostics for display
             formatted_output = self._format_diagnostics(diagnostics)
 
             # Create result
             result = LSPToolResult(
-                diagnostics=diagnostics,
-                formatted_output=formatted_output
+                diagnostics=diagnostics, formatted_output=formatted_output
             )
 
             yield result
 
         except Exception as e:
-            error_msg = f"Error getting LSP diagnostics: {str(e)}"
+            error_msg = f"Error getting LSP diagnostics: {e!s}"
             # Yield both an error event and a result with empty diagnostics
             yield ToolStreamEvent(
-                tool_name=self.get_name(),
-                message=error_msg,
-                tool_call_id=""
+                tool_name=self.get_name(), message=error_msg, tool_call_id=""
             )
-            result = LSPToolResult(
-                diagnostics=[],
-                formatted_output=error_msg
-            )
+            result = LSPToolResult(diagnostics=[], formatted_output=error_msg)
             yield result
 
     def _format_diagnostics(self, diagnostics: list[dict[str, Any]]) -> str:

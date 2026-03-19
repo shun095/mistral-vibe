@@ -40,29 +40,36 @@ from vibe.core.llm.backend.generic import GenericBackend
 from vibe.core.llm.backend.mistral import MistralBackend
 from vibe.core.llm.exceptions import BackendError
 from vibe.core.llm.types import BackendLike
-from vibe.core.types import LLMChunk, LLMMessage, Role, ToolCall
+from vibe.core.types import (
+    AvailableTool,
+    LLMChunk,
+    LLMMessage,
+    Role,
+    StrToolChoice,
+    ToolCall,
+)
 from vibe.core.utils import async_generator_retry, async_retry, get_user_agent
 
 
 # Test-specific backends with lower retry count for faster test execution
 class TestGenericBackend(GenericBackend):
     """GenericBackend with 1 retry attempt for faster test execution."""
-    
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Override retry count for both regular and streaming requests
         self._retry_count = 1
-    
+
     @async_retry(tries=1)
     async def _make_request(self, url, data, headers):
         return await super()._make_request(url, data, headers)
-    
+
     def _is_retryable_streaming_error(self, exception: Exception) -> bool:
         """Don't retry HTTP status errors for streaming requests."""
         if isinstance(exception, httpx.HTTPStatusError):
             return False
         return True
-    
+
     async def _make_streaming_request(self, url, data, headers):
         """Override to not retry HTTP status errors."""
         # Copy implementation from parent but bypass its decorator
@@ -108,9 +115,9 @@ class TestGenericBackend(GenericBackend):
 
 class TestMistralBackend(MistralBackend):
     """MistralBackend with 1 retry attempt for faster test execution."""
-    
+
     @async_retry(tries=1)
-    async def complete(
+    async def complete(  # type: ignore[override]
         self,
         *,
         model: ModelConfig,
@@ -130,9 +137,9 @@ class TestMistralBackend(MistralBackend):
             tool_choice=tool_choice,
             extra_headers=extra_headers,
         )
-    
+
     @async_generator_retry(tries=1)
-    async def complete_streaming(
+    async def complete_streaming(  # type: ignore[override]
         self,
         *,
         model: ModelConfig,

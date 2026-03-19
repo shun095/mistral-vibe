@@ -7,9 +7,12 @@ from pathlib import Path
 import re
 import shlex
 import tomllib
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 from dotenv import dotenv_values
+
+# Magic values for type annotation processing
+DICT_ARGS_MIN_LENGTH = 2
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic.fields import FieldInfo
 from pydantic_settings import (
@@ -238,11 +241,14 @@ MCPServer = Annotated[
     MCPHttp | MCPStreamableHttp | MCPStdio, Field(discriminator="transport")
 ]
 
+
 # FIXME: root_markers configuration and implementation to use the configuration should be added.
 class LSPServerConfig(BaseModel):
     """Configuration for an LSP (Language Server Protocol) server."""
 
-    name: str = Field(description="Name of the LSP server (e.g., 'pyright', 'tsserver')")
+    name: str = Field(
+        description="Name of the LSP server (e.g., 'pyright', 'tsserver')"
+    )
     command: list[str] = Field(
         description="Command to start the LSP server (e.g., ['pyright-langserver', '--stdio'])"
     )
@@ -731,7 +737,9 @@ class VibeConfig(BaseSettings):
         cls.dump_config(validated.model_dump(mode="json", exclude_none=True))
 
     @classmethod
-    def _get_nested_model_class(cls, field_info: FieldInfo | None) -> type[BaseModel] | None:
+    def _get_nested_model_class(
+        cls, field_info: FieldInfo | None
+    ) -> type[BaseModel] | None:
         """Get the nested model class for a field if it's a known Pydantic model."""
         if field_info is None:
             return None
@@ -739,7 +747,7 @@ class VibeConfig(BaseSettings):
         # Check the annotation for nested models
         annotation = field_info.annotation
         # Handle bare types (e.g., ProjectContextConfig)
-        if hasattr(annotation, '__origin__'):
+        if hasattr(annotation, "__origin__"):
             # It's a generic type like list[T] or dict[K, V]
             return None
         # Check if it's a BaseModel subclass
@@ -799,7 +807,9 @@ class VibeConfig(BaseSettings):
                     default_value = default_value.model_dump(mode="json")
                 elif isinstance(default_value, list):
                     default_value = [
-                        item.model_dump(mode="json") if isinstance(item, BaseModel) else item
+                        item.model_dump(mode="json")
+                        if isinstance(item, BaseModel)
+                        else item
                         for item in default_value
                     ]
                 elif isinstance(default_value, dict):
@@ -902,7 +912,9 @@ class VibeConfig(BaseSettings):
             f.write(tomlkit.dumps(doc).encode("utf-8"))
 
     @classmethod
-    def _get_models_for_array_field(cls, field_name: str, field_type: Any) -> list[type[BaseModel]]:
+    def _get_models_for_array_field(
+        cls, field_name: str, field_type: Any
+    ) -> list[type[BaseModel]]:
         """Get model classes for an array field, handling discriminated unions.
 
         For discriminated unions (e.g., MCPServer = MCPHttp | MCPStreamableHttp | MCPStdio),
@@ -931,7 +943,9 @@ class VibeConfig(BaseSettings):
         return []
 
     @classmethod
-    def _remove_defaults_from_doc(cls, doc: tomlkit.TOMLDocument) -> None:
+    def _remove_defaults_from_doc(  # noqa: PLR0912, PLR0915
+        cls, doc: tomlkit.TOMLDocument
+    ) -> None:
         """Remove all fields with default values from the document."""
         # Dynamically detect field types from model_fields
         # Arrays of models: list[SomeModel] -> extract SomeModel
@@ -943,7 +957,7 @@ class VibeConfig(BaseSettings):
         array_model_map: dict[str, list[type[BaseModel]]] = {}
         dict_model_keys: dict[str, type[BaseModel]] = {}
 
-        for field_name, field_info in cls.model_fields.items():
+        for field_name, field_info in cls.model_fields.items():  # noqa: PLR1702
             annotation = field_info.annotation
             origin = getattr(annotation, "__origin__", None)
 
@@ -960,22 +974,27 @@ class VibeConfig(BaseSettings):
                             field_type = actual_args[0]
 
                     # Use helper to handle discriminated unions
-                    model_classes = cls._get_models_for_array_field(field_name, field_type)
+                    model_classes = cls._get_models_for_array_field(
+                        field_name, field_type
+                    )
                     if model_classes:
                         array_model_map[field_name] = model_classes
 
             elif origin is dict:
                 # It's a dict[str, SomeModel]
                 args = getattr(annotation, "__args__", ())
-                if len(args) >= 2:
-                    value_type = args[1]
+                if len(args) >= DICT_ARGS_MIN_LENGTH:
+                    args_typed = cast(tuple[type, type], args)
+                    value_type = args_typed[1]
                     # Handle Annotated wrapper
                     if hasattr(value_type, "__origin__"):
                         actual_args = getattr(value_type, "__args__", ())
                         if actual_args:
                             value_type = actual_args[0]
 
-                    if isinstance(value_type, type) and issubclass(value_type, BaseModel):
+                    if isinstance(value_type, type) and issubclass(
+                        value_type, BaseModel
+                    ):
                         dict_model_keys[field_name] = value_type
 
             elif isinstance(annotation, type) and issubclass(annotation, BaseModel):
@@ -985,7 +1004,11 @@ class VibeConfig(BaseSettings):
         # Remove top-level defaults (excluding nested sections, arrays, and dicts)
         keys_to_remove: list[str] = []
         for key in doc.keys():
-            if key in nested_section_keys or key in array_model_map or key in dict_model_keys:
+            if (
+                key in nested_section_keys
+                or key in array_model_map
+                or key in dict_model_keys
+            ):
                 # Skip nested structures - handle separately
                 continue
 
@@ -999,7 +1022,7 @@ class VibeConfig(BaseSettings):
             del doc[key]
 
         # Check and remove ALL array fields that are default (empty lists)
-        for key in list(doc.keys()):
+        for key in list(doc.keys()):  # noqa: PLR1702
             if key in nested_section_keys or key in dict_model_keys:
                 # Skip nested sections and dicts - handle separately
                 continue

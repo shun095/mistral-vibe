@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from vibe.core.lsp.installers.pyright import PyrightInstaller
 from vibe.core.lsp.project_root import ProjectRootFinder
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 class PyrightLSP(LSPServer):
     name = "pyright"
-    command = ["pyright-langserver", "--stdio"]
+    command: ClassVar[list[str]] = ["pyright-langserver", "--stdio"]
 
     async def get_command(self) -> list[str]:
         # Get command for Pyright LSP server
@@ -48,7 +48,15 @@ class PyrightLSP(LSPServer):
     def _find_python_project_root(self) -> str:
         # Find Python project root by walking up from current directory
         # FIXME: root_mark should be configuarable by config file.
-        root_markers = ['pyrightconfig.json', 'pyproject.toml', 'setup.py', 'setup.cfg', 'requirements.txt', 'Pipfile', '.git']
+        root_markers = [
+            "pyrightconfig.json",
+            "pyproject.toml",
+            "setup.py",
+            "setup.cfg",
+            "requirements.txt",
+            "Pipfile",
+            ".git",
+        ]
         return ProjectRootFinder.find_project_root(root_markers)
 
     def get_initialization_params(self) -> dict[str, Any]:
@@ -62,15 +70,13 @@ class PyrightLSP(LSPServer):
         # Include workspaceFolders with the detected project root
         workspace_folder = {
             "uri": root_uri,
-            "name": Path(root_uri[7:]).name  # Remove 'file://' prefix and get folder name
+            "name": Path(
+                root_uri[7:]
+            ).name,  # Remove 'file://' prefix and get folder name
         }
         params["workspaceFolders"] = [workspace_folder]
 
         # Minimal settings for Pyright diagnostics
-        params["settings"] = {
-            "python": {}
-        }
+        params["settings"] = {"python": {}}
 
         return params
-
-

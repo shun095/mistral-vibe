@@ -5,7 +5,7 @@ from typing import ClassVar
 from pydantic import BaseModel
 from textual import events
 from textual.app import ComposeResult
-from textual.binding import Binding, BindingType
+from textual.binding import Binding
 from textual.containers import Container, Vertical, VerticalScroll
 from textual.message import Message
 from textual.widgets import Static

@@ -43,20 +43,18 @@ async def _wait_for_compact_summary(
         for summary in app.query(CompactSummaryMessage):
             return summary
         await pilot.pause(0.05)
-    raise TimeoutError(
-        "CompactSummaryMessage did not appear within timeout"
-    )
+    raise TimeoutError("CompactSummaryMessage did not appear within timeout")
 
 
 @pytest.mark.asyncio
 async def test_compact_summary_after_auto_compaction() -> None:
     """Test that compaction summary widget appears after auto-compaction.
-    
-    User flow: Submit a message -> auto-compaction triggers -> 
+
+    User flow: Submit a message -> auto-compaction triggers ->
     "Compaction complete" and summary widgets appear.
     """
     expected_summary = "Summary: User asked about Python basics, assistant explained variables and loops."
-    
+
     # First response: summary for compaction
     # Second response: assistant response after compaction
     backend = FakeBackend(  # type: ignore
@@ -65,14 +63,14 @@ async def test_compact_summary_after_auto_compaction() -> None:
             [mock_llm_chunk(content="Response after compaction.")],
         ]
     )
-    
+
     # Set threshold to 1 so any message triggers compaction
     cfg = build_test_vibe_config(models=make_test_models(auto_compact_threshold=1))
     agent_loop = build_test_agent_loop(config=cfg, backend=backend)  # type: ignore
-    
+
     # Set context tokens above threshold to trigger auto-compaction
     agent_loop.stats.context_tokens = 2
-    
+
     app = build_test_vibe_app(agent_loop=agent_loop)
 
     async with app.run_test() as pilot:
@@ -99,12 +97,12 @@ async def test_compact_summary_after_auto_compaction() -> None:
 @pytest.mark.asyncio
 async def test_compact_summary_after_manual_compact_command() -> None:
     """Test that compaction summary widget appears after /compact command.
-    
+
     User flow: Type /compact and press Enter -> compaction triggers ->
     "Compaction complete" and summary widgets appear.
     """
     expected_summary = "Summary: Conversation about weather and travel plans."
-    
+
     # First response: summary for compaction
     # Second response: confirmation after compaction
     backend = FakeBackend(  # type: ignore
@@ -113,17 +111,22 @@ async def test_compact_summary_after_manual_compact_command() -> None:
             [mock_llm_chunk(content="Compaction completed successfully.")],
         ]
     )
-    
+
     cfg = build_test_vibe_config(models=make_test_models(auto_compact_threshold=1000))
     agent_loop = build_test_agent_loop(config=cfg, backend=backend)  # type: ignore
-    
+
     # Add some messages to simulate conversation history
     from vibe.core.types import LLMMessage, Role
-    agent_loop.messages.append(LLMMessage(role=Role.user, content="What's the weather?"))
+
+    agent_loop.messages.append(
+        LLMMessage(role=Role.user, content="What's the weather?")
+    )
     agent_loop.messages.append(LLMMessage(role=Role.assistant, content="It's sunny."))
     agent_loop.messages.append(LLMMessage(role=Role.user, content="Should I go out?"))
-    agent_loop.messages.append(LLMMessage(role=Role.assistant, content="Yes, it's a nice day."))
-    
+    agent_loop.messages.append(
+        LLMMessage(role=Role.assistant, content="Yes, it's a nice day.")
+    )
+
     app = build_test_vibe_app(agent_loop=agent_loop)
 
     async with app.run_test() as pilot:

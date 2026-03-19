@@ -25,6 +25,7 @@ from vibe.core.types import (
     AssistantEvent,
     CompactEndEvent,
     CompactStartEvent,
+    Content,
     FunctionCall,
     LLMMessage,
     Role,
@@ -502,7 +503,7 @@ class TestCompactStatsHandling:
 class TestAutoCompactIntegration:
     @pytest.mark.asyncio
     async def test_auto_compact_triggers_and_preserves_stats(self) -> None:
-        observed: list[tuple[Role, str | None]] = []
+        observed: list[tuple[Role, Content | None]] = []
 
         def observer(msg: LLMMessage) -> None:
             observed.append((msg.role, msg.content))

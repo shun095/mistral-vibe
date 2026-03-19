@@ -65,7 +65,7 @@ class SearchReplaceResult(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     lsp_diagnostics: str | None = Field(
         default=None,
-        description="Formatted LSP diagnostics for the modified file, if available"
+        description="Formatted LSP diagnostics for the modified file, if available",
     )
 
 
@@ -167,8 +167,10 @@ class SearchReplace(
             # Automatically check for LSP diagnostics after modification
             try:
                 client_manager = LSPClientManager()
-                diagnostics_list = await client_manager.get_diagnostics_from_all_servers(file_path)
-                
+                diagnostics_list = (
+                    await client_manager.get_diagnostics_from_all_servers(file_path)
+                )
+
                 # Format diagnostics for LLM consumption if available
                 if diagnostics_list:
                     diagnostics = LSPDiagnosticFormatter.format_diagnostics_for_llm(

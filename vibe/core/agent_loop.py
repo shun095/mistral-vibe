@@ -195,10 +195,10 @@ class AgentLoop:
         self.messages = MessageList(initial=[system_message], observer=message_observer)
 
         self.stats = AgentStats()
-        
+
         # Initialize loop handler for tool call loop detection (only if enabled)
         self._loop_handler = ToolCallLoopHandler(config)
-        
+
         try:
             active_model = config.get_active_model()
             self.stats.input_price_per_million = active_model.input_price
@@ -312,11 +312,9 @@ class AgentLoop:
             self.agent_profile,
         )
 
-    async def act(
-        self, msg: Content
-    ) -> AsyncGenerator[BaseEvent]:
+    async def act(self, msg: Content) -> AsyncGenerator[BaseEvent]:
         """Process a user message (text or multi-part content).
-        
+
         Args:
             msg: User message as string or multi-part content list (e.g., for images).
         """
@@ -326,10 +324,10 @@ class AgentLoop:
 
     async def act_without_adding_message(self) -> AsyncGenerator[BaseEvent]:
         """Trigger the LLM without adding a new message to history.
-        
+
         This is used when the message has already been added to history
         (e.g., after editing a previous message).
-        
+
         Note: We do NOT call _clean_message_history() here because the message
         history has already been cleaned up by edit_last_message(). Calling it
         would incorrectly add "Understood." after the user message.
@@ -507,14 +505,14 @@ class AgentLoop:
         self, user_msg: Content | None = None
     ) -> AsyncGenerator[BaseEvent]:
         """Run the conversation loop.
-        
+
         Args:
             user_msg: New user message to add (string or multi-part content).
                 If None, extracts last user message from history (used for edit operations).
         """
         # Use strategy pattern to handle message preparation
         handler = create_message_handler(user_msg)
-        
+
         try:
             content, message_id = handler.prepare_message(self.messages, user_msg)
         except ValueError as e:
@@ -547,7 +545,7 @@ class AgentLoop:
 
                 self.stats.steps += 1
                 user_cancelled = False
-                
+
                 # Track if we yielded a ContinueableUserMessageEvent (e.g., for image messages)
                 yielded_continueable_event = False
                 async for event in self._perform_llm_turn():
@@ -560,9 +558,11 @@ class AgentLoop:
                     await self._save_messages()
 
                 last_message = self.messages[-1]
-                
+
                 # Special handling for tools that yield ContinueableUserMessageEvent
-                should_break_loop = not yielded_continueable_event and last_message.role != Role.tool
+                should_break_loop = (
+                    not yielded_continueable_event and last_message.role != Role.tool
+                )
 
                 if user_cancelled:
                     return
@@ -627,24 +627,27 @@ class AgentLoop:
                 yield event
 
             if chunk.message.reasoning_content:
-                yield ReasoningEvent(
-                    content=chunk.message.reasoning_content, message_id=message_id
+                reasoning_content = (
+                    chunk.message.reasoning_content
+                    if isinstance(chunk.message.reasoning_content, str)
+                    else ""
                 )
+                yield ReasoningEvent(content=reasoning_content, message_id=message_id)
 
             if chunk.message.content:
-                yield AssistantEvent(
-                    content=chunk.message.content, message_id=message_id
+                content = (
+                    chunk.message.content
+                    if isinstance(chunk.message.content, str)
+                    else ""
                 )
+                yield AssistantEvent(content=content, message_id=message_id)
 
     async def _get_assistant_event(self) -> AssistantEvent:
         llm_result = await self._chat()
         content = llm_result.message.content or ""
         if isinstance(content, list):
             content = "".join(str(item) for item in content)
-        return AssistantEvent(
-            content=content,
-            message_id=llm_result.message.message_id,
-        )
+        return AssistantEvent(content=content, message_id=llm_result.message.message_id)
 
     async def _emit_failed_tool_events(
         self, failed_calls: list[FailedToolCall]
@@ -664,9 +667,14 @@ class AgentLoop:
                 )
             )
 
-    async def _process_one_tool_call(
+    async def _process_one_tool_call(  # noqa: PLR0915
         self, tool_call: ResolvedToolCall
-    ) -> AsyncGenerator[ToolResultEvent | ToolStreamEvent]:
+    ) -> AsyncGenerator[
+        ToolResultEvent
+        | ToolStreamEvent
+        | AssistantEvent
+        | ContinueableUserMessageEvent
+    ]:
         try:
             tool_instance = self.tool_manager.get(tool_call.tool_name)
         except Exception as exc:
@@ -749,7 +757,7 @@ class AgentLoop:
                     events = event_constructor(tool_call, result_model)
                     for event in events:
                         yield event
-                    
+
                     # Add additional context to LLM messages (e.g., images)
                     self._append_special_tool_response(tool_call, result_model)
             self.stats.tool_calls_succeeded += 1
@@ -773,7 +781,13 @@ class AgentLoop:
 
     async def _handle_tool_calls(
         self, resolved: ResolvedMessage
-    ) -> AsyncGenerator[ToolCallEvent | ToolResultEvent | ToolStreamEvent]:
+    ) -> AsyncGenerator[
+        ToolCallEvent
+        | ToolResultEvent
+        | ToolStreamEvent
+        | AssistantEvent
+        | ContinueableUserMessageEvent
+    ]:
         async for event in self._emit_failed_tool_events(resolved.failed_calls):
             yield event
         if not resolved.tool_calls:
@@ -787,7 +801,7 @@ class AgentLoop:
             )
             if is_loop:
                 from vibe.core.llm.format import FailedToolCall
-                
+
                 yield ToolResultEvent(
                     tool_name=first_tool_call.tool_name,
                     tool_class=first_tool_call.tool_class,
@@ -826,7 +840,14 @@ class AgentLoop:
     async def _execute_tool_to_queue(
         self,
         tc: ResolvedToolCall,
-        queue: asyncio.Queue[ToolCallEvent | ToolResultEvent | ToolStreamEvent | None],
+        queue: asyncio.Queue[
+            ToolCallEvent
+            | ToolResultEvent
+            | ToolStreamEvent
+            | AssistantEvent
+            | ContinueableUserMessageEvent
+            | None
+        ],
     ) -> None:
         """Run a single tool call, sending events to the queue."""
         async for event in self._process_one_tool_call(tc):
@@ -834,10 +855,21 @@ class AgentLoop:
 
     async def _run_tools_concurrently(
         self, tool_calls: list[ResolvedToolCall]
-    ) -> AsyncGenerator[ToolCallEvent | ToolResultEvent | ToolStreamEvent]:
+    ) -> AsyncGenerator[
+        ToolCallEvent
+        | ToolResultEvent
+        | ToolStreamEvent
+        | AssistantEvent
+        | ContinueableUserMessageEvent
+    ]:
         """Execute multiple tool calls concurrently, yielding events as they arrive."""
         queue: asyncio.Queue[
-            ToolCallEvent | ToolResultEvent | ToolStreamEvent | None
+            ToolCallEvent
+            | ToolResultEvent
+            | ToolStreamEvent
+            | AssistantEvent
+            | ContinueableUserMessageEvent
+            | None
         ] = asyncio.Queue()
 
         tasks = [
@@ -902,7 +934,7 @@ class AgentLoop:
         self, tool_call: ResolvedToolCall, result_model: BaseModel
     ) -> None:
         """Append additional LLM messages for tools with special handling.
-        
+
         This is called after yielding custom events and is used to add
         context to the LLM that isn't part of the standard tool response.
         For example, read_image adds the actual image to the conversation.
@@ -1181,7 +1213,7 @@ class AgentLoop:
         self.middleware_pipeline.reset()
         self.tool_manager.reset_all()
         self._reset_session()
-        
+
         # Notify listeners that history was cleared
         self._notify_event_listeners(MessageResetEvent(reason="clear"))
 
@@ -1233,7 +1265,9 @@ class AgentLoop:
         # Update the current user message ID for tracking
         self._current_user_message_id = edited_message_id
 
-    async def compact(self, reason: Literal["compact", "auto_compact"] = "compact") -> str:
+    async def compact(
+        self, reason: Literal["compact", "auto_compact"] = "compact"
+    ) -> str:
         try:
             with self.messages.silent():
                 self._clean_message_history()

@@ -26,7 +26,9 @@ async def test_runs_echo_successfully(bash):
 @pytest.mark.asyncio
 async def test_fails_cat_command_with_missing_file(bash):
     with pytest.raises(ToolError) as err:
-        await collect_result(bash.run(BashArgs(command="cat missing_file.txt", timeout=10)))
+        await collect_result(
+            bash.run(BashArgs(command="cat missing_file.txt", timeout=10))
+        )
 
     message = str(err.value)
     assert "Command failed" in message
@@ -69,7 +71,9 @@ async def test_truncates_output_to_max_bytes(bash):
 
 @pytest.mark.asyncio
 async def test_decodes_non_utf8_bytes(bash):
-    result = await collect_result(bash.run(BashArgs(command="printf '\\xff\\xfe'", timeout=10)))
+    result = await collect_result(
+        bash.run(BashArgs(command="printf '\\xff\\xfe'", timeout=10))
+    )
 
     # accept both possible encodings, as some shells emit escaped bytes as literal strings
     assert result.stdout in {"��", "\xff\xfe", r"\xff\xfe"}
@@ -79,7 +83,9 @@ async def test_decodes_non_utf8_bytes(bash):
 def test_find_not_in_default_allowlist():
     bash_tool = Bash(config=BashToolConfig(), state=BaseToolState())
     # find -exec runs arbitrary commands; must not be allowlisted by default
-    permission = bash_tool.resolve_permission(BashArgs(command="find . -exec id \\;", timeout=10))
+    permission = bash_tool.resolve_permission(
+        BashArgs(command="find . -exec id \\;", timeout=10)
+    )
     assert permission is not ToolPermission.ALWAYS
 
 
@@ -88,7 +94,9 @@ def test_resolve_permission():
     bash_tool = Bash(config=config, state=BaseToolState())
 
     allowlisted = bash_tool.resolve_permission(BashArgs(command="echo hi", timeout=10))
-    denylisted = bash_tool.resolve_permission(BashArgs(command="rm -rf /tmp", timeout=10))
+    denylisted = bash_tool.resolve_permission(
+        BashArgs(command="rm -rf /tmp", timeout=10)
+    )
     mixed = bash_tool.resolve_permission(BashArgs(command="pwd && whoami", timeout=10))
     empty = bash_tool.resolve_permission(BashArgs(command="", timeout=10))
 
@@ -112,7 +120,9 @@ class TestResolvePermissionWindowsSyntax:
 
     def test_type_command_allowlisted(self):
         bash_tool = self._make_bash(allowlist=["type"])
-        result = bash_tool.resolve_permission(BashArgs(command="type file.txt", timeout=10))
+        result = bash_tool.resolve_permission(
+            BashArgs(command="type file.txt", timeout=10)
+        )
         assert result is ToolPermission.ALWAYS
 
     def test_findstr_allowlisted(self):
@@ -129,22 +139,30 @@ class TestResolvePermissionWindowsSyntax:
 
     def test_where_allowlisted(self):
         bash_tool = self._make_bash(allowlist=["where"])
-        result = bash_tool.resolve_permission(BashArgs(command="where python", timeout=10))
+        result = bash_tool.resolve_permission(
+            BashArgs(command="where python", timeout=10)
+        )
         assert result is ToolPermission.ALWAYS
 
     def test_cmd_k_denylisted(self):
         bash_tool = self._make_bash(denylist=["cmd /k"])
-        result = bash_tool.resolve_permission(BashArgs(command="cmd /k something", timeout=10))
+        result = bash_tool.resolve_permission(
+            BashArgs(command="cmd /k something", timeout=10)
+        )
         assert result is ToolPermission.NEVER
 
     def test_powershell_noexit_denylisted(self):
         bash_tool = self._make_bash(denylist=["powershell -NoExit"])
-        result = bash_tool.resolve_permission(BashArgs(command="powershell -NoExit", timeout=10))
+        result = bash_tool.resolve_permission(
+            BashArgs(command="powershell -NoExit", timeout=10)
+        )
         assert result is ToolPermission.NEVER
 
     def test_notepad_denylisted(self):
         bash_tool = self._make_bash(denylist=["notepad"])
-        result = bash_tool.resolve_permission(BashArgs(command="notepad file.txt", timeout=10))
+        result = bash_tool.resolve_permission(
+            BashArgs(command="notepad file.txt", timeout=10)
+        )
         assert result is ToolPermission.NEVER
 
     def test_cmd_standalone_denylisted(self):
@@ -154,12 +172,16 @@ class TestResolvePermissionWindowsSyntax:
 
     def test_powershell_standalone_denylisted(self):
         bash_tool = self._make_bash(denylist_standalone=["powershell"])
-        result = bash_tool.resolve_permission(BashArgs(command="powershell", timeout=10))
+        result = bash_tool.resolve_permission(
+            BashArgs(command="powershell", timeout=10)
+        )
         assert result is ToolPermission.NEVER
 
     def test_powershell_cmdlet_asks(self):
         bash_tool = self._make_bash(allowlist=["dir", "echo"])
-        result = bash_tool.resolve_permission(BashArgs(command="Get-ChildItem -Path .", timeout=10))
+        result = bash_tool.resolve_permission(
+            BashArgs(command="Get-ChildItem -Path .", timeout=10)
+        )
         assert result is None
 
     def test_mixed_allowed_and_unknown_asks(self):
@@ -171,12 +193,16 @@ class TestResolvePermissionWindowsSyntax:
 
     def test_chained_windows_commands_all_allowed(self):
         bash_tool = self._make_bash(allowlist=["dir", "echo"])
-        result = bash_tool.resolve_permission(BashArgs(command="dir /s && echo done", timeout=10))
+        result = bash_tool.resolve_permission(
+            BashArgs(command="dir /s && echo done", timeout=10)
+        )
         assert result is ToolPermission.ALWAYS
 
     def test_chained_commands_one_denied(self):
         bash_tool = self._make_bash(allowlist=["dir"], denylist=["rm"])
-        result = bash_tool.resolve_permission(BashArgs(command="dir /s && rm -rf /", timeout=10))
+        result = bash_tool.resolve_permission(
+            BashArgs(command="dir /s && rm -rf /", timeout=10)
+        )
         assert result is ToolPermission.NEVER
 
     def test_piped_windows_commands(self):

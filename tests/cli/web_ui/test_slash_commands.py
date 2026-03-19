@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import pytest
+from unittest.mock import AsyncMock, MagicMock
+
 from fastapi.testclient import TestClient
-from unittest.mock import MagicMock, AsyncMock
+import pytest
 
 
 @pytest.fixture
@@ -20,29 +21,25 @@ def web_ui_app():
     mock_tui._show_config = AsyncMock()
     mock_tui._show_session_picker = AsyncMock()
     mock_tui.submit_message_from_web = MagicMock()
-    
+
     # Mock command registry
     mock_commands = MagicMock()
     mock_commands.commands = {
         "clear": MagicMock(
-            aliases=frozenset(["/clear"]),
-            description="Clear conversation history",
+            aliases=frozenset(["/clear"]), description="Clear conversation history"
         ),
         "compact": MagicMock(
             aliases=frozenset(["/compact"]),
             description="Compact conversation history by summarizing",
         ),
         "help": MagicMock(
-            aliases=frozenset(["/help"]),
-            description="Show help message",
+            aliases=frozenset(["/help"]), description="Show help message"
         ),
         "restart": MagicMock(
-            aliases=frozenset(["/restart"]),
-            description="Restart the application",
+            aliases=frozenset(["/restart"]), description="Restart the application"
         ),
         "config": MagicMock(
-            aliases=frozenset(["/config", "/model"]),
-            description="Edit config settings",
+            aliases=frozenset(["/config", "/model"]), description="Edit config settings"
         ),
         "resume": MagicMock(
             aliases=frozenset(["/resume", "/continue"]),
@@ -54,7 +51,7 @@ def web_ui_app():
         ),
     }
     mock_tui.commands = mock_commands
-    
+
     # Mock skill manager
     mock_skill_manager = MagicMock()
     mock_skill_manager.get_skill = MagicMock(return_value=None)
@@ -78,8 +75,7 @@ class TestListCommands:
     def test_list_commands_success(self, web_ui_client):
         """Test command listing endpoint returns commands."""
         response = web_ui_client.get(
-            "/api/commands",
-            headers={"Authorization": "Bearer test-token"},
+            "/api/commands", headers={"Authorization": "Bearer test-token"}
         )
         assert response.status_code == 200
         data = response.json()
@@ -89,8 +85,7 @@ class TestListCommands:
     def test_list_commands_has_clear(self, web_ui_client):
         """Test that /clear command is listed."""
         response = web_ui_client.get(
-            "/api/commands",
-            headers={"Authorization": "Bearer test-token"},
+            "/api/commands", headers={"Authorization": "Bearer test-token"}
         )
         commands = response.json()["commands"]
         clear_cmd = next((c for c in commands if c["name"] == "clear"), None)
@@ -101,8 +96,7 @@ class TestListCommands:
     def test_list_commands_has_aliases(self, web_ui_client):
         """Test that commands with multiple aliases show all aliases."""
         response = web_ui_client.get(
-            "/api/commands",
-            headers={"Authorization": "Bearer test-token"},
+            "/api/commands", headers={"Authorization": "Bearer test-token"}
         )
         commands = response.json()["commands"]
         config_cmd = next((c for c in commands if c["name"] == "config"), None)
@@ -128,7 +122,9 @@ class TestExecuteCommand:
         )
         assert response.status_code == 200
         assert response.json()["success"] is True
-        web_ui_app.state.tui_app.submit_message_from_web.assert_called_once_with("/clean")
+        web_ui_app.state.tui_app.submit_message_from_web.assert_called_once_with(
+            "/clean"
+        )
 
     def test_clear_command_alias(self, web_ui_client, web_ui_app):
         """Test /clear command (alias for clean)."""
@@ -139,7 +135,9 @@ class TestExecuteCommand:
         )
         assert response.status_code == 200
         assert response.json()["success"] is True
-        web_ui_app.state.tui_app.submit_message_from_web.assert_called_once_with("/clear")
+        web_ui_app.state.tui_app.submit_message_from_web.assert_called_once_with(
+            "/clear"
+        )
 
     def test_restart_command(self, web_ui_client, web_ui_app):
         """Test /restart command."""
@@ -150,7 +148,9 @@ class TestExecuteCommand:
         )
         assert response.status_code == 200
         assert response.json()["success"] is True
-        web_ui_app.state.tui_app.submit_message_from_web.assert_called_once_with("/restart")
+        web_ui_app.state.tui_app.submit_message_from_web.assert_called_once_with(
+            "/restart"
+        )
 
     def test_config_command(self, web_ui_client, web_ui_app):
         """Test /config command."""
@@ -161,7 +161,9 @@ class TestExecuteCommand:
         )
         assert response.status_code == 200
         assert response.json()["success"] is True
-        web_ui_app.state.tui_app.submit_message_from_web.assert_called_once_with("/config")
+        web_ui_app.state.tui_app.submit_message_from_web.assert_called_once_with(
+            "/config"
+        )
 
     def test_resume_command(self, web_ui_client, web_ui_app):
         """Test /resume command."""
@@ -172,7 +174,9 @@ class TestExecuteCommand:
         )
         assert response.status_code == 200
         assert response.json()["success"] is True
-        web_ui_app.state.tui_app.submit_message_from_web.assert_called_once_with("/resume")
+        web_ui_app.state.tui_app.submit_message_from_web.assert_called_once_with(
+            "/resume"
+        )
 
     def test_edit_command_with_content(self, web_ui_client, web_ui_app):
         """Test /edit command with content."""
@@ -196,7 +200,9 @@ class TestExecuteCommand:
         )
         assert response.status_code == 200
         assert response.json()["success"] is True
-        web_ui_app.state.tui_app.submit_message_from_web.assert_called_once_with("/edit")
+        web_ui_app.state.tui_app.submit_message_from_web.assert_called_once_with(
+            "/edit"
+        )
 
     def test_unknown_command(self, web_ui_client, web_ui_app):
         """Test handling of unknown commands."""
@@ -207,7 +213,9 @@ class TestExecuteCommand:
         )
         assert response.status_code == 200
         assert response.json()["success"] is True
-        web_ui_app.state.tui_app.submit_message_from_web.assert_called_once_with("/unknown")
+        web_ui_app.state.tui_app.submit_message_from_web.assert_called_once_with(
+            "/unknown"
+        )
 
     def test_skill_command(self, web_ui_client, web_ui_app):
         """Test skill invocation command."""
@@ -232,7 +240,6 @@ class TestExecuteCommand:
     def test_execute_command_no_auth(self, web_ui_client):
         """Test command execution without authentication."""
         response = web_ui_client.post(
-            "/api/command/execute",
-            json={"command": "clean", "args": ""},
+            "/api/command/execute", json={"command": "clean", "args": ""}
         )
         assert response.status_code == 401

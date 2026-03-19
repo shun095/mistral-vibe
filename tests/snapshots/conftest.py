@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-import pytest
 import os
+
+import pytest
+
 
 def pytest_configure(config):
     # Make sure nothing disables colour
@@ -14,6 +16,7 @@ def pytest_configure(config):
     # Ensure a colour-capable terminal is assumed
     os.environ.setdefault("TERM", "xterm-256color")
     os.environ.setdefault("COLORTERM", "truecolor")
+
 
 @pytest.fixture(autouse=True)
 def _pin_banner_version(monkeypatch: pytest.MonkeyPatch) -> None:

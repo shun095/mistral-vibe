@@ -4,15 +4,18 @@ This file combines overlapping test scenarios from multiple test files
 and adds tests for previously untested error paths.
 """
 
-import asyncio
+from __future__ import annotations
+
 import json
-import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from vibe.core.lsp.client import LSPClient
 from vibe.core.lsp.client_manager import LSPClientManager
 from vibe.core.lsp.formatter import LSPDiagnosticFormatter
+from vibe.core.lsp.types import LSPServerHandle
 
 
 @pytest.mark.asyncio
@@ -43,11 +46,11 @@ class TestDiagnosticStorageAndRetrieval:
                             "message": f"Error in file {file_num}",
                             "range": {
                                 "start": {"line": 0, "character": 0},
-                                "end": {"line": 0, "character": 10}
-                            }
+                                "end": {"line": 0, "character": 10},
+                            },
                         }
-                    ]
-                }
+                    ],
+                },
             }
             await client._handle_response(notification)
 
@@ -74,8 +77,8 @@ class TestDiagnosticStorageAndRetrieval:
             "method": "textDocument/publishDiagnostics",
             "params": {
                 "uri": uri,
-                "diagnostics": [{"severity": 1, "message": "First error"}]
-            }
+                "diagnostics": [{"severity": 1, "message": "First error"}],
+            },
         }
         await client._handle_response(notification1)
 
@@ -87,9 +90,9 @@ class TestDiagnosticStorageAndRetrieval:
                 "uri": uri,
                 "diagnostics": [
                     {"severity": 1, "message": "Second error"},
-                    {"severity": 2, "message": "Warning"}
-                ]
-            }
+                    {"severity": 2, "message": "Warning"},
+                ],
+            },
         }
         await client._handle_response(notification2)
 
@@ -116,16 +119,18 @@ class TestDiagnosticStorageAndRetrieval:
                 "uri": uri,
                 "diagnostics": [
                     {"severity": 1, "message": "Error"},
-                    {"severity": 2, "message": "Warning"}
-                ]
-            }
+                    {"severity": 2, "message": "Warning"},
+                ],
+            },
         }
         await client._handle_response(notification)
 
         # Mock send_request to raise "Unhandled method" error (fallback to publishDiagnostics)
-        with patch.object(client, 'send_request') as mock_send:
-            mock_send.side_effect = Exception("Unhandled method: textDocument/documentDiagnostic")
-            
+        with patch.object(client, "send_request") as mock_send:
+            mock_send.side_effect = Exception(
+                "Unhandled method: textDocument/documentDiagnostic"
+            )
+
             # Retrieve diagnostics
             diagnostics = await client.document_diagnostics(uri)
 
@@ -143,8 +148,8 @@ class TestDiagnosticStorageAndRetrieval:
                 "message": f"Error {i}",
                 "range": {
                     "start": {"line": i, "character": 0},
-                    "end": {"line": i, "character": 5}
-                }
+                    "end": {"line": i, "character": 5},
+                },
             }
             for i in range(30)
         ]
@@ -153,7 +158,7 @@ class TestDiagnosticStorageAndRetrieval:
         formatted = LSPDiagnosticFormatter.format_diagnostics_for_llm(diagnostics)
 
         # Should only include first 10 (in JSON format)
-        import json
+
         data = json.loads(formatted)
         assert data["max_displayed"] == 10
         assert data["original_count"] == 30
@@ -178,22 +183,16 @@ class TestPublishDiagnosticsNotificationHandling:
 
         # Test with various diagnostic structures
         test_cases = [
-            {
-                "diagnostics": [{"severity": 1, "message": "Error"}],
-                "expected_count": 1
-            },
+            {"diagnostics": [{"severity": 1, "message": "Error"}], "expected_count": 1},
             {
                 "diagnostics": [
                     {"severity": 1, "message": "Error 1"},
                     {"severity": 2, "message": "Warning 1"},
-                    {"severity": 3, "message": "Info 1"}
+                    {"severity": 3, "message": "Info 1"},
                 ],
-                "expected_count": 3
+                "expected_count": 3,
             },
-            {
-                "diagnostics": [],
-                "expected_count": 0
-            }
+            {"diagnostics": [], "expected_count": 0},
         ]
 
         for i, test_case in enumerate(test_cases):
@@ -201,10 +200,7 @@ class TestPublishDiagnosticsNotificationHandling:
             notification = {
                 "jsonrpc": "2.0",
                 "method": "textDocument/publishDiagnostics",
-                "params": {
-                    "uri": uri,
-                    "diagnostics": test_case["diagnostics"]
-                }
+                "params": {"uri": uri, "diagnostics": test_case["diagnostics"]},
             }
             await client._handle_response(notification)
 
@@ -225,18 +221,18 @@ class TestPublishDiagnosticsNotificationHandling:
             {
                 "jsonrpc": "2.0",
                 "method": "textDocument/didSave",
-                "params": {"textDocument": {"uri": "file:///tmp/test.py"}}
+                "params": {"textDocument": {"uri": "file:///tmp/test.py"}},
             },
             {
                 "jsonrpc": "2.0",
                 "method": "window/logMessage",
-                "params": {"type": 1, "message": "Info"}
+                "params": {"type": 1, "message": "Info"},
             },
             {
                 "jsonrpc": "2.0",
                 "method": "window/showMessage",
-                "params": {"type": 2, "message": "Warning"}
-            }
+                "params": {"type": 2, "message": "Warning"},
+            },
         ]
 
         for notification in other_notifications:
@@ -264,8 +260,8 @@ class TestPublishDiagnosticsNotificationHandling:
             "method": "textDocument/publishDiagnostics",
             "params": {
                 "uri": uri,
-                "diagnostics": [{"severity": 1, "message": "Error"}]
-            }
+                "diagnostics": [{"severity": 1, "message": "Error"}],
+            },
         }
         await client._handle_response(notification)
 
@@ -290,9 +286,13 @@ class TestDocumentDiagnosticFallback:
         uri = "file:///tmp/test.py"
 
         # Mock send_request and send_notification to avoid stdin.drain() issues
-        with patch.object(client, 'send_request') as mock_send, \
-             patch.object(client, 'send_notification') as mock_notify:
-            mock_send.side_effect = Exception("Unhandled method: textDocument/documentDiagnostic")
+        with (
+            patch.object(client, "send_request") as mock_send,
+            patch.object(client, "send_notification"),
+        ):
+            mock_send.side_effect = Exception(
+                "Unhandled method: textDocument/documentDiagnostic"
+            )
 
             # Simulate didChange notification (sets diagnostics_refreshed[uri] = None)
             await client.text_document_did_change(uri, "test code")
@@ -303,8 +303,8 @@ class TestDocumentDiagnosticFallback:
                 "method": "textDocument/publishDiagnostics",
                 "params": {
                     "uri": uri,
-                    "diagnostics": [{"severity": 1, "message": "Error"}]
-                }
+                    "diagnostics": [{"severity": 1, "message": "Error"}],
+                },
             }
             await client._handle_response(notification)
 
@@ -325,9 +325,13 @@ class TestDocumentDiagnosticFallback:
         uri = "file:///tmp/test.py"
 
         # Mock send_request and send_notification to avoid stdin.drain() issues
-        with patch.object(client, 'send_request') as mock_send, \
-             patch.object(client, 'send_notification') as mock_notify:
-            mock_send.side_effect = Exception("Unhandled method: textDocument/documentDiagnostic")
+        with (
+            patch.object(client, "send_request") as mock_send,
+            patch.object(client, "send_notification"),
+        ):
+            mock_send.side_effect = Exception(
+                "Unhandled method: textDocument/documentDiagnostic"
+            )
 
             # Simulate didChange notification
             await client.text_document_did_change(uri, "test code")
@@ -354,14 +358,16 @@ class TestDocumentDiagnosticFallback:
             "method": "textDocument/publishDiagnostics",
             "params": {
                 "uri": uri,
-                "diagnostics": [{"severity": 1, "message": "Existing error"}]
-            }
+                "diagnostics": [{"severity": 1, "message": "Existing error"}],
+            },
         }
         await client._handle_response(notification)
 
         # Mock send_request to raise "Unhandled method" error
-        with patch.object(client, 'send_request') as mock_send:
-            mock_send.side_effect = Exception("Unhandled method: textDocument/documentDiagnostic")
+        with patch.object(client, "send_request") as mock_send:
+            mock_send.side_effect = Exception(
+                "Unhandled method: textDocument/documentDiagnostic"
+            )
 
             # Call document_diagnostics without triggering didChange/didSave
             # Should return existing diagnostics immediately without waiting
@@ -385,9 +391,9 @@ class TestTextDocumentSynchronization:
         client = LSPClient(mock_process)
 
         # Verify that all three mandatory methods exist
-        assert hasattr(client, 'text_document_did_open')
-        assert hasattr(client, 'text_document_did_change')
-        assert hasattr(client, 'text_document_did_close')
+        assert hasattr(client, "text_document_did_open")
+        assert hasattr(client, "text_document_did_change")
+        assert hasattr(client, "text_document_did_close")
 
         # Verify they are callable
         assert callable(client.text_document_did_open)
@@ -404,11 +410,9 @@ class TestTextDocumentSynchronization:
         client = LSPClient(mock_process)
 
         # Mock the send_notification method to capture the call
-        with patch.object(client, 'send_notification') as mock_send:
+        with patch.object(client, "send_notification") as mock_send:
             await client.text_document_did_open(
-                uri="file:///test.py",
-                text="print('hello')",
-                language_id="python"
+                uri="file:///test.py", text="print('hello')", language_id="python"
             )
 
         # Verify send_notification was called with correct parameters
@@ -434,11 +438,9 @@ class TestTextDocumentSynchronization:
         client = LSPClient(mock_process)
 
         # Mock the send_notification method to capture the call
-        with patch.object(client, 'send_notification') as mock_send:
+        with patch.object(client, "send_notification") as mock_send:
             await client.text_document_did_change(
-                uri="file:///test.py",
-                text="print('world')",
-                version=2
+                uri="file:///test.py", text="print('world')", version=2
             )
 
         # Verify send_notification was called with correct parameters
@@ -466,7 +468,7 @@ class TestTextDocumentSynchronization:
         client = LSPClient(mock_process)
 
         # Mock the send_notification method to capture the call
-        with patch.object(client, 'send_notification') as mock_send:
+        with patch.object(client, "send_notification") as mock_send:
             await client.text_document_did_close(uri="file:///test.py")
 
         # Verify send_notification was called with correct parameters
@@ -489,11 +491,9 @@ class TestTextDocumentSynchronization:
         client = LSPClient(mock_process)
 
         # Mock the send_notification method to capture the call
-        with patch.object(client, 'send_notification') as mock_send:
+        with patch.object(client, "send_notification") as mock_send:
             await client.text_document_did_change(
-                uri="file:///test.py",
-                text="print('hello')",
-                version=5
+                uri="file:///test.py", text="print('hello')", version=5
             )
 
         # Verify the notification was sent
@@ -545,11 +545,13 @@ class TestErrorHandling:
 
         # Simulate reading a message without Content-Length header
         # This should be handled gracefully
-        with patch.object(client.stdout, 'read', return_value=b"invalid message\r\n\r\n"):
+        with patch.object(
+            client.stdout, "read", return_value=b"invalid message\r\n\r\n"
+        ):
             # The _read_messages method should handle this gracefully
             # We can't easily test this without mocking the entire read loop,
             # but we can verify the method exists and is callable
-            assert hasattr(client, '_read_messages')
+            assert hasattr(client, "_read_messages")
             assert callable(client._read_messages)
 
     async def test_json_decode_error_in_message_parsing(self):
@@ -568,8 +570,8 @@ class TestErrorHandling:
             "method": "textDocument/publishDiagnostics",
             "params": {
                 "uri": "file:///test.py",
-                "diagnostics": "invalid_string_instead_of_array"  # Should be array
-            }
+                "diagnostics": "invalid_string_instead_of_array",  # Should be array
+            },
         }
 
         # This should not crash, just store whatever is in params.diagnostics
@@ -578,7 +580,9 @@ class TestErrorHandling:
         # The diagnostics should be stored as-is
         assert "file:///test.py" in client.diagnostics
         # The value should be the string, not an array
-        assert client.diagnostics["file:///test.py"] == "invalid_string_instead_of_array"
+        assert (
+            client.diagnostics["file:///test.py"] == "invalid_string_instead_of_array"
+        )
 
     async def test_content_length_parsing_with_invalid_header(self):
         """Test handling of invalid Content-Length headers."""
@@ -587,14 +591,15 @@ class TestErrorHandling:
         mock_process.stdout = AsyncMock()
         mock_process.stderr = AsyncMock()
 
-        client = LSPClient(mock_process)
+        LSPClient(mock_process)
 
         # Test with invalid Content-Length header
         # This would be handled in _read_messages, which we can't easily test
         # but we can verify the regex pattern used for parsing
         import re
+
         pattern = r"Content-Length:\s*(\d+)"
-        
+
         # Test valid header
         valid_header = "Content-Length: 123"
         match = re.search(pattern, valid_header)
@@ -620,10 +625,7 @@ class TestErrorHandling:
         notification = {
             "jsonrpc": "2.0",
             "method": "textDocument/publishDiagnostics",
-            "params": {
-                "uri": uri,
-                "diagnostics": []
-            }
+            "params": {"uri": uri, "diagnostics": []},
         }
         await client._handle_response(notification)
 
@@ -644,9 +646,7 @@ class TestErrorHandling:
         notification = {
             "jsonrpc": "2.0",
             "method": "textDocument/publishDiagnostics",
-            "params": {
-                "diagnostics": [{"severity": 1, "message": "Error"}]
-            }
+            "params": {"diagnostics": [{"severity": 1, "message": "Error"}]},
         }
         await client._handle_response(notification)
 
@@ -670,7 +670,7 @@ class TestIntegration:
         text = "print('hello')"
 
         # Mock the send_notification method to capture all calls
-        with patch.object(client, 'send_notification') as mock_send:
+        with patch.object(client, "send_notification") as mock_send:
             # Open document
             await client.text_document_did_open(uri, text, "python")
 
@@ -684,8 +684,8 @@ class TestIntegration:
                 "method": "textDocument/publishDiagnostics",
                 "params": {
                     "uri": uri,
-                    "diagnostics": [{"severity": 1, "message": "Error"}]
-                }
+                    "diagnostics": [{"severity": 1, "message": "Error"}],
+                },
             }
             await client._handle_response(notification)
 
@@ -713,10 +713,9 @@ class TestIntegration:
     async def test_client_manager_integration_with_diagnostics(self):
         """Test LSPClientManager integration with diagnostic retrieval."""
         import tempfile
-        from pathlib import Path
 
         # Create a temporary file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write("print('test')\n")
             temp_file = Path(f.name)
 
@@ -729,18 +728,21 @@ class TestIntegration:
             mock_client.text_document_did_open = AsyncMock()
             mock_client.text_document_did_change = AsyncMock()
             mock_client.text_document_did_save = AsyncMock()
-            mock_client.document_diagnostics = AsyncMock(return_value=[
-                {"severity": 1, "message": "Test error"}
-            ])
+            mock_client.document_diagnostics = AsyncMock(
+                return_value=[{"severity": 1, "message": "Test error"}]
+            )
             mock_client.text_document_did_close = AsyncMock()
 
-            mock_handle = {"process": MagicMock(), "initialization": {}}
+            mock_handle: LSPServerHandle = {
+                "process": MagicMock(),
+                "initialization": {},
+            }
 
             async def mock_start_server(server_name):
                 manager.handles[server_name] = mock_handle
                 return mock_client
 
-            with patch.object(manager, 'start_server', side_effect=mock_start_server):
+            with patch.object(manager, "start_server", side_effect=mock_start_server):
                 # Call get_diagnostics_from_all_servers which should trigger the notifications
                 diagnostics = await manager.get_diagnostics_from_all_servers(temp_file)
 

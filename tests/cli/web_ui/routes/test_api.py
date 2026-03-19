@@ -2,21 +2,19 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from vibe.cli.web_ui.server import messages_to_events
 from vibe.core.types import FunctionCall, LLMMessage, Role, ToolCall
-
-
-class MockTool:
-    """Mock tool for testing."""
-
-    pass
 
 
 class MockToolManager:
     """Mock tool manager for testing."""
 
-    def get(self, tool_name: str) -> MockTool:
-        return MockTool()
+    _available: ClassVar[dict[str, type]] = {}
+
+    def get(self, tool_name: str) -> None:
+        return None
 
 
 def test_messages_to_events_empty_list() -> None:
@@ -27,10 +25,8 @@ def test_messages_to_events_empty_list() -> None:
 
 def test_messages_to_events_skips_system_messages() -> None:
     """Test that messages_to_events skips system messages."""
-    messages = [
-        LLMMessage(role=Role.system, content="System prompt"),
-    ]
-    events = messages_to_events(messages, MockToolManager())
+    messages = [LLMMessage(role=Role.system, content="System prompt")]
+    events = messages_to_events(messages, MockToolManager())  # type: ignore[call-arg])
     assert events == []
 
 
@@ -38,10 +34,8 @@ def test_messages_to_events_converts_user_messages() -> None:
     """Test that messages_to_events converts user messages to UserMessageEvent."""
     from vibe.core.types import UserMessageEvent
 
-    messages = [
-        LLMMessage(role=Role.user, content="Hello", message_id="msg_1"),
-    ]
-    events = messages_to_events(messages, MockToolManager())
+    messages = [LLMMessage(role=Role.user, content="Hello", message_id="msg_1")]
+    events = messages_to_events(messages, MockToolManager())  # type: ignore[call-arg])
     assert len(events) == 1
     assert isinstance(events[0], UserMessageEvent)
     assert events[0].content == "Hello"
@@ -53,9 +47,9 @@ def test_messages_to_events_converts_assistant_messages() -> None:
     from vibe.core.types import AssistantEvent
 
     messages = [
-        LLMMessage(role=Role.assistant, content="Hi there!", message_id="msg_1"),
+        LLMMessage(role=Role.assistant, content="Hi there!", message_id="msg_1")
     ]
-    events = messages_to_events(messages, MockToolManager())
+    events = messages_to_events(messages, MockToolManager())  # type: ignore[call-arg])
     assert len(events) == 1
     assert isinstance(events[0], AssistantEvent)
     assert events[0].content == "Hi there!"
@@ -72,9 +66,9 @@ def test_messages_to_events_converts_reasoning_content() -> None:
             content="Answer",
             reasoning_content="Thinking...",
             message_id="msg_1",
-        ),
+        )
     ]
-    events = messages_to_events(messages, MockToolManager())
+    events = messages_to_events(messages, MockToolManager())  # type: ignore[call-arg])
     assert len(events) == 2
     assert isinstance(events[0], ReasoningEvent)
     assert events[0].content == "Thinking..."
@@ -87,10 +81,7 @@ def test_messages_to_events_converts_tool_calls() -> None:
     tool_call = ToolCall(
         id="call_123",
         index=0,
-        function=FunctionCall(
-            name="read_file",
-            arguments='{"path": "test.py"}',
-        ),
+        function=FunctionCall(name="read_file", arguments='{"path": "test.py"}'),
     )
     messages = [
         LLMMessage(
@@ -98,9 +89,9 @@ def test_messages_to_events_converts_tool_calls() -> None:
             content="Let me read that file.",
             tool_calls=[tool_call],
             message_id="msg_1",
-        ),
+        )
     ]
-    events = messages_to_events(messages, MockToolManager())
+    events = messages_to_events(messages, MockToolManager())  # type: ignore[call-arg])
     assert len(events) == 2  # AssistantEvent + ToolCallEvent
 
     # Find the ToolCallEvent
@@ -123,23 +114,17 @@ def test_messages_to_events_converts_tool_results() -> None:
 
     # Include the assistant message with the tool call so the tool_name can be looked up
     tool_call = ToolCall(
-        id="call_456",
-        index=0,
-        function=FunctionCall(name="write_file", arguments='{}'),
+        id="call_456", index=0, function=FunctionCall(name="write_file", arguments="{}")
     )
     messages = [
-        LLMMessage(
-            role=Role.assistant,
-            content="Writing file",
-            tool_calls=[tool_call],
-        ),
+        LLMMessage(role=Role.assistant, content="Writing file", tool_calls=[tool_call]),
         LLMMessage(
             role=Role.tool,
             tool_call_id="call_456",
             content='{"success": true, "bytes_written": 12}',
         ),
     ]
-    events = messages_to_events(messages, MockToolManager())
+    events = messages_to_events(messages, MockToolManager())  # type: ignore[call-arg])
     assert len(events) == 3  # AssistantEvent + ToolCallEvent + ToolResultEvent
 
     # Find the ToolResultEvent
@@ -163,9 +148,9 @@ def test_messages_to_events_parses_text_format_tool_results() -> None:
             role=Role.tool,
             tool_call_id="call_789",
             content="success: true\nbytes_written: 24",
-        ),
+        )
     ]
-    events = messages_to_events(messages, MockToolManager())
+    events = messages_to_events(messages, MockToolManager())  # type: ignore[call-arg])
     assert len(events) == 1
     assert isinstance(events[0], ToolResultEvent)
     assert events[0].result is not None
@@ -198,13 +183,11 @@ def test_messages_to_events_full_conversation() -> None:
             message_id="msg_2",
         ),
         LLMMessage(
-            role=Role.tool,
-            tool_call_id="call_full",
-            content='{"result": "done"}',
+            role=Role.tool, tool_call_id="call_full", content='{"result": "done"}'
         ),
         LLMMessage(role=Role.user, content="Another message", message_id="msg_3"),
     ]
-    events = messages_to_events(messages, MockToolManager())
+    events = messages_to_events(messages, MockToolManager())  # type: ignore[call-arg])
 
     # Should have: UserMessageEvent, AssistantEvent, ToolCallEvent, ToolResultEvent, UserMessageEvent
     assert len(events) == 5

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any, cast
 
-from vibe.core.lsp.types import LSPDiagnosticDict, LSPDiagnosticDetails
+from vibe.core.lsp.types import LSPDiagnosticDetails, LSPDiagnosticDict
 
 
 class LSPDiagnosticFormatter:
@@ -15,12 +15,12 @@ class LSPDiagnosticFormatter:
         max_diagnostics: int = 10,
     ) -> str:
         """Format LSP diagnostics specifically for LLM consumption as single-line JSON.
-        
+
         Args:
             diagnostics: List of diagnostic dictionaries from LSP
             file_path: Optional path to the file being diagnosed
             max_diagnostics: Maximum number of diagnostics to display
-            
+
         Returns:
             Single-line JSON string with diagnostics organized by severity
         """
@@ -28,13 +28,13 @@ class LSPDiagnosticFormatter:
             data = {
                 "source": "LSP",
                 "max_displayed": max_diagnostics,
-                "diagnostics": []
+                "diagnostics": [],
             }
-            return json.dumps(data, separators=(',', ':'))
+            return json.dumps(data, separators=(",", ":"))
 
         original_count = len(diagnostics)
         diagnostics = diagnostics[:max_diagnostics]
-        
+
         # Build the structure for JSON output
         data = {
             "source": f"LSP{f' in {file_path}' if file_path else ''}",
@@ -43,23 +43,25 @@ class LSPDiagnosticFormatter:
             "diagnostics": [
                 LSPDiagnosticFormatter._build_diagnostic_dict(diag)
                 for diag in diagnostics
-            ]
+            ],
         }
-        
+
         # Add note if diagnostics were truncated
         if original_count > max_diagnostics:
             data["note"] = f"{original_count - max_diagnostics} more issue(s) not shown"
-        
+
         # Output as single-line JSON
-        return json.dumps(data, separators=(',', ':'))
+        return json.dumps(data, separators=(",", ":"))
 
     @staticmethod
-    def _build_diagnostic_dict(diag: dict[str, Any]) -> LSPDiagnosticDict:
+    def _build_diagnostic_dict(  # noqa: PLR0914
+        diag: dict[str, Any],
+    ) -> LSPDiagnosticDict:
         """Build structured dictionary representation of a diagnostic for PyYAML processing.
-        
+
         Args:
             diag: Raw diagnostic dictionary from LSP
-            
+
         Returns:
             Structured dictionary with severity, location, message, and details
         """
@@ -91,7 +93,7 @@ class LSPDiagnosticFormatter:
             "location": location,
             "message": message,
         }
-        
+
         # Add details if available
         details: LSPDiagnosticDetails | None = None
         detail_dict: dict[str, str] = {}
@@ -99,34 +101,34 @@ class LSPDiagnosticFormatter:
             detail_dict["code"] = str(code)
         if source:
             detail_dict["source"] = str(source)
-        
+
         if detail_dict:
             details = cast(LSPDiagnosticDetails, detail_dict)
             result["details"] = details
-        
+
         return result
 
     @staticmethod
     def format_json_to_markdown(json_content: str) -> str:
         """Convert JSON formatted diagnostics to Markdown format for UI display.
-        
+
         Args:
             json_content: JSON formatted diagnostic string
-            
+
         Returns:
             Markdown formatted diagnostic string
         """
         import json as json_module
-        
+
         # Parse JSON
         try:
             data = json_module.loads(json_content)
         except json_module.JSONDecodeError:
             return json_content
-        
+
         if not data:
             return json_content
-        
+
         # Handle both flat structure (new) and nested structure (legacy)
         if "lsp_diagnostics" in data:
             # Legacy nested structure
@@ -135,17 +137,17 @@ class LSPDiagnosticFormatter:
         else:
             # New flat structure
             diagnostics = data.get("diagnostics", [])
-        
+
         if not diagnostics:
             return json_content
-        
+
         # Convert to markdown format
         entries = []
         for diag in diagnostics:
             severity = diag.get("severity", "unknown")
             location = diag.get("location", "")
             message = diag.get("message", "")
-            
+
             # Map severity to uppercase text
             severity_map = {
                 "error": "ERROR",
@@ -154,12 +156,10 @@ class LSPDiagnosticFormatter:
                 "hint": "HINT",
             }
             severity_text = severity_map.get(severity, severity.upper())
-            
+
             entries.append(f"- {severity_text} at {location}: {message}")
-        
+
         if not entries:
             return json_content
-        
+
         return "LSP diagnostics:\n\n" + "\n".join(entries)
-
-

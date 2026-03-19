@@ -172,9 +172,7 @@ async def test_filter_with_html_content(webfetch):
 
 @pytest.mark.asyncio
 async def test_pattern_with_custom_offset_rejected(webfetch):
-    with pytest.raises(
-        ToolError, match="Cannot use 'pattern' with custom 'offset'"
-    ):
+    with pytest.raises(ToolError, match="Cannot use 'pattern' with custom 'offset'"):
         await collect_result(
             webfetch.run(
                 WebFetchArgs(url="https://example.com", pattern="error", offset=99)
@@ -184,9 +182,7 @@ async def test_pattern_with_custom_offset_rejected(webfetch):
 
 @pytest.mark.asyncio
 async def test_pattern_with_custom_limit_rejected(webfetch):
-    with pytest.raises(
-        ToolError, match="Cannot use 'pattern' with custom"
-    ):
+    with pytest.raises(ToolError, match="Cannot use 'pattern' with custom"):
         await collect_result(
             webfetch.run(
                 WebFetchArgs(url="https://example.com", pattern="error", limit=50)
@@ -200,14 +196,10 @@ async def test_pattern_with_defaults_allowed(webfetch):
     with respx.mock:
         respx.get("https://example.com").mock(
             return_value=httpx.Response(
-                200,
-                text="line1\nerror2\nline3",
-                headers={"Content-Type": "text/plain"},
+                200, text="line1\nerror2\nline3", headers={"Content-Type": "text/plain"}
             )
         )
         result = await collect_result(
-            webfetch.run(
-                WebFetchArgs(url="https://example.com", pattern="error")
-            )
+            webfetch.run(WebFetchArgs(url="https://example.com", pattern="error"))
         )
         assert "2: error2" in result.content

@@ -302,7 +302,7 @@ class TestSessionLoggerSaveInteraction:
             LLMMessage(role=Role.system, content="System prompt"),
             LLMMessage(
                 role=Role.user,
-                content="Can you analyze this image: https://example.com/image.jpg"
+                content="Can you analyze this image: https://example.com/image.jpg",
             ),
             LLMMessage(
                 role=Role.assistant,

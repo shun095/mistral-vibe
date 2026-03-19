@@ -92,9 +92,7 @@ class HistoryReplayHandler(MessageHandlerStrategy):
         return False
 
 
-def create_message_handler(
-    user_msg: Content | None,
-) -> MessageHandlerStrategy:
+def create_message_handler(user_msg: Content | None) -> MessageHandlerStrategy:
     """Factory function to create the appropriate message handler.
 
     Args:

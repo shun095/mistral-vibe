@@ -308,8 +308,7 @@ class TestAPIToolFormatHandlerJsonRepair:
                     id="call_123",
                     index=0,
                     function=FunctionCall(
-                        name="read_file",
-                        arguments='{"path": "test.py", "limit": 100}',
+                        name="read_file", arguments='{"path": "test.py", "limit": 100}'
                     ),
                 )
             ],
@@ -373,10 +372,7 @@ class TestAPIToolFormatHandlerJsonRepair:
 
         assert len(parsed.tool_calls) == 1
         assert parsed.tool_calls[0].tool_name == "write_file"
-        assert parsed.tool_calls[0].raw_args == {
-            "path": "test.py",
-            "content": "hello",
-        }
+        assert parsed.tool_calls[0].raw_args == {"path": "test.py", "content": "hello"}
 
     def test_parse_message_with_trailing_comma(self):
         """Test that JSON with trailing comma is repaired."""
@@ -445,10 +441,7 @@ class TestAPIToolFormatHandlerJsonRepair:
                 ToolCall(
                     id="call_empty",
                     index=0,
-                    function=FunctionCall(
-                        name="some_tool",
-                        arguments="",
-                    ),
+                    function=FunctionCall(name="some_tool", arguments=""),
                 )
             ],
         )

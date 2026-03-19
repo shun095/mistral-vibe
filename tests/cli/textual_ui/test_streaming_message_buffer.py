@@ -4,6 +4,7 @@ import asyncio
 
 import pytest
 
+from vibe.cli.textual_ui.ansi_markdown import AnsiMarkdown
 from vibe.cli.textual_ui.widgets.messages import StreamingMessageBase
 
 
@@ -34,7 +35,7 @@ class MessageTestDouble(StreamingMessageBase):
         self._batch_buffer: list[str] = []
         self._flush_task: asyncio.Task | None = None
         self._stream = None
-        self._markdown = object()  # Set to truthy value so _flush_batch works
+        self._markdown = AnsiMarkdown()  # Set to truthy value so _flush_batch works
         self._at_bottom = at_bottom
         self._should_write = should_write
         self._fake_stream: FakeStream = FakeStream()
@@ -79,7 +80,9 @@ class TestAppendContent:
         assert msg._batch_buffer == []
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="New implementation uses time-based batching without scroll-back checks. Content is always written.")
+    @pytest.mark.skip(
+        reason="New implementation uses time-based batching without scroll-back checks. Content is always written."
+    )
     async def test_scrolled_away_buffers_without_writing(self) -> None:
         msg = make_msg(at_bottom=False)
 
@@ -90,7 +93,9 @@ class TestAppendContent:
         assert msg._batch_buffer == []
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="New implementation uses time-based batching without scroll-back checks. Content is always written.")
+    @pytest.mark.skip(
+        reason="New implementation uses time-based batching without scroll-back checks. Content is always written."
+    )
     async def test_multiple_chunks_scrolled_away_accumulate(self) -> None:
         msg = make_msg(at_bottom=False)
 
@@ -143,7 +148,9 @@ class TestAppendContent:
         assert msg._batch_buffer == []
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="New implementation uses time-based batching without should_write checks. Content is always written.")
+    @pytest.mark.skip(
+        reason="New implementation uses time-based batching without should_write checks. Content is always written."
+    )
     async def test_should_write_false_skips_stream_and_buffer(self) -> None:
         msg = make_msg(should_write=False)
 
@@ -219,7 +226,9 @@ class TestWriteInitialContent:
         assert msg._fake_stream.all_written == "full content"
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="New implementation uses time-based batching without idempotency check on second call.")
+    @pytest.mark.skip(
+        reason="New implementation uses time-based batching without idempotency check on second call."
+    )
     async def test_is_idempotent_second_call_writes_nothing(self) -> None:
         msg = make_msg()
         msg._content = "content"
@@ -230,7 +239,9 @@ class TestWriteInitialContent:
         assert msg._fake_stream.all_written == "content"
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="New implementation uses time-based batching without content_initialized flag check.")
+    @pytest.mark.skip(
+        reason="New implementation uses time-based batching without content_initialized flag check."
+    )
     async def test_already_initialized_flag_is_noop(self) -> None:
         msg = make_msg()
         msg._content = "something"
@@ -241,7 +252,9 @@ class TestWriteInitialContent:
         assert msg._fake_stream.all_written == ""
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="New implementation uses time-based batching, empty content still triggers initialization.")
+    @pytest.mark.skip(
+        reason="New implementation uses time-based batching, empty content still triggers initialization."
+    )
     async def test_empty_content_writes_nothing(self) -> None:
         msg = make_msg()
 
@@ -250,7 +263,9 @@ class TestWriteInitialContent:
         assert msg._fake_stream.all_written == ""
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="New implementation uses time-based batching without should_write checks.")
+    @pytest.mark.skip(
+        reason="New implementation uses time-based batching without should_write checks."
+    )
     async def test_should_write_false_writes_nothing(self) -> None:
         msg = make_msg(should_write=False)
         msg._content = "hidden"
@@ -260,7 +275,9 @@ class TestWriteInitialContent:
         assert msg._fake_stream.all_written == ""
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="New implementation uses time-based batching. Batch buffer is flushed independently of write_initial_content.")
+    @pytest.mark.skip(
+        reason="New implementation uses time-based batching. Batch buffer is flushed independently of write_initial_content."
+    )
     async def test_clears_buffer_after_writing(self) -> None:
         msg = make_msg()
         msg._content = "initial"
@@ -275,7 +292,9 @@ class TestWriteInitialContent:
 
 class TestNoDoubleWrite:
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="New implementation uses time-based batching. Buffer is flushed by stop_stream regardless of write_initial_content.")
+    @pytest.mark.skip(
+        reason="New implementation uses time-based batching. Buffer is flushed by stop_stream regardless of write_initial_content."
+    )
     async def test_write_initial_then_stop_stream_no_duplication(self) -> None:
         """Regression: buffer must be cleared after write_initial_content so
         stop_stream does not re-write the same content.
@@ -293,7 +312,9 @@ class TestNoDoubleWrite:
         )
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Original test had write_initial_content with empty content (no-op), then buffered content. New implementation uses time-based batching.")
+    @pytest.mark.skip(
+        reason="Original test had write_initial_content with empty content (no-op), then buffered content. New implementation uses time-based batching."
+    )
     async def test_write_initial_before_streaming_then_buffered_then_stop(self) -> None:
         """Reflects the real call order: write_initial_content is called once at
         mount time (stream is pristine, _content is empty), then streaming begins.
@@ -322,7 +343,9 @@ class TestNoDoubleWrite:
         )
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Original test had write_initial_content with no content (no-op). New implementation uses time-based batching.")
+    @pytest.mark.skip(
+        reason="Original test had write_initial_content with no content (no-op). New implementation uses time-based batching."
+    )
     async def test_write_initial_before_streaming_at_bottom_then_stop(self) -> None:
         """write_initial_content at mount (no-op), streaming at bottom writes
         directly, stop_stream has nothing extra to flush.
@@ -350,7 +373,9 @@ class TestNoDoubleWrite:
         assert msg._fake_stream.all_written == "data"
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="New implementation uses time-based batching without idempotency check on second call.")
+    @pytest.mark.skip(
+        reason="New implementation uses time-based batching without idempotency check on second call."
+    )
     async def test_write_initial_twice_no_double_write(self) -> None:
         msg = make_msg()
         msg._content = "once"

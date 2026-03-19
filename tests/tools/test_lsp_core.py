@@ -1,15 +1,14 @@
 """End-to-end tests for LSP integration."""
 
-import pytest
+from __future__ import annotations
+
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 # Import built-in servers to ensure they're registered
-from vibe.core.lsp.builtins import TypeScriptLSP, PyrightLSP, DenoLSP
-
-from vibe.core.lsp import LSPClientManager, LSPServerRegistry
 from vibe.core.lsp.client_manager import LSPClientManager
-from vibe.core.lsp.server import LSPServer, LSPServerRegistry
+from vibe.core.lsp.server import LSPServer
 
 
 @pytest.mark.asyncio
@@ -29,7 +28,7 @@ async def test_lsp_client_manager_with_config(tmp_path: Path):
             file_patterns=["*.py"],
             command=["pyright-langserver", "--stdio"],
             env=None,
-            cwd=None
+            cwd=None,
         )
     ]
 
@@ -54,21 +53,21 @@ async def test_lsp_diagnostic_formatting():
             "message": "Name 'undefined_var' is not defined",
             "range": {
                 "start": {"line": 5, "character": 10},
-                "end": {"line": 5, "character": 25}
+                "end": {"line": 5, "character": 25},
             },
             "code": "E0602",
-            "source": "Pyright"
+            "source": "Pyright",
         },
         {
             "severity": 2,
             "message": "Unused import 'os'",
             "range": {
                 "start": {"line": 2, "character": 0},
-                "end": {"line": 2, "character": 15}
+                "end": {"line": 2, "character": 15},
             },
             "code": "W0611",
-            "source": "Pyright"
-        }
+            "source": "Pyright",
+        },
     ]
 
     # Format diagnostics
@@ -76,11 +75,17 @@ async def test_lsp_diagnostic_formatting():
 
     # Verify JSON format for LLM backends (single-line)
     import json
+
     data = json.loads(formatted)
     assert data["source"] == "LSP"
     assert "diagnostics" in data
-    assert any("Name 'undefined_var' is not defined" in d.get("message", "") for d in data["diagnostics"])
-    assert any("Unused import 'os'" in d.get("message", "") for d in data["diagnostics"])
+    assert any(
+        "Name 'undefined_var' is not defined" in d.get("message", "")
+        for d in data["diagnostics"]
+    )
+    assert any(
+        "Unused import 'os'" in d.get("message", "") for d in data["diagnostics"]
+    )
 
 
 @pytest.mark.asyncio
@@ -131,7 +136,7 @@ async def test_lsp_with_custom_config_patterns(tmp_path: Path):
             file_patterns=["*.py"],
             command=["pyright-langserver", "--stdio"],
             env=None,
-            cwd=None
+            cwd=None,
         ),
         LSPServerConfig(
             name="custom",
@@ -139,8 +144,8 @@ async def test_lsp_with_custom_config_patterns(tmp_path: Path):
             file_patterns=["*.txt"],
             command=["custom-server"],
             env=None,
-            cwd=None
-        )
+            cwd=None,
+        ),
     ]
 
     manager = LSPClientManager(config)
@@ -162,8 +167,8 @@ async def test_lsp_diagnostic_limiting():
             "message": f"Error {i}",
             "range": {
                 "start": {"line": i, "character": 0},
-                "end": {"line": i, "character": 5}
-            }
+                "end": {"line": i, "character": 5},
+            },
         }
         for i in range(30)
     ]
@@ -173,6 +178,7 @@ async def test_lsp_diagnostic_limiting():
 
     # Should only include first 10 (in JSON format)
     import json
+
     data = json.loads(formatted)
     assert data["max_displayed"] == 10
     assert data["original_count"] == 30
@@ -185,10 +191,10 @@ async def test_lsp_diagnostic_limiting():
 @pytest.mark.asyncio
 async def test_lsp_language_id_mapping():
     """Test language ID mapping for different LSP servers."""
-    from vibe.core.lsp.client_manager import LSPClientManager
-    from vibe.core.lsp.builtins.typescript import TypeScriptLSP
-    from vibe.core.lsp.builtins.pyright import PyrightLSP
     from vibe.core.lsp.builtins.deno import DenoLSP
+    from vibe.core.lsp.builtins.pyright import PyrightLSP
+    from vibe.core.lsp.builtins.typescript import TypeScriptLSP
+    from vibe.core.lsp.client_manager import LSPClientManager
 
     manager = LSPClientManager()
 

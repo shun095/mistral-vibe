@@ -265,9 +265,7 @@ def test_get_status_text():
 @respx.mock
 async def test_pdf_converted_to_markdown(webfetch):
     """Test that PDFs are converted to markdown."""
-    with patch(
-        "vibe.core.tools.builtins.webfetch._pdf_to_markdown"
-    ) as mock_pdf:
+    with patch("vibe.core.tools.builtins.webfetch._pdf_to_markdown") as mock_pdf:
         mock_pdf.return_value = "# Hello PDF World\n\nSome content here."
         respx.get("https://example.com/document.pdf").mock(
             return_value=httpx.Response(
@@ -287,9 +285,7 @@ async def test_pdf_converted_to_markdown(webfetch):
 @respx.mock
 async def test_pdf_truncated_after_markdown_conversion(webfetch_small):
     """Test that PDFs are truncated after markdown conversion, not before."""
-    with patch(
-        "vibe.core.tools.builtins.webfetch._pdf_to_markdown"
-    ) as mock_pdf:
+    with patch("vibe.core.tools.builtins.webfetch._pdf_to_markdown") as mock_pdf:
         # Return a large markdown that will be truncated
         mock_pdf.return_value = "# Large PDF\n\n" + "x" * 200
         respx.get("https://example.com/document.pdf").mock(

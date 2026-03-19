@@ -174,7 +174,8 @@ class EventHandler:
                 self.current_compact.set_error(event.error)
             else:
                 self.current_compact.set_complete(
-                    old_tokens=event.old_context_tokens, new_tokens=event.new_context_tokens
+                    old_tokens=event.old_context_tokens,
+                    new_tokens=event.new_context_tokens,
                 )
             self.current_compact = None
 
@@ -186,7 +187,7 @@ class EventHandler:
         self, event: ContinueableUserMessageEvent
     ) -> None:
         """Handle ContinueableUserMessageEvent by displaying [image] placeholder.
-        
+
         The event content is a list with text and image_url items.
         We extract the text content and display it with [image] placeholder.
         The actual image data is sent to LLM via the tool's get_llm_message_constructor().

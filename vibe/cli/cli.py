@@ -139,7 +139,7 @@ def _resume_previous_session(
     )
 
 
-def run_cli(args: argparse.Namespace) -> None:
+def run_cli(args: argparse.Namespace) -> None:  # noqa: PLR0915
     load_dotenv_values()
     bootstrap_config_files()
 
@@ -210,13 +210,19 @@ def run_cli(args: argparse.Namespace) -> None:
 
             if args.web:
                 import os
-                from vibe.cli.textual_ui.app import VibeApp, _print_session_resume_message
+
+                from vibe.cli.plan_offer.adapters.http_whoami_gateway import (
+                    HttpWhoAmIGateway,
+                )
+                from vibe.cli.textual_ui.app import (
+                    VibeApp,
+                    _print_session_resume_message,
+                )
                 from vibe.cli.update_notifier import (
                     FileSystemUpdateCacheRepository,
                     PyPIUpdateGateway,
                 )
                 from vibe.cli.web_ui.run_server import run_web_server_in_background
-                from vibe.cli.plan_offer.adapters.http_whoami_gateway import HttpWhoAmIGateway
 
                 token = os.environ.get("VIBE_WEB_TOKEN", "")
 
@@ -241,7 +247,9 @@ def run_cli(args: argparse.Namespace) -> None:
                     agent_loop=agent_loop,
                     tui_app=tui_app,
                 )
-                rprint(f"[green]Web UI started at http://localhost:{args.web_port}/?token={token}[/]\n")
+                rprint(
+                    f"[green]Web UI started at http://localhost:{args.web_port}/?token={token}[/]\n"
+                )
 
                 # Run TUI (this blocks until TUI exits)
                 session_id = tui_app.run()

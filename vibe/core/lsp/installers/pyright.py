@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import subprocess
 from pathlib import Path
+import subprocess
 
 from vibe.core.lsp.installer import LSPServerInstaller
 from vibe.core.lsp.mason_paths import MasonPaths
-from vibe.core.paths._vibe_home import VIBE_HOME
 
 logger = logging.getLogger(__name__)
 
@@ -23,11 +22,7 @@ class PyrightInstaller(LSPServerInstaller):
         install_dir.mkdir(parents=True, exist_ok=True)
 
         # Check if npm is available
-        result = subprocess.run(
-            ["npm", "--version"],
-            capture_output=True,
-            text=True,
-        )
+        result = subprocess.run(["npm", "--version"], capture_output=True, text=True)
         if result.returncode != 0:
             logger.error("npm is not available. Please install Node.js and npm first.")
             return False

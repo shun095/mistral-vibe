@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+from typing import cast
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 
 class TestTUIImageMessageDisplay:
@@ -14,7 +15,7 @@ class TestTUIImageMessageDisplay:
     @pytest.mark.asyncio
     async def test_handle_user_message_with_image_mounts_single_widget(self) -> None:
         """Test that _handle_user_message_with_image mounts only one ImageMessage widget.
-        
+
         This test verifies the fix for the bug where text+image messages resulted
         in two separate widgets (UserMessage + ImageMessage) being mounted.
         """
@@ -42,10 +43,10 @@ class TestTUIImageMessageDisplay:
             return await AsyncMock().__aenter__()
 
         # Patch _mount_and_scroll to track calls without actually mounting
-        with patch.object(app, '_mount_and_scroll', side_effect=track_mount_and_scroll):
+        with patch.object(app, "_mount_and_scroll", side_effect=track_mount_and_scroll):
             # Mark TUI as ready
             app._tui_ready = True
-            
+
             # Mock _agent_task to prevent actual agent loop execution
             app._agent_task = None
             app._agent_running = False
@@ -53,20 +54,25 @@ class TestTUIImageMessageDisplay:
             # Call the method directly
             await app._handle_user_message_with_image(
                 "test message with image",
-                {"data": "base64data", "mime_type": "image/png"}
+                {"data": "base64data", "mime_type": "image/png"},
             )
 
         # Verify only ONE widget was mounted (ImageMessage)
-        assert len(mounted_widgets) == 1, \
+        assert len(mounted_widgets) == 1, (
             f"Expected 1 widget to be mounted, but {len(mounted_widgets)} were mounted: {mounted_widgets}"
+        )
 
         # Verify it's an ImageMessage widget
         from vibe.cli.textual_ui.widgets.messages import ImageMessage
-        assert isinstance(mounted_widgets[0], ImageMessage), \
+
+        assert isinstance(mounted_widgets[0], ImageMessage), (
             f"Expected ImageMessage widget, got {type(mounted_widgets[0])}"
+        )
 
     @pytest.mark.asyncio
-    async def test_handle_user_message_with_image_only_mounts_single_widget(self) -> None:
+    async def test_handle_user_message_with_image_only_mounts_single_widget(
+        self,
+    ) -> None:
         """Test that image-only messages (no text) mount only one ImageMessage widget."""
         from vibe.cli.textual_ui.app import VibeApp
         from vibe.core.agent_loop import AgentLoop
@@ -91,7 +97,7 @@ class TestTUIImageMessageDisplay:
             return await AsyncMock().__aenter__()
 
         # Patch _mount_and_scroll to track calls
-        with patch.object(app, '_mount_and_scroll', side_effect=track_mount_and_scroll):
+        with patch.object(app, "_mount_and_scroll", side_effect=track_mount_and_scroll):
             # Mark TUI as ready
             app._tui_ready = True
             app._agent_task = None
@@ -99,18 +105,20 @@ class TestTUIImageMessageDisplay:
 
             # Call the method with empty text (image only)
             await app._handle_user_message_with_image(
-                "",
-                {"data": "base64data", "mime_type": "image/png"}
+                "", {"data": "base64data", "mime_type": "image/png"}
             )
 
         # Verify only ONE widget was mounted
-        assert len(mounted_widgets) == 1, \
+        assert len(mounted_widgets) == 1, (
             f"Expected 1 widget to be mounted, but {len(mounted_widgets)} were mounted"
+        )
 
         # Verify it's an ImageMessage widget
         from vibe.cli.textual_ui.widgets.messages import ImageMessage
-        assert isinstance(mounted_widgets[0], ImageMessage), \
+
+        assert isinstance(mounted_widgets[0], ImageMessage), (
             f"Expected ImageMessage widget, got {type(mounted_widgets[0])}"
+        )
 
     @pytest.mark.asyncio
     async def test_handle_user_message_with_image_content_structure(self) -> None:
@@ -140,8 +148,12 @@ class TestTUIImageMessageDisplay:
 
         # Patch both methods
         with (
-            patch.object(app, '_handle_agent_loop_turn_with_content', side_effect=mock_handle_agent_turn),
-            patch.object(app, '_mount_and_scroll', side_effect=mock_mount_and_scroll)
+            patch.object(
+                app,
+                "_handle_agent_loop_turn_with_content",
+                side_effect=mock_handle_agent_turn,
+            ),
+            patch.object(app, "_mount_and_scroll", side_effect=mock_mount_and_scroll),
         ):
             app._tui_ready = True
             app._agent_task = None
@@ -149,8 +161,7 @@ class TestTUIImageMessageDisplay:
 
             # Call the method
             await app._handle_user_message_with_image(
-                "test message",
-                {"data": "base64data", "mime_type": "image/png"}
+                "test message", {"data": "base64data", "mime_type": "image/png"}
             )
 
         # Verify _agent_task was created (meaning content was passed to create_task)
@@ -160,7 +171,7 @@ class TestTUIImageMessageDisplay:
         # Cancel the task to clean up
         app._agent_task.cancel()
         try:
-            await app._agent_task
+            await cast(asyncio.Task, app._agent_task)
         except asyncio.CancelledError:
             pass
 

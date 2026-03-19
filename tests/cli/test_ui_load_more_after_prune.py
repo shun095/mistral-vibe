@@ -76,25 +76,17 @@ def _load_more_remaining(app: VibeApp) -> int:
 async def _wait_for_user_message(app: VibeApp, pause, expected_count: int) -> None:
     """Wait for the expected number of user messages to appear."""
     await _wait_until(
-        pause,
-        lambda: len(app.query(UserMessage)) >= expected_count,
-        timeout=5.0,
+        pause, lambda: len(app.query(UserMessage)) >= expected_count, timeout=5.0
     )
 
 
 async def _wait_for_agent_complete(app: VibeApp, pause) -> None:
     """Wait for the agent to complete its turn."""
-    await _wait_until(
-        pause,
-        lambda: not app._agent_running,
-        timeout=10.0,
-    )
+    await _wait_until(pause, lambda: not app._agent_running, timeout=10.0)
 
 
 @pytest.mark.asyncio
-async def test_ui_load_more_shown_after_prune(
-    vibe_config: VibeConfig,
-) -> None:
+async def test_ui_load_more_shown_after_prune(vibe_config: VibeConfig) -> None:
     """Test that 'Load more messages' is shown after _refresh_windowing_from_history
     even when pruning occurred during the conversation.
 
@@ -201,9 +193,7 @@ async def test_ui_load_more_shown_after_prune(
         )
 
         # Verify that there's still backfill (the exact count may vary due to pruning)
-        assert remaining_after > 0, (
-            f"Expected remaining > 0, got {remaining_after}"
-        )
+        assert remaining_after > 0, f"Expected remaining > 0, got {remaining_after}"
 
 
 @pytest.mark.asyncio
@@ -233,7 +223,9 @@ async def test_ui_load_more_count_updates_after_multiple_loads_and_prune(
         )
 
     # Set up FakeBackend with a long response
-    long_response_chunks = [mock_llm_chunk(content=f"Response line {i}\n") for i in range(40)]
+    long_response_chunks = [
+        mock_llm_chunk(content=f"Response line {i}\n") for i in range(40)
+    ]
     backend = FakeBackend([long_response_chunks])
 
     agent_loop = build_test_agent_loop(config=vibe_config, backend=backend)  # type: ignore
@@ -273,7 +265,7 @@ async def test_ui_load_more_count_updates_after_multiple_loads_and_prune(
                 timeout=5.0,
             )
             assert _load_more_remaining(app) == expected_remaining, (
-                f"After load {i+1}, remaining should be {expected_remaining}"
+                f"After load {i + 1}, remaining should be {expected_remaining}"
             )
 
         # Patch the PRUNE marks to trigger pruning

@@ -129,16 +129,16 @@ async def test_edit_command_does_not_block_ui(edit_test_app: VibeApp) -> None:
         assert app._agent_task.done(), "agent_task should be completed"
 
         # agent_running should be reset
-        assert app._agent_running is False, "agent_running should be reset after completion"
+        assert app._agent_running is False, (
+            "agent_running should be reset after completion"
+        )
 
         # Exit the app
         app.exit()
 
 
 @pytest.mark.asyncio
-async def test_edit_last_message_with_tool_calls(
-    edit_test_app: VibeApp,
-) -> None:
+async def test_edit_last_message_with_tool_calls(edit_test_app: VibeApp) -> None:
     """Test editing a message that has tool calls in the response.
 
     Scenario:
@@ -228,9 +228,7 @@ async def test_edit_last_message_no_messages(edit_test_app: VibeApp) -> None:
 
 
 @pytest.mark.asyncio
-async def test_edit_last_message_empty_content(
-    edit_test_app: VibeApp,
-) -> None:
+async def test_edit_last_message_empty_content(edit_test_app: VibeApp) -> None:
     """Test that editing with empty content shows error."""
     async with edit_test_app.run_test() as pilot:
         app = edit_test_app
@@ -255,9 +253,7 @@ async def test_edit_last_message_empty_content(
 
 
 @pytest.mark.asyncio
-async def test_edit_last_message_multiple_edits(
-    edit_test_app: VibeApp,
-) -> None:
+async def test_edit_last_message_multiple_edits(edit_test_app: VibeApp) -> None:
     """Test multiple consecutive edits."""
     async with edit_test_app.run_test() as pilot:
         app = edit_test_app
