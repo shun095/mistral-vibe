@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 import platform
 import subprocess
-from pathlib import Path
 
 
 def get_python_path() -> str | None:
     """Get the path to the Python executable.
-    
+
     Checks virtual environments and system Python installations.
     Used primarily by Pyright LSP server.
-    
+
     Returns:
         Path to Python executable as string, or None if not found.
     """
@@ -33,19 +33,11 @@ def get_python_path() -> str | None:
                 return str(python_path)
 
     try:
-        result = subprocess.run(
-            ["which", "python"],
-            capture_output=True,
-            text=True,
-        )
+        result = subprocess.run(["which", "python"], capture_output=True, text=True)
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
 
-        result = subprocess.run(
-            ["which", "python3"],
-            capture_output=True,
-            text=True,
-        )
+        result = subprocess.run(["which", "python3"], capture_output=True, text=True)
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
     except FileNotFoundError:

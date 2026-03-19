@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from vibe.core.lsp.installers.ruff import RuffLSPInstaller
 from vibe.core.lsp.project_root import ProjectRootFinder
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 class RuffLSP(LSPServer):
     name = "ruff"
-    command = ["ruff", "server"]
+    command: ClassVar[list[str]] = ["ruff", "server"]
 
     async def get_command(self) -> list[str]:
         # Get command for Ruff LSP server
@@ -34,8 +34,7 @@ class RuffLSP(LSPServer):
 
         # If we still can't find it, raise an error
         raise RuntimeError(
-            "ruff server not found. "
-            "Please ensure ruff is installed (pip install ruff)."
+            "ruff server not found. Please ensure ruff is installed (pip install ruff)."
         )
 
     def _find_python_project_root(self) -> str:
@@ -63,14 +62,14 @@ class RuffLSP(LSPServer):
         # Include workspaceFolders with the detected project root
         workspace_folder = {
             "uri": root_uri,
-            "name": Path(root_uri[7:]).name  # Remove 'file://' prefix and get folder name
+            "name": Path(
+                root_uri[7:]
+            ).name,  # Remove 'file://' prefix and get folder name
         }
         params["workspaceFolders"] = [workspace_folder]
 
         # Minimal settings for Ruff diagnostics and formatting
         # Ruff will automatically detect pyproject.toml or ruff.toml
-        params["settings"] = {
-            "ruff": {}
-        }
+        params["settings"] = {"ruff": {}}
 
         return params

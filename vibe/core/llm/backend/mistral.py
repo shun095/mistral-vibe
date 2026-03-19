@@ -31,9 +31,8 @@ from mistralai.client.models import (
 from mistralai.client.utils.retries import BackoffStrategy, RetryConfig
 
 from vibe.core.llm.exceptions import BackendErrorBuilder
-from vibe.core.logger import logger
-from vibe.core.utils import async_generator_retry, async_retry
 from vibe.core.llm.message_utils import merge_consecutive_user_messages
+from vibe.core.logger import logger
 from vibe.core.types import (
     AvailableTool,
     Content,
@@ -45,7 +44,11 @@ from vibe.core.types import (
     StrToolChoice,
     ToolCall,
 )
-from vibe.core.utils import get_server_url_from_api_base
+from vibe.core.utils import (
+    async_generator_retry,
+    async_retry,
+    get_server_url_from_api_base,
+)
 
 if TYPE_CHECKING:
     from vibe.core.config import ModelConfig, ProviderConfig
@@ -60,27 +63,37 @@ class MistralMapper:
     def prepare_message(self, msg: LLMMessage) -> ChatCompletionRequestMessage:
         match msg.role:
             case Role.system:
-                return SystemMessage(role="system", content=msg.content or "")
+                content = msg.content if isinstance(msg.content, str) else ""
+                return SystemMessage(role="system", content=content)
             case Role.user:
-                return UserMessage(role="user", content=msg.content)
+                content = msg.content if isinstance(msg.content, str) else None
+                return UserMessage(role="user", content=content)
             case Role.assistant:
-                content: AssistantMessageContent
                 if msg.reasoning_content:
-                    content = [
-                        ThinkChunk(
-                            type="thinking",
-                            thinking=[
-                                TextChunk(type="text", text=msg.reasoning_content)
-                            ],
-                        ),
-                        TextChunk(type="text", text=msg.content or ""),
-                    ]
+                    text_content = msg.content if isinstance(msg.content, str) else ""
+                    reasoning_text = (
+                        msg.reasoning_content
+                        if isinstance(msg.reasoning_content, str)
+                        else ""
+                    )
+                    assistant_content: AssistantMessageContent = cast(
+                        AssistantMessageContent,
+                        [
+                            ThinkChunk(
+                                type="thinking",
+                                thinking=[TextChunk(type="text", text=reasoning_text)],
+                            ),
+                            TextChunk(type="text", text=text_content),
+                        ],
+                    )
                 else:
-                    content = msg.content or ""
+                    assistant_content = (
+                        msg.content if isinstance(msg.content, str) else ""
+                    )
 
                 return AssistantMessage(
                     role="assistant",
-                    content=content,
+                    content=assistant_content,
                     tool_calls=[
                         MistralToolCall(
                             function=MistralFunctionCall(
@@ -95,9 +108,10 @@ class MistralMapper:
                     ],
                 )
             case Role.tool:
+                content = msg.content if isinstance(msg.content, str) else None
                 return ToolMessage(
                     role="tool",
-                    content=msg.content,
+                    content=content,
                     tool_call_id=msg.tool_call_id,
                     name=msg.name,
                 )
@@ -255,7 +269,9 @@ class MistralBackend:
             merged_messages = merge_consecutive_user_messages(messages)
             kwargs: dict[str, Any] = {
                 "model": model.name,
-                "messages": [self._mapper.prepare_message(msg) for msg in merged_messages],
+                "messages": [
+                    self._mapper.prepare_message(msg) for msg in merged_messages
+                ],
                 "tools": [self._mapper.prepare_tool(tool) for tool in tools]
                 if tools
                 else None,
@@ -269,12 +285,12 @@ class MistralBackend:
             }
             if temperature is not None:
                 kwargs["temperature"] = temperature
-            
+
             logger.debug(
                 "Mistral Backend Request: %s",
                 json.dumps(kwargs.copy(), default=str, ensure_ascii=False),
             )
-            
+
             response = await self._get_client().chat.complete_async(**kwargs)
 
             logger.debug(
@@ -345,7 +361,9 @@ class MistralBackend:
             merged_messages = merge_consecutive_user_messages(messages)
             kwargs: dict[str, Any] = {
                 "model": model.name,
-                "messages": [self._mapper.prepare_message(msg) for msg in merged_messages],
+                "messages": [
+                    self._mapper.prepare_message(msg) for msg in merged_messages
+                ],
                 "tools": [self._mapper.prepare_tool(tool) for tool in tools]
                 if tools
                 else None,
@@ -358,16 +376,21 @@ class MistralBackend:
             }
             if temperature is not None:
                 kwargs["temperature"] = temperature
-            
+
             logger.debug(
                 "Mistral Backend Streaming Request: %s",
                 json.dumps(kwargs.copy(), indent=2, default=str, ensure_ascii=False),
             )
-            
+
             async for chunk in await self._get_client().chat.stream_async(**kwargs):
                 logger.debug(
                     "Mistral Backend Streaming Response Chunk: %s",
-                    json.dumps(chunk.data.model_dump(), indent=2, default=str, ensure_ascii=False),
+                    json.dumps(
+                        chunk.data.model_dump(),
+                        indent=2,
+                        default=str,
+                        ensure_ascii=False,
+                    ),
                 )
                 parsed = (
                     self._mapper.parse_content(chunk.data.choices[0].delta.content)
@@ -444,4 +467,3 @@ class MistralBackend:
             raise ValueError("Missing usage in non streaming completion")
 
         return result.usage.prompt_tokens
-

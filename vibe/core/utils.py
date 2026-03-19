@@ -140,7 +140,7 @@ def get_user_agent(backend: Backend | None) -> str:
     return user_agent
 
 
-def _is_retryable_backend_error(e: Exception) -> bool:
+def _is_retryable_backend_error(e: Exception) -> bool:  # noqa: PLR0911
     """Check if an exception is retryable for LLM backend operations.
 
     Handles both HTTP status errors and network/transport errors.
@@ -164,7 +164,9 @@ def _is_retryable_backend_error(e: Exception) -> bool:
         if "peer closed connection" in error_str:
             return True
         # Other common network errors
-        if any(keyword in error_str for keyword in ["network", "connection", "timeout"]):
+        if any(
+            keyword in error_str for keyword in ["network", "connection", "timeout"]
+        ):
             return True
 
     return False
@@ -210,9 +212,6 @@ def async_retry[T, **P](
         return wrapper
 
     return decorator
-
-
-
 
 
 def async_generator_retry[T, **P](
@@ -261,9 +260,6 @@ def async_generator_retry[T, **P](
         return wrapper
 
     return decorator
-
-
-
 
 
 class ConversationLimitException(Exception):

@@ -1,5 +1,7 @@
 """Tests for tool output parsing with multi-line support."""
 
+from __future__ import annotations
+
 from vibe.cli.web_ui.server import _parse_tool_output
 
 
@@ -44,9 +46,9 @@ class TestParseToolOutput:
     def test_parse_write_file_output(self) -> None:
         """Test parsing write_file tool output with multi-line content."""
         content = (
-            'path: /project/tests/cli/web_ui/test_popup_events.py\n'
-            'bytes_written: 8462\n'
-            'file_existed: False\n'
+            "path: /project/tests/cli/web_ui/test_popup_events.py\n"
+            "bytes_written: 8462\n"
+            "file_existed: False\n"
             'content: """Tests for popup event serialization and handling in web UI."""\n'
             "\n"
             "from __future__ import annotations\n"
@@ -90,7 +92,10 @@ class TestParseToolOutput:
 
         result = _parse_tool_output(content)
 
-        assert result["command"] == "cd /project && uv run pytest tests/cli/web_ui/test_popup_events.py -xvs 2>&1 | tail -30"
+        assert (
+            result["command"]
+            == "cd /project && uv run pytest tests/cli/web_ui/test_popup_events.py -xvs 2>&1 | tail -30"
+        )
         assert "stdout" in result
         assert "PASSED" in result["stdout"]
         assert "10 passed" in result["stdout"]
@@ -190,9 +195,7 @@ class TestParseToolOutput:
             "returncode: 0"
         )
 
-        result = _parse_tool_output(
-            content, tool_name="bash", tool_manager=mock_tm
-        )
+        result = _parse_tool_output(content, tool_name="bash", tool_manager=mock_tm)
 
         assert result["command"] == "ls -la"
         assert "total 12" in result["stdout"]

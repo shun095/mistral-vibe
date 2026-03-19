@@ -7,7 +7,7 @@ import inspect
 from pathlib import Path
 import re
 import sys
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from vibe.core.config.harness_files import get_harness_files_manager
 from vibe.core.logger import logger
@@ -64,10 +64,10 @@ class ToolManager:
     Discovers available tools from the provided search paths. Each Agent
     should have its own ToolManager instance.
     """
-    
+
     # Class-level MCP cache shared across all instances
     # This cache persists across ToolManager instance creations and mode switches
-    _mcp_cache: dict[str, dict[str, type[BaseTool]]] = {}
+    _mcp_cache: ClassVar[dict[str, dict[str, type[BaseTool]]]] = {}
 
     def __init__(
         self,
@@ -224,7 +224,7 @@ class ToolManager:
             default_config = BaseToolConfig()
 
         user_overrides = self._config.tools.get(tool_name)
-        if user_overrides is None:
+        if user_overrides is None:  # noqa: PLR1702
             merged_dict = default_config.model_dump()
         else:
             # Only merge fields that are explicitly set in user_overrides
@@ -232,7 +232,7 @@ class ToolManager:
             # with empty lists from BaseToolConfig
             default_dict = default_config.model_dump()
             override_dict = user_overrides.model_dump()
-            
+
             # Check which fields are actually different from defaults
             merged_dict = default_dict.copy()
             for key, value in override_dict.items():

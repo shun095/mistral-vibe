@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from logging import getLogger
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from vibe.core.lsp.installers.typescript import TypeScriptLSPInstaller
 from vibe.core.lsp.project_root import ProjectRootFinder
@@ -14,9 +14,9 @@ logger = getLogger("vibe")
 class TypeScriptLSP(LSPServer):
     name = "typescript"
     # Base command without options
-    command = ["typescript-language-server"]
+    command: ClassVar[list[str]] = ["typescript-language-server"]
     # Additional options to append to the command
-    command_options = ["--stdio", "--log-level", "4"]
+    command_options: ClassVar[list[str]] = ["--stdio", "--log-level", "4"]
 
     async def get_command(self) -> list[str]:
         # Get command for TypeScript Language Server
@@ -25,7 +25,7 @@ class TypeScriptLSP(LSPServer):
         # Check if typescript-language-server is installed
         exec_path = installer.get_executable_path()
         if exec_path and exec_path.exists():
-            if exec_path.suffix in [".js", ".mjs"]:
+            if exec_path.suffix in {".js", ".mjs"}:
                 # Use node to run the JS/MJS file
                 return ["node", str(exec_path)] + self.command_options
             else:
@@ -37,7 +37,7 @@ class TypeScriptLSP(LSPServer):
         if await installer.install():
             exec_path = installer.get_executable_path()
             if exec_path and exec_path.exists():
-                if exec_path.suffix in [".js", ".mjs"]:
+                if exec_path.suffix in {".js", ".mjs"}:
                     return ["node", str(exec_path)] + self.command_options
                 else:
                     return [str(exec_path)] + self.command_options
@@ -67,18 +67,17 @@ class TypeScriptLSP(LSPServer):
         # Find TypeScript/JavaScript project root
         root_uri = self._find_typescript_project_root()
         params["rootUri"] = root_uri
-        
+
         # Include workspaceFolders with the detected project root
         workspace_folder = {
             "uri": root_uri,
-            "name": Path(root_uri[7:]).name  # Remove 'file://' prefix and get folder name
+            "name": Path(
+                root_uri[7:]
+            ).name,  # Remove 'file://' prefix and get folder name
         }
         params["workspaceFolders"] = [workspace_folder]
-        
+
         # Minimal settings for TypeScript/JavaScript diagnostics
-        params["settings"] = {
-            "typescript": {},
-            "javascript": {}
-        }
+        params["settings"] = {"typescript": {}, "javascript": {}}
 
         return params

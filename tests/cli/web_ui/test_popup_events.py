@@ -203,7 +203,14 @@ class TestPopupEventTypes:
 
         event = QuestionPopupEvent(
             popup_id="test_id",
-            questions=[{"question": "Test?", "header": "Test", "options": [], "multi_select": False}],
+            questions=[
+                {
+                    "question": "Test?",
+                    "header": "Test",
+                    "options": [],
+                    "multi_select": False,
+                }
+            ],
             content_preview="Test preview",
             timestamp=1234567890.0,
         )

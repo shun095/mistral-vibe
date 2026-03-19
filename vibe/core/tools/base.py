@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass, field
 from enum import StrEnum, auto
 import functools
@@ -13,7 +13,6 @@ import types
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
     Protocol,
     Union,
@@ -30,7 +29,6 @@ from vibe.core.types import (
     AssistantEvent,
     ContinueableUserMessageEvent,
     LLMMessage,
-    Role,
     ToolStreamEvent,
 )
 
@@ -62,8 +60,11 @@ class SpecialToolBehavior(Protocol):
         return None
 
 
-EventConstructor = Callable[..., list[AssistantEvent | ContinueableUserMessageEvent]] | None
+EventConstructor = (
+    Callable[..., list[AssistantEvent | ContinueableUserMessageEvent]] | None
+)
 LLMMessageConstructor = Callable[..., LLMMessage | list[LLMMessage] | None] | None
+
 
 @dataclass
 class InvokeContext:

@@ -199,19 +199,18 @@ class APIToolFormatHandler:
     def create_special_tool_response_message(
         self, tool_call: ResolvedToolCall, result_model: Any
     ) -> LLMMessage | list[LLMMessage] | None:
-        """
-        Create additional LLM messages for tools with special handling.
-        
+        """Create additional LLM messages for tools with special handling.
+
         Returns None if no additional message is needed.
         Returns a single LLMMessage or a list of LLMMessage objects.
         """
         # Check if the tool class implements get_llm_message_constructor
         get_constructor_method = getattr(
-            tool_call.tool_class, 'get_llm_message_constructor', None
+            tool_call.tool_class, "get_llm_message_constructor", None
         )
         if get_constructor_method:
             message_constructor = get_constructor_method()
             if message_constructor:
                 return message_constructor(tool_call, result_model)
-        
+
         return None

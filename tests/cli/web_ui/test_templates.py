@@ -33,7 +33,7 @@ def test_index_template_includes_css() -> None:
     app = create_app(token="test-token")
     client = TestClient(app)
     response = client.get("/")
-    assert '/static/css/style.css' in response.text
+    assert "/static/css/style.css" in response.text
 
 
 def test_index_template_includes_js() -> None:
@@ -43,7 +43,7 @@ def test_index_template_includes_js() -> None:
     app = create_app(token="test-token")
     client = TestClient(app)
     response = client.get("/")
-    assert '/static/js/app.js' in response.text
+    assert "/static/js/app.js" in response.text
 
 
 def test_static_css_file_served() -> None:

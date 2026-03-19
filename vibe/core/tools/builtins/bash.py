@@ -193,7 +193,7 @@ class BashToolConfig(BaseToolConfig):
 class BashArgs(BaseModel):
     command: str
     timeout: int = Field(
-        description="Timeout for the command in seconds (required to prevent hanging).",
+        description="Timeout for the command in seconds (required to prevent hanging)."
     )
 
     @field_validator("timeout", mode="before")
@@ -221,7 +221,9 @@ class Bash(
     def format_call_display(cls, args: BashArgs) -> ToolCallDisplay:
         timeout = args.timeout
         if timeout is not None:
-            return ToolCallDisplay(summary=f"bash: {args.command} (timeout: {timeout}s)")
+            return ToolCallDisplay(
+                summary=f"bash: {args.command} (timeout: {timeout}s)"
+            )
         return ToolCallDisplay(summary=f"bash: {args.command}")
 
     @classmethod
@@ -304,6 +306,7 @@ class Bash(
         max_bytes = self.config.max_output_bytes
 
         from vibe.core.logger import logger
+
         logger.debug(f"Config: {self.config}")
 
         proc = None

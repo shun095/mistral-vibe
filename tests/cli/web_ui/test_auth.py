@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import pytest
-
 from fastapi.testclient import TestClient
+import pytest
 
 
 def test_endpoint_requires_token() -> None:
@@ -23,10 +22,7 @@ def test_endpoint_accepts_valid_token() -> None:
 
     app = create_app(token="test-token")
     client = TestClient(app)
-    response = client.get(
-        "/api/stats",
-        headers={"Authorization": "Bearer test-token"},
-    )
+    response = client.get("/api/stats", headers={"Authorization": "Bearer test-token"})
     # For now, just check it doesn't return 401
     assert response.status_code != 401
 
@@ -37,10 +33,7 @@ def test_endpoint_rejects_invalid_token() -> None:
 
     app = create_app(token="test-token")
     client = TestClient(app)
-    response = client.get(
-        "/api/stats",
-        headers={"Authorization": "Bearer wrong-token"},
-    )
+    response = client.get("/api/stats", headers={"Authorization": "Bearer wrong-token"})
     assert response.status_code == 401
 
 

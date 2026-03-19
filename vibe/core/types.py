@@ -177,16 +177,17 @@ class ToolCall(BaseModel):
 
 class ToolCallSignature(BaseModel):
     """Signature for a tool call used in loop detection.
-    
+
     This immutable dataclass represents a tool call's identifying
     characteristics for comparison purposes.
     """
+
     model_config = ConfigDict(frozen=True)
-    
+
     tool_name: str
     normalized_args: dict[str, Any]
     call_id: str
-    
+
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, ToolCallSignature):
             return False
@@ -198,7 +199,7 @@ class ToolCallSignature(BaseModel):
 
 def _content_before(v: Any) -> str | list:
     """Convert content to a format suitable for LLM messages.
-    
+
     Handles:
     - Strings: returned as-is
     - Lists with text dicts: extracts text and joins with newlines
@@ -209,13 +210,12 @@ def _content_before(v: Any) -> str | list:
     if isinstance(v, list):
         # Check if this is a multi-part content with image_url
         has_image_url = any(
-            isinstance(p, dict) and p.get("type") == "image_url"
-            for p in v
+            isinstance(p, dict) and p.get("type") == "image_url" for p in v
         )
         if has_image_url:
             # Preserve the list format for multi-part content with images
             return v
-        
+
         # Handle simple lists of text dicts
         parts: list[str] = []
         for p in v:
@@ -227,7 +227,7 @@ def _content_before(v: Any) -> str | list:
     return str(v)
 
 
-Content = Annotated[str | list, BeforeValidator(_content_before)]
+Content = Annotated[str | list[dict | str], BeforeValidator(_content_before)]
 
 
 class Role(StrEnum):
@@ -287,13 +287,21 @@ class LLMMessage(BaseModel):
         if self.tool_call_id != other.tool_call_id:
             raise ValueError("Can't accumulate messages with different tool_call_ids")
 
-        content = (self.content or "") + (other.content or "")
+        # Handle content concatenation with type guards
+        self_content = self.content if isinstance(self.content, str) else ""
+        other_content = other.content if isinstance(other.content, str) else ""
+        content = self_content + other_content
         if not content:
             content = None
 
-        reasoning_content = (self.reasoning_content or "") + (
-            other.reasoning_content or ""
+        # Handle reasoning_content concatenation with type guards
+        self_reasoning = (
+            self.reasoning_content if isinstance(self.reasoning_content, str) else ""
         )
+        other_reasoning = (
+            other.reasoning_content if isinstance(other.reasoning_content, str) else ""
+        )
+        reasoning_content = self_reasoning + other_reasoning
         if not reasoning_content:
             reasoning_content = None
 
@@ -372,6 +380,7 @@ class UserMessageEvent(BaseEvent):
 
 class ContinueableUserMessageEvent(BaseEvent):
     """Event for user messages that require the conversation to continue."""
+
     content: Content
     message_id: str | None = None
 
@@ -494,7 +503,7 @@ class PopupResponseEvent(BaseEvent):
 
 class MessageResetEvent(BaseEvent):
     """Event broadcast when message history is reset.
-    
+
     Triggered by /clear, /compact, /resume, or auto-compact operations.
     """
 

@@ -1,9 +1,12 @@
 """Tests for message handler with multi-part content support."""
 
+from __future__ import annotations
+
 import pytest
+
 from vibe.core.message_handler import (
-    NewMessageHandler,
     HistoryReplayHandler,
+    NewMessageHandler,
     create_message_handler,
 )
 from vibe.core.types import LLMMessage, MessageList, Role
@@ -32,10 +35,7 @@ class TestNewMessageHandler:
         messages = MessageList()
         user_msg = [
             {"type": "text", "text": "What is in this image?"},
-            {
-                "type": "image_url",
-                "image_url": {"url": "data:image/png;base64,abc123"},
-            },
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc123"}},
         ]
 
         content, message_id = handler.prepare_message(messages, user_msg)
@@ -50,11 +50,8 @@ class TestNewMessageHandler:
         """Test preparing an image-only message."""
         handler = NewMessageHandler()
         messages = MessageList()
-        user_msg = [
-            {
-                "type": "image_url",
-                "image_url": {"url": "data:image/jpeg;base64,xyz789"},
-            }
+        user_msg: list[dict | str] = [
+            {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,xyz789"}}
         ]
 
         content, message_id = handler.prepare_message(messages, user_msg)
@@ -85,12 +82,10 @@ class TestHistoryReplayHandler:
     def test_prepare_message_with_string_in_history(self):
         """Test replaying a string message from history."""
         handler = HistoryReplayHandler()
-        messages = MessageList(
-            [
-                LLMMessage(role=Role.user, content="Previous message"),
-                LLMMessage(role=Role.assistant, content="Response"),
-            ]
-        )
+        messages = MessageList([
+            LLMMessage(role=Role.user, content="Previous message"),
+            LLMMessage(role=Role.assistant, content="Response"),
+        ])
 
         content, message_id = handler.prepare_message(messages, None)
 
@@ -107,12 +102,10 @@ class TestHistoryReplayHandler:
             },
         ]
         handler = HistoryReplayHandler()
-        messages = MessageList(
-            [
-                LLMMessage(role=Role.user, content=original_content),
-                LLMMessage(role=Role.assistant, content="Response"),
-            ]
-        )
+        messages = MessageList([
+            LLMMessage(role=Role.user, content=original_content),
+            LLMMessage(role=Role.assistant, content="Response"),
+        ])
 
         content, message_id = handler.prepare_message(messages, None)
 
@@ -125,19 +118,13 @@ class TestHistoryReplayHandler:
         handler = HistoryReplayHandler()
         messages = MessageList()
 
-        with pytest.raises(
-            ValueError, match="should not receive a new message"
-        ):
+        with pytest.raises(ValueError, match="should not receive a new message"):
             handler.prepare_message(messages, "new message")
 
     def test_prepare_message_with_no_user_message_raises_error(self):
         """Test that missing user message raises ValueError."""
         handler = HistoryReplayHandler()
-        messages = MessageList(
-            [
-                LLMMessage(role=Role.assistant, content="Response"),
-            ]
-        )
+        messages = MessageList([LLMMessage(role=Role.assistant, content="Response")])
 
         with pytest.raises(ValueError, match="No user message found"):
             handler.prepare_message(messages, None)
@@ -145,11 +132,7 @@ class TestHistoryReplayHandler:
     def test_prepare_message_with_none_content(self):
         """Test handling None content in history."""
         handler = HistoryReplayHandler()
-        messages = MessageList(
-            [
-                LLMMessage(role=Role.user, content=None),
-            ]
-        )
+        messages = MessageList([LLMMessage(role=Role.user, content=None)])
 
         content, message_id = handler.prepare_message(messages, None)
 

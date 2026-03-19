@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import time
+from unittest.mock import MagicMock
 
 import pytest
 from starlette.testclient import TestClient as StarletteTestClient
-from unittest.mock import MagicMock
 
 
 @pytest.fixture(scope="function")
@@ -22,9 +22,7 @@ class TestWebSocketImageAttachment:
     """Test image attachment handling in WebSocket messages."""
 
     @pytest.mark.timeout(5)
-    def test_websocket_message_with_image_and_text(
-        self, app_with_token: tuple
-    ) -> None:
+    def test_websocket_message_with_image_and_text(self, app_with_token: tuple) -> None:
         """Test that WebSocket handler correctly extracts and forwards image data with text."""
         app, token = app_with_token
         client = StarletteTestClient(app)
@@ -43,29 +41,21 @@ class TestWebSocketImageAttachment:
             message = {
                 "type": "user_message",
                 "content": "test text message",
-                "image": {
-                    "data": "base64encodeddata",
-                    "mime_type": "image/png",
-                },
+                "image": {"data": "base64encodeddata", "mime_type": "image/png"},
             }
             websocket.send_json(message)
-            
+
             # Give the handler time to process the message
             time.sleep(0.1)
 
             # Verify submit_message_from_web was called with correct parameters
             mock_tui_app.submit_message_from_web.assert_called_once_with(
                 "test text message",
-                {
-                    "data": "base64encodeddata",
-                    "mime_type": "image/png",
-                },
+                {"data": "base64encodeddata", "mime_type": "image/png"},
             )
 
     @pytest.mark.timeout(5)
-    def test_websocket_message_with_image_only(
-        self, app_with_token: tuple
-    ) -> None:
+    def test_websocket_message_with_image_only(self, app_with_token: tuple) -> None:
         """Test that WebSocket handler forwards image-only messages (empty content)."""
         app, token = app_with_token
         client = StarletteTestClient(app)
@@ -84,29 +74,20 @@ class TestWebSocketImageAttachment:
             message = {
                 "type": "user_message",
                 "content": "",
-                "image": {
-                    "data": "base64encodeddata",
-                    "mime_type": "image/jpeg",
-                },
+                "image": {"data": "base64encodeddata", "mime_type": "image/jpeg"},
             }
             websocket.send_json(message)
-            
+
             # Give the handler time to process the message
             time.sleep(0.1)
 
             # Verify submit_message_from_web was called with empty string and image
             mock_tui_app.submit_message_from_web.assert_called_once_with(
-                "",
-                {
-                    "data": "base64encodeddata",
-                    "mime_type": "image/jpeg",
-                },
+                "", {"data": "base64encodeddata", "mime_type": "image/jpeg"}
             )
 
     @pytest.mark.timeout(5)
-    def test_websocket_message_without_image(
-        self, app_with_token: tuple
-    ) -> None:
+    def test_websocket_message_without_image(self, app_with_token: tuple) -> None:
         """Test backward compatibility: messages without image still work."""
         app, token = app_with_token
         client = StarletteTestClient(app)
@@ -122,19 +103,15 @@ class TestWebSocketImageAttachment:
             websocket.receive_json()
 
             # Send message without image
-            message = {
-                "type": "user_message",
-                "content": "text only message",
-            }
+            message = {"type": "user_message", "content": "text only message"}
             websocket.send_json(message)
-            
+
             # Give the handler time to process the message
             time.sleep(0.1)
 
             # Verify submit_message_from_web was called with None for image
             mock_tui_app.submit_message_from_web.assert_called_once_with(
-                "text only message",
-                None,
+                "text only message", None
             )
 
     @pytest.mark.timeout(5)
@@ -156,12 +133,9 @@ class TestWebSocketImageAttachment:
             websocket.receive_json()
 
             # Send empty message without image
-            message = {
-                "type": "user_message",
-                "content": "",
-            }
+            message = {"type": "user_message", "content": ""}
             websocket.send_json(message)
-            
+
             # Give the handler time to process the message
             time.sleep(0.1)
 
@@ -169,9 +143,7 @@ class TestWebSocketImageAttachment:
             mock_tui_app.submit_message_from_web.assert_not_called()
 
     @pytest.mark.timeout(5)
-    def test_websocket_message_with_webp_image(
-        self, app_with_token: tuple
-    ) -> None:
+    def test_websocket_message_with_webp_image(self, app_with_token: tuple) -> None:
         """Test that WebSocket handler supports WEBP format."""
         app, token = app_with_token
         client = StarletteTestClient(app)
@@ -190,29 +162,20 @@ class TestWebSocketImageAttachment:
             message = {
                 "type": "user_message",
                 "content": "webp image test",
-                "image": {
-                    "data": "webpbase64data",
-                    "mime_type": "image/webp",
-                },
+                "image": {"data": "webpbase64data", "mime_type": "image/webp"},
             }
             websocket.send_json(message)
-            
+
             # Give the handler time to process the message
             time.sleep(0.1)
 
             # Verify submit_message_from_web was called with WEBP image
             mock_tui_app.submit_message_from_web.assert_called_once_with(
-                "webp image test",
-                {
-                    "data": "webpbase64data",
-                    "mime_type": "image/webp",
-                },
+                "webp image test", {"data": "webpbase64data", "mime_type": "image/webp"}
             )
 
     @pytest.mark.timeout(5)
-    def test_websocket_no_tui_app_message_ignored(
-        self, app_with_token: tuple
-    ) -> None:
+    def test_websocket_no_tui_app_message_ignored(self, app_with_token: tuple) -> None:
         """Test that messages are ignored when TUI app is not available."""
         app, token = app_with_token
         client = StarletteTestClient(app)
@@ -227,10 +190,7 @@ class TestWebSocketImageAttachment:
             message = {
                 "type": "user_message",
                 "content": "test message",
-                "image": {
-                    "data": "base64data",
-                    "mime_type": "image/png",
-                },
+                "image": {"data": "base64data", "mime_type": "image/png"},
             }
             websocket.send_json(message)
 
@@ -261,8 +221,7 @@ class TestTUIImageMessageHandling:
 
         # Submit message with image
         mock_tui_app.submit_message_from_web(
-            "test message",
-            {"data": "base64data", "mime_type": "image/png"},
+            "test message", {"data": "base64data", "mime_type": "image/png"}
         )
 
         # Verify message was queued correctly
@@ -292,8 +251,7 @@ class TestTUIImageMessageHandling:
 
         # Submit message with image
         mock_tui_app.submit_message_from_web(
-            "test message",
-            {"data": "base64data", "mime_type": "image/png"},
+            "test message", {"data": "base64data", "mime_type": "image/png"}
         )
 
         # Verify message was NOT queued

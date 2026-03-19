@@ -32,13 +32,7 @@ class ChatTextArea(TextArea):
             priority=True,
         ),
         Binding("ctrl+g", "open_external_editor", "External Editor", show=False),
-        Binding(
-            "ctrl+y",
-            "enhance_prompt",
-            "Enhance Prompt",
-            show=True,
-            priority=True,
-        ),
+        Binding("ctrl+y", "enhance_prompt", "Enhance Prompt", show=True, priority=True),
     ]
 
     class PromptEnhancementRequested(Message):

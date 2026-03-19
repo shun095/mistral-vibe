@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import subprocess
 from pathlib import Path
+import subprocess
 
 from vibe.core.lsp.installer import LSPServerInstaller
 from vibe.core.lsp.mason_paths import MasonPaths
-from vibe.core.paths._vibe_home import VIBE_HOME
 
 logger = logging.getLogger(__name__)
 
@@ -25,16 +24,17 @@ class RuffLSPInstaller(LSPServerInstaller):
 
         # Check if python is available
         result = subprocess.run(
-            ["python3", "--version"],
-            capture_output=True,
-            text=True,
+            ["python3", "--version"], capture_output=True, text=True
         )
         if result.returncode != 0:
             logger.error("python3 is not available. Please install Python 3 first.")
             return False
 
         # Create virtual environment if it doesn't exist
-        if not (venv_dir / "bin" / "python").exists() and not (venv_dir / "Scripts" / "python.exe").exists():
+        if (
+            not (venv_dir / "bin" / "python").exists()
+            and not (venv_dir / "Scripts" / "python.exe").exists()
+        ):
             logger.info(f"Creating virtual environment in {venv_dir}...")
             proc = await asyncio.create_subprocess_exec(
                 "python3",
@@ -55,7 +55,7 @@ class RuffLSPInstaller(LSPServerInstaller):
         pip_exe = venv_dir / "bin" / "pip"
         if not pip_exe.exists():
             pip_exe = venv_dir / "Scripts" / "pip.exe"
-        
+
         if not pip_exe.exists():
             logger.error(f"pip not found in virtual environment: {pip_exe}")
             return False
@@ -91,11 +91,7 @@ class RuffLSPInstaller(LSPServerInstaller):
     def _get_default_executable_path(self) -> Path | None:
         # First check if ruff is available in PATH
         try:
-            result = subprocess.run(
-                ["which", "ruff"],
-                capture_output=True,
-                text=True,
-            )
+            result = subprocess.run(["which", "ruff"], capture_output=True, text=True)
             if result.returncode == 0 and result.stdout.strip():
                 return Path(result.stdout.strip())
         except FileNotFoundError:
@@ -103,12 +99,12 @@ class RuffLSPInstaller(LSPServerInstaller):
 
         # Check if installed in our virtual environment
         venv_dir = self.install_dir / ".venv"
-        
+
         # Check for Linux/macOS
         ruff_exe = venv_dir / "bin" / "ruff"
         if ruff_exe.exists():
             return ruff_exe
-        
+
         # Check for Windows
         ruff_exe_win = venv_dir / "Scripts" / "ruff.exe"
         if ruff_exe_win.exists():

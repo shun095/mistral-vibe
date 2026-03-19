@@ -165,13 +165,12 @@ def create_compact_end_session_update(event: CompactEndEvent) -> ToolCallProgres
             session_update="tool_call_update",
             tool_call_id=event.tool_call_id,
             title="Compaction failed",
-            status="error",
+            status="failed",
             content=[
                 ContentToolCallContent(
                     type="content",
                     content=TextContentBlock(
-                        type="text",
-                        text=f"Compaction failed: {event.error}",
+                        type="text", text=f"Compaction failed: {event.error}"
                     ),
                 )
             ],

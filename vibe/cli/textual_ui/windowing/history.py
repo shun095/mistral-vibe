@@ -21,6 +21,7 @@ def _content_to_str(content: Content | None) -> str | None:
     if isinstance(content, str):
         return content
     # Handle list content (e.g., multi-part messages with images)
+    # Content is str | list[str] but we may receive list[dict] for multi-part
     parts: list[str] = []
     for item in content:
         if isinstance(item, dict):
@@ -28,7 +29,8 @@ def _content_to_str(content: Content | None) -> str | None:
                 # For image parts, show a simple placeholder (avoid large URLs)
                 parts.append("[image]")
             elif "text" in item:
-                parts.append(str(item["text"]))
+                text_val = item.get("text")
+                parts.append(str(text_val) if text_val is not None else "")
             else:
                 parts.append(str(item))
         else:

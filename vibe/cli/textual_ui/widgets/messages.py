@@ -75,7 +75,9 @@ class ImageMessage(Static):
 
     def compose(self) -> ComposeResult:
         with Horizontal(classes="user-message-container"):
-            content = f"{self._text_content}\n[image]" if self._text_content else "[image]"
+            content = (
+                f"{self._text_content}\n[image]" if self._text_content else "[image]"
+            )
             yield NoMarkupStatic(content, classes="user-message-content")
 
 

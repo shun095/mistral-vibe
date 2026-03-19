@@ -18,7 +18,12 @@ class MockTool:
     pass
 
 
+from typing import ClassVar
+
+
 class MockToolManager:
+    _available: ClassVar[dict[str, type]] = {}
+
     """Mock tool manager for testing."""
 
     def get(self, tool_name: str) -> MockTool:
@@ -35,20 +40,14 @@ def create_sample_conversation() -> list[LLMMessage]:
     read_file_call = ToolCall(
         id="call_read_1",
         index=0,
-        function=FunctionCall(
-            name="read_file",
-            arguments='{"path": "test.py"}',
-        ),
+        function=FunctionCall(name="read_file", arguments='{"path": "test.py"}'),
     )
 
     # Tool call 2: bash
     bash_call = ToolCall(
         id="call_bash_1",
         index=0,
-        function=FunctionCall(
-            name="bash",
-            arguments='{"command": "ls -la"}',
-        ),
+        function=FunctionCall(name="bash", arguments='{"command": "ls -la"}'),
     )
 
     return [
@@ -74,11 +73,7 @@ def create_sample_conversation() -> list[LLMMessage]:
             content='{"content": "print(\\nHello World\\n)", "size": 23}',
         ),
         # User message 2
-        LLMMessage(
-            role=Role.user,
-            content="Now run the file",
-            message_id="msg_user_2",
-        ),
+        LLMMessage(role=Role.user, content="Now run the file", message_id="msg_user_2"),
         # Assistant message with reasoning and tool call
         LLMMessage(
             role=Role.assistant,
@@ -218,9 +213,7 @@ def test_history_events_serialize_correctly() -> None:
         ]
 
     # Verify ToolCallEvent has args serialized
-    tool_call_events = [
-        s for s in serialized_events if s["__type"] == "ToolCallEvent"
-    ]
+    tool_call_events = [s for s in serialized_events if s["__type"] == "ToolCallEvent"]
     assert len(tool_call_events) == 2
 
     for tc_event in tool_call_events:
@@ -264,9 +257,9 @@ def test_tool_result_tool_name_matches_tool_call() -> None:
     for event in events:
         if isinstance(event, ToolResultEvent):
             expected_name = call_to_name.get(event.tool_call_id)
-            assert (
-                event.tool_name == expected_name
-            ), f"ToolResultEvent.tool_name '{event.tool_name}' doesn't match ToolCallEvent.tool_name '{expected_name}' for {event.tool_call_id}"
+            assert event.tool_name == expected_name, (
+                f"ToolResultEvent.tool_name '{event.tool_name}' doesn't match ToolCallEvent.tool_name '{expected_name}' for {event.tool_call_id}"
+            )
 
 
 def test_websocket_streams_history_before_connected() -> None:
@@ -304,7 +297,9 @@ def test_websocket_streams_history_before_connected() -> None:
         assert messages[-1]["type"] == "connected"
 
         # Verify we got the expected number of events
-        assert len(event_messages) == 10, f"Expected 10 events, got {len(event_messages)}"
+        assert len(event_messages) == 10, (
+            f"Expected 10 events, got {len(event_messages)}"
+        )
 
         # Verify event types in order
         event_types = [m["event"]["__type"] for m in event_messages]
@@ -335,18 +330,14 @@ def test_consecutive_tool_calls_have_unique_ids() -> None:
         id="call_edit_1",
         index=0,
         function=FunctionCall(
-            name="edit_file",
-            arguments='{"path": "test.py", "old": "x", "new": "y"}',
+            name="edit_file", arguments='{"path": "test.py", "old": "x", "new": "y"}'
         ),
     )
 
     tool_call_2 = ToolCall(
         id="call_bash_2",
         index=0,
-        function=FunctionCall(
-            name="bash",
-            arguments='{"command": "ls -la"}',
-        ),
+        function=FunctionCall(name="bash", arguments='{"command": "ls -la"}'),
     )
 
     messages = [

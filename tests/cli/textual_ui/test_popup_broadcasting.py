@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from unittest.mock import MagicMock
+
 from pydantic import BaseModel
 
 
@@ -48,7 +49,7 @@ class TestApprovalPopupBroadcasting:
     def test_broadcast_approval_response_sends_event(self) -> None:
         """Test that _broadcast_approval_response sends PopupResponseEvent."""
         from vibe.cli.textual_ui.app import VibeApp
-        from vibe.core.types import PopupResponseEvent, ApprovalResponse
+        from vibe.core.types import ApprovalResponse, PopupResponseEvent
 
         # Create mock app
         app = MagicMock(spec=VibeApp)
@@ -57,7 +58,9 @@ class TestApprovalPopupBroadcasting:
 
         # Call the method
         result = (ApprovalResponse.YES, "Approved via TUI")
-        VibeApp._broadcast_approval_response(app, popup_id="approval_123", result=result)
+        VibeApp._broadcast_approval_response(
+            app, popup_id="approval_123", result=result
+        )
 
         # Verify event was sent
         assert app.agent_loop._notify_event_listeners.called
@@ -76,8 +79,7 @@ class TestQuestionPopupBroadcasting:
 
     def test_broadcast_question_popup_sends_event(self) -> None:
         """Test that _broadcast_question_popup sends QuestionPopupEvent."""
-        from vibe.cli.textual_ui.app import VibeApp
-        from vibe.cli.textual_ui.app import AskUserQuestionArgs
+        from vibe.cli.textual_ui.app import AskUserQuestionArgs, VibeApp
         from vibe.core.types import QuestionPopupEvent
 
         # Create mock app
@@ -86,7 +88,7 @@ class TestQuestionPopupBroadcasting:
         app.agent_loop._notify_event_listeners = MagicMock()
 
         # Create question args
-        from vibe.core.tools.builtins.ask_user_question import Question, Choice
+        from vibe.core.tools.builtins.ask_user_question import Choice, Question
 
         question_args = AskUserQuestionArgs(
             questions=[
@@ -105,9 +107,7 @@ class TestQuestionPopupBroadcasting:
 
         # Call the method
         VibeApp._broadcast_question_popup(
-            app,
-            popup_id="question_456",
-            args=question_args,
+            app, popup_id="question_456", args=question_args
         )
 
         # Verify event was sent
@@ -122,8 +122,7 @@ class TestQuestionPopupBroadcasting:
 
     def test_broadcast_question_response_sends_event(self) -> None:
         """Test that _broadcast_question_response sends PopupResponseEvent."""
-        from vibe.cli.textual_ui.app import VibeApp
-        from vibe.cli.textual_ui.app import AskUserQuestionResult
+        from vibe.cli.textual_ui.app import AskUserQuestionResult, VibeApp
         from vibe.core.types import PopupResponseEvent
 
         # Create mock app
@@ -135,15 +134,15 @@ class TestQuestionPopupBroadcasting:
         from vibe.core.tools.builtins.ask_user_question import Answer
 
         result = AskUserQuestionResult(
-            answers=[Answer(question="What is your name?", answer="Alice", is_other=False)],
+            answers=[
+                Answer(question="What is your name?", answer="Alice", is_other=False)
+            ],
             cancelled=False,
         )
 
         # Call the method
         VibeApp._broadcast_question_response(
-            app,
-            popup_id="question_456",
-            result=result,
+            app, popup_id="question_456", result=result
         )
 
         # Verify event was sent
@@ -190,7 +189,7 @@ class TestWebResponseHandlers:
             result = future.result()
             assert result[0] == ApprovalResponse.YES
             assert result[1] == "Approved via web"
-            
+
             # Verify cleanup happened
             assert app._pending_approval is None
             assert app._pending_approval_id is None
@@ -228,8 +227,7 @@ class TestWebResponseHandlers:
 
     def test_handle_web_question_response_resolves_future(self) -> None:
         """Test that handle_web_question_response resolves the pending question future."""
-        from vibe.cli.textual_ui.app import VibeApp
-        from vibe.cli.textual_ui.app import AskUserQuestionResult
+        from vibe.cli.textual_ui.app import AskUserQuestionResult, VibeApp
 
         # Create event loop for Future
         loop = asyncio.new_event_loop()
@@ -244,14 +242,13 @@ class TestWebResponseHandlers:
             # Create answers
             from vibe.core.tools.builtins.ask_user_question import Answer
 
-            answers = [Answer(question="What is your name?", answer="Alice", is_other=False)]
+            answers = [
+                Answer(question="What is your name?", answer="Alice", is_other=False)
+            ]
 
             # Call the handler
             VibeApp.handle_web_question_response(
-                app,
-                popup_id="question_456",
-                answers=answers,
-                cancelled=False,
+                app, popup_id="question_456", answers=answers, cancelled=False
             )
 
             # Verify future was set
@@ -296,7 +293,7 @@ class TestWebResponseHandlers:
                 "bash", save_permanently=False
             )
             assert future.done()
-            
+
             # Verify cleanup happened
             assert app._pending_approval is None
             assert app._pending_approval_id is None
@@ -332,7 +329,7 @@ class TestWebResponseHandlers:
             # Verify call_later was called to switch agent
             assert app.call_later.called
             assert future.done()
-            
+
             # Verify cleanup happened
             assert app._pending_approval is None
             assert app._pending_approval_id is None
@@ -368,7 +365,7 @@ class TestWebResponseHandlers:
             # Verify tool permission was NOT set
             app._set_tool_permission_always.assert_not_called()
             assert future.done()
-            
+
             # Verify cleanup happened
             assert app._pending_approval is None
             assert app._pending_approval_id is None

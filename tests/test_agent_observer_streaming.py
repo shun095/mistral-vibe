@@ -27,6 +27,7 @@ from vibe.core.tools.builtins.todo import TodoArgs
 from vibe.core.types import (
     ApprovalResponse,
     AssistantEvent,
+    Content,
     FunctionCall,
     LLMMessage,
     RateLimitError,
@@ -71,9 +72,9 @@ def make_config(
 
 @pytest.fixture
 def observer_capture() -> tuple[
-    list[tuple[Role, str | None]], Callable[[LLMMessage], None]
+    list[tuple[Role, Content | None]], Callable[[LLMMessage], None]
 ]:
-    observed: list[tuple[Role, str | None]] = []
+    observed: list[tuple[Role, Content | None]] = []
 
     def observer(msg: LLMMessage) -> None:
         observed.append((msg.role, msg.content))

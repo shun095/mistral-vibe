@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING, ClassVar, NamedTuple, final
 import anyio
 from pydantic import BaseModel, Field
 
-from vibe.core.lsp import LSPClientManager, LSPDiagnosticFormatter
 from vibe.core.config.harness_files import get_harness_files_manager
+from vibe.core.lsp import LSPClientManager, LSPDiagnosticFormatter
 from vibe.core.tools.base import (
     BaseTool,
     BaseToolConfig,
@@ -35,7 +35,7 @@ class _ReadResult(NamedTuple):
 class ReadFileArgs(BaseModel):
     path: str
     offset: int = Field(
-        description="Line number to start reading from (0-indexed, inclusive).",
+        description="Line number to start reading from (0-indexed, inclusive)."
     )
     limit: int | None = Field(
         default=None, description="Maximum number of lines to read."
@@ -50,8 +50,7 @@ class ReadFileResult(BaseModel):
         description="True if the reading was stopped due to the max_read_bytes limit."
     )
     lsp_diagnostics: str | None = Field(
-        default=None,
-        description="LSP diagnostics for the file content, if available."
+        default=None, description="LSP diagnostics for the file content, if available."
     )
 
 
@@ -88,8 +87,10 @@ class ReadFile(
         lsp_diagnostics = None
         try:
             client_manager = LSPClientManager()
-            diagnostics = await client_manager.get_diagnostics_from_all_servers(file_path)
-            
+            diagnostics = await client_manager.get_diagnostics_from_all_servers(
+                file_path
+            )
+
             # Format diagnostics for LLM consumption if available
             if diagnostics:
                 lsp_diagnostics = LSPDiagnosticFormatter.format_diagnostics_for_llm(

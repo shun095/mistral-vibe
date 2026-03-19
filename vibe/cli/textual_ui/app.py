@@ -13,6 +13,9 @@ from uuid import uuid4
 from weakref import WeakKeyDictionary
 
 from pydantic import BaseModel
+
+# Constants
+MESSAGE_PREVIEW_LENGTH = 50
 from rich import print as rprint
 from textual.app import WINDOWS, App, ComposeResult
 from textual.binding import Binding, BindingType
@@ -123,6 +126,7 @@ from vibe.core.types import (
     AgentStats,
     ApprovalPopupEvent,
     ApprovalResponse,
+    Content,
     LLMMessage,
     MessageResetEvent,
     PopupResponseEvent,
@@ -243,7 +247,9 @@ class VibeApp(App):  # noqa: PLR0904
             "pagedown", "scroll_chat_down", "Scroll Down", show=False, priority=True
         ),
         Binding("home", "scroll_chat_home", "Scroll to Top", show=False, priority=True),
-        Binding("end", "scroll_chat_end", "Scroll to Bottom", show=False, priority=True),
+        Binding(
+            "end", "scroll_chat_end", "Scroll to Bottom", show=False, priority=True
+        ),
     ]
 
     def __init__(
@@ -370,7 +376,7 @@ class VibeApp(App):  # noqa: PLR0904
         self._chat_input_container = self.query_one(ChatInputContainer)
         context_progress = self.query_one(ContextProgress)
 
-          # Mark TUI as ready to accept messages from web UI
+        # Mark TUI as ready to accept messages from web UI
         self._tui_ready = True
 
         # Start timer to process web messages
@@ -443,13 +449,17 @@ class VibeApp(App):  # noqa: PLR0904
                 self._queued_message = value
                 # Show notification that message is updated
                 await self._mount_and_scroll(
-                    UserMessage(f"Queued message updated: {value[:50]}{'...' if len(value) > 50 else ''}")
+                    UserMessage(
+                        f"Queued message updated: {value[:MESSAGE_PREVIEW_LENGTH]}{'...' if len(value) > MESSAGE_PREVIEW_LENGTH else ''}"
+                    )
                 )
             else:
                 self._queued_message = value
                 # Show notification that message is queued
                 await self._mount_and_scroll(
-                    UserMessage(f"Message queued: {value[:50]}{'...' if len(value) > 50 else ''}")
+                    UserMessage(
+                        f"Message queued: {value[:MESSAGE_PREVIEW_LENGTH]}{'...' if len(value) > MESSAGE_PREVIEW_LENGTH else ''}"
+                    )
                 )
             return
 
@@ -617,26 +627,24 @@ class VibeApp(App):  # noqa: PLR0904
             if user_input.startswith(alias):
                 cmd_name = name
                 break
-        
+
         if not cmd_name:
             return False
-        
+
         command = self.commands.commands.get(cmd_name)
         if not command:
             return False
-        
-        self.agent_loop.telemetry_client.send_slash_command_used(
-            cmd_name, "builtin"
-        )
-        
+
+        self.agent_loop.telemetry_client.send_slash_command_used(cmd_name, "builtin")
+
         # Add message to agent_loop.messages BEFORE calling handler
         # so the handler can find it
         user_message = LLMMessage(role=Role.user, content=user_input)
         self.agent_loop.messages.append(user_message)
-        
+
         # Also mount to UI for display
         await self._mount_and_scroll(UserMessage(user_input))
-        
+
         handler = getattr(self, command.handler)
         if asyncio.iscoroutinefunction(handler):
             await handler()
@@ -749,20 +757,19 @@ class VibeApp(App):  # noqa: PLR0904
         # Build multi-part content for LLM
         base64_data = image_data.get("data", "")
         mime_type = image_data.get("mime_type", "image/png")
-        
+
         # Create content list with text and image
         content: list[dict] = []
         if message:
             content.append({"type": "text", "text": message})
-        content.append(
-            {
-                "type": "image_url",
-                "image_url": {"url": f"data:{mime_type};base64,{base64_data}"}
-            }
-        )
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:{mime_type};base64,{base64_data}"},
+        })
 
         # Add combined message with image placeholder to the display
         from vibe.cli.textual_ui.widgets.messages import ImageMessage
+
         image_message = ImageMessage(message if message else "")
         await self._mount_and_scroll(image_message)
 
@@ -776,9 +783,7 @@ class VibeApp(App):  # noqa: PLR0904
                 self._handle_agent_loop_turn_with_content(content)
             )
 
-    async def _handle_agent_loop_turn_with_content(
-        self, content: list[dict]
-    ) -> None:
+    async def _handle_agent_loop_turn_with_content(self, content: list[dict]) -> None:
         """Handle agent loop turn with multi-part content (text + image).
 
         Args:
@@ -795,8 +800,8 @@ class VibeApp(App):  # noqa: PLR0904
         await loading_area.mount(loading)
 
         try:
-            # Use act() with multi-part content
-            async for event in self.agent_loop.act(content):
+            # Use act() with multi-part content - cast since Content is str | list[str] but we're using list[dict]
+            async for event in self.agent_loop.act(cast(Content, content)):
                 if self.event_handler:
                     await self.event_handler.handle_event(
                         event,
@@ -852,9 +857,7 @@ class VibeApp(App):  # noqa: PLR0904
             return
 
         # Store message for processing in TUI event loop
-        self._web_message_queue.append(
-            {"message": message, "image": image_data}
-        )
+        self._web_message_queue.append({"message": message, "image": image_data})
 
     def is_agent_running(self) -> bool:
         """Check if the agent is currently running/processing.
@@ -912,10 +915,7 @@ class VibeApp(App):  # noqa: PLR0904
             event = PopupResponseEvent(
                 popup_id=popup_id,
                 response_type="approval",
-                response_data={
-                    "response": response.value,
-                    "feedback": feedback,
-                },
+                response_data={"response": response.value, "feedback": feedback},
                 cancelled=False,
             )
             self.agent_loop._notify_event_listeners(event)
@@ -935,8 +935,7 @@ class VibeApp(App):  # noqa: PLR0904
             event = QuestionPopupEvent(
                 popup_id=popup_id,
                 questions=[
-                    q.model_dump(mode="json", exclude_none=True)
-                    for q in args.questions
+                    q.model_dump(mode="json", exclude_none=True) for q in args.questions
                 ],
                 content_preview=args.content_preview,
                 timestamp=time.time(),
@@ -962,7 +961,7 @@ class VibeApp(App):  # noqa: PLR0904
                     "answers": [
                         a.model_dump(mode="json", exclude_none=True)
                         for a in result.answers
-                    ],
+                    ]
                 },
                 cancelled=result.cancelled,
             )
@@ -993,11 +992,17 @@ class VibeApp(App):  # noqa: PLR0904
             # Handle different approval types
             if approval_type == "session" and self._pending_approval_tool:
                 # Set tool permission for this session (not permanent)
-                self._set_tool_permission_always(self._pending_approval_tool, save_permanently=False)
+                self._set_tool_permission_always(
+                    self._pending_approval_tool, save_permanently=False
+                )
             elif approval_type == "auto-approve":
                 # Switch to auto-approve mode
                 if self.agent_loop:
-                    self.call_later(lambda: self.agent_loop.switch_agent(BuiltinAgentName.AUTO_APPROVE))
+                    self.call_later(
+                        lambda: self.agent_loop.switch_agent(
+                            BuiltinAgentName.AUTO_APPROVE
+                        )
+                    )
 
             self._pending_approval.set_result((response, feedback))
             # Clean up pending approval state
@@ -1034,32 +1039,36 @@ class VibeApp(App):  # noqa: PLR0904
         if self._interrupt_requested and self._agent_running:
             await self._interrupt_agent_loop()
             return
-        
+
         # Process queued messages - same flow as TUI input
         while self._web_message_queue:
             item = self._web_message_queue.pop(0)
             message = item.get("message", "")
             image_data = item.get("image")
-            
+
+            # Ensure message is a string (handle potential type issues)
+            if not isinstance(message, str):
+                message = str(message) if message is not None else ""
+
             # Handle messages with image attachments
-            if image_data:
+            if image_data and isinstance(image_data, dict):
                 await self._handle_user_message_with_image(message, image_data)
                 continue
-            
+
             # Check for teleport command first
             if message.startswith("&"):
                 if self.config.nuage_enabled:
                     await self._handle_teleport_command(message[1:])
                     continue
-            
+
             # Check for slash commands
             if await self._handle_command(message):
                 continue
-            
+
             # Check for skills
             if await self._handle_skill(message):
                 continue
-            
+
             # Regular user message
             await self._handle_user_message(message)
 
@@ -1138,14 +1147,18 @@ class VibeApp(App):  # noqa: PLR0904
         async with self._user_interaction_lock:
             # Generate unique popup ID
             popup_id = f"approval_{tool_call_id}_{time.time()}"
-            
+
             # Broadcast approval popup event to web UI
             self._broadcast_approval_popup(popup_id, tool, args)
-            
+
             self._pending_approval = asyncio.Future()
             self._pending_approval_id = popup_id
-            self._pending_approval_tool = tool  # Store tool name for web response handling
-            self._pending_approval_args = args.model_dump(mode="json", exclude_none=True)
+            self._pending_approval_tool = (
+                tool  # Store tool name for web response handling
+            )
+            self._pending_approval_args = args.model_dump(
+                mode="json", exclude_none=True
+            )
             self._terminal_notifier.notify(NotificationContext.ACTION_REQUIRED)
             try:
                 with paused_timer(self._loading_widget):
@@ -1154,7 +1167,7 @@ class VibeApp(App):  # noqa: PLR0904
 
                 # Broadcast approval response event
                 self._broadcast_approval_response(popup_id, result)
-                
+
                 return result
             except asyncio.CancelledError:
                 raise
@@ -1170,13 +1183,15 @@ class VibeApp(App):  # noqa: PLR0904
         async with self._user_interaction_lock:
             # Generate unique popup ID
             popup_id = f"question_{time.time()}_{uuid4()}"
-            
+
             # Broadcast question popup event to web UI
             self._broadcast_question_popup(popup_id, question_args)
-            
+
             self._pending_question = asyncio.Future()
             self._pending_question_id = popup_id
-            self._pending_question_args = question_args.model_dump(mode="json", exclude_none=True)
+            self._pending_question_args = question_args.model_dump(
+                mode="json", exclude_none=True
+            )
             self._terminal_notifier.notify(NotificationContext.ACTION_REQUIRED)
             try:
                 with paused_timer(self._loading_widget):
@@ -1185,7 +1200,7 @@ class VibeApp(App):  # noqa: PLR0904
 
                 # Broadcast question response event
                 self._broadcast_question_response(popup_id, result)
-                
+
                 return result
             finally:
                 self._pending_question = None
@@ -1426,7 +1441,7 @@ class VibeApp(App):  # noqa: PLR0904
         self._enhancement_running = True
 
         loading_area = self.query_one("#loading-area-content")
-        
+
         # Remove existing loading widget if present (only one should be visible)
         if self._loading_widget and self._loading_widget.parent:
             await self._loading_widget.remove()
@@ -1439,6 +1454,7 @@ class VibeApp(App):  # noqa: PLR0904
             # Load the enhancement prompt template
             try:
                 from vibe.core.prompts import UtilityPrompt
+
                 enhancement_template = UtilityPrompt.ENHANCEMENT.read()
             except Exception as e:
                 logger.warning(f"Failed to load enhancement template: {e}")
@@ -1465,7 +1481,11 @@ Enhanced prompt:"""
                 extra_headers=None,
             ):
                 if chunk.message.content:
-                    content_str = chunk.message.content if isinstance(chunk.message.content, str) else str(chunk.message.content)
+                    content_str = (
+                        chunk.message.content
+                        if isinstance(chunk.message.content, str)
+                        else str(chunk.message.content)
+                    )
                     enhanced_text += content_str
 
             if enhanced_text.strip():
@@ -1600,9 +1620,7 @@ Enhanced prompt:"""
             await self._resume_history_from_messages()
 
             # Notify listeners that history was reset (resume)
-            self.agent_loop._notify_event_listeners(
-                MessageResetEvent(reason="resume")
-            )
+            self.agent_loop._notify_event_listeners(MessageResetEvent(reason="resume"))
 
             await self._mount_and_scroll(
                 UserCommandMessage(f"Resumed session `{event.session_id[:8]}`")
@@ -1762,9 +1780,7 @@ Enhanced prompt:"""
 
             # Execute edit asynchronously to allow interruption
             handler = EditHandler(
-                app=self,
-                agent_loop=self.agent_loop,
-                new_content=new_content,
+                app=self, agent_loop=self.agent_loop, new_content=new_content
             )
             self._agent_task = asyncio.create_task(handler.execute())
 
@@ -1774,8 +1790,11 @@ Enhanced prompt:"""
             )
         except Exception as e:
             await self._mount_and_scroll(
-                ErrorMessage(f"Failed to edit message: {e}", collapsed=self._tools_collapsed)
+                ErrorMessage(
+                    f"Failed to edit message: {e}", collapsed=self._tools_collapsed
+                )
             )
+
     async def _compact_history(self) -> None:
         if self._agent_running:
             await self._mount_and_scroll(
@@ -1851,14 +1870,16 @@ Enhanced prompt:"""
 
     def _restart_app(self) -> None:
         """Restart the application using os.execv.
-        
+
         This replaces the current process with a new instance,
         preserving TTY attachment and process ID.
         """
         import os
         import sys
 
-        os.execv(sys.executable, [sys.executable, "-m", "vibe.cli.entrypoint"] + sys.argv[1:])
+        os.execv(
+            sys.executable, [sys.executable, "-m", "vibe.cli.entrypoint"] + sys.argv[1:]
+        )
 
     async def _setup_terminal(self) -> None:
         result = setup_terminal()
@@ -2072,7 +2093,10 @@ Enhanced prompt:"""
         ):
             # Clear the queued message
             self._queued_message = None
-            self.run_worker(self._mount_and_scroll(ErrorMessage("Queued message cleared")), exclusive=False)
+            self.run_worker(
+                self._mount_and_scroll(ErrorMessage("Queued message cleared")),
+                exclusive=False,
+            )
             self._last_escape_time = None
             return
 

@@ -10,8 +10,8 @@ from uvicorn.config import Config
 from vibe.cli.web_ui.server import create_app
 
 if TYPE_CHECKING:
-    from vibe.core.agent_loop import AgentLoop
     from vibe.cli.textual_ui.app import VibeApp
+    from vibe.core.agent_loop import AgentLoop
 
 
 def run_web_server_in_background(

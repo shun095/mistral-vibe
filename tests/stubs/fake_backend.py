@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator, Callable, Iterable, Sequence
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from tests.mock.utils import mock_llm_chunk
-from vibe.core.types import LLMChunk, LLMMessage, Role
+from vibe.core.llm.types import BackendLike
+from vibe.core.types import AvailableTool, LLMChunk, LLMMessage, Role, StrToolChoice
+
+if TYPE_CHECKING:
+    from vibe.core.config import ModelConfig
 
 
-class FakeBackend:
+class FakeBackend(BackendLike):
     """Minimal async backend stub to drive Agent.act without network.
 
     Provide a finite sequence of LLMResult objects to be returned by
@@ -83,19 +87,19 @@ class FakeBackend:
     async def complete(
         self,
         *,
-        model,
-        messages,
-        temperature,
-        tools,
-        tool_choice,
-        extra_headers,
-        max_tokens,
-        metadata=None,
+        model: ModelConfig,
+        messages: Sequence[LLMMessage],
+        temperature: float | None = None,
+        tools: list[AvailableTool] | None = None,
+        max_tokens: int | None = None,
+        tool_choice: StrToolChoice | AvailableTool | None = None,
+        extra_headers: dict[str, str] | None = None,
+        metadata: dict[str, str] | None = None,
     ) -> LLMChunk:
         if self._exception_to_raise:
             raise self._exception_to_raise
 
-        self._requests_messages.append(messages)
+        self._requests_messages.append(list(messages))
         self._requests_extra_headers.append(extra_headers)
         self._requests_metadata.append(metadata)
 
@@ -111,19 +115,19 @@ class FakeBackend:
     async def complete_streaming(
         self,
         *,
-        model,
-        messages,
-        temperature,
-        tools,
-        tool_choice,
-        extra_headers,
-        max_tokens,
-        metadata=None,
+        model: ModelConfig,
+        messages: Sequence[LLMMessage],
+        temperature: float | None = None,
+        tools: list[AvailableTool] | None = None,
+        max_tokens: int | None = None,
+        tool_choice: StrToolChoice | AvailableTool | None = None,
+        extra_headers: dict[str, str] | None = None,
+        metadata: dict[str, str] | None = None,
     ) -> AsyncGenerator[LLMChunk]:
         if self._exception_to_raise:
             raise self._exception_to_raise
 
-        self._requests_messages.append(messages)
+        self._requests_messages.append(list(messages))
         self._requests_extra_headers.append(extra_headers)
         self._requests_metadata.append(metadata)
 
@@ -137,13 +141,13 @@ class FakeBackend:
     async def count_tokens(
         self,
         *,
-        model,
-        messages,
-        temperature=0.0,
-        tools,
-        tool_choice=None,
-        extra_headers,
-        metadata=None,
+        model: ModelConfig,
+        messages: Sequence[LLMMessage],
+        temperature: float | None = None,
+        tools: list[AvailableTool] | None = None,
+        tool_choice: StrToolChoice | AvailableTool | None = None,
+        extra_headers: dict[str, str] | None = None,
+        metadata: dict[str, str] | None = None,
     ) -> int:
         self._count_tokens_calls.append(list(messages))
         return self._token_counter(messages)

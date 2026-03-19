@@ -16,7 +16,7 @@ from vibe.core.types import LLMChunk, LLMMessage, LLMUsage, Role
 
 @pytest.fixture
 def backend() -> FakeBackend:
-    backend = FakeBackend(
+    backend = FakeBackend(  # type: ignore[call-arg]
         LLMChunk(
             message=LLMMessage(role=Role.assistant, content="Hi"),
             usage=LLMUsage(prompt_tokens=1, completion_tokens=1),

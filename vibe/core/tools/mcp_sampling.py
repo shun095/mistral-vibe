@@ -56,7 +56,11 @@ class MCPSamplingHandler:
                 extra_headers=None,
             )
 
-            content_text = result.message.content or ""
+            content_text = (
+                result.message.content
+                if isinstance(result.message.content, str)
+                else ""
+            )
 
             return CreateMessageResult(
                 role="assistant",

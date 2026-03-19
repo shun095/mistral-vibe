@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-import json
 from pathlib import Path
 
 import pytest
@@ -20,7 +19,6 @@ from vibe.core.types import (
     BaseEvent,
     ContinueableUserMessageEvent,
     FunctionCall,
-    LLMMessage,
     Role,
     ToolCall,
     ToolCallEvent,
@@ -35,7 +33,9 @@ async def act_and_collect_events(agent_loop: AgentLoop, prompt: str) -> list[Bas
     return [ev async for ev in agent_loop.act(prompt)]
 
 
-def make_config(read_image_permission: ToolPermission = ToolPermission.ALWAYS) -> VibeConfig:
+def make_config(
+    read_image_permission: ToolPermission = ToolPermission.ALWAYS,
+) -> VibeConfig:
     """Create test configuration for read_image tool."""
     return VibeConfig(
         session_logging=SessionLoggingConfig(enabled=False),
@@ -52,9 +52,15 @@ def make_read_image_tool_call(
     call_id: str, index: int = 0, arguments: str | None = None
 ) -> ToolCall:
     """Create a mock read_image tool call."""
-    args = arguments if arguments is not None else '{"image_url": "https://example.com/image.jpg"}'
+    args = (
+        arguments
+        if arguments is not None
+        else '{"image_url": "https://example.com/image.jpg"}'
+    )
     return ToolCall(
-        id=call_id, index=index, function=FunctionCall(name="read_image", arguments=args)
+        id=call_id,
+        index=index,
+        function=FunctionCall(name="read_image", arguments=args),
     )
 
 
@@ -100,7 +106,10 @@ def assert_conversation_continues(events, tmp_path):
     assert len(events) >= 7
     assert isinstance(events[-1], AssistantEvent)
     # The response should mention the image
-    assert "beautiful landscape" in events[-1].content or "image" in events[-1].content.lower()
+    assert (
+        "beautiful landscape" in events[-1].content
+        or "image" in events[-1].content.lower()
+    )
 
 
 def assert_invalid_url_scheme(events):
@@ -117,12 +126,12 @@ def assert_message_construction(events, tmp_path):
     assert isinstance(events[5], ContinueableUserMessageEvent)
     content = events[5].content
     assert len(content) == 2
-    
+
     # Verify text part
     text_item = content[0]
     assert text_item["type"] == "text"
     assert "This is an image fetched from file://" in text_item["text"]
-    
+
     # Verify image part
     image_item = content[1]
     assert image_item["type"] == "image_url"
@@ -151,7 +160,9 @@ def assert_message_construction(events, tmp_path):
         {
             "name": "File URL",
             "image_url": lambda tmp_path: f"file://{tmp_path}/test.jpg",
-            "setup": lambda tmp_path: (Path(tmp_path) / "test.jpg").write_bytes(b"fake_image_data_1234567890"),
+            "setup": lambda tmp_path: (Path(tmp_path) / "test.jpg").write_bytes(
+                b"fake_image_data_1234567890"
+            ),
             "expected_event_types": [
                 UserMessageEvent,
                 AssistantEvent,
@@ -166,7 +177,9 @@ def assert_message_construction(events, tmp_path):
         {
             "name": "Conversation continues after image",
             "image_url": lambda tmp_path: f"file://{tmp_path}/test.jpg",
-            "setup": lambda tmp_path: (Path(tmp_path) / "test.jpg").write_bytes(b"test_data"),
+            "setup": lambda tmp_path: (Path(tmp_path) / "test.jpg").write_bytes(
+                b"test_data"
+            ),
             "expected_event_types": [
                 UserMessageEvent,
                 AssistantEvent,
@@ -176,7 +189,9 @@ def assert_message_construction(events, tmp_path):
                 ContinueableUserMessageEvent,  # Image message
                 AssistantEvent,  # Response to image
             ],
-            "assertions": lambda events, tmp_path: assert_conversation_continues(events, tmp_path),
+            "assertions": lambda events, tmp_path: assert_conversation_continues(
+                events, tmp_path
+            ),
         },
         {
             "name": "Invalid URL scheme",
@@ -193,7 +208,9 @@ def assert_message_construction(events, tmp_path):
         {
             "name": "Message construction in agent loop",
             "image_url": lambda tmp_path: f"file://{tmp_path}/test.jpg",
-            "setup": lambda tmp_path: (Path(tmp_path) / "test.jpg").write_bytes(b"test_data"),
+            "setup": lambda tmp_path: (Path(tmp_path) / "test.jpg").write_bytes(
+                b"test_data"
+            ),
             "expected_event_types": [
                 UserMessageEvent,
                 AssistantEvent,
@@ -210,40 +227,46 @@ def assert_message_construction(events, tmp_path):
 async def test_read_image_integration(tmp_path, monkeypatch, test_case):
     """Test read_image tool integration with agent loop - parameterized version."""
     monkeypatch.chdir(tmp_path)
-    
+
     # Run setup if needed
     if test_case["setup"]:
         test_case["setup"](tmp_path)
-    
+
     # Create agent loop with mock responses
     config = make_config()
-    
+
     # Determine the image URL (may be a lambda)
-    image_url = test_case["image_url"](tmp_path) if callable(test_case["image_url"]) else test_case["image_url"]
-    
+    image_url = (
+        test_case["image_url"](tmp_path)
+        if callable(test_case["image_url"])
+        else test_case["image_url"]
+    )
+
     # Create tool call for read_image with the actual URL
-    tool_call = make_read_image_tool_call("call_1", arguments=f'{{"image_url": "{image_url}"}}')
-    
+    tool_call = make_read_image_tool_call(
+        "call_1", arguments=f'{{"image_url": "{image_url}"}}'
+    )
+
     # Mock responses: first call includes tool call, second is final response
     backend = FakeBackend([
         [mock_llm_chunk(content="Understood.", tool_calls=[tool_call])],
         [mock_llm_chunk(content="This is a beautiful landscape image.")],
     ])
-    
+
     agent_loop = AgentLoop(
-        config=config,
-        backend=backend,
-        agent_name=BuiltinAgentName.DEFAULT,
+        config=config, backend=backend, agent_name=BuiltinAgentName.DEFAULT
     )
-    
+
     # Act and collect events
     prompt = f"Please analyze this image: {image_url}"
     events = await act_and_collect_events(agent_loop, prompt)
-    
+
     # Verify event types match expectations
     for i, expected_type in enumerate(test_case["expected_event_types"]):
-        assert isinstance(events[i], expected_type), f"Event {i} should be {expected_type}, got {type(events[i])}"
-    
+        assert isinstance(events[i], expected_type), (
+            f"Event {i} should be {expected_type}, got {type(events[i])}"
+        )
+
     # Run scenario-specific assertions
     test_case["assertions"](events, tmp_path)
 
@@ -255,33 +278,36 @@ def assert_http_url_messages(messages):
     assert messages[3].role == Role.tool
     assert messages[3].tool_call_id == "call_1"
     assert messages[3].name == "read_image"
-    
+
     # Parse the content string (format: key: value\nkey: value)
     content_lines = messages[3].content.strip().split("\n")
     content_dict = {}
     for line in content_lines:
         key, value = line.split(": ", 1)
         content_dict[key] = value
-    
+
     assert content_dict["source_url"] == "https://example.com/image.jpg"
     assert content_dict["source_type"] == "https"
-    
+
     # Verify message 4: Assistant "Understood" message
     assert messages[4].role == Role.assistant
     assert messages[4].content == "Understood."
     assert messages[4].tool_call_id == "call_1"
-    
+
     # Verify message 5: User message with image
     assert messages[5].role == Role.user
     assert isinstance(messages[5].content, list)
     assert len(messages[5].content) == 2
     assert messages[5].tool_call_id == "call_1"
-    
+
     # Verify text part
     text_item = messages[5].content[0]
     assert text_item["type"] == "text"
-    assert "This is an image fetched from https://example.com/image.jpg" in text_item["text"]
-    
+    assert (
+        "This is an image fetched from https://example.com/image.jpg"
+        in text_item["text"]
+    )
+
     # Verify image part
     image_item = messages[5].content[1]
     assert image_item["type"] == "image_url"
@@ -294,41 +320,41 @@ def assert_file_url_messages(messages, tmp_path):
     assert messages[3].role == Role.tool
     assert messages[3].tool_call_id == "call_1"
     assert messages[3].name == "read_image"
-    
+
     # Parse the content string (format: key: value\nkey: value)
     content_lines = messages[3].content.strip().split("\n")
     content_dict = {}
     for line in content_lines:
         key, value = line.split(": ", 1)
         content_dict[key] = value
-    
+
     assert "source_url" in content_dict
     assert content_dict["source_type"] == "file"
     assert tmp_path.as_posix() in content_dict["source_url"]
-    
+
     # Verify message 4: Assistant "Understood" message
     assert messages[4].role == Role.assistant
     assert messages[4].content == "Understood."
     assert messages[4].tool_call_id == "call_1"
-    
+
     # Verify message 5: User message with image (base64 encoded)
     assert messages[5].role == Role.user
     assert isinstance(messages[5].content, list)
     assert len(messages[5].content) == 2
     assert messages[5].tool_call_id == "call_1"
-    
+
     # Verify text part
     text_item = messages[5].content[0]
     assert text_item["type"] == "text"
     assert "This is an image fetched from file://" in text_item["text"]
-    
+
     # Verify image part (should be base64 data URL)
     image_item = messages[5].content[1]
     assert image_item["type"] == "image_url"
     image_url = image_item["image_url"]["url"]
     assert image_url.startswith("data:")
     assert ";base64," in image_url
-    
+
     # Extract and verify the base64 data
     data_part = image_url.split(";base64,")[1]
     decoded_data = base64.b64decode(data_part)
@@ -347,48 +373,56 @@ def assert_file_url_messages(messages, tmp_path):
         {
             "name": "File URL",
             "image_url": lambda tmp_path: f"file://{tmp_path}/test.jpg",
-            "setup": lambda tmp_path: (Path(tmp_path) / "test.jpg").write_bytes(b"fake_image_data_1234567890"),
+            "setup": lambda tmp_path: (Path(tmp_path) / "test.jpg").write_bytes(
+                b"fake_image_data_1234567890"
+            ),
             "assertions": assert_file_url_messages,
         },
     ],
 )
-async def test_backend_receives_messages_after_read_image(tmp_path, monkeypatch, test_case):
+async def test_backend_receives_messages_after_read_image(
+    tmp_path, monkeypatch, test_case
+):
     """Test that backend receives correct messages after read_image tool call."""
     monkeypatch.chdir(tmp_path)
-    
+
     # Run setup if needed
     if test_case.get("setup"):
         test_case["setup"](tmp_path)
-    
+
     # Create agent loop with mock responses
     config = make_config()
-    
+
     # Determine the image URL (may be a lambda)
-    image_url = test_case["image_url"](tmp_path) if callable(test_case["image_url"]) else test_case["image_url"]
-    
+    image_url = (
+        test_case["image_url"](tmp_path)
+        if callable(test_case["image_url"])
+        else test_case["image_url"]
+    )
+
     # Create tool call for read_image with the actual URL
-    tool_call = make_read_image_tool_call("call_1", arguments=f'{{"image_url": "{image_url}"}}')
-    
+    tool_call = make_read_image_tool_call(
+        "call_1", arguments=f'{{"image_url": "{image_url}"}}'
+    )
+
     # Mock responses: first call includes tool call, second is final response
     backend = FakeBackend([
         [mock_llm_chunk(content="Understood.", tool_calls=[tool_call])],
         [mock_llm_chunk(content="This is a beautiful landscape image.")],
     ])
-    
+
     agent_loop = AgentLoop(
-        config=config,
-        backend=backend,
-        agent_name=BuiltinAgentName.DEFAULT,
+        config=config, backend=backend, agent_name=BuiltinAgentName.DEFAULT
     )
-    
+
     # Act and collect events
     prompt = f"Please analyze this image: {image_url}"
-    events = await act_and_collect_events(agent_loop, prompt)
-    
+    await act_and_collect_events(agent_loop, prompt)
+
     # Get messages that would be sent to backend (after tool execution)
     # The messages list includes: system message, user message, tool result, assistant response, user image message
     messages = agent_loop.messages
-    
+
     # Run scenario-specific assertions
     test_case["assertions"](messages, tmp_path)
 
@@ -397,22 +431,18 @@ async def test_backend_receives_messages_after_read_image(tmp_path, monkeypatch,
 async def test_read_image_with_permission_denied(tmp_path, monkeypatch):
     """Test read_image tool with permission denied."""
     monkeypatch.chdir(tmp_path)
-    
+
     # Create agent loop with permission denied
     config = make_config(read_image_permission=ToolPermission.NEVER)
-    backend = FakeBackend([
-        [mock_llm_chunk(content="I cannot analyze images.")],
-    ])
+    backend = FakeBackend([mock_llm_chunk(content="I cannot analyze images.")])
     agent_loop = AgentLoop(
-        config=config,
-        backend=backend,
-        agent_name=BuiltinAgentName.DEFAULT,
+        config=config, backend=backend, agent_name=BuiltinAgentName.DEFAULT
     )
-    
+
     # Try to use read_image tool
     prompt = "Please analyze this image: https://example.com/image.jpg"
     events = await act_and_collect_events(agent_loop, prompt)
-    
+
     # Should not call the tool
     assert len(events) == 2  # User message and assistant response
     assert isinstance(events[0], UserMessageEvent)
@@ -424,22 +454,20 @@ async def test_read_image_with_permission_denied(tmp_path, monkeypatch):
 async def test_read_image_with_invalid_url(tmp_path, monkeypatch):
     """Test read_image tool with invalid URL."""
     monkeypatch.chdir(tmp_path)
-    
+
     # Create agent loop
     config = make_config()
     backend = FakeBackend([
-        [mock_llm_chunk(content="The URL 'not-a-valid-url' is not valid.")],
+        [mock_llm_chunk(content="The URL 'not-a-valid-url' is not valid.")]
     ])
     agent_loop = AgentLoop(
-        config=config,
-        backend=backend,
-        agent_name=BuiltinAgentName.DEFAULT,
+        config=config, backend=backend, agent_name=BuiltinAgentName.DEFAULT
     )
-    
+
     # Try to use read_image tool with invalid URL
     prompt = "Please analyze this image: not-a-valid-url"
     events = await act_and_collect_events(agent_loop, prompt)
-    
+
     # Should handle gracefully
     assert len(events) >= 2
     assert isinstance(events[0], UserMessageEvent)

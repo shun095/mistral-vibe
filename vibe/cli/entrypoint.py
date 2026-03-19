@@ -89,9 +89,7 @@ def parse_arguments() -> argparse.Namespace:
 
     # Web UI options
     parser.add_argument(
-        "--web",
-        action="store_true",
-        help="Start web UI server alongside TUI",
+        "--web", action="store_true", help="Start web UI server alongside TUI"
     )
     parser.add_argument(
         "--web-port",
