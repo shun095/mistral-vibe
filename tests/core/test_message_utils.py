@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from vibe.core.llm.message_utils import merge_consecutive_user_messages
 from vibe.core.types import LLMMessage, Role
 
@@ -40,10 +42,9 @@ class TestMergeConsecutiveUserMessages:
         assert len(merged[0].content) == 3
         assert merged[0].content[0] == {"type": "text", "text": "Hello"}
         assert merged[0].content[1] == {"type": "text", "text": "test message"}
-        assert merged[0].content[2]["type"] == "image_url"  # type: ignore[index]
-        assert (
-            merged[0].content[2]["image_url"]["url"] == "data:image/png;base64,abcdefg"  # type: ignore[index]
-        )
+        image_item = cast(dict, merged[0].content[2])
+        assert image_item["type"] == "image_url"
+        assert image_item["image_url"]["url"] == "data:image/png;base64,abcdefg"
 
     def test_merge_image_with_string_message(self) -> None:
         """Test merging multi-part content with image and string message."""
@@ -65,10 +66,9 @@ class TestMergeConsecutiveUserMessages:
         assert isinstance(merged[0].content, list)
         assert len(merged[0].content) == 3
         assert merged[0].content[0] == {"type": "text", "text": "test message"}
-        assert merged[0].content[1]["type"] == "image_url"  # type: ignore[index]
-        assert (
-            merged[0].content[1]["image_url"]["url"] == "data:image/png;base64,abcdefg"  # type: ignore[index]
-        )
+        image_item = cast(dict, merged[0].content[1])
+        assert image_item["type"] == "image_url"
+        assert image_item["image_url"]["url"] == "data:image/png;base64,abcdefg"
         assert merged[0].content[2] == {"type": "text", "text": "Hello"}
 
     def test_merge_two_image_messages(self) -> None:
@@ -100,15 +100,13 @@ class TestMergeConsecutiveUserMessages:
         assert isinstance(merged[0].content, list)
         assert len(merged[0].content) == 4
         assert merged[0].content[0] == {"type": "text", "text": "first message"}
-        assert merged[0].content[1]["type"] == "image_url"  # type: ignore[index]
-        assert (
-            merged[0].content[1]["image_url"]["url"] == "data:image/png;base64,image1"  # type: ignore[index]
-        )
+        image_item1 = cast(dict, merged[0].content[1])
+        assert image_item1["type"] == "image_url"
+        assert image_item1["image_url"]["url"] == "data:image/png;base64,image1"
         assert merged[0].content[2] == {"type": "text", "text": "second message"}
-        assert merged[0].content[3]["type"] == "image_url"  # type: ignore[index]
-        assert (
-            merged[0].content[3]["image_url"]["url"] == "data:image/jpeg;base64,image2"  # type: ignore[index]
-        )
+        image_item2 = cast(dict, merged[0].content[3])
+        assert image_item2["type"] == "image_url"
+        assert image_item2["image_url"]["url"] == "data:image/jpeg;base64,image2"
 
     def test_no_merge_different_roles(self) -> None:
         """Test that messages with different roles are not merged."""
@@ -162,7 +160,8 @@ class TestMergeConsecutiveUserMessages:
         assert isinstance(merged[0].content, list)
         assert len(merged[0].content) == 2
         assert merged[0].content[0] == {"type": "text", "text": "Hello"}
-        assert merged[0].content[1]["type"] == "image_url"  # type: ignore[index]
+        image_item = cast(dict, merged[0].content[1])
+        assert image_item["type"] == "image_url"
 
     def test_merge_three_consecutive_user_messages(self) -> None:
         """Test merging three consecutive user messages."""
@@ -197,5 +196,6 @@ class TestMergeConsecutiveUserMessages:
         assert len(merged[0].content) == 4
         assert merged[0].content[0] == {"type": "text", "text": "First"}
         assert merged[0].content[1] == {"type": "text", "text": "Second"}
-        assert merged[0].content[2]["type"] == "image_url"  # type: ignore[index]
+        image_item = cast(dict, merged[0].content[2])
+        assert image_item["type"] == "image_url"
         assert merged[0].content[3] == {"type": "text", "text": "Third"}

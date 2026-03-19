@@ -139,7 +139,119 @@ def _resume_previous_session(
     )
 
 
-def run_cli(args: argparse.Namespace) -> None:  # noqa: PLR0915
+def _run_programmatic_mode(
+    args: argparse.Namespace,
+    config: VibeConfig,
+    loaded_session: tuple[list[LLMMessage], Path] | None,
+    initial_agent_name: str,
+) -> None:
+    """Run CLI in programmatic mode with prompt from args or stdin."""
+    stdin_prompt = get_prompt_from_stdin()
+    config.disabled_tools = [*config.disabled_tools, "ask_user_question"]
+    programmatic_prompt = args.prompt or stdin_prompt
+    if not programmatic_prompt:
+        print("Error: No prompt provided for programmatic mode", file=sys.stderr)
+        sys.exit(1)
+
+    output_format = OutputFormat(args.output if hasattr(args, "output") else "text")
+
+    try:
+        final_response = run_programmatic(
+            config=config,
+            prompt=programmatic_prompt,
+            max_turns=args.max_turns,
+            max_price=args.max_price,
+            output_format=output_format,
+            previous_messages=loaded_session[0] if loaded_session else None,
+            agent_name=initial_agent_name,
+        )
+        if final_response:
+            print(final_response)
+        sys.exit(0)
+    except ConversationLimitException as e:
+        print(e, file=sys.stderr)
+        sys.exit(1)
+    except RuntimeError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _run_interactive_mode_with_web(
+    args: argparse.Namespace, agent_loop: AgentLoop, stdin_prompt: str | None
+) -> None:
+    """Run interactive mode with web UI server."""
+    import os
+
+    from vibe.cli.plan_offer.adapters.http_whoami_gateway import HttpWhoAmIGateway
+    from vibe.cli.textual_ui.app import VibeApp, _print_session_resume_message
+    from vibe.cli.update_notifier import (
+        FileSystemUpdateCacheRepository,
+        PyPIUpdateGateway,
+    )
+    from vibe.cli.web_ui.run_server import run_web_server_in_background
+
+    token = os.environ.get("VIBE_WEB_TOKEN", "")
+
+    update_notifier = PyPIUpdateGateway(project_name="mistral-vibe")
+    update_cache_repository = FileSystemUpdateCacheRepository()
+    plan_offer_gateway = HttpWhoAmIGateway()
+    tui_app = VibeApp(
+        agent_loop=agent_loop,
+        initial_prompt=args.initial_prompt or stdin_prompt,
+        teleport_on_start=args.teleport,
+        update_notifier=update_notifier,
+        update_cache_repository=update_cache_repository,
+        plan_offer_gateway=plan_offer_gateway,
+    )
+
+    rprint(f"\n[green]Starting Web UI on port {args.web_port}...[/]\n")
+    web_server_thread = run_web_server_in_background(
+        port=args.web_port, token=token, agent_loop=agent_loop, tui_app=tui_app
+    )
+    rprint(
+        f"[green]Web UI started at http://localhost:{args.web_port}/?token={token}[/]\n"
+    )
+
+    session_id = tui_app.run()
+    _print_session_resume_message(session_id)
+    web_server_thread.join(timeout=2)
+
+
+def _run_interactive_mode(
+    args: argparse.Namespace,
+    config: VibeConfig,
+    loaded_session: tuple[list[LLMMessage], Path] | None,
+    initial_agent_name: str,
+) -> None:
+    """Run CLI in interactive mode, optionally with web UI."""
+    stdin_prompt = get_prompt_from_stdin()
+    agent_loop = AgentLoop(
+        config,
+        agent_name=initial_agent_name,
+        enable_streaming=True,
+        entrypoint_metadata=EntrypointMetadata(
+            agent_entrypoint="cli",
+            agent_version=__version__,
+            client_name="vibe_cli",
+            client_version=__version__,
+        ),
+    )
+
+    if loaded_session:
+        _resume_previous_session(agent_loop, *loaded_session)
+
+    if args.web:
+        _run_interactive_mode_with_web(args, agent_loop, stdin_prompt)
+    else:
+        run_textual_ui(
+            agent_loop=agent_loop,
+            initial_prompt=args.initial_prompt or stdin_prompt,
+            teleport_on_start=args.teleport,
+        )
+
+
+def run_cli(args: argparse.Namespace) -> None:
+    """Run the CLI with the given arguments."""
     load_dotenv_values()
     bootstrap_config_files()
 
@@ -156,114 +268,10 @@ def run_cli(args: argparse.Namespace) -> None:  # noqa: PLR0915
 
         loaded_session = load_session(args, config)
 
-        stdin_prompt = get_prompt_from_stdin()
         if args.prompt is not None:
-            config.disabled_tools = [*config.disabled_tools, "ask_user_question"]
-            programmatic_prompt = args.prompt or stdin_prompt
-            if not programmatic_prompt:
-                print(
-                    "Error: No prompt provided for programmatic mode", file=sys.stderr
-                )
-                sys.exit(1)
-            output_format = OutputFormat(
-                args.output if hasattr(args, "output") else "text"
-            )
-
-            try:
-                final_response = run_programmatic(
-                    config=config,
-                    prompt=programmatic_prompt,
-                    max_turns=args.max_turns,
-                    max_price=args.max_price,
-                    output_format=output_format,
-                    previous_messages=loaded_session[0] if loaded_session else None,
-                    agent_name=initial_agent_name,
-                )
-                if final_response:
-                    print(final_response)
-                sys.exit(0)
-            except ConversationLimitException as e:
-                print(e, file=sys.stderr)
-                sys.exit(1)
-            except RuntimeError as e:
-                print(f"Error: {e}", file=sys.stderr)
-                sys.exit(1)
+            _run_programmatic_mode(args, config, loaded_session, initial_agent_name)
         else:
-            agent_loop = AgentLoop(
-                config,
-                agent_name=initial_agent_name,
-                enable_streaming=True,
-                entrypoint_metadata=EntrypointMetadata(
-                    agent_entrypoint="cli",
-                    agent_version=__version__,
-                    client_name="vibe_cli",
-                    client_version=__version__,
-                ),
-            )
-
-            if loaded_session:
-                _resume_previous_session(agent_loop, *loaded_session)
-
-            # Start web server if --web flag is provided
-            web_server_thread = None
-            tui_app = None
-
-            if args.web:
-                import os
-
-                from vibe.cli.plan_offer.adapters.http_whoami_gateway import (
-                    HttpWhoAmIGateway,
-                )
-                from vibe.cli.textual_ui.app import (
-                    VibeApp,
-                    _print_session_resume_message,
-                )
-                from vibe.cli.update_notifier import (
-                    FileSystemUpdateCacheRepository,
-                    PyPIUpdateGateway,
-                )
-                from vibe.cli.web_ui.run_server import run_web_server_in_background
-
-                token = os.environ.get("VIBE_WEB_TOKEN", "")
-
-                # Create TUI app instance
-                update_notifier = PyPIUpdateGateway(project_name="mistral-vibe")
-                update_cache_repository = FileSystemUpdateCacheRepository()
-                plan_offer_gateway = HttpWhoAmIGateway()
-                tui_app = VibeApp(
-                    agent_loop=agent_loop,
-                    initial_prompt=args.initial_prompt or stdin_prompt,
-                    teleport_on_start=args.teleport,
-                    update_notifier=update_notifier,
-                    update_cache_repository=update_cache_repository,
-                    plan_offer_gateway=plan_offer_gateway,
-                )
-
-                # Start web server with TUI app (before running TUI)
-                rprint(f"\n[green]Starting Web UI on port {args.web_port}...[/]\n")
-                web_server_thread = run_web_server_in_background(
-                    port=args.web_port,
-                    token=token,
-                    agent_loop=agent_loop,
-                    tui_app=tui_app,
-                )
-                rprint(
-                    f"[green]Web UI started at http://localhost:{args.web_port}/?token={token}[/]\n"
-                )
-
-                # Run TUI (this blocks until TUI exits)
-                session_id = tui_app.run()
-                _print_session_resume_message(session_id)
-
-                # Clean up web server thread
-                web_server_thread.join(timeout=2)
-            else:
-                # Run TUI without web server
-                run_textual_ui(
-                    agent_loop=agent_loop,
-                    initial_prompt=args.initial_prompt or stdin_prompt,
-                    teleport_on_start=args.teleport,
-                )
+            _run_interactive_mode(args, config, loaded_session, initial_agent_name)
 
     except (KeyboardInterrupt, EOFError):
         rprint("\n[dim]Bye![/]")
