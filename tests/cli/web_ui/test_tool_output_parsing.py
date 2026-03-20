@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from tests.cli.web_ui.conftest import MockToolManager
 from vibe.cli.web_ui.server import _parse_tool_output
 
 
@@ -10,6 +11,16 @@ class TestParseToolOutput:
 
     def test_parse_edit_file_output(self) -> None:
         """Test parsing edit_file tool output with multi-line content."""
+        from vibe.core.tools.builtins.edit_file import (
+            EditFile,
+            EditFileConfig,
+            EditFileState,
+        )
+
+        mock_tm = MockToolManager({
+            "edit_file": EditFile(config=EditFileConfig(), state=EditFileState())
+        })
+
         content = (
             "file: /project/vibe/cli/web_ui/static/js/app.js\n"
             "blocks_applied: 1\n"
@@ -28,7 +39,9 @@ class TestParseToolOutput:
             'lsp_diagnostics: {"source":"LSP in /project/vibe/cli/web_ui/static/js/app.js","max_displayed":10,"original_count":236,"diagnostics":[{"severity":"error","location":"line 5","message":"Test error"}]}'
         )
 
-        result = _parse_tool_output(content)
+        result = _parse_tool_output(
+            content, tool_name="edit_file", tool_manager=mock_tm
+        )
 
         assert result["file"] == "/project/vibe/cli/web_ui/static/js/app.js"
         assert result["blocks_applied"] == "1"
@@ -38,13 +51,20 @@ class TestParseToolOutput:
         assert "--- ORIGINAL" in result["content"]
         assert "+++ MODIFIED" in result["content"]
         assert "ApprovalPopupEvent" in result["content"]
-        # lsp_diagnostics is now single-line JSON
+        # lsp_diagnostics is single-line JSON
         assert result["lsp_diagnostics"].startswith('{"source":"LSP')
         assert "max_displayed" in result["lsp_diagnostics"]
         assert "original_count" in result["lsp_diagnostics"]
 
     def test_parse_write_file_output(self) -> None:
         """Test parsing write_file tool output with multi-line content."""
+        from vibe.core.tools.base import BaseToolState
+        from vibe.core.tools.builtins.write_file import WriteFile, WriteFileConfig
+
+        mock_tm = MockToolManager({
+            "write_file": WriteFile(config=WriteFileConfig(), state=BaseToolState())
+        })
+
         content = (
             "path: /project/tests/cli/web_ui/test_popup_events.py\n"
             "bytes_written: 8462\n"
@@ -65,7 +85,9 @@ class TestParseToolOutput:
             'lsp_diagnostics: {"source":"LSP in /project/tests/cli/web_ui/test_popup_events.py","max_displayed":10,"original_count":5,"diagnostics":[]}'
         )
 
-        result = _parse_tool_output(content)
+        result = _parse_tool_output(
+            content, tool_name="write_file", tool_manager=mock_tm
+        )
 
         assert result["path"] == "/project/tests/cli/web_ui/test_popup_events.py"
         assert result["bytes_written"] == "8462"
@@ -79,6 +101,13 @@ class TestParseToolOutput:
 
     def test_parse_bash_output(self) -> None:
         """Test parsing bash tool output."""
+        from vibe.core.tools.base import BaseToolState
+        from vibe.core.tools.builtins.bash import Bash, BashToolConfig
+
+        mock_tm = MockToolManager({
+            "bash": Bash(config=BashToolConfig(), state=BaseToolState())
+        })
+
         content = (
             "command: cd /project && uv run pytest tests/cli/web_ui/test_popup_events.py -xvs 2>&1 | tail -30\n"
             "stdout: tests/cli/web_ui/test_popup_events.py::TestApprovalPopupEventSerialization::test_serialize_approval_popup_event\n"
@@ -90,7 +119,7 @@ class TestParseToolOutput:
             "returncode: 0"
         )
 
-        result = _parse_tool_output(content)
+        result = _parse_tool_output(content, tool_name="bash", tool_manager=mock_tm)
 
         assert (
             result["command"]
@@ -102,15 +131,14 @@ class TestParseToolOutput:
         assert result["stderr"] == ""
         assert result["returncode"] == "0"
 
-    def test_parse_simple_key_value(self) -> None:
-        """Test parsing simple key-value pairs."""
+    def test_parse_simple_key_value_without_tool_manager(self) -> None:
+        """Test parsing without tool_manager returns empty dict (no known fields)."""
         content = "key1: value1\nkey2: value2\nkey3: value3"
 
         result = _parse_tool_output(content)
 
-        assert result["key1"] == "value1"
-        assert result["key2"] == "value2"
-        assert result["key3"] == "value3"
+        # Without tool_manager, no known fields, so nothing is parsed
+        assert result == {}
 
     def test_parse_empty_content(self) -> None:
         """Test parsing empty content."""
@@ -120,46 +148,42 @@ class TestParseToolOutput:
 
         assert result == {}
 
-    def test_parse_single_line_keys_only(self) -> None:
-        """Test parsing content with only single-line keys."""
+    def test_parse_single_line_keys_only_without_tool_manager(self) -> None:
+        """Test parsing without tool_manager returns empty dict."""
         content = "file: test.py\nbytes_written: 100\nreturncode: 0"
 
         result = _parse_tool_output(content)
 
-        assert result["file"] == "test.py"
-        assert result["bytes_written"] == "100"
-        assert result["returncode"] == "0"
+        # Without tool_manager, no known fields, so nothing is parsed
+        assert result == {}
 
-    def test_multi_line_fields_are_excluded(self) -> None:
-        """Test that known multi-line fields result in multi-line parsing."""
+    def test_result_model_fields_only(self) -> None:
+        """Test that only Result model fields are recognized as key delimiters."""
         from vibe.core.tools.base import BaseToolState
         from vibe.core.tools.builtins.bash import Bash, BashToolConfig
         from vibe.core.tools.builtins.grep import Grep, GrepToolConfig
 
-        class MockToolManager:
-            def get(self, name: str):
-                if name == "bash":
-                    return Bash(config=BashToolConfig(), state=BaseToolState())
-                elif name == "grep":
-                    return Grep(config=GrepToolConfig(), state=BaseToolState())
-                raise ValueError(f"Unknown tool: {name}")
+        mock_tm = MockToolManager({
+            "bash": Bash(config=BashToolConfig(), state=BaseToolState()),
+            "grep": Grep(config=GrepToolConfig(), state=BaseToolState()),
+        })
 
-        mock_tm = MockToolManager()
-
-        # Test bash - stdout should be parsed as multi-line
+        # Test bash - stdout should capture lines containing "file:" as content
         bash_output = (
             "command: ls -la\n"
             "stdout: total 12\n"
             "drwxr-xr-x 1 user user 4096 .\n"
+            "file: test.py\n"
             "returncode: 0"
         )
         result = _parse_tool_output(bash_output, tool_name="bash", tool_manager=mock_tm)
         assert result["command"] == "ls -la"
         assert "total 12" in result["stdout"]
-        assert "drwxr-xr-x" in result["stdout"]  # Multi-line value captured
+        assert "drwxr-xr-x" in result["stdout"]
+        assert "file: test.py" in result["stdout"]  # Not a known field, part of stdout
         assert result["returncode"] == "0"
 
-        # Test grep - matches should be parsed as multi-line
+        # Test grep - matches should capture multi-line output
         grep_output = (
             "matches: /path/to/file.py:10:found pattern\n"
             "/another/file.py:20:also found\n"
@@ -174,16 +198,12 @@ class TestParseToolOutput:
 
     def test_parse_with_tool_name_and_manager(self) -> None:
         """Test parsing with tool_name to use dynamic field detection."""
-        from vibe.cli.web_ui.server import _parse_tool_output
         from vibe.core.tools.base import BaseToolState
         from vibe.core.tools.builtins.bash import Bash, BashToolConfig
 
-        # Create a mock tool manager
-        class MockToolManager:
-            def get(self, name: str):
-                return Bash(config=BashToolConfig(), state=BaseToolState())
-
-        mock_tm = MockToolManager()
+        mock_tm = MockToolManager({
+            "bash": Bash(config=BashToolConfig(), state=BaseToolState())
+        })
 
         # Bash output with multi-line stdout
         content = (

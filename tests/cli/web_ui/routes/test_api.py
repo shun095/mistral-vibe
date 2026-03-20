@@ -141,22 +141,38 @@ def test_messages_to_events_converts_tool_results() -> None:
 
 def test_messages_to_events_parses_text_format_tool_results() -> None:
     """Test that messages_to_events parses text format tool results."""
+    from tests.cli.web_ui.conftest import MockToolManager
+    from vibe.core.tools.base import BaseToolState
+    from vibe.core.tools.builtins.write_file import WriteFile, WriteFileConfig
     from vibe.core.types import ToolResultEvent
 
+    # Need assistant message with tool call to populate tool_call_to_name map
+    tool_call = ToolCall(
+        id="call_789",
+        index=0,
+        function=FunctionCall(name="write_file", arguments='{"path": "/test/file.py"}'),
+    )
     messages = [
+        LLMMessage(role=Role.assistant, tool_calls=[tool_call]),
         LLMMessage(
             role=Role.tool,
             tool_call_id="call_789",
-            content="success: true\nbytes_written: 24",
-        )
+            content="path: /test/file.py\nbytes_written: 24\nfile_existed: false\ncontent: test",
+        ),
     ]
-    events = messages_to_events(messages, MockToolManager())  # type: ignore[call-arg])
-    assert len(events) == 1
-    assert isinstance(events[0], ToolResultEvent)
-    assert events[0].result is not None
+    mock_tm = MockToolManager({
+        "write_file": WriteFile(config=WriteFileConfig(), state=BaseToolState())
+    })
+    events = messages_to_events(messages, mock_tm)  # type: ignore[call-arg]
+    assert len(events) == 2  # ToolCallEvent + ToolResultEvent
+    tool_result_events = [e for e in events if isinstance(e, ToolResultEvent)]
+    assert len(tool_result_events) == 1
+    event = tool_result_events[0]
+    assert event.result is not None
     # Text format stores values as strings
-    assert events[0].result.success == "true"  # type: ignore
-    assert events[0].result.bytes_written == "24"  # type: ignore
+    assert event.result.path == "/test/file.py"  # type: ignore
+    assert event.result.bytes_written == "24"  # type: ignore
+    assert event.result.file_existed == "false"  # type: ignore
 
 
 def test_messages_to_events_full_conversation() -> None:
