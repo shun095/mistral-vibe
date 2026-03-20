@@ -10,6 +10,7 @@ import { ImageAttachmentHandler } from './image-attachment.js';
 import { WebSocketClient } from './websocket-client.js';
 import { APIClient } from './api-client.js';
 import { MessageStreamer } from './message-streamer.js';
+import { showBrowserNotification } from './notification.js';
 
 class VibeClient {
     constructor() {
@@ -257,6 +258,9 @@ class VibeClient {
             case 'MessageResetEvent':
                 this.handleMessageReset(event.reason);
                 break;
+            case 'WebNotificationEvent':
+                this.handleWebNotification(event);
+                break;
         }
     }
 
@@ -339,6 +343,15 @@ class VibeClient {
         }
 
         setTimeout(() => this.forceScrollToBottom(), 0);
+    }
+
+    /**
+     * Handle web notification event
+     * @param {Object} event
+     */
+    handleWebNotification(event) {
+        const { title, message } = event;
+        showBrowserNotification(title, message);
     }
 
     // Message streamer callbacks (thin delegates to UI methods)
@@ -1220,7 +1233,9 @@ class VibeClient {
     }
 
     formatAskUserQuestionResult(card, result) {
-        const answerCount = result.answers?.length || 0;
+        // Ensure answers is an array - handle cases where it might be a string or object
+        const answers = Array.isArray(result.answers) ? result.answers : [];
+        const answerCount = answers.length;
         const cancelled = result.cancelled ? ' (cancelled)' : '';
 
         this.createCardHeader(card, 'User Answers',
@@ -1229,8 +1244,8 @@ class VibeClient {
 
         const content = card.querySelector('.card-content');
 
-        if (result.answers?.length > 0) {
-            result.answers.forEach(answer => {
+        if (answers.length > 0) {
+            answers.forEach(answer => {
                 const answerItem = document.createElement('div');
                 answerItem.className = 'answer-item';
                 answerItem.innerHTML = `
