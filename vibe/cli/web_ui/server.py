@@ -128,19 +128,6 @@ def _create_pydantic_model_from_dict(data: dict) -> Any:
 
 # Multi-line fields: text blobs that span multiple lines
 # All other fields are treated as single-line by default
-MULTI_LINE_FIELDS: set[str] = {
-    "content",  # read_file, write_file, edit_file, search_replace, webfetch
-    "stdout",  # bash
-    "stderr",  # bash
-    "text",  # mcp
-    "body",  # generic
-    "data",  # generic
-    "matches",  # grep - multi-line grep output
-    "response",  # task - subagent accumulated response
-    "answer",  # websearch - joined text parts
-}
-
-
 def _parse_tool_output(
     content: str, tool_name: str | None = None, tool_manager: Any = None
 ) -> dict:
@@ -150,8 +137,9 @@ def _parse_tool_output(
         key1: value1
         key2: value2 (may span multiple lines)
 
-    A field is multi-line if it's in MULTI_LINE_FIELDS. All other fields are
-    treated as single-line (key delimiters).
+    Only keys that exist in the tool's Result model are recognized as field
+    delimiters. All other lines are treated as value continuations. This
+    prevents false positives when field values contain lines like "file: ...".
 
     Args:
         content: The tool output text to parse.
@@ -175,54 +163,41 @@ def _parse_tool_output(
         except Exception:
             pass
 
-    def is_single_line_key(key: str) -> bool:
-        """Check if a key should be treated as single-line (key delimiter).
-
-        A key is single-line if:
-        1. It's not in MULTI_LINE_FIELDS, AND
-        2. It's a known field from the tool's Result model (if available)
-        """
-        if key in MULTI_LINE_FIELDS:
-            return False
-        if known_fields is not None:
-            return key in known_fields
-        # Unknown tool: treat all non-multi-line keys as single-line
-        return True
-
     lines = content.strip().split("\n")
     current_key: str | None = None
     current_value_lines: list[str] = []
 
     for line in lines:
         # Check if this line starts a new key-value pair
-        # A new key starts with a word followed by ": " at the beginning of the line
+        # A new key must:
+        # 1. Not start with whitespace
+        # 2. Contain ": "
+        # 3. Have a known field name before the ": "
         if (
             line
             and not line.startswith(" ")
             and not line.startswith("\t")
             and ": " in line
         ):
-            # Save previous key-value pair if exists
-            if current_key is not None:
-                result[current_key] = "\n".join(current_value_lines).strip()
-
-            # Extract key and start of value
+            # Extract potential key
             colon_idx = line.index(": ")
-            current_key = line[:colon_idx].strip()
-            value_start = line[colon_idx + 2 :]
+            potential_key = line[:colon_idx].strip()
 
-            if value_start:
-                # Check if this is a single-line key using the helper function
-                if is_single_line_key(current_key):
-                    result[current_key] = value_start.strip()
-                    current_key = None
-                    current_value_lines = []
-                else:
-                    current_value_lines = [value_start]
-            else:
-                current_value_lines = []
+            # Only treat as new key if it's a known field from Result model
+            if known_fields is not None and potential_key in known_fields:
+                # Save previous key-value pair if exists
+                if current_key is not None:
+                    result[current_key] = "\n".join(current_value_lines).strip()
+
+                # Start new key-value pair
+                current_key = potential_key
+                value_start = line[colon_idx + 2 :]
+                current_value_lines = [value_start] if value_start else []
+            elif current_key is not None:
+                # Not a known key, append to current value (multi-line continuation)
+                current_value_lines.append(line)
         elif current_key is not None:
-            # Continue multi-line value
+            # Continuation line (starts with whitespace or no ": ")
             current_value_lines.append(line)
 
     # Save last key-value pair
