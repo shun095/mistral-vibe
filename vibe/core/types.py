@@ -512,6 +512,21 @@ class MessageResetEvent(BaseEvent):
     )
 
 
+class WebNotificationEvent(BaseEvent):
+    """Event broadcast to trigger browser notifications in WebUI.
+
+    Triggered when user interaction is required or task completes.
+    """
+
+    context: Literal["action_required", "complete"] = Field(
+        description="Context for the notification"
+    )
+    title: str = Field(description="Notification title")
+    message: str | None = Field(
+        default=None, description="Optional notification message"
+    )
+
+
 class MessageList(Sequence[LLMMessage]):
     def __init__(
         self,

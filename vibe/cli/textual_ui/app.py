@@ -16,6 +16,12 @@ from pydantic import BaseModel
 
 # Constants
 MESSAGE_PREVIEW_LENGTH = 50
+
+# Web notification constants
+WEB_NOTIFICATION_ACTION_TITLE = "Action Required"
+WEB_NOTIFICATION_COMPLETE_TITLE = "Task Complete"
+WEB_NOTIFICATION_COMPLETE_MESSAGE = "Assistant has finished processing"
+
 from rich import print as rprint
 from textual.app import WINDOWS, App, ComposeResult
 from textual.binding import Binding, BindingType
@@ -133,6 +139,7 @@ from vibe.core.types import (
     QuestionPopupEvent,
     RateLimitError,
     Role,
+    WebNotificationEvent,
 )
 from vibe.core.utils import (
     CancellationReason,
@@ -839,6 +846,11 @@ class VibeApp(App):  # noqa: PLR0904
                 await self.event_handler.finalize_streaming()
             await self._refresh_windowing_from_history()
             self._terminal_notifier.notify(NotificationContext.COMPLETE)
+            self._broadcast_web_notification(
+                "complete",
+                WEB_NOTIFICATION_COMPLETE_TITLE,
+                WEB_NOTIFICATION_COMPLETE_MESSAGE,
+            )
 
     def submit_message_from_web(
         self, message: str, image_data: dict | None = None
@@ -965,6 +977,28 @@ class VibeApp(App):  # noqa: PLR0904
                 },
                 cancelled=result.cancelled,
             )
+            self.agent_loop._notify_event_listeners(event)
+        except Exception:
+            pass
+
+    def _broadcast_web_notification(
+        self,
+        context: Literal["action_required", "complete"],
+        title: str,
+        message: str | None = None,
+    ) -> None:
+        """Broadcast web notification event to WebUI.
+
+        Args:
+            context: Notification context (action_required or complete).
+            title: Notification title.
+            message: Optional notification message.
+        """
+        if not self.config.enable_web_notifications:
+            return
+
+        try:
+            event = WebNotificationEvent(context=context, title=title, message=message)
             self.agent_loop._notify_event_listeners(event)
         except Exception:
             pass
@@ -1160,6 +1194,11 @@ class VibeApp(App):  # noqa: PLR0904
                 mode="json", exclude_none=True
             )
             self._terminal_notifier.notify(NotificationContext.ACTION_REQUIRED)
+            self._broadcast_web_notification(
+                "action_required",
+                WEB_NOTIFICATION_ACTION_TITLE,
+                f"Tool '{tool}' needs approval",
+            )
             try:
                 with paused_timer(self._loading_widget):
                     await self._switch_to_approval_app(tool, args)
@@ -1193,6 +1232,11 @@ class VibeApp(App):  # noqa: PLR0904
                 mode="json", exclude_none=True
             )
             self._terminal_notifier.notify(NotificationContext.ACTION_REQUIRED)
+            self._broadcast_web_notification(
+                "action_required",
+                WEB_NOTIFICATION_ACTION_TITLE,
+                "Assistant has a question for you",
+            )
             try:
                 with paused_timer(self._loading_widget):
                     await self._switch_to_question_app(question_args)
@@ -1259,6 +1303,11 @@ class VibeApp(App):  # noqa: PLR0904
                 await self.event_handler.finalize_streaming()
             await self._refresh_windowing_from_history()
             self._terminal_notifier.notify(NotificationContext.COMPLETE)
+            self._broadcast_web_notification(
+                "complete",
+                WEB_NOTIFICATION_COMPLETE_TITLE,
+                WEB_NOTIFICATION_COMPLETE_MESSAGE,
+            )
 
     def _rate_limit_message(self) -> str:
         upgrade_to_pro = self._plan_info and (
