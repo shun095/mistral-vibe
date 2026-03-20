@@ -1,42 +1,20 @@
-// Mistral Vibe Web UI - WebSocket Client
+// Mistral Vibe Web UI - Main Application
+//
+// Orchestrates WebSocket connection, API calls, and UI updates.
+// Delegates concerns to specialized modules.
 
-// Import modules (ES6 modules for browser)
 import { QuestionHandler } from './question-handler.js';
 import * as scrollUtils from './scroll-utils.js';
 import { SlashCommandRegistry, SlashAutocomplete } from './slash-commands.js';
 import { ImageAttachmentHandler } from './image-attachment.js';
+import { WebSocketClient } from './websocket-client.js';
+import { APIClient } from './api-client.js';
+import { MessageStreamer } from './message-streamer.js';
 
-/**
- * @typedef {Object} VibeClient
- */
 class VibeClient {
     constructor() {
-        this.ws = null;
         this.token = this.getTokenFromURL();
-        this.connecting = false;
-        this.reconnectAttempts = 0;
-        this.maxReconnectAttempts = 5;
-        this.reconnectDelay = 1000;
         this.historyLoaded = false;
-        
-        // Initialize QuestionHandler
-        this.questionHandler = new QuestionHandler();
-
-        // Initialize slash command system
-        this.slashRegistry = new SlashCommandRegistry();
-        this.slashRegistry.token = this.token;
-        this.slashAutocomplete = null; // Will be initialized in init()
-
-        // Image attachment handler (initialized in init() after DOM elements are ready)
-        this.imageAttachment = null;
-
-        // Streaming state
-        this.currentReasoningMessage = null;
-        this.currentReasoningText = '';
-        this.currentAssistantMessage = null;
-        this.currentAssistantText = '';
-        this.currentToolCall = null;
-        this.currentToolCallId = null;
         this.isProcessing = false;
         this.statusPollInterval = null;
 
@@ -45,6 +23,16 @@ class VibeClient {
         this.currentPopupElement = null;
         this.wasAtBottomBeforePopup = false;
 
+        // UI rendering state
+        this.currentReasoningMessage = null;
+        this.currentReasoningText = '';
+        this.currentAssistantMessage = null;
+        this.currentAssistantText = '';
+        this.currentToolCall = null;
+        this.currentToolCallId = null;
+        this.toolCallMap = new Map(); // Map<toolCallId, toolCallElement>
+
+        // DOM elements
         this.elements = {
             status: document.getElementById('status'),
             messages: document.getElementById('messages'),
@@ -60,9 +48,55 @@ class VibeClient {
             imageFileInput: document.getElementById('image-file-input'),
         };
 
-        this.historyLoaded = false;
-
+        // Initialize modules
+        this._initModules();
         this.init();
+    }
+
+    _initModules() {
+        this.questionHandler = new QuestionHandler();
+        this.slashRegistry = new SlashCommandRegistry();
+        this.slashRegistry.token = this.token;
+        this.slashAutocomplete = null;
+        this.imageAttachment = null;
+
+        this.wsClient = new WebSocketClient({
+            token: this.token,
+            onOpen: () => this._onWsOpen(),
+            onMessage: (msg) => this._onWsMessage(msg),
+            onClose: () => this._onWsClose(),
+            onError: (err) => this._onWsError(err)
+        });
+
+        this.apiClient = new APIClient(this.token);
+
+        this.messageStreamer = new MessageStreamer({
+            onReasoningStart: (data) => this._onReasoningStart(data),
+            onReasoningUpdate: (data) => this._onReasoningUpdate(data),
+            onReasoningEnd: () => this._onReasoningEnd(),
+            onAssistantStart: (data) => this._onAssistantStart(data),
+            onAssistantUpdate: (data) => this._onAssistantUpdate(data),
+            onAssistantEnd: () => this._onAssistantEnd(),
+            onToolCallStart: (data) => this._onToolCallStart(data),
+            onToolCallUpdate: (data) => this._updateExistingToolCall(data),
+            onToolResult: (data) => this._onToolResult(data),
+            onStopStreaming: () => this._onStopStreaming()
+        });
+    }
+
+    init() {
+        this.bindEvents();
+
+        if (this.elements.input && !this.slashAutocomplete) {
+            this.slashAutocomplete = new SlashAutocomplete(this.elements.input, this.slashRegistry);
+        }
+
+        this.slashRegistry.loadCommands();
+        this.updatePlaceholder();
+        window.addEventListener('resize', () => this.updatePlaceholder());
+        this.loadTheme();
+        this.wsClient.connect();
+        this.startStatusPolling();
     }
 
     getTokenFromURL() {
@@ -72,10 +106,8 @@ class VibeClient {
 
     bindEvents() {
         this.elements.sendBtn.addEventListener('click', () => this.sendMessage());
-        
         this.elements.interruptBtn.addEventListener('click', () => this.requestInterrupt());
-        
-        // Enable Ctrl+Enter/Cmd+Enter to submit, plain Enter for newlines
+
         this.elements.input.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                 e.preventDefault();
@@ -83,23 +115,15 @@ class VibeClient {
             }
         });
 
-       this.elements.input.addEventListener('input', () => {
+        this.elements.input.addEventListener('input', () => {
             this.updateSendButtonState();
             this.autoResizeTextarea();
         });
 
-        // Auto-resize textarea based on content
-        this.elements.input.addEventListener('scroll', () => {
-            this.autoResizeTextarea();
-        });
-
-        // Bind scroll navigation buttons
+        this.elements.input.addEventListener('scroll', () => this.autoResizeTextarea());
         this.bindScrollNavigationEvents();
-        
-        // Bind theme toggle button
         this.elements.themeToggle.addEventListener('click', () => this.toggleTheme());
-        
-        // Initialize image attachment handler
+
         this.imageAttachment = new ImageAttachmentHandler({
             previewContainer: this.elements.imagePreviewContainer,
             previewImg: this.elements.imagePreviewImg,
@@ -108,17 +132,10 @@ class VibeClient {
             onImageRemoved: () => this.updateSendButtonState(),
             onError: (msg) => this.addMessage('system', msg)
         });
-        
-        // Bind paste event for image attachment
+
         this.elements.input.addEventListener('paste', (e) => this.imageAttachment.handlePaste(e));
-        
-        // Bind image preview remove button
         this.elements.imagePreviewRemove.addEventListener('click', () => this.imageAttachment.removeImage());
-        
-        // Bind attach image button
         this.elements.attachImageBtn.addEventListener('click', () => this.elements.imageFileInput.click());
-        
-        // Bind file input change event
         this.elements.imageFileInput.addEventListener('change', (e) => this.imageAttachment.handleFileSelect(e));
     }
 
@@ -126,77 +143,33 @@ class VibeClient {
         const textarea = this.elements.input;
         textarea.style.height = 'auto';
         const scrollHeight = textarea.scrollHeight;
-        const lineHeight = 27; // Approximate line height (font-size 1rem * line-height 1.5 + padding)
+        const lineHeight = 27;
         const maxLines = 5;
-        const maxHeight = lineHeight * maxLines;
-        textarea.style.height = Math.min(scrollHeight, maxHeight) + 'px';
-    }
-
-    init() {
-        this.bindEvents();
-        
-        // Initialize autocomplete after input element is available
-        if (this.elements.input && !this.slashAutocomplete) {
-            this.slashAutocomplete = new SlashAutocomplete(
-                this.elements.input,
-                this.slashRegistry
-            );
-        }
-        
-        // Load commands for autocomplete
-        this.slashRegistry.loadCommands();
-        
-        // Set placeholder based on viewport width
-        this.updatePlaceholder();
-        window.addEventListener('resize', () => this.updatePlaceholder());
-        
-        // Load saved theme
-        this.loadTheme();
-        
-        this.connect();
-        // Start polling for agent status
-        this.startStatusPolling();
-        // History will be streamed via WebSocket after connection
+        textarea.style.height = Math.min(scrollHeight, lineHeight * maxLines) + 'px';
     }
 
     startStatusPolling() {
-        // Poll status every 500ms
         this.statusPollInterval = setInterval(() => this.pollStatus(), 500);
     }
 
     async pollStatus() {
-        try {
-            const response = await fetch('/api/status', {
-                headers: {
-                    'Authorization': `Bearer ${this.token}`
-                }
-            });
-            if (!response.ok) {
-                return;
-            }
-
-            const data = await response.json();
+        const data = await this.apiClient.getStatus();
+        if (data) {
             this.updateProcessingState(data.running);
-        } catch (error) {
-            console.error('Failed to poll status:', error);
         }
     }
 
     updateProcessingState(isRunning) {
-        if (isRunning === this.isProcessing) {
-            return;
-        }
+        if (isRunning === this.isProcessing) return;
 
         this.isProcessing = isRunning;
 
         if (isRunning) {
-            // Show processing indicator and interrupt button
             this.elements.processingIndicator.style.display = 'flex';
             this.elements.interruptBtn.style.display = 'inline-flex';
             this.elements.sendBtn.style.display = 'none';
             this.elements.input.disabled = true;
         } else {
-            // Hide processing indicator and interrupt button
             this.elements.processingIndicator.style.display = 'none';
             this.elements.interruptBtn.style.display = 'none';
             this.elements.sendBtn.style.display = 'flex';
@@ -205,78 +178,27 @@ class VibeClient {
     }
 
     async requestInterrupt() {
-        try {
-            const response = await fetch('/api/interrupt', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${this.token}`,
-                    'Content-Type': 'application/json'
-                }
-            });
-            if (response.ok) {
-                // Add a visual feedback message
-                this.addMessage('system', '⏹️ Interrupt requested...');
-            }
-        } catch (error) {
-            console.error('Failed to request interrupt:', error);
-            this.addMessage('system', 'Failed to request interrupt');
-        }
+        const success = await this.apiClient.requestInterrupt();
+        this.addMessage('system', success ? '⏹️ Interrupt requested...' : 'Failed to request interrupt');
     }
 
-    connect() {
-        if (this.connecting || this.ws?.readyState === WebSocket.OPEN) {
-            return;
-        }
-
-        this.connecting = true;
-        this.updateStatus('Connecting...');
-
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}/ws?token=${this.token}`;
-
-        try {
-            this.ws = new WebSocket(wsUrl);
-
-            this.ws.onopen = () => {
-                this.connecting = false;
-                this.reconnectAttempts = 0;
-                this.updateStatus('Connected', true);
-                this.elements.sendBtn.disabled = false;
-            };
-
-            this.ws.onmessage = (event) => {
-                this.handleMessage(JSON.parse(event.data));
-            };
-
-            this.ws.onclose = () => {
-                this.connecting = false;
-                this.updateStatus('Disconnected');
-                this.attemptReconnect();
-            };
-
-            this.ws.onerror = () => {
-                this.connecting = false;
-                this.updateStatus('Error');
-            };
-        } catch (error) {
-            console.error('WebSocket connection error:', error);
-            this.connecting = false;
-            this.updateStatus('Error');
-        }
+    // WebSocket callbacks (thin delegates)
+    _onWsOpen() {
+        this.updateStatus('Connected', true);
+        this.elements.sendBtn.disabled = false;
     }
 
-    attemptReconnect() {
-        if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-            this.updateStatus('Connection failed');
-            return;
-        }
+    _onWsMessage(message) {
+        this.handleMessage(message);
+    }
 
-        this.reconnectAttempts++;
-        const delay = this.reconnectDelay * this.reconnectAttempts;
-        
-        setTimeout(() => {
-            this.connect();
-        }, delay);
+    _onWsClose() {
+        this.updateStatus('Disconnected');
+    }
+
+    _onWsError(error) {
+        console.error('[VibeClient] WebSocket error:', error);
+        this.updateStatus('Error');
     }
 
     handleMessage(message) {
@@ -284,7 +206,6 @@ class VibeClient {
             case 'connected':
                 this.updateStatus('Connected', true);
                 this.historyLoaded = true;
-                // Scroll to bottom after history is loaded
                 setTimeout(() => this.forceScrollToBottom(), 0);
                 break;
             case 'event':
@@ -301,135 +222,326 @@ class VibeClient {
 
         switch (eventType) {
             case 'UserMessageEvent':
-                // Stop any ongoing streaming
-                this.stopStreaming();
-                // Handle multi-part content (text + images)
-                if (Array.isArray(event.content)) {
-                    event.content.forEach(item => {
-                        if (item.type === 'image_url') {
-                            const imageUrl = item.image_url?.url || '';
-                            this.addImageMessage(imageUrl);
-                        } else if (item.type === 'text') {
-                            this.addMessage('user', item.text);
-                        }
-                    });
-                } else {
-                    this.addMessage('user', event.content);
+                if (event.content) {
+                    this._clearUiState();
                 }
+                this._renderUserMessage(event.content);
                 break;
             case 'AssistantEvent':
-                // Handle streaming assistant message
-                this.handleAssistantEvent(event);
+                this.messageStreamer.handleEvent(event);
                 break;
             case 'ReasoningEvent':
-                // Handle streaming reasoning/thought
-                this.handleReasoningEvent(event);
+                this.messageStreamer.handleEvent(event);
                 break;
             case 'ToolCallEvent':
-                this.stopStreaming();
-                this.handleToolCallEvent(event);
+                this.messageStreamer.handleEvent(event);
                 break;
             case 'ToolResultEvent':
-                this.stopStreaming();
-                this.handleToolResultEvent(event);
+                this.messageStreamer.handleEvent(event);
                 break;
             case 'ContinueableUserMessageEvent':
-                this.stopStreaming();
-                if (Array.isArray(event.content)) {
-                    // Handle multi-part content (text + images)
-                    event.content.forEach(item => {
-                        if (item.type === 'image_url') {
-                            // Extract base64 data from full data URL
-                            const imageUrl = item.image_url?.url || '';
-                            this.addImageMessage(imageUrl);
-                        } else if (item.type === 'text') {
-                            this.addMessage('user', item.text);
-                        }
-                    });
-                } else {
-                    this.addMessage('user', event.content);
+                if (event.content) {
+                    this._clearUiState();
                 }
+                this._renderUserMessage(event.content);
                 break;
             case 'ApprovalPopupEvent':
-                console.log('Received ApprovalPopupEvent:', event);
                 this.showApprovalPopup(event);
                 break;
             case 'QuestionPopupEvent':
                 this.showQuestionPopup(event);
                 break;
             case 'PopupResponseEvent':
-                console.log('Received PopupResponseEvent:', event);
-                // Hide popup when response is received (from TUI or web)
                 this.hidePopup(event);
                 break;
             case 'MessageResetEvent':
-                console.log('Received MessageResetEvent:', event.reason);
                 this.handleMessageReset(event.reason);
                 break;
-            default:
-                console.log('Unhandled event type:', eventType);
+        }
+    }
+
+    /**
+     * Replay event for history loading (without clearing state)
+     * @param {Object} event
+     * @private
+     */
+    _replayEvent(event) {
+        const eventType = event.__type;
+
+        switch (eventType) {
+            case 'UserMessageEvent':
+                this._renderUserMessage(event.content);
+                break;
+            case 'AssistantEvent':
+                this.messageStreamer.handleEvent(event);
+                break;
+            case 'ReasoningEvent':
+                this.messageStreamer.handleEvent(event);
+                break;
+            case 'ToolCallEvent':
+                this.messageStreamer.handleEvent(event);
+                break;
+            case 'ToolResultEvent':
+                this.messageStreamer.handleEvent(event);
+                break;
+            case 'ContinueableUserMessageEvent':
+                this._renderUserMessage(event.content);
+                break;
+            case 'ApprovalPopupEvent':
+                this.showApprovalPopup(event);
+                break;
+            case 'QuestionPopupEvent':
+                this.showQuestionPopup(event);
+                break;
+            case 'PopupResponseEvent':
+                this.hidePopup(event);
+                break;
+        }
+    }
+
+    _renderUserMessage(content) {
+        if (!content) return;
+
+        if (Array.isArray(content)) {
+            content.forEach(item => {
+                if (item.type === 'image_url') {
+                    this.addImageMessage(item.image_url?.url || '');
+                } else if (item.type === 'text') {
+                    this.addMessage('user', item.text);
+                }
+            });
+        } else {
+            this.addMessage('user', content);
         }
     }
 
     async handleMessageReset(reason) {
         console.log(`Handling message reset (reason: ${reason})`);
-        
-        // Stop any ongoing streaming
         this.stopStreaming();
-        
-        // Fetch fresh history from server
-        try {
-            const response = await fetch('/api/messages', {
-                headers: {
-                    'Authorization': `Bearer ${this.token}`
-                }
-            });
-            
-            if (!response.ok) {
-                console.error('Failed to fetch messages:', response.status);
-                return;
-            }
-            
-            const data = await response.json();
-            
-            // Clear only dynamic messages (not the welcome message)
-            const welcomeMessageDiv = Array.from(
-                this.elements.messages.querySelectorAll('.message.system')
-            ).find(div => div.textContent?.includes('Welcome to Mistral Vibe'));
-            
-            this.elements.messages.innerHTML = '';
-            
-            // Restore welcome message if it existed
-            if (welcomeMessageDiv) {
-                this.elements.messages.appendChild(welcomeMessageDiv);
-            }
-            
-            // Rebuild messages from events
-            for (const event of data.events) {
-                this.handleEvent(event);
-            }
-            
-            // Scroll to bottom after rebuilding
-            setTimeout(() => this.forceScrollToBottom(), 0);
-            
-        } catch (error) {
-            console.error('Error reloading messages:', error);
+
+        const data = await this.apiClient.getMessages();
+        if (!data) {
+            console.error('Failed to fetch messages');
+            return;
+        }
+
+        const welcomeMessageDiv = Array.from(
+            this.elements.messages.querySelectorAll('.message.system')
+        ).find(div => div.textContent?.includes('Welcome to Mistral Vibe'));
+
+        this.elements.messages.innerHTML = '';
+        if (welcomeMessageDiv) {
+            this.elements.messages.appendChild(welcomeMessageDiv);
+        }
+
+        for (const event of data.events) {
+            this._replayEvent(event);
+        }
+
+        setTimeout(() => this.forceScrollToBottom(), 0);
+    }
+
+    // Message streamer callbacks (thin delegates to UI methods)
+    _onReasoningStart(data) {
+        this._appendReasoningContent(data.text || '');
+    }
+
+    _onReasoningUpdate(data) {
+        const previousScrollHeight = this.elements.messages.scrollHeight;
+        this._appendReasoningContent(data.text);
+        this._scrollAfterUpdate(previousScrollHeight);
+    }
+
+    _onReasoningEnd() {
+        this.finalizeReasoningMessage();
+        this.currentReasoningMessage = null;
+        this.currentReasoningText = '';
+    }
+
+    _onAssistantStart(data) {
+        if (this.currentReasoningMessage) {
+            this.finalizeReasoningMessage();
+            this.currentReasoningMessage = null;
+        }
+        this._appendAssistantContent(data.text || '');
+    }
+
+    _onAssistantUpdate(data) {
+        const previousScrollHeight = this.elements.messages.scrollHeight;
+        this._appendAssistantContent(data.text);
+        this._scrollAfterUpdate(previousScrollHeight);
+    }
+
+    _onAssistantEnd() {
+        this.currentAssistantMessage = null;
+        this.currentAssistantText = '';
+    }
+
+    _onToolCallStart(data) {
+        if (this.currentToolCall && this.currentToolCallId === data.id) {
+            this._updateExistingToolCall(data);
+        } else {
+            this._createNewToolCall(data);
         }
     }
 
+    _onToolResult(data) {
+        this._handleToolResultUpdate(data);
+    }
+
+    _onStopStreaming() {
+        this._clearUiState();
+    }
+
+    _clearUiState() {
+        this.currentReasoningMessage = null;
+        this.currentReasoningText = '';
+        this.currentAssistantMessage = null;
+        this.currentAssistantText = '';
+        this.currentToolCall = null;
+        this.currentToolCallId = null;
+        this.toolCallMap.clear();
+    }
+
+    // Private helpers for streaming UI
+    _appendReasoningContent(content) {
+        if (this.currentAssistantMessage) {
+            this.currentAssistantMessage = null;
+        }
+
+        if (!this.currentReasoningMessage) {
+            this.currentReasoningMessage = this.createReasoningMessage();
+            this.elements.messages.appendChild(this.currentReasoningMessage);
+        }
+
+        this.currentReasoningText += content;
+        const textSpan = this.currentReasoningMessage?.querySelector('.text');
+        if (textSpan) {
+            textSpan.textContent = this.currentReasoningText;
+        }
+    }
+
+    _appendAssistantContent(content) {
+        if (!this.currentAssistantMessage) {
+            this.currentAssistantMessage = this.createAssistantMessage();
+            this.elements.messages.appendChild(this.currentAssistantMessage);
+        }
+
+        this.currentAssistantText += content;
+        const contentDiv = this.currentAssistantMessage?.querySelector('.content');
+        if (contentDiv) {
+            this.renderMarkdownFromText(contentDiv, this.currentAssistantText);
+        }
+    }
+
+    _createNewToolCall(data) {
+        const toolCallDiv = this.createToolCallElement(data.name, data.arguments, 'hourglass_empty', 'Running...');
+        this.elements.messages.appendChild(toolCallDiv);
+        this.currentToolCall = toolCallDiv;
+        this.currentToolCallId = data.id;
+        this.toolCallMap.set(data.id, toolCallDiv);
+        this.scrollToBottom();
+    }
+
+    _updateExistingToolCall(data) {
+        const contentDiv = this.currentToolCall?.querySelector('.content');
+        const toolNameSpan = this.currentToolCall?.querySelector('.tool-name');
+
+        if (!contentDiv || !toolNameSpan) {
+            return;
+        }
+
+        if (toolNameSpan) {
+            toolNameSpan.textContent = this.escapeHtml(data.name);
+        }
+
+        if (data.arguments) {
+            const previousScrollHeight = this.elements.messages.scrollHeight;
+            this._appendToolArgs(contentDiv, data.arguments);
+            this._scrollAfterUpdate(previousScrollHeight);
+        }
+    }
+
+    _appendToolArgs(contentDiv, args) {
+        try {
+            const argsPre = document.createElement('pre');
+            argsPre.className = 'tool-args';
+            argsPre.textContent = JSON.stringify(args, null, 2);
+            contentDiv.appendChild(argsPre);
+        } catch (e) {
+            const argsDiv = document.createElement('div');
+            argsDiv.className = 'tool-args';
+            argsDiv.textContent = String(args);
+            contentDiv.appendChild(argsDiv);
+        }
+    }
+
+    _handleToolResultUpdate(data) {
+        // Try to find the tool call element from the map first
+        let toolCallElement = this.toolCallMap.get(data.toolCallId);
+
+        // If not in map, fall back to currentToolCall (for live streaming)
+        if (!toolCallElement && this.currentToolCallId === data.toolCallId) {
+            toolCallElement = this.currentToolCall;
+        }
+
+        if (!toolCallElement) {
+            return;
+        }
+
+        // Capture scroll height BEFORE modifying content
+        const previousScrollHeight = this.elements.messages.scrollHeight;
+
+        const statusSpan = toolCallElement.querySelector('.tool-status');
+        const contentDiv = toolCallElement.querySelector('.content');
+
+        if (data.error) {
+            if (statusSpan) statusSpan.innerHTML = '<span class="material-symbols-rounded">error</span> Failed';
+            contentDiv.appendChild(this._createErrorDiv(data.error));
+        } else if (data.result) {
+            if (statusSpan) statusSpan.innerHTML = '<span class="material-symbols-rounded">check_circle</span> Completed';
+            contentDiv.appendChild(this.formatToolResult(data.tool_name, data.result));
+        } else if (data.skipped) {
+            if (statusSpan) statusSpan.innerHTML = '<span class="material-symbols-rounded">skip_next</span> Skipped';
+            contentDiv.appendChild(this._createSkipDiv(data.skip_reason));
+        }
+
+        this._scrollAfterUpdate(previousScrollHeight);
+
+        // Clear the map entry and current state only if this is the current tool call
+        if (this.currentToolCallId === data.toolCallId) {
+            this.currentToolCall = null;
+            this.currentToolCallId = null;
+        }
+        this.toolCallMap.delete(data.toolCallId);
+    }
+
+    _createErrorDiv(error) {
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'tool-error';
+        errorDiv.innerHTML = `<pre>${this.escapeHtml(error)}</pre>`;
+        return errorDiv;
+    }
+
+    _createSkipDiv(skipReason) {
+        const skipDiv = document.createElement('div');
+        skipDiv.className = 'tool-skip';
+        skipDiv.textContent = skipReason || 'Tool was skipped';
+        return skipDiv;
+    }
+
+    _scrollAfterUpdate(previousScrollHeight) {
+        this.scrollToBottomIfWasAtBottom(previousScrollHeight);
+    }
+
     showApprovalPopup(event) {
-        console.log('showApprovalPopup called with event:', event);
         this.currentPopupId = event.popup_id;
-        
-        // Track if user was at bottom before showing popup
         this.wasAtBottomBeforePopup = scrollUtils.isAtBottom(this.elements.messages);
-        
-        // Create popup element
+
         const popupDiv = document.createElement('div');
         popupDiv.className = 'popup-card approval-popup';
         popupDiv.id = `popup-${event.popup_id}`;
-        console.log('Created popup element:', popupDiv);
-        
+
         popupDiv.innerHTML = `
             <div class="popup-header">
                 <span class="popup-icon material-symbols-rounded">warning</span>
@@ -445,155 +557,101 @@ class VibeClient {
                 <button class="popup-btn no" data-option="3">No</button>
             </div>
         `;
-        
-        // Setup button handlers
+
         popupDiv.querySelectorAll('.popup-btn').forEach(btn => {
-            btn.onclick = () => {
-                const option = parseInt(btn.dataset.option);
-                this.handleApprovalOption(option);
-            };
+            btn.onclick = () => this.handleApprovalOption(parseInt(btn.dataset.option));
         });
-        
-        // Append to messages and show
+
         this.currentPopupElement = popupDiv;
-        console.log('Appending popup to messages container:', this.elements.messages);
         this.elements.messages.appendChild(popupDiv);
         this.elements.input.disabled = true;
         this.forceScrollToBottom();
-        console.log('Popup appended successfully');
     }
 
     handleApprovalOption(option) {
         if (!this.currentPopupId) return;
-        
-        let response, feedback, approvalType;
-        
-        switch (option) {
-            case 0: // Yes
-                response = 'y';
-                feedback = null;
-                approvalType = 'once';
-                break;
-            case 1: // Yes (session)
-                response = 'y';
-                feedback = null;
-                approvalType = 'session';
-                break;
-            case 2: // Auto-approve
-                response = 'y';
-                feedback = null;
-                approvalType = 'auto-approve';
-                break;
-            case 3: // No
-                response = 'n';
-                feedback = 'User denied approval via web UI';
-                approvalType = 'once';
-                break;
-        }
-        
+
+        const options = [
+            { response: 'y', feedback: null, approvalType: 'once' },
+            { response: 'y', feedback: null, approvalType: 'session' },
+            { response: 'y', feedback: null, approvalType: 'auto-approve' },
+            { response: 'n', feedback: 'User denied approval via web UI', approvalType: 'once' }
+        ];
+
+        const { response, feedback, approvalType } = options[option] || options[0];
         this.sendApprovalResponse(this.currentPopupId, response, feedback, approvalType);
         this.currentPopupId = null;
     }
 
     sendApprovalResponse(popupId, response, feedback, approvalType = 'once') {
-        this.ws.send(JSON.stringify({
+        this.wsClient.send({
             type: 'approval_response',
             popup_id: popupId,
-            response: response,
-            feedback: feedback,
+            response,
+            feedback,
             approval_type: approvalType
-        }));
+        });
     }
 
-       showQuestionPopup(event) {
-        // Use questionHandler to manage state
+    showQuestionPopup(event) {
         const currentQuestion = this.questionHandler.showQuestionPopup(event);
-        
         if (!currentQuestion) {
             console.error('showQuestionPopup: No questions provided');
             return;
         }
-        
-        // Track if user was at bottom before showing popup
+
         this.wasAtBottomBeforePopup = scrollUtils.isAtBottom(this.elements.messages);
-        
-        // Sync popup state with questionHandler
         this.currentPopupId = this.questionHandler.currentPopupId;
-        
-        // Build options HTML
-        let optionsHtml = '';
-        currentQuestion.options.forEach((opt, idx) => {
-            optionsHtml += `<button class="popup-btn" data-option="${idx}">
+
+        const optionsHtml = currentQuestion.options.map((opt, idx) => `
+            <button class="popup-btn" data-option="${idx}">
                 <strong>${this.escapeHtml(opt.label)}</strong><br>
                 <small>${this.escapeHtml(opt.description)}</small>
-            </button>`;
-        });
-        
-        // Build other option HTML if enabled
+            </button>
+        `).join('');
+
         const hasOther = !currentQuestion.hide_other;
-        let otherHtml = '';
-        if (hasOther) {
-            otherHtml = `
-                <div class="popup-other">
-                    <input type="text" id="question-other-input" placeholder="Type your answer...">
-                </div>
-                <button class="popup-btn other-btn">Other (custom answer)</button>
-            `;
-        }
-        
-        // Create popup element
+        const isLastQuestion = this.questionHandler.currentQuestions.length === 1 ||
+                               this.questionHandler.currentQuestionIndex === this.questionHandler.currentQuestions.length - 1;
+        const submitButtonText = isLastQuestion ? 'Submit' : 'Next';
+
         const popupDiv = document.createElement('div');
         popupDiv.className = 'popup-card question-popup';
         popupDiv.id = `popup-${event.popup_id}`;
-        
-        const headerText = currentQuestion.header || 'Question';
-        const isLastQuestion = this.questionHandler.currentQuestions.length === 1 || this.questionHandler.currentQuestionIndex === this.questionHandler.currentQuestions.length - 1;
-        const submitButtonText = isLastQuestion ? 'Submit' : 'Next';
-        
+
         popupDiv.innerHTML = `
             <div class="popup-header">
                 <span class="popup-icon material-symbols-rounded">help</span>
-                <span class="popup-title">${this.escapeHtml(headerText)}</span>
+                <span class="popup-title">${this.escapeHtml(currentQuestion.header || 'Question')}</span>
             </div>
-            <div class="popup-content">
-                ${this.escapeHtml(currentQuestion.question)}
-            </div>
-            <div class="popup-options">
-                ${optionsHtml}
-                ${hasOther ? '<button class="popup-btn other-btn">Other (custom answer)</button>' : ''}
-            </div>
+            <div class="popup-content">${this.escapeHtml(currentQuestion.question)}</div>
+            <div class="popup-options">${optionsHtml}${hasOther ? '<button class="popup-btn other-btn">Other (custom answer)</button>' : ''}</div>
             ${hasOther ? '<div class="popup-other" style="display:none;"><input type="text" id="question-other-input" placeholder="Type your answer..."></div>' : ''}
             <div class="popup-actions">
                 <button class="popup-btn submit" id="question-submit">${submitButtonText}</button>
                 <button class="popup-btn cancel" id="question-cancel">Cancel</button>
             </div>
         `;
-        
-        // Setup option button handlers
+
         popupDiv.querySelectorAll('.popup-btn[data-option]').forEach(btn => {
             btn.onclick = () => {
                 if (currentQuestion.multi_select) {
-                    // Toggle selection for multi-select
                     btn.classList.toggle('selected');
                 } else {
-                    // Single-select: remove all, add to clicked
                     popupDiv.querySelectorAll('.popup-btn[data-option]').forEach(b => b.classList.remove('selected'));
                     btn.classList.add('selected');
-                    // Auto-submit for single-select
                     const optionIdx = parseInt(btn.dataset.option);
-                    const optionLabel = currentQuestion.options[optionIdx].label;
                     const questionText = popupDiv.querySelector('.popup-content').textContent;
                     this.questionHandler.currentQuestionAnswers.push({
                         question: questionText,
-                        answer: optionLabel,
+                        answer: currentQuestion.options[optionIdx].label,
                         is_other: false
                     });
                     this.submitCurrentQuestionOrNext();
                 }
             };
         });
-        
-        // Setup other button handler
+
         if (hasOther) {
             const otherBtn = popupDiv.querySelector('.other-btn');
             const otherContainer = popupDiv.querySelector('.popup-other');
@@ -602,36 +660,29 @@ class VibeClient {
                 otherContainer.querySelector('input').focus();
             };
         }
-        
-        // Setup submit handler
+
         popupDiv.querySelector('#question-submit').onclick = () => {
-            // Collect all selected options
             const selectedBtns = popupDiv.querySelectorAll('.popup-btn[data-option].selected');
-            
-            if (hasOther) {
-                const otherInput = popupDiv.querySelector('#question-other-input');
-                if (otherInput && otherInput.value.trim()) {
-                    // Handle "Other" answer
-                    const questionText = popupDiv.querySelector('.popup-content').textContent;
-                    this.questionHandler.currentQuestionAnswers.push({
-                        question: questionText,
-                        answer: otherInput.value.trim(),
-                        is_other: true
-                    });
-                    this.submitCurrentQuestionOrNext();
-                    return;
-                }
+            const otherInput = popupDiv.querySelector('#question-other-input');
+
+            if (hasOther && otherInput?.value.trim()) {
+                const questionText = popupDiv.querySelector('.popup-content').textContent;
+                this.questionHandler.currentQuestionAnswers.push({
+                    question: questionText,
+                    answer: otherInput.value.trim(),
+                    is_other: true
+                });
+                this.submitCurrentQuestionOrNext();
+                return;
             }
-            
-            // Submit selected options (supports multi-select)
+
             if (selectedBtns.length > 0) {
                 const questionText = popupDiv.querySelector('.popup-content').textContent;
                 const answers = Array.from(selectedBtns).map(btn => {
                     const optionIdx = parseInt(btn.dataset.option);
-                    const optionLabel = currentQuestion.options[optionIdx].label;
                     return {
                         question: questionText,
-                        answer: optionLabel,
+                        answer: currentQuestion.options[optionIdx].label,
                         is_other: false
                     };
                 });
@@ -639,171 +690,54 @@ class VibeClient {
                 this.submitCurrentQuestionOrNext();
             }
         };
-        
-        // Setup cancel handler
+
         popupDiv.querySelector('#question-cancel').onclick = () => {
             this.sendQuestionResponse(this.currentPopupId, [], true);
             this.hidePopup({popup_id: this.currentPopupId});
             this.questionHandler.reset();
         };
-        
-        // Append to messages and show
+
         this.currentPopupElement = popupDiv;
         this.elements.messages.appendChild(popupDiv);
         this.elements.input.disabled = true;
         this.forceScrollToBottom();
     }
-    
+
     submitCurrentQuestionOrNext() {
-        // Delegate to questionHandler
         const result = this.questionHandler.submitCurrentQuestionOrNext();
-        
+
         if (result.hasMore && result.nextEvent) {
-            // Hide current popup and show next question
             this.hidePopup({ popup_id: this.currentPopupId });
             this.showQuestionPopup(result.nextEvent);
         } else if (!result.hasMore && result.message) {
-            // Send final response via WebSocket and hide popup
-            this.ws.send(JSON.stringify(result.message));
+            this.wsClient.send(result.message);
             this.hidePopup({ popup_id: this.currentPopupId });
         }
     }
 
     sendQuestionResponse(popupId, answers, cancelled) {
-        const message = {
+        this.wsClient.send({
             type: 'question_response',
             popup_id: popupId,
-            answers: answers,
-            cancelled: cancelled
-        };
-        this.ws.send(JSON.stringify(message));
+            answers,
+            cancelled
+        });
     }
 
     hidePopup(event) {
-        // Remove popup element from DOM if it exists
-        if (this.currentPopupElement && this.currentPopupElement.parentNode) {
+        if (this.currentPopupElement?.parentNode) {
             this.currentPopupElement.parentNode.removeChild(this.currentPopupElement);
         }
-        
-        // Re-enable input
+
         this.elements.input.disabled = false;
-        
-        // Force scroll to bottom if user was at bottom before popup
+
         if (this.wasAtBottomBeforePopup) {
             this.forceScrollToBottom();
         }
-        
-        // Clear popup state (questionHandler manages question state)
+
         this.currentPopupId = null;
         this.currentPopupElement = null;
         this.wasAtBottomBeforePopup = false;
-    }
-
-    handleToolCallEvent(event) {
-        // Check if this is the same tool call we're already tracking
-        if (this.currentToolCall && this.currentToolCallId === event.tool_call_id) {
-            const contentDiv = this.currentToolCall.querySelector('.content');
-            const toolNameSpan = this.currentToolCall.querySelector('.tool-name');
-            const previousScrollHeight = this.elements.messages.scrollHeight;
-            
-            // Update tool name if it changed
-            if (toolNameSpan) {
-                toolNameSpan.textContent = this.escapeHtml(event.tool_name);
-            }
-            
-            // Add args if they're available now
-            if (event.args) {
-                try {
-                    const argsPre = document.createElement('pre');
-                    argsPre.className = 'tool-args';
-                    argsPre.textContent = JSON.stringify(event.args, null, 2);
-                    contentDiv.appendChild(argsPre);
-                } catch (e) {
-                    const argsDiv = document.createElement('div');
-                    argsDiv.className = 'tool-args';
-                    argsDiv.textContent = String(event.args);
-                    contentDiv.appendChild(argsDiv);
-                }
-                this.scrollToBottomIfWasAtBottom(previousScrollHeight);
-            }
-            return;
-        }
-        
-        // Create new tool call widget using createToolCallElement
-        const toolCallDiv = this.createToolCallElement(event.tool_name, event.args, 'hourglass_empty', 'Running...');
-        this.elements.messages.appendChild(toolCallDiv);
-        this.currentToolCall = toolCallDiv;
-        this.currentToolCallId = event.tool_call_id;
-        this.scrollToBottom();
-    }
-
-    handleToolResultEvent(event) {
-        // Only update if this result matches the current pending tool call
-        if (this.currentToolCall && this.currentToolCallId === event.tool_call_id) {
-            const statusSpan = this.currentToolCall.querySelector('.tool-status');
-            const contentDiv = this.currentToolCall.querySelector('.content');
-            const previousScrollHeight = this.elements.messages.scrollHeight;
-            
-            if (event.error) {
-                // Tool failed
-                if (statusSpan) statusSpan.innerHTML = '<span class="material-symbols-rounded">error</span> Failed';
-                const errorDiv = document.createElement('div');
-                errorDiv.className = 'tool-error';
-                errorDiv.innerHTML = `<pre>${this.escapeHtml(event.error)}</pre>`;
-                contentDiv.appendChild(errorDiv);
-                this.scrollToBottomIfWasAtBottom(previousScrollHeight);
-            } else if (event.result) {
-                // Tool succeeded - use formatted display
-                if (statusSpan) statusSpan.innerHTML = '<span class="material-symbols-rounded">check_circle</span> Completed';
-                const resultCard = this.formatToolResult(event.tool_name, event.result);
-                contentDiv.appendChild(resultCard);
-                this.scrollToBottomIfWasAtBottom(previousScrollHeight);
-            } else if (event.skipped) {
-                // Tool was skipped
-                if (statusSpan) statusSpan.innerHTML = '<span class="material-symbols-rounded">skip_next</span> Skipped';
-                const skipDiv = document.createElement('div');
-                skipDiv.className = 'tool-skip';
-                skipDiv.textContent = event.skip_reason || 'Tool was skipped';
-                contentDiv.appendChild(skipDiv);
-                this.scrollToBottomIfWasAtBottom(previousScrollHeight);
-            }
-            
-            this.currentToolCall = null;
-            this.currentToolCallId = null;
-        }
-    }
-
-    handleReasoningEvent(event) {
-        // If we have an assistant message streaming, stop it
-        if (this.currentAssistantMessage) {
-            this.currentAssistantMessage = null;
-        }
-
-        // Create new reasoning message or append to existing
-        if (!this.currentReasoningMessage) {
-            this.currentReasoningMessage = this.createReasoningMessage();
-            this.elements.messages.appendChild(this.currentReasoningMessage);
-        }
-        const previousScrollHeight = this.elements.messages.scrollHeight;
-        this.appendReasoningContent(event.content);
-        this.scrollToBottomIfWasAtBottom(previousScrollHeight);
-    }
-
-    handleAssistantEvent(event) {
-        // If we have a reasoning message, finalize it
-        if (this.currentReasoningMessage) {
-            this.finalizeReasoningMessage();
-            this.currentReasoningMessage = null;
-        }
-
-        // Create new assistant message or append to existing
-        if (!this.currentAssistantMessage) {
-            this.currentAssistantMessage = this.createAssistantMessage();
-            this.elements.messages.appendChild(this.currentAssistantMessage);
-        }
-        const previousScrollHeight = this.elements.messages.scrollHeight;
-        this.appendAssistantContent(event.content);
-        this.scrollToBottomIfWasAtBottom(previousScrollHeight);
     }
 
     createReasoningMessage() {
@@ -820,41 +754,13 @@ class VibeClient {
         return messageDiv;
     }
 
-    appendReasoningContent(content) {
-        // Accumulate raw text
-        this.currentReasoningText += content;
-        
-        if (this.currentReasoningMessage) {
-            const textSpan = this.currentReasoningMessage.querySelector('.text');
-            if (textSpan) {
-                textSpan.textContent = this.currentReasoningText;
-            }
-        }
-    }
-
-    appendAssistantContent(content) {
-        // Accumulate raw text separately
-        this.currentAssistantText += content;
-        
-        if (this.currentAssistantMessage) {
-            const contentDiv = this.currentAssistantMessage.querySelector('.content');
-            if (contentDiv) {
-                // Render markdown from accumulated text
-                this.renderMarkdownFromText(contentDiv, this.currentAssistantText);
-            }
-        }
-    }
-
     finalizeReasoningMessage() {
-        // Reasoning message is already visible, just keep it
         this.currentReasoningMessage = null;
     }
 
-   stopStreaming() {
-        this.currentReasoningMessage = null;
-        this.currentReasoningText = '';
-        this.currentAssistantMessage = null;
-        this.currentAssistantText = '';
+    stopStreaming() {
+        this.messageStreamer.stopStreaming();
+        this._clearUiState();
     }
 
     addMessage(type, content) {
@@ -862,14 +768,14 @@ class VibeClient {
         messageDiv.className = `message ${type}`;
         const contentDiv = document.createElement('div');
         contentDiv.className = 'content';
-        
+
         if (type === 'assistant') {
             contentDiv.textContent = content;
             this.renderMarkdown(contentDiv);
         } else {
             contentDiv.innerHTML = this.escapeHtml(content);
         }
-        
+
         messageDiv.appendChild(contentDiv);
         this.elements.messages.appendChild(messageDiv);
         this.scrollToBottom();
@@ -878,22 +784,17 @@ class VibeClient {
     addImageMessage(imageData) {
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message user';
-        
-        // Handle both full data URLs and raw base64
+
         let imageUrl = imageData;
         if (imageData && !imageData.startsWith('data:')) {
-            // Assume it's raw base64, add default jpeg prefix
             imageUrl = `data:image/jpeg;base64,${imageData}`;
         }
-        
+
         messageDiv.innerHTML = `<div class="content"><img src="${imageUrl}" style="max-width: 100%; border-radius: 8px;"></div>`;
         this.elements.messages.appendChild(messageDiv);
         this.scrollToBottom();
     }
 
-    /**
-     * Update send button state based on input and image attachment.
-     */
     updateSendButtonState() {
         const hasText = this.elements.input.value.trim();
         const hasImage = this.imageAttachment?.getImageData() !== null;
@@ -906,186 +807,102 @@ class VibeClient {
         return div.innerHTML;
     }
 
-    /**
-     * Scroll to bottom only if already at the bottom.
-     * This prevents disrupting the user's reading position.
-     */
     scrollToBottom() {
         scrollUtils.scrollToBottomIfNeeded(this.elements.messages);
     }
 
-    /**
-     * Scroll to bottom if user was at bottom before the update.
-     * This handles expanding content that pushes the bottom down.
-     */
     scrollToBottomIfWasAtBottom(previousScrollHeight) {
         scrollUtils.scrollToBottomIfWasAtBottom(this.elements.messages, previousScrollHeight);
     }
 
-    /**
-     * Force scroll to bottom regardless of current position.
-     */
     forceScrollToBottom() {
         scrollUtils.scrollToBottom(this.elements.messages);
     }
 
-    /**
-     * Scroll to top of messages.
-     */
     scrollToTop() {
         scrollUtils.scrollToTop(this.elements.messages);
     }
 
-    /**
-     * Scroll to previous user message.
-     */
     scrollToPreviousUserMessage() {
         scrollUtils.scrollToPreviousUserMessage(this.elements.messages);
     }
 
-    /**
-     * Scroll to next user message.
-     */
     scrollToNextUserMessage() {
         scrollUtils.scrollToNextUserMessage(this.elements.messages);
     }
 
-    /**
-     * Bind scroll navigation button events.
-     */
     bindScrollNavigationEvents() {
         const scrollTopBtn = document.getElementById('scroll-top-btn');
         const scrollPrevUserBtn = document.getElementById('scroll-prev-user-btn');
         const scrollNextUserBtn = document.getElementById('scroll-next-user-btn');
         const scrollBottomBtn = document.getElementById('scroll-bottom-btn');
 
-        if (scrollTopBtn) {
-            scrollTopBtn.addEventListener('click', () => this.scrollToTop());
-        }
+        if (scrollTopBtn) scrollTopBtn.addEventListener('click', () => this.scrollToTop());
+        if (scrollPrevUserBtn) scrollPrevUserBtn.addEventListener('click', () => this.scrollToPreviousUserMessage());
+        if (scrollNextUserBtn) scrollNextUserBtn.addEventListener('click', () => this.scrollToNextUserMessage());
+        if (scrollBottomBtn) scrollBottomBtn.addEventListener('click', () => this.forceScrollToBottom());
 
-        if (scrollPrevUserBtn) {
-            scrollPrevUserBtn.addEventListener('click', () => this.scrollToPreviousUserMessage());
-        }
-
-        if (scrollNextUserBtn) {
-            scrollNextUserBtn.addEventListener('click', () => this.scrollToNextUserMessage());
-        }
-
-        if (scrollBottomBtn) {
-            scrollBottomBtn.addEventListener('click', () => this.forceScrollToBottom());
-        }
-
-        // Position FAB buttons above the input area
         this.updateFabPosition();
-
-        // Update position on window resize
         window.addEventListener('resize', () => this.updateFabPosition());
 
-        // Watch for input area height changes using ResizeObserver
         const inputArea = document.querySelector('.input-area');
         if (inputArea && typeof ResizeObserver !== 'undefined') {
-            const resizeObserver = new ResizeObserver(() => this.updateFabPosition());
-            resizeObserver.observe(inputArea);
+            new ResizeObserver(() => this.updateFabPosition()).observe(inputArea);
         }
     }
 
-    /**
-     * Update FAB position to be above the input area.
-     */
     updateFabPosition() {
         const fabContainer = document.querySelector('.fab-container');
         const inputArea = document.querySelector('.input-area');
         const chatContainer = document.querySelector('.chat-container');
 
         if (!fabContainer || !inputArea || !chatContainer) return;
-
-        // Calculate position: bottom of chat container minus input area height minus padding
-        const chatContainerHeight = chatContainer.clientHeight;
-        const inputAreaHeight = inputArea.clientHeight;
-        const padding = 16; // Padding above input area
-
-        const bottomOffset = inputAreaHeight + padding;
-        fabContainer.style.bottom = `${bottomOffset}px`;
+        fabContainer.style.bottom = `${inputArea.clientHeight + 16}px`;
     }
 
     renderMarkdown(element) {
         const text = element.textContent;
-        if (!text.trim()) {
-            return;
-        }
-        
-        // Use marked.js to parse markdown
-        const html = marked.parse(text);
-        element.innerHTML = html;
-        
-        // Apply syntax highlighting to code blocks
-        element.querySelectorAll('pre code').forEach((block) => {
-            hljs.highlightElement(block);
-        });
+        if (!text.trim()) return;
+
+        element.innerHTML = marked.parse(text);
+        element.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
     }
 
     renderMarkdownFromText(element, text) {
-        if (!text.trim()) {
-            return;
-        }
-        
-        // Use marked.js to parse markdown
-        const html = marked.parse(text);
-        element.innerHTML = html;
-        
-        // Apply syntax highlighting to code blocks
-        element.querySelectorAll('pre code').forEach((block) => {
-            hljs.highlightElement(block);
-        });
+        if (!text.trim()) return;
+
+        element.innerHTML = marked.parse(text);
+        element.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
     }
 
     async sendMessage() {
-       const content = this.elements.input.value.trim();
+        const content = this.elements.input.value.trim();
         const imageData = this.imageAttachment?.getImageData();
-        
-        // Allow sending image-only messages
-        if (!content && !imageData) {
-            return;
-        }
 
-        // Check for slash command (only if there's text content and no image)
+        if (!content && !imageData) return;
+
         if (content && !imageData) {
             const command = this.slashRegistry.getCommand(content);
             if (command) {
-                // Execute command
                 const result = await this.slashRegistry.execute(command.name, command.args);
-                
+
                 if (result.success) {
-                    // Clear input on success
                     this.elements.input.value = '';
                     this.autoResizeTextarea();
                     this.updateSendButtonState();
                 } else {
-                    // Show error message
                     this.addMessage('system', `Command error: ${result.error}`);
                 }
                 return;
             }
         }
 
-        // Regular message handling
-        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-            return;
-        }
+        if (!this.wsClient.isConnected()) return;
 
-        const message = {
-            type: 'user_message',
-            content: content
-        };
-        
-        // Include image data if attached
-        if (imageData) {
-            message.image = imageData;
-        }
+        const message = { type: 'user_message', content };
+        if (imageData) message.image = imageData;
 
-        this.ws.send(JSON.stringify(message));
-
-        // Clear input and image attachment
+        this.wsClient.send(message);
         this.elements.input.value = '';
         this.autoResizeTextarea();
         this.imageAttachment?.clear();
@@ -1100,15 +917,13 @@ class VibeClient {
         }
     }
 
-    // Create a tool call element (used for both streaming and historical)
     createToolCallElement(toolName, args, statusIcon, statusText) {
         const toolCallDiv = document.createElement('div');
         toolCallDiv.className = 'message tool-call';
-        
+
         const contentDiv = document.createElement('div');
         contentDiv.className = 'content';
-        
-        // Build tool header
+
         const headerDiv = document.createElement('div');
         headerDiv.className = 'tool-header';
         headerDiv.innerHTML = `
@@ -1120,8 +935,7 @@ class VibeClient {
             </span>
         `;
         contentDiv.appendChild(headerDiv);
-        
-        // Build args display if available
+
         if (args) {
             try {
                 const argsPre = document.createElement('pre');
@@ -1135,37 +949,26 @@ class VibeClient {
                 contentDiv.appendChild(argsPre);
             }
         }
-        
+
         toolCallDiv.appendChild(contentDiv);
         return toolCallDiv;
     }
 
-    // Format tool result based on tool name
     formatToolResult(toolName, result) {
         const card = document.createElement('div');
         card.className = 'tool-result-card';
-        
+
         switch (toolName) {
-            case 'bash':
-                return this.formatBashResult(card, result);
-            case 'websearch':
-                return this.formatWebSearchResult(card, result);
-            case 'webfetch':
-                return this.formatWebFetchResult(card, result);
-            case 'grep':
-                return this.formatGrepResult(card, result);
-            case 'read_file':
-                return this.formatReadFileResult(card, result);
-            case 'edit_file':
-                return this.formatEditFileResult(card, result);
-            case 'lsp':
-                return this.formatLspResult(card, result);
-            case 'todo':
-                return this.formatTodoResult(card, result);
-            case 'ask_user_question':
-                return this.formatAskUserQuestionResult(card, result);
-            default:
-                return this.formatGenericResult(card, result);
+            case 'bash': return this.formatBashResult(card, result);
+            case 'websearch': return this.formatWebSearchResult(card, result);
+            case 'webfetch': return this.formatWebFetchResult(card, result);
+            case 'grep': return this.formatGrepResult(card, result);
+            case 'read_file': return this.formatReadFileResult(card, result);
+            case 'edit_file': return this.formatEditFileResult(card, result);
+            case 'lsp': return this.formatLspResult(card, result);
+            case 'todo': return this.formatTodoResult(card, result);
+            case 'ask_user_question': return this.formatAskUserQuestionResult(card, result);
+            default: return this.formatGenericResult(card, result);
         }
     }
 
@@ -1179,21 +982,18 @@ class VibeClient {
             </div>
             <span class="card-toggle">▼</span>
         `;
-        
-        // Add collapse functionality
-        header.addEventListener('click', () => {
-            card.classList.toggle('collapsed');
-        });
-        
+
+        header.addEventListener('click', () => card.classList.toggle('collapsed'));
+
         const content = document.createElement('div');
         content.className = 'card-content';
-        
+
         if (summary) {
             const summaryPre = document.createElement('pre');
             summaryPre.textContent = summary;
             content.appendChild(summaryPre);
         }
-        
+
         card.appendChild(header);
         card.appendChild(content);
         return card;
@@ -1202,232 +1002,173 @@ class VibeClient {
     formatBashResult(card, result) {
         const returncode = parseInt(result.returncode) || 0;
         const isSuccess = returncode === 0;
-        
-        const headerTitle = `bash: ${result.command || 'command'}`;
-        const headerIcon = isSuccess ? '<span class="material-symbols-rounded">check_circle</span>' : '<span class="material-symbols-rounded">error</span>';
-        const summary = `Return code: ${returncode}`;
-        
-        this.createCardHeader(card, headerTitle, headerIcon, summary);
+
+        this.createCardHeader(card, `bash: ${result.command || 'command'}`,
+            isSuccess ? '<span class="material-symbols-rounded">check_circle</span>' : '<span class="material-symbols-rounded">error</span>',
+            `Return code: ${returncode}`);
+
         const content = card.querySelector('.card-content');
-        
-        // Add stdout if present
+
         if (result.stdout) {
-            const stdoutSection = document.createElement('div');
-            stdoutSection.className = 'bash-output-section stdout';
-            stdoutSection.innerHTML = `
-                <div class="output-label">STDOUT</div>
-                <div class="output-content"><pre>${this.escapeHtml(result.stdout)}</pre></div>
-            `;
-            content.appendChild(stdoutSection);
+            content.appendChild(this._createOutputSection('stdout', result.stdout));
         }
-        
-        // Add stderr if present
         if (result.stderr) {
-            const stderrSection = document.createElement('div');
-            stderrSection.className = 'bash-output-section stderr';
-            stderrSection.innerHTML = `
-                <div class="output-label">STDERR</div>
-                <div class="output-content"><pre>${this.escapeHtml(result.stderr)}</pre></div>
-            `;
-            content.appendChild(stderrSection);
+            content.appendChild(this._createOutputSection('stderr', result.stderr));
         }
-        
-        // Add return code badge
+
         const returncodeBadge = document.createElement('div');
         returncodeBadge.className = `bash-returncode ${isSuccess ? 'success' : 'failure'}`;
         returncodeBadge.textContent = `Return code: ${returncode}`;
         content.appendChild(returncodeBadge);
-        
+
         return card;
+    }
+
+    _createOutputSection(type, content) {
+        const section = document.createElement('div');
+        section.className = `bash-output-section ${type}`;
+        section.innerHTML = `<div class="output-label">${type.toUpperCase()}</div><div class="output-content"><pre>${this.escapeHtml(content)}</pre></div>`;
+        return section;
     }
 
     formatWebSearchResult(card, result) {
         const sourceCount = result.sources?.length || 0;
-        const headerTitle = `Web search: ${result.answer?.substring(0, 50) || 'search'}...`;
-        const headerIcon = '<span class="material-symbols-rounded">search</span>';
-        const summary = `${sourceCount} sources found`;
-        
-        this.createCardHeader(card, headerTitle, headerIcon, summary);
+        this.createCardHeader(card, `Web search: ${result.answer?.substring(0, 50) || 'search'}...`,
+            '<span class="material-symbols-rounded">search</span>', `${sourceCount} sources found`);
+
         const content = card.querySelector('.card-content');
-        
-        // Add answer
+
         if (result.answer) {
             const answerPre = document.createElement('pre');
             answerPre.textContent = result.answer;
             content.appendChild(answerPre);
         }
-        
-        // Add sources as list
-        if (result.sources && result.sources.length > 0) {
+
+        if (result.sources?.length > 0) {
             const sourcesDiv = document.createElement('div');
             sourcesDiv.style.marginTop = '12px';
-            
             result.sources.forEach(source => {
                 const sourceItem = document.createElement('div');
                 sourceItem.className = 'search-source-item';
-                sourceItem.innerHTML = `
-                    <div class="source-title">${this.escapeHtml(source.title)}</div>
-                    <div class="source-url">${this.escapeHtml(source.url)}</div>
-                `;
+                sourceItem.innerHTML = `<div class="source-title">${this.escapeHtml(source.title)}</div><div class="source-url">${this.escapeHtml(source.url)}</div>`;
                 sourcesDiv.appendChild(sourceItem);
             });
-            
             content.appendChild(sourcesDiv);
         }
-        
+
         return card;
     }
 
     formatWebFetchResult(card, result) {
-        const headerTitle = `Fetch: ${result.url || 'URL'}`;
-        const headerIcon = '<span class="material-symbols-rounded">description</span>';
         const linesRead = result.lines_read || 0;
         const totalLines = result.total_lines || 0;
         const wasTruncated = result.was_truncated ? ' (truncated)' : '';
-        const summary = `Fetched ${linesRead}/${totalLines} lines${wasTruncated}`;
-        
-        this.createCardHeader(card, headerTitle, headerIcon, summary);
+
+        this.createCardHeader(card, `Fetch: ${result.url || 'URL'}`,
+            '<span class="material-symbols-rounded">description</span>',
+            `Fetched ${linesRead}/${totalLines} lines${wasTruncated}`);
+
         const content = card.querySelector('.card-content');
-        
-        // Add content preview (first 100 lines)
+
         if (result.content) {
-            const previewLines = result.content.split('\n').slice(0, 100);
-            const previewPre = document.createElement('pre');
-            previewPre.textContent = previewLines.join('\n');
-            content.appendChild(previewPre);
-            
-            if (result.content.split('\n').length > 100) {
+            const lines = result.content.split('\n');
+            content.appendChild(document.createElement('pre')).textContent = lines.slice(0, 100).join('\n');
+
+            if (lines.length > 100) {
                 const moreDiv = document.createElement('div');
-                moreDiv.style.padding = '8px 12px';
-                moreDiv.style.color = '#a0a0a0';
-                moreDiv.style.fontStyle = 'italic';
-                moreDiv.textContent = `... and ${result.content.split('\n').length - 100} more lines`;
+                moreDiv.style.cssText = 'padding: 8px 12px; color: #a0a0a0; font-style: italic';
+                moreDiv.textContent = `... and ${lines.length - 100} more lines`;
                 content.appendChild(moreDiv);
             }
         }
-        
+
         return card;
     }
 
     formatGrepResult(card, result) {
-        const headerTitle = `Grep: ${result.pattern || 'pattern'}`;
-        const headerIcon = '<span class="material-symbols-rounded">search</span>';
         const matchCount = result.match_count || 0;
         const wasTruncated = result.was_truncated ? ' (truncated)' : '';
-        const summary = `${matchCount} matches found${wasTruncated}`;
-        
-        this.createCardHeader(card, headerTitle, headerIcon, summary);
+
+        this.createCardHeader(card, `Grep: ${result.pattern || 'pattern'}`,
+            '<span class="material-symbols-rounded">search</span>',
+            `${matchCount} matches found${wasTruncated}`);
+
         const content = card.querySelector('.card-content');
-        
-        // Add matches
         if (result.matches) {
-            const matchesPre = document.createElement('pre');
-            matchesPre.textContent = result.matches;
-            content.appendChild(matchesPre);
+            content.appendChild(document.createElement('pre')).textContent = result.matches;
         }
-        
+
         return card;
     }
 
     formatReadFileResult(card, result) {
-        const headerTitle = `Read: ${result.path || 'file'}`;
-        const headerIcon = '<span class="material-symbols-rounded">description</span>';
         const linesRead = result.lines_read || 0;
         const wasTruncated = result.was_truncated ? ' (truncated)' : '';
-        const summary = `Read ${linesRead} lines${wasTruncated}`;
-        
-        this.createCardHeader(card, headerTitle, headerIcon, summary);
+
+        this.createCardHeader(card, `Read: ${result.path || 'file'}`,
+            '<span class="material-symbols-rounded">description</span>',
+            `Read ${linesRead} lines${wasTruncated}`);
+
         const content = card.querySelector('.card-content');
-        
-        // Add content preview (first 100 lines)
+
         if (result.content) {
-            const previewLines = result.content.split('\n').slice(0, 100);
-            const previewPre = document.createElement('pre');
-            previewPre.textContent = previewLines.join('\n');
-            content.appendChild(previewPre);
-            
-            if (result.content.split('\n').length > 100) {
+            const lines = result.content.split('\n');
+            content.appendChild(document.createElement('pre')).textContent = lines.slice(0, 100).join('\n');
+
+            if (lines.length > 100) {
                 const moreDiv = document.createElement('div');
-                moreDiv.style.padding = '8px 12px';
-                moreDiv.style.color = '#a0a0a0';
-                moreDiv.style.fontStyle = 'italic';
-                moreDiv.textContent = `... and ${result.content.split('\n').length - 100} more lines`;
+                moreDiv.style.cssText = 'padding: 8px 12px; color: #a0a0a0; font-style: italic';
+                moreDiv.textContent = `... and ${lines.length - 100} more lines`;
                 content.appendChild(moreDiv);
             }
         }
-        
-        // Add LSP diagnostics if present
+
         if (result.lsp_diagnostics) {
             const diagnosticsDiv = document.createElement('div');
-            diagnosticsDiv.style.marginTop = '12px';
-            diagnosticsDiv.style.padding = '8px 12px';
-            diagnosticsDiv.style.backgroundColor = '#3a2a1a';
-            diagnosticsDiv.style.borderRadius = '4px';
-            diagnosticsDiv.innerHTML = `
-                <div style="font-weight: 600; color: #f0ad4e; margin-bottom: 4px;">LSP Diagnostics</div>
-                <pre style="margin: 0; font-size: 0.85rem;">${this.escapeHtml(result.lsp_diagnostics)}</pre>
-            `;
+            diagnosticsDiv.style.cssText = 'margin-top: 12px; padding: 8px 12px; background-color: #3a2a1a; border-radius: 4px';
+            diagnosticsDiv.innerHTML = `<div style="font-weight: 600; color: #f0ad4e; margin-bottom: 4px;">LSP Diagnostics</div><pre style="margin: 0; font-size: 0.85rem;">${this.escapeHtml(result.lsp_diagnostics)}</pre>`;
             content.appendChild(diagnosticsDiv);
         }
-        
+
         return card;
     }
 
     formatEditFileResult(card, result) {
-        const headerTitle = `Edit: ${result.file || 'file'}`;
-        const headerIcon = '<span class="material-symbols-rounded">edit</span>';
         const blocksApplied = result.blocks_applied || 0;
         const linesChanged = result.lines_changed || 0;
-        const summary = `${blocksApplied} block(s) applied, ${linesChanged} line(s) changed`;
-        
-        this.createCardHeader(card, headerTitle, headerIcon, summary);
+
+        this.createCardHeader(card, `Edit: ${result.file || 'file'}`,
+            '<span class="material-symbols-rounded">edit</span>',
+            `${blocksApplied} block(s) applied, ${linesChanged} line(s) changed`);
+
         const content = card.querySelector('.card-content');
-        
-        // Add warnings if present
+
         if (result.warnings) {
-            // Parse warnings as JSON if it's a string (from history replay)
             let warningsArray = result.warnings;
             if (typeof warningsArray === 'string') {
-                try {
-                    warningsArray = JSON.parse(warningsArray);
-                } catch (e) {
-                    warningsArray = [warningsArray];
-                }
+                try { warningsArray = JSON.parse(warningsArray); } catch (e) { warningsArray = [warningsArray]; }
             }
-            
+
             if (Array.isArray(warningsArray) && warningsArray.length > 0) {
                 const warningsDiv = document.createElement('div');
-                warningsDiv.style.padding = '8px 12px';
-                warningsDiv.style.backgroundColor = '#3a2a1a';
-                warningsDiv.style.borderRadius = '4px';
-                warningsDiv.style.marginBottom = '8px';
-                warningsDiv.innerHTML = `
-                    <div style="font-weight: 600; color: #f0ad4e; margin-bottom: 4px;">Warnings</div>
-                    <ul style="margin: 0; padding-left: 20px; font-size: 0.85rem;">
-                        ${warningsArray.map(w => `<li>${this.escapeHtml(w)}</li>`).join('')}
-                    </ul>
-                `;
+                warningsDiv.style.cssText = 'padding: 8px 12px; background-color: #3a2a1a; border-radius: 4px; margin-bottom: 8px';
+                warningsDiv.innerHTML = `<div style="font-weight: 600; color: #f0ad4e; margin-bottom: 4px;">Warnings</div><ul style="margin: 0; padding-left: 20px; font-size: 0.85rem;">${warningsArray.map(w => `<li>${this.escapeHtml(w)}</li>`).join('')}</ul>`;
                 content.appendChild(warningsDiv);
             }
         }
-        
-        // Add content preview
+
         if (result.content) {
-            const previewLines = result.content.split('\n').slice(0, 50);
-            const previewPre = document.createElement('pre');
-            previewPre.textContent = previewLines.join('\n');
-            content.appendChild(previewPre);
-            
-            if (result.content.split('\n').length > 50) {
+            const lines = result.content.split('\n');
+            content.appendChild(document.createElement('pre')).textContent = lines.slice(0, 50).join('\n');
+
+            if (lines.length > 50) {
                 const moreDiv = document.createElement('div');
-                moreDiv.style.padding = '8px 12px';
-                moreDiv.style.color = '#a0a0a0';
-                moreDiv.style.fontStyle = 'italic';
-                moreDiv.textContent = `... and ${result.content.split('\n').length - 50} more lines`;
+                moreDiv.style.cssText = 'padding: 8px 12px; color: #a0a0a0; font-style: italic';
+                moreDiv.textContent = `... and ${lines.length - 50} more lines`;
                 content.appendChild(moreDiv);
             }
         }
-        
+
         return card;
     }
 
@@ -1435,83 +1176,60 @@ class VibeClient {
         const diagnostics = result.diagnostics || [];
         const errors = diagnostics.filter(d => d.severity === 1).length;
         const warnings = diagnostics.filter(d => d.severity === 2).length;
-        
-        let headerTitle = 'LSP Diagnostics';
-        let headerIcon = errors > 0 
-            ? '<span class="material-symbols-rounded">error</span>' 
-            : (warnings > 0 
-                ? '<span class="material-symbols-rounded">warning</span>' 
-                : '<span class="material-symbols-rounded">check_circle</span>');
-        let summary = '';
-        
-        if (errors === 0 && warnings === 0) {
-            summary = 'No issues found';
-        } else {
-            summary = `${errors} error(s), ${warnings} warning(s)`;
-        }
-        
-        this.createCardHeader(card, headerTitle, headerIcon, summary);
+
+        let headerIcon = errors > 0 ? '<span class="material-symbols-rounded">error</span>' :
+                         warnings > 0 ? '<span class="material-symbols-rounded">warning</span>' :
+                         '<span class="material-symbols-rounded">check_circle</span>';
+        const summary = errors === 0 && warnings === 0 ? 'No issues found' : `${errors} error(s), ${warnings} warning(s)`;
+
+        this.createCardHeader(card, 'LSP Diagnostics', headerIcon, summary);
+
         const content = card.querySelector('.card-content');
-        
-        // Add formatted diagnostics
         if (result.formatted_output) {
-            const outputPre = document.createElement('pre');
-            outputPre.textContent = result.formatted_output;
-            content.appendChild(outputPre);
+            content.appendChild(document.createElement('pre')).textContent = result.formatted_output;
         }
-        
+
         return card;
     }
 
     formatTodoResult(card, result) {
         const total = result.total_count || 0;
-        const headerTitle = 'Todo List';
-        const headerIcon = '<span class="material-symbols-rounded">check_circle</span>';
-        const summary = `${total} total tasks`;
-        
-        this.createCardHeader(card, headerTitle, headerIcon, summary);
+        this.createCardHeader(card, 'Todo List',
+            '<span class="material-symbols-rounded">check_circle</span>',
+            `${total} total tasks`);
+
         const content = card.querySelector('.card-content');
-        
-        // Add todos as table
-        if (result.todos && result.todos.length > 0) {
+
+        if (result.todos?.length > 0) {
             const table = document.createElement('table');
             table.className = 'tool-table';
             table.innerHTML = `
-                <thead>
+                <thead><tr><th>Status</th><th>Priority</th><th>Content</th></tr></thead>
+                <tbody>${result.todos.map(todo => `
                     <tr>
-                        <th>Status</th>
-                        <th>Priority</th>
-                        <th>Content</th>
+                        <td>${this.escapeHtml(todo.status || 'pending')}</td>
+                        <td>${this.escapeHtml(todo.priority || 'medium')}</td>
+                        <td>${this.escapeHtml(todo.content || '')}</td>
                     </tr>
-                </thead>
-                <tbody>
-                    ${result.todos.map(todo => `
-                        <tr>
-                            <td>${this.escapeHtml(todo.status || 'pending')}</td>
-                            <td>${this.escapeHtml(todo.priority || 'medium')}</td>
-                            <td>${this.escapeHtml(todo.content || '')}</td>
-                        </tr>
-                    `).join('')}
-                </tbody>
+                `).join('')}</tbody>
             `;
             content.appendChild(table);
         }
-        
+
         return card;
     }
 
     formatAskUserQuestionResult(card, result) {
         const answerCount = result.answers?.length || 0;
         const cancelled = result.cancelled ? ' (cancelled)' : '';
-        const headerTitle = 'User Answers';
-        const headerIcon = '<span class="material-symbols-rounded">chat_outgoing</span>';
-        const summary = `${answerCount} answer(s)${cancelled}`;
-        
-        this.createCardHeader(card, headerTitle, headerIcon, summary);
+
+        this.createCardHeader(card, 'User Answers',
+            '<span class="material-symbols-rounded">chat_outgoing</span>',
+            `${answerCount} answer(s)${cancelled}`);
+
         const content = card.querySelector('.card-content');
-        
-        // Add answers
-        if (result.answers && result.answers.length > 0) {
+
+        if (result.answers?.length > 0) {
             result.answers.forEach(answer => {
                 const answerItem = document.createElement('div');
                 answerItem.className = 'answer-item';
@@ -1523,60 +1241,42 @@ class VibeClient {
                 content.appendChild(answerItem);
             });
         }
-        
+
         return card;
     }
 
     formatGenericResult(card, result) {
-        const headerTitle = 'Result';
-        const headerIcon = '<span class="material-symbols-rounded">analytics</span>';
-        const summary = JSON.stringify(result, null, 2);
-        
-        this.createCardHeader(card, headerTitle, headerIcon, summary);
+        this.createCardHeader(card, 'Result',
+            '<span class="material-symbols-rounded">analytics</span>',
+            JSON.stringify(result, null, 2));
         return card;
     }
 
     updatePlaceholder() {
-        const mobilePlaceholder = 'Type your message...';
-        const desktopPlaceholder = 'Type your message... (Ctrl+Enter/Cmd+Enter to send)';
-        
-        if (window.innerWidth <= 480) {
-            this.elements.input.placeholder = mobilePlaceholder;
-        } else {
-            this.elements.input.placeholder = desktopPlaceholder;
-        }
+        this.elements.input.placeholder = window.innerWidth <= 480
+            ? 'Type your message...'
+            : 'Type your message... (Ctrl+Enter/Cmd+Enter to send)';
     }
 
     toggleTheme() {
         const currentTheme = document.documentElement.getAttribute('data-theme');
         const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
         const icon = this.elements.themeToggle.querySelector('.material-symbols-rounded');
-        
+
         document.documentElement.setAttribute('data-theme', newTheme);
         localStorage.setItem('theme', newTheme);
-        
-        if (newTheme === 'dark') {
-            icon.textContent = 'light_mode';
-        } else {
-            icon.textContent = 'dark_mode';
-        }
+        icon.textContent = newTheme === 'dark' ? 'light_mode' : 'dark_mode';
     }
 
     loadTheme() {
         const savedTheme = localStorage.getItem('theme') || 'light';
         const icon = this.elements.themeToggle.querySelector('.material-symbols-rounded');
-        
+
         document.documentElement.setAttribute('data-theme', savedTheme);
-        
-        if (savedTheme === 'dark') {
-            icon.textContent = 'light_mode';
-        } else {
-            icon.textContent = 'dark_mode';
-        }
+        icon.textContent = savedTheme === 'dark' ? 'light_mode' : 'dark_mode';
     }
 }
 
-// Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
     window.vibeClient = new VibeClient();
 });

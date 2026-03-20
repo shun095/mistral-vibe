@@ -199,7 +199,13 @@ result-*
 # Tests run the agent in the playground, we don't need to keep the session files
 tests/playground/*
 .
--e 
+-e
 # Node.js
 node_modules/
 package-lock.json
+-e
+# Coverage reports
+coverage/
+
+# Temporary files
+tmp/
