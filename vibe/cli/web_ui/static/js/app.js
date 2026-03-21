@@ -266,6 +266,9 @@ class VibeClient {
             case 'WebNotificationEvent':
                 this.handleWebNotification(event);
                 break;
+            case 'LLMErrorEvent':
+                this.handleLLMError(event);
+                break;
         }
     }
 
@@ -357,6 +360,37 @@ class VibeClient {
     handleWebNotification(event) {
         const { title, message } = event;
         showBrowserNotification(title, message);
+    }
+
+    /**
+     * Handle LLM error event
+     * @param {Object} event
+     */
+    handleLLMError(event) {
+        const { error_message: errorMessage, error_type: errorType, provider, model } = event;
+
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'message error';
+
+        let metaHtml = '';
+        if (provider || model) {
+            const parts = [];
+            if (provider) parts.push(`Provider: ${this.escapeHtml(provider)}`);
+            if (model) parts.push(`Model: ${this.escapeHtml(model)}`);
+            metaHtml = `<div class="error-meta">${parts.join(' | ')}</div>`;
+        }
+
+        errorDiv.innerHTML = `
+            <div class="error-header">
+                <span class="material-symbols-rounded">error</span>
+                <span>${this.escapeHtml(errorType)}</span>
+            </div>
+            <div class="error-details">${this.escapeHtml(errorMessage)}</div>
+            ${metaHtml}
+        `;
+
+        this.elements.messages.appendChild(errorDiv);
+        scrollUtils.scrollToBottom(this.elements.messages);
     }
 
     // Message streamer callbacks (thin delegates to UI methods)
