@@ -5,6 +5,7 @@ from enum import StrEnum, auto
 import gc
 import os
 from pathlib import Path
+import re
 import signal
 import subprocess
 import time
@@ -133,6 +134,7 @@ from vibe.core.types import (
     ApprovalPopupEvent,
     ApprovalResponse,
     Content,
+    LLMErrorEvent,
     LLMMessage,
     MessageResetEvent,
     PopupResponseEvent,
@@ -835,6 +837,9 @@ class VibeApp(App):  # noqa: PLR0904
             await self._mount_and_scroll(
                 ErrorMessage(error_message, collapsed=self._tools_collapsed)
             )
+
+            # Broadcast LLM error to WebUI
+            self._broadcast_llm_error_event(e)
         finally:
             self._agent_running = False
             self._interrupt_requested = False
@@ -1002,6 +1007,73 @@ class VibeApp(App):  # noqa: PLR0904
             self.agent_loop._notify_event_listeners(event)
         except Exception:
             pass
+
+    def _broadcast_llm_error_event(self, error: Exception) -> None:
+        """Broadcast LLM error event to WebUI.
+
+        Args:
+            error: The exception that occurred during LLM processing.
+        """
+        try:
+            event = LLMErrorEvent(
+                error_message=str(error),
+                error_type=type(error).__name__,
+                provider=self._extract_error_provider(error),
+                model=self._extract_error_model(error),
+            )
+            self.agent_loop._notify_event_listeners(event)
+        except Exception:
+            pass
+
+    def _extract_error_provider(self, error: Exception) -> str | None:
+        """Extract provider name from LLM error.
+
+        Args:
+            error: The exception to extract provider from.
+
+        Returns:
+            Provider name or None if not available.
+        """
+        from vibe.core.agent_loop import AgentLoopLLMResponseError
+        from vibe.core.llm.exceptions import BackendError
+
+        if isinstance(error, (RateLimitError, BackendError)):
+            return getattr(error, "provider", None)
+
+        if isinstance(error, (AgentLoopLLMResponseError, ValueError)):
+            return None
+
+        if isinstance(error, RuntimeError):
+            match = re.search(r"from ([^ ]+) \(model:", str(error))
+            if match:
+                return match.group(1)
+
+        return None
+
+    def _extract_error_model(self, error: Exception) -> str | None:
+        """Extract model name from LLM error.
+
+        Args:
+            error: The exception to extract model from.
+
+        Returns:
+            Model name or None if not available.
+        """
+        from vibe.core.agent_loop import AgentLoopLLMResponseError
+        from vibe.core.llm.exceptions import BackendError
+
+        if isinstance(error, (RateLimitError, BackendError)):
+            return getattr(error, "model", None)
+
+        if isinstance(error, (AgentLoopLLMResponseError, ValueError)):
+            return None
+
+        if isinstance(error, RuntimeError):
+            match = re.search(r"\(model: ([^)]+)\)", str(error))
+            if match:
+                return match.group(1)
+
+        return None
 
     def handle_web_approval_response(
         self,
@@ -1292,6 +1364,9 @@ class VibeApp(App):  # noqa: PLR0904
             await self._mount_and_scroll(
                 ErrorMessage(message, collapsed=self._tools_collapsed)
             )
+
+            # Broadcast LLM error to WebUI
+            self._broadcast_llm_error_event(e)
         finally:
             self._agent_running = False
             self._interrupt_requested = False

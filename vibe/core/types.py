@@ -527,6 +527,20 @@ class WebNotificationEvent(BaseEvent):
     )
 
 
+class LLMErrorEvent(BaseEvent):
+    """Event broadcast when agent loop fails to get result from LLM backend.
+
+    Triggered when LLM backend errors occur (BackendError, AgentLoopLLMResponseError, etc.).
+    """
+
+    error_message: str = Field(description="Human-readable error message")
+    error_type: str = Field(
+        description="Type of error (e.g., BackendError, RateLimitError)"
+    )
+    provider: str | None = Field(default=None, description="LLM provider name")
+    model: str | None = Field(default=None, description="Model name")
+
+
 class MessageList(Sequence[LLMMessage]):
     def __init__(
         self,
