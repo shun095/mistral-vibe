@@ -681,12 +681,12 @@ body {
 }
 
 .input-area {
-    padding: 16px 24px;
+    padding: 8px 12px;
     background-color: var(--bg-secondary);
     box-shadow: 0 3px 6px rgba(0, 0, 0, 0.16), 0 3px 6px rgba(0, 0, 0, 0.23);
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
 }
 
 #message-input {
@@ -697,6 +697,7 @@ body {
     background-color: var(--bg-primary);
     color: var(--text-primary);
     font-size: 1rem;
+    font-family: inherit;
     resize: none;
     min-height: 42px;
     max-height: 135px;
@@ -709,7 +710,7 @@ body {
 }
 
 #send-btn {
-    padding: 12px 24px;
+    padding: 12px;
     background-color: var(--blue);
     color: white;
     border: none;
@@ -717,10 +718,11 @@ body {
     cursor: pointer;
     font-size: 1rem;
     transition: background-color 0.2s;
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 6px;
+    justify-content: center;
     height: 42px;
+    width: 42px;
 }
 
 #send-btn:hover:not(:disabled) {
@@ -760,8 +762,8 @@ body {
 .interrupt-btn {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 12px 24px;
+    justify-content: center;
+    padding: 12px;
     background-color: var(--blue);
     color: white;
     border: none;
@@ -770,6 +772,7 @@ body {
     font-size: 1rem;
     transition: background-color 0.2s;
     height: 42px;
+    width: 42px;
 }
 
 .interrupt-btn:hover {
