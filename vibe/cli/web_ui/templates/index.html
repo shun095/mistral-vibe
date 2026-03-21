@@ -7,13 +7,16 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
-    <link rel="stylesheet" href="/static/css/style.css?v=20260318j">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260321i">
 </head>
 <body>
     <div class="container">
         <header class="header">
             <h1>Mistral Vibe</h1>
             <div class="header-actions">
+                <button id="toggle-cards-btn" class="theme-toggle-btn" title="Toggle all cards">
+                    <span class="material-symbols-rounded">remove</span>
+                </button>
                 <button id="theme-toggle" class="theme-toggle-btn" title="Toggle dark mode">
                     <span class="material-symbols-rounded">dark_mode</span>
                 </button>
@@ -63,6 +66,11 @@
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-    <script type="module" src="/static/js/app.js?v=20260318j"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+    <script>
+        // Configure Monaco Editor AMD loader
+        require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' }});
+    </script>
+    <script type="module" src="/static/js/app.js?v=20260321i"></script>
 </body>
 </html>

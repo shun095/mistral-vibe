@@ -42,6 +42,7 @@ class VibeClient {
             interruptBtn: document.getElementById('interrupt-btn'),
             processingIndicator: document.getElementById('processing-indicator'),
             themeToggle: document.getElementById('theme-toggle'),
+            toggleCardsBtn: document.getElementById('toggle-cards-btn'),
             imagePreviewContainer: document.getElementById('image-preview-container'),
             imagePreviewImg: document.getElementById('image-preview-img'),
             imagePreviewRemove: document.getElementById('image-preview-remove'),
@@ -124,6 +125,7 @@ class VibeClient {
         this.elements.input.addEventListener('scroll', () => this.autoResizeTextarea());
         this.bindScrollNavigationEvents();
         this.elements.themeToggle.addEventListener('click', () => this.toggleTheme());
+        this.elements.toggleCardsBtn.addEventListener('click', () => this.toggleAllCards());
 
         this.imageAttachment = new ImageAttachmentHandler({
             previewContainer: this.elements.imagePreviewContainer,
@@ -207,7 +209,10 @@ class VibeClient {
             case 'connected':
                 this.updateStatus('Connected', true);
                 this.historyLoaded = true;
-                setTimeout(() => this.forceScrollToBottom(), 0);
+                setTimeout(() => {
+                    this.forceScrollToBottom();
+                    this.updateToggleCardsIcon();
+                }, 0);
                 break;
             case 'event':
                 this.handleEvent(message.event);
@@ -428,7 +433,7 @@ class VibeClient {
         }
 
         this.currentReasoningText += content;
-        const textSpan = this.currentReasoningMessage?.querySelector('.text');
+        const textSpan = this.currentReasoningMessage?.querySelector('.reasoning-text');
         if (textSpan) {
             textSpan.textContent = this.currentReasoningText;
         }
@@ -755,8 +760,25 @@ class VibeClient {
 
     createReasoningMessage() {
         const messageDiv = document.createElement('div');
-        messageDiv.className = 'message reasoning';
-        messageDiv.innerHTML = `<div class="content"><span class="label">Thought</span><span class="text"></span></div>`;
+        messageDiv.className = 'message reasoning collapsed';
+
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'content';
+
+        const headerDiv = document.createElement('div');
+        headerDiv.className = 'reasoning-header';
+        headerDiv.innerHTML = `
+            <span class="label">Thought</span>
+            <span class="reasoning-toggle">▼</span>
+        `;
+        headerDiv.addEventListener('click', () => messageDiv.classList.toggle('collapsed'));
+        contentDiv.appendChild(headerDiv);
+
+        const textSpan = document.createElement('span');
+        textSpan.className = 'reasoning-text';
+        contentDiv.appendChild(textSpan);
+
+        messageDiv.appendChild(contentDiv);
         return messageDiv;
     }
 
@@ -932,7 +954,7 @@ class VibeClient {
 
     createToolCallElement(toolName, args, statusIcon, statusText) {
         const toolCallDiv = document.createElement('div');
-        toolCallDiv.className = 'message tool-call';
+        toolCallDiv.className = 'message tool-call collapsed';
 
         const contentDiv = document.createElement('div');
         contentDiv.className = 'content';
@@ -946,7 +968,10 @@ class VibeClient {
                 <span class="material-symbols-outlined">${this.escapeHtml(statusIcon || 'check_circle')}</span>
                 ${this.escapeHtml(statusText || '')}
             </span>
+            <span class="tool-toggle">▼</span>
         `;
+
+        headerDiv.addEventListener('click', () => toolCallDiv.classList.toggle('collapsed'));
         contentDiv.appendChild(headerDiv);
 
         if (args) {
@@ -978,6 +1003,7 @@ class VibeClient {
             case 'grep': return this.formatGrepResult(card, result);
             case 'read_file': return this.formatReadFileResult(card, result);
             case 'edit_file': return this.formatEditFileResult(card, result);
+            case 'write_file': return this.formatWriteFileResult(card, result);
             case 'lsp': return this.formatLspResult(card, result);
             case 'todo': return this.formatTodoResult(card, result);
             case 'ask_user_question': return this.formatAskUserQuestionResult(card, result);
@@ -1115,31 +1141,24 @@ class VibeClient {
     }
 
     formatReadFileResult(card, result) {
+        const path = result.path || 'unknown';
         const linesRead = result.lines_read || 0;
         const wasTruncated = result.was_truncated ? ' (truncated)' : '';
 
-        this.createCardHeader(card, `Read: ${result.path || 'file'}`,
+        this.createCardHeader(card, `Read: ${path}`,
             '<span class="material-symbols-rounded">description</span>',
             `Read ${linesRead} lines${wasTruncated}`);
 
         const content = card.querySelector('.card-content');
 
         if (result.content) {
-            const lines = result.content.split('\n');
-            content.appendChild(document.createElement('pre')).textContent = lines.slice(0, 100).join('\n');
-
-            if (lines.length > 100) {
-                const moreDiv = document.createElement('div');
-                moreDiv.style.cssText = 'padding: 8px 12px; color: #a0a0a0; font-style: italic';
-                moreDiv.textContent = `... and ${lines.length - 100} more lines`;
-                content.appendChild(moreDiv);
-            }
+            this.createCodeBlock(path, result.content, content, result.offset || 0);
         }
 
         if (result.lsp_diagnostics) {
             const diagnosticsDiv = document.createElement('div');
-            diagnosticsDiv.style.cssText = 'margin-top: 12px; padding: 8px 12px; background-color: #3a2a1a; border-radius: 4px';
-            diagnosticsDiv.innerHTML = `<div style="font-weight: 600; color: #f0ad4e; margin-bottom: 4px;">LSP Diagnostics</div><pre style="margin: 0; font-size: 0.85rem;">${this.escapeHtml(result.lsp_diagnostics)}</pre>`;
+            diagnosticsDiv.style.cssText = 'margin-top: 12px; padding: 8px 12px; background-color: var(--bg-tertiary); border-radius: 4px;';
+            diagnosticsDiv.innerHTML = `<div style="font-weight: 600; color: var(--yellow); margin-bottom: 4px;">LSP Diagnostics</div><pre style="margin: 0; font-size: 0.85rem;">${this.escapeHtml(result.lsp_diagnostics)}</pre>`;
             content.appendChild(diagnosticsDiv);
         }
 
@@ -1267,6 +1286,463 @@ class VibeClient {
         return card;
     }
 
+    createCodeBlock(path, content, container, offset = 0) {
+        const language = this.detectLanguageFromPath(path);
+        const codeBlock = document.createElement('pre');
+        codeBlock.style.cssText = 'margin-top: 8px; border-radius: 4px; overflow: hidden; max-height: 400px; overflow-y: auto; cursor: pointer;';
+        codeBlock.title = 'Double-click to view full screen';
+
+        const code = document.createElement('code');
+        code.className = `language-${language}`;
+        code.textContent = content;
+
+        codeBlock.appendChild(code);
+        container.appendChild(codeBlock);
+
+        // Apply syntax highlighting
+        if (window.hljs) {
+            window.hljs.highlightElement(codeBlock);
+        }
+
+        // Add double-click handler for fullscreen
+        codeBlock.addEventListener('dblclick', () => {
+            this.showCodeFullscreen(path, content, language, offset);
+        });
+
+        return codeBlock;
+    }
+
+    formatWriteFileResult(card, result) {
+        const path = result.path || 'unknown';
+        const bytesWritten = result.bytes_written || 0;
+        const fileExisted = result.file_existed;
+
+        const status = fileExisted ? 'Overwritten' : 'Created';
+        const statusIcon = fileExisted ? 'edit_note' : 'note_add';
+        const statusColor = fileExisted ? 'var(--yellow)' : 'var(--green)';
+
+        this.createCardHeader(card, status,
+            `<span class="material-symbols-rounded" style="color: ${statusColor}">${statusIcon}</span>`,
+            `${bytesWritten} bytes written`);
+
+        const contentDiv = card.querySelector('.card-content');
+
+        const pathDiv = document.createElement('div');
+        pathDiv.style.cssText = 'padding: 8px 12px 0; font-family: monospace; font-size: 0.9rem; color: var(--text-secondary);';
+        pathDiv.textContent = `Path: ${path}`;
+        contentDiv.appendChild(pathDiv);
+
+        if (result.content) {
+            this.createCodeBlock(path, result.content, contentDiv);
+        }
+
+        return card;
+    }
+
+    truncatePathFromStart(path, container) {
+        const buttonsWidth = 70;
+        const padding = 40;
+        const availableWidth = container.offsetWidth - buttonsWidth - padding;
+        const style = window.getComputedStyle(container);
+        const fontSize = parseFloat(style.fontSize);
+        const maxChars = Math.floor(availableWidth / (fontSize * 0.6));
+        if (path.length <= maxChars) return path;
+        const parts = path.split('/');
+        let result = parts[parts.length - 1];
+        for (let i = parts.length - 2; i >= 0; i--) {
+            const test = '...' + parts.slice(i).join('/');
+            if (test.length > maxChars) break;
+            result = test;
+        }
+        return result;
+    }
+
+    showCodeFullscreen(path, content, language, offset = 0) {
+        // Create modal if it doesn't exist
+        if (!this.codeModal) {
+            this.codeModal = this.createCodeModal();
+            document.body.appendChild(this.codeModal);
+        }
+
+        // Populate modal content
+        const titleEl = this.codeModal.querySelector('.code-modal-title');
+        const headerEl = this.codeModal.querySelector('.code-modal-header');
+        titleEl.textContent = this.truncatePathFromStart(path, headerEl);
+        if (offset > 0) {
+            titleEl.textContent += ` (from line ${offset + 1})`;
+        }
+
+        const monacoContainer = this.codeModal.querySelector('.monaco-container');
+        monacoContainer.innerHTML = '';
+
+        // Show modal first
+        this.codeModal.classList.add('active');
+
+        // Initialize Monaco Editor with proper timing
+        require(['vs/editor/editor.main'], (monaco) => {
+            // Wait for DOM to be fully rendered
+            setTimeout(() => {
+                try {
+                    const editor = monaco.editor.create(monacoContainer, {
+                        value: content,
+                        language: this.mapLanguageToMonaco(language),
+                        theme: 'vs-dark',
+                        readOnly: true,
+                        domReadOnly: true,
+                        scrollBeyondLastLine: false,
+                        minimap: { enabled: false },
+                        lineNumbers: num => num + offset,
+                        wordWrap: 'off',
+                        automaticLayout: true,
+                        fontSize: 14,
+                        renderLineHighlight: 'none',
+                        cursorStyle: 'line',
+                        cursorBlinking: 'smooth',
+                        selectionHighlight: false,
+                        scrollbar: {
+                            vertical: 'visible',
+                            horizontal: 'auto',
+                            useShadows: false,
+                            verticalScrollbarSize: 12,
+                            horizontalScrollbarSize: 12
+                        }
+                    });
+
+                    // domReadOnly: true handles focus prevention automatically
+
+                    // Store editor reference for word wrap toggle
+                    this.currentEditor = editor;
+                    this.monacoContainer = monacoContainer;
+
+                    // Update word wrap button state
+                    const wrapBtn = this.codeModal.querySelector('.code-modal-btn');
+                    wrapBtn.dataset.wrap = 'false';
+                    wrapBtn.querySelector('.material-symbols-rounded').textContent = 'wrap_text';
+                } catch (error) {
+                    console.error('Monaco editor creation failed:', error);
+                    // Fallback to simple display
+                    monacoContainer.innerHTML = `<pre style="padding: 20px; color: #fff; font-family: monospace;">${content}</pre>`;
+                }
+            }, 100);
+        });
+
+        // Prevent body scroll
+        document.body.style.overflow = 'hidden';
+    }
+
+    hideCodeFullscreen() {
+        if (this.codeModal) {
+            // Dispose Monaco editor if it exists
+            if (this.currentEditor) {
+                this.currentEditor.dispose();
+                this.currentEditor = null;
+            }
+            this.codeModal.classList.remove('active');
+            document.body.style.overflow = '';
+        }
+    }
+
+    createCodeModal() {
+        const modal = document.createElement('div');
+        modal.className = 'code-modal';
+
+        const header = document.createElement('div');
+        header.className = 'code-modal-header';
+
+        const title = document.createElement('h3');
+        title.className = 'code-modal-title';
+        title.textContent = 'File path';
+
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'code-modal-actions';
+
+        const wrapBtn = document.createElement('button');
+        wrapBtn.className = 'code-modal-btn';
+        wrapBtn.innerHTML = '<span class="material-symbols-rounded">wrap_text</span>';
+        wrapBtn.title = 'Toggle word wrap';
+        wrapBtn.dataset.wrap = 'false';
+
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'code-modal-close';
+        closeBtn.innerHTML = '<span class="material-symbols-rounded">close</span>';
+        closeBtn.title = 'Close (ESC)';
+
+        actionsDiv.appendChild(wrapBtn);
+        actionsDiv.appendChild(closeBtn);
+        header.appendChild(title);
+        header.appendChild(actionsDiv);
+
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'code-modal-content';
+
+        const monacoContainer = document.createElement('div');
+        monacoContainer.className = 'monaco-container';
+        contentDiv.appendChild(monacoContainer);
+
+        modal.appendChild(header);
+        modal.appendChild(contentDiv);
+
+        // Close handlers
+        const close = () => this.hideCodeFullscreen();
+        closeBtn.addEventListener('click', close);
+
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                close();
+            }
+        });
+
+        // Word wrap toggle
+        wrapBtn.addEventListener('click', () => {
+            if (this.currentEditor) {
+                const isWrap = wrapBtn.dataset.wrap === 'true';
+                const newWrap = !isWrap;
+                wrapBtn.dataset.wrap = String(newWrap);
+
+                this.currentEditor.updateOptions({
+                    wordWrap: newWrap ? 'on' : 'off',
+                    lineNumbers: 'on'  // Always keep line numbers visible
+                });
+
+                wrapBtn.querySelector('.material-symbols-rounded').textContent =
+                    newWrap ? 'format_line_spacing' : 'wrap_text';
+            }
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && this.codeModal && this.codeModal.classList.contains('active')) {
+                close();
+            }
+        });
+
+        return modal;
+    }
+
+    mapLanguageToMonaco(language) {
+        const map = {
+            'javascript': 'javascript',
+            'jsx': 'javascript',
+            'typescript': 'typescript',
+            'tsx': 'typescript',
+            'python': 'python',
+            'ruby': 'ruby',
+            'java': 'java',
+            'cpp': 'cpp',
+            'c': 'c',
+            'csharp': 'csharp',
+            'go': 'go',
+            'rust': 'rust',
+            'php': 'php',
+            'swift': 'swift',
+            'kotlin': 'kotlin',
+            'scala': 'scala',
+            'bash': 'shell',
+            'sh': 'shell',
+            'sql': 'sql',
+            'json': 'json',
+            'css': 'css',
+            'scss': 'scss',
+            'html': 'html',
+            'xml': 'xml',
+            'yaml': 'yaml',
+            'yml': 'yaml',
+            'markdown': 'markdown',
+            'plaintext': 'plaintext',
+            'text': 'plaintext'
+        };
+        return map[language] || 'plaintext';
+    }
+
+    detectLanguageFromPath(path) {
+        const extMap = {
+            // Common languages
+            'js': 'javascript',
+            'jsx': 'jsx',
+            'ts': 'typescript',
+            'tsx': 'tsx',
+            'py': 'python',
+            'rb': 'ruby',
+            'java': 'java',
+            'cpp': 'cpp',
+            'cc': 'cpp',
+            'cxx': 'cpp',
+            'h': 'cpp',
+            'hpp': 'cpp',
+            'c': 'c',
+            'cs': 'csharp',
+            'go': 'go',
+            'rs': 'rust',
+            'php': 'php',
+            'phtml': 'php',
+            'php3': 'php',
+            'php4': 'php',
+            'php5': 'php',
+            'phpt': 'php',
+            'swift': 'swift',
+            'kt': 'kotlin',
+            'scala': 'scala',
+            // Shell scripts
+            'sh': 'bash',
+            'bash': 'bash',
+            'zsh': 'bash',
+            'fish': 'bash',
+            // Markup
+            'html': 'xml',
+            'htm': 'xml',
+            'xhtml': 'xml',
+            'xml': 'xml',
+            'json': 'json',
+            // Stylesheets
+            'css': 'css',
+            'scss': 'scss',
+            'sass': 'scss',
+            'less': 'less',
+            // Config
+            'yaml': 'yaml',
+            'yml': 'yaml',
+            'toml': 'toml',
+            'ini': 'ini',
+            'cfg': 'ini',
+            'conf': 'ini',
+            // Documentation
+            'md': 'markdown',
+            'markdown': 'markdown',
+            'rst': 'rst',
+            'tex': 'latex',
+            // Database
+            'sql': 'sql',
+            'mysql': 'sql',
+            'postgres': 'sql',
+            'psql': 'sql',
+            // API
+            'graphql': 'graphql',
+            'gql': 'graphql',
+            'proto': 'protobuf',
+            // Frameworks
+            'vue': 'vue',
+            'svelte': 'javascript',
+            // Data science
+            'r': 'r',
+            'R': 'r',
+            // PowerShell
+            'ps1': 'powershell',
+            'psm1': 'powershell',
+            'psd1': 'powershell',
+            'ps1xml': 'xml',
+            'ps1tab': 'xml',
+            'pssc': 'xml',
+            'psrc': 'xml',
+            // Scripting
+            'lua': 'lua',
+            'pl': 'perl',
+            'pm': 'perl',
+            'tcl': 'tcl',
+            'awk': 'awk',
+            // Build tools
+            'sbt': 'scala',
+            'gradle': 'groovy',
+            'gradle.kts': 'kotlin',
+            'cake': 'csharp',
+            // .NET
+            'fs': 'fsharp',
+            'fsi': 'fsharp',
+            'fsx': 'fsharp',
+            'fsproj': 'xml',
+            // Functional
+            'ml': 'ocaml',
+            'mli': 'ocaml',
+            'erl': 'erlang',
+            'hrl': 'erlang',
+            'ex': 'elixir',
+            'exs': 'elixir',
+            'eex': 'elixir',
+            'heex': 'elixir',
+            'leex': 'elixir',
+            // Legacy
+            'aw': 'actionscript',
+            'as': 'actionscript',
+            'as3': 'actionscript',
+            'mxml': 'xml',
+            'actionscript': 'actionscript',
+            'asp': 'asp',
+            'aspx': 'asp',
+            'vb': 'vbnet',
+            'vbs': 'vbnet',
+            'vbhtml': 'asp',
+            'vbscript': 'vbnet',
+            // Templating
+            'hbs': 'handlebars',
+            'handlebars': 'handlebars',
+            'mustache': 'handlebars',
+            'ejs': 'ejs',
+            'pug': 'pug',
+            'jade': 'pug',
+            'haml': 'haml',
+            'slim': 'slim',
+            'coffee': 'coffeescript',
+            'litcoffee': 'coffeescript',
+            // Dart
+            'dart': 'dart',
+            'flap': 'dart',
+            'pubspec': 'yaml',
+            'pubspec.lock': 'yaml',
+            'dart_tool': 'yaml',
+            // Lisp family
+            'clj': 'clojure',
+            'cljs': 'clojure',
+            'cljc': 'clojure',
+            'end': 'clojure',
+            'lisp': 'lisp',
+            'el': 'lisp',
+            'scm': 'lisp',
+            'ss': 'lisp',
+            'rkt': 'scheme',
+            'rktl': 'scheme',
+            'scheme': 'scheme',
+            // Assembly
+            'asm': 'asm',
+            'nasm': 'asm',
+            'masm': 'asm',
+            'fasm': 'asm',
+            's': 'asm',
+            'S': 'asm',
+            // Hardware
+            'v': 'verilog',
+            'sv': 'systemverilog',
+            'svh': 'systemverilog',
+            'vh': 'vhdl',
+            'vhd': 'vhdl',
+            'vu': 'verilog',
+            // Build
+            'make': 'makefile',
+            'mk': 'makefile',
+            'cmake': 'cmake',
+            'dockerfile': 'dockerfile',
+            'docker': 'dockerfile',
+            // Git
+            'gitignore': 'ini',
+            'gitattributes': 'ini',
+            'editorconfig': 'ini',
+            'gitconfig': 'ini',
+            // Sublime Text
+            'sublime': 'ini',
+            'sublime-project': 'json',
+            'sublime-workspace': 'json',
+            'sublime-build': 'json',
+            'sublime-settings': 'json',
+            'sublime-keybindings': 'json',
+            'sublime-completions': 'json',
+            'sublime-menu': 'json',
+            'sublime-macro': 'json',
+            'sublime-syntax': 'yaml',
+            'sublime-theme': 'json',
+            'sublime-completion': 'json',
+        };
+
+        const ext = path.split('.').pop().toLowerCase();
+        return extMap[ext] || 'plaintext';
+    }
+
     updatePlaceholder() {
         this.elements.input.placeholder = window.innerWidth <= 480
             ? 'Type your message...'
@@ -1289,6 +1765,33 @@ class VibeClient {
 
         document.documentElement.setAttribute('data-theme', savedTheme);
         icon.textContent = savedTheme === 'dark' ? 'light_mode' : 'dark_mode';
+    }
+
+    _getCollapsibleCards() {
+        return document.querySelectorAll('.message.tool-call, .message.reasoning');
+    }
+
+    _getAllCardsCollapsed() {
+        return Array.from(this._getCollapsibleCards()).every(card => card.classList.contains('collapsed'));
+    }
+
+    updateToggleCardsIcon() {
+        const icon = this.elements.toggleCardsBtn.querySelector('.material-symbols-rounded');
+        icon.textContent = this._getAllCardsCollapsed() ? 'add' : 'remove';
+    }
+
+    toggleAllCards() {
+        const allCollapsed = this._getAllCardsCollapsed();
+
+        this._getCollapsibleCards().forEach(card => {
+            if (allCollapsed) {
+                card.classList.remove('collapsed');
+            } else {
+                card.classList.add('collapsed');
+            }
+        });
+
+        this.updateToggleCardsIcon();
     }
 }
 
