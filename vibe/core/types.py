@@ -541,6 +541,21 @@ class LLMErrorEvent(BaseEvent):
     model: str | None = Field(default=None, description="Model name")
 
 
+class LLMRetryEvent(BaseEvent):
+    """Event broadcast when LLM backend request fails and is being retried.
+
+    Triggered by async_retry/async_generator_retry decorators when a retryable
+    error occurs and a retry attempt is about to be made.
+    """
+
+    attempt: int = Field(description="Current retry attempt number (1-indexed)")
+    max_attempts: int = Field(description="Maximum number of retry attempts")
+    error_message: str = Field(description="Human-readable error message")
+    delay_seconds: float = Field(description="Delay before next retry in seconds")
+    provider: str | None = Field(default=None, description="LLM provider name")
+    model: str | None = Field(default=None, description="Model name")
+
+
 class MessageList(Sequence[LLMMessage]):
     def __init__(
         self,

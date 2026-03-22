@@ -133,9 +133,11 @@ from vibe.core.types import (
     AgentStats,
     ApprovalPopupEvent,
     ApprovalResponse,
+    BaseEvent,
     Content,
     LLMErrorEvent,
     LLMMessage,
+    LLMRetryEvent,
     MessageResetEvent,
     PopupResponseEvent,
     QuestionPopupEvent,
@@ -402,6 +404,7 @@ class VibeApp(App):  # noqa: PLR0904
 
         self.agent_loop.set_approval_callback(self._approval_callback)
         self.agent_loop.set_user_input_callback(self._user_input_callback)
+        self.agent_loop.add_event_listener(self._handle_retry_event)
         self._refresh_profile_widgets()
 
         chat_input_container = self.query_one(ChatInputContainer)
@@ -1022,6 +1025,29 @@ class VibeApp(App):  # noqa: PLR0904
             self.agent_loop._notify_event_listeners(event)
         except Exception:
             pass
+
+    def _handle_retry_event(self, event: BaseEvent) -> None:
+        """Handle retry events from the agent loop.
+
+        Args:
+            event: The event to handle.
+        """
+        if isinstance(event, LLMRetryEvent):
+            self._show_retry_notification(event)
+
+    def _show_retry_notification(self, event: LLMRetryEvent) -> None:
+        """Show a toast notification when LLM request is being retried.
+
+        Args:
+            event: LLMRetryEvent containing retry details.
+        """
+        provider_info = f" ({event.provider})" if event.provider else ""
+        self.notify(
+            f"Request failed, retrying... (attempt {event.attempt}/{event.max_attempts}){provider_info}",
+            title="Retrying",
+            severity="warning",
+            timeout=3,
+        )
 
     def _extract_error_provider(self, error: Exception) -> str | None:
         """Extract provider name from LLM error.

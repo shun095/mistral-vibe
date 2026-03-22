@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Callable, Sequence
 import json
 import os
 import types
@@ -19,11 +19,12 @@ from vibe.core.types import (
     AvailableTool,
     LLMChunk,
     LLMMessage,
+    LLMRetryEvent,
     LLMUsage,
     Role,
     StrToolChoice,
 )
-from vibe.core.utils import async_generator_retry, async_retry
+from vibe.core.utils import apply_retry_decorator
 
 if TYPE_CHECKING:
     from vibe.core.config import ModelConfig, ProviderConfig
@@ -170,16 +171,39 @@ class GenericBackend:
         client: httpx.AsyncClient | None = None,
         provider: ProviderConfig,
         timeout: float = 720.0,
+        on_retry: Callable[[LLMRetryEvent], None] | None = None,
     ) -> None:
         """Initialize the backend.
 
         Args:
             client: Optional httpx client to use. If not provided, one will be created.
+            provider: Provider configuration
+            timeout: Request timeout in seconds
+            on_retry: Optional callback invoked before each retry with LLMRetryEvent
         """
         self._client = client
         self._owns_client = client is None
         self._provider = provider
         self._timeout = timeout
+        self._on_retry = on_retry
+
+        # Apply retry decorators dynamically with callback if provided
+        if on_retry is not None:
+            self._apply_retry_decorators()
+
+    def _apply_retry_decorators(self) -> None:
+        """Apply retry decorators with the on_retry callback to request methods."""
+        retry_config: dict[str, Any] = {
+            "tries": 10,
+            "on_retry": self._on_retry,
+            "provider": self._provider.name,
+            "model": None,
+        }
+
+        apply_retry_decorator(self, "_make_request", retry_config, is_streaming=False)
+        apply_retry_decorator(
+            self, "_make_streaming_request", retry_config, is_streaming=True
+        )
 
     async def __aenter__(self) -> GenericBackend:
         if self._client is None:
@@ -360,7 +384,6 @@ class GenericBackend:
         data: dict[str, Any]
         headers: dict[str, str]
 
-    @async_retry(tries=10)
     async def _make_request(
         self, url: str, data: bytes, headers: dict[str, str]
     ) -> HTTPResponse:
@@ -384,7 +407,6 @@ class GenericBackend:
         )
         return self.HTTPResponse(response_body, response_headers)
 
-    @async_generator_retry(tries=10)
     async def _make_streaming_request(
         self, url: str, data: bytes, headers: dict[str, str]
     ) -> AsyncGenerator[dict[str, Any]]:
