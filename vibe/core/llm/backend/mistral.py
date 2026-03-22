@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Callable, Sequence
 import json
 import os
 import types
@@ -39,16 +39,13 @@ from vibe.core.types import (
     FunctionCall,
     LLMChunk,
     LLMMessage,
+    LLMRetryEvent,
     LLMUsage,
     Role,
     StrToolChoice,
     ToolCall,
 )
-from vibe.core.utils import (
-    async_generator_retry,
-    async_retry,
-    get_server_url_from_api_base,
-)
+from vibe.core.utils import apply_retry_decorator, get_server_url_from_api_base
 
 if TYPE_CHECKING:
     from vibe.core.config import ModelConfig, ProviderConfig
@@ -183,7 +180,12 @@ class MistralMapper:
 
 
 class MistralBackend:
-    def __init__(self, provider: ProviderConfig, timeout: float = 720.0) -> None:
+    def __init__(
+        self,
+        provider: ProviderConfig,
+        timeout: float = 720.0,
+        on_retry: Callable[[LLMRetryEvent], None] | None = None,
+    ) -> None:
         self._client: Mistral | None = None
         self._provider = provider
         self._mapper = MistralMapper()
@@ -192,6 +194,7 @@ class MistralBackend:
             if self._provider.api_key_env_var
             else None
         )
+        self._on_retry = on_retry
 
         reasoning_field = getattr(provider, "reasoning_field_name", "reasoning_content")
         if reasoning_field != "reasoning_content":
@@ -210,6 +213,24 @@ class MistralBackend:
         self._server_url = server_url
         self._timeout = timeout
         self._retry_config = self._build_retry_config()
+
+        # Apply retry decorators dynamically with callback if provided
+        if on_retry is not None:
+            self._apply_retry_decorators()
+
+    def _apply_retry_decorators(self) -> None:
+        """Apply retry decorators with the on_retry callback to request methods."""
+        retry_config: dict[str, Any] = {
+            "tries": 10,
+            "on_retry": self._on_retry,
+            "provider": self._provider.name,
+            "model": None,
+        }
+
+        apply_retry_decorator(self, "complete", retry_config, is_streaming=False)
+        apply_retry_decorator(
+            self, "complete_streaming", retry_config, is_streaming=True
+        )
 
     def _build_retry_config(self) -> RetryConfig:
         return RetryConfig(
@@ -252,7 +273,6 @@ class MistralBackend:
             self._client = self._create_mistral_client()
         return self._client
 
-    @async_retry(tries=10)
     async def complete(
         self,
         *,
@@ -344,7 +364,6 @@ class MistralBackend:
                 tool_choice=tool_choice,
             ) from e
 
-    @async_generator_retry(tries=10)
     async def complete_streaming(
         self,
         *,

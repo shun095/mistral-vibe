@@ -80,6 +80,7 @@ from vibe.core.types import (
     EntrypointMetadata,
     LLMChunk,
     LLMMessage,
+    LLMRetryEvent,
     LLMUsage,
     MessageList,
     MessageResetEvent,
@@ -239,6 +240,14 @@ class AgentLoop:
             except Exception:
                 pass
 
+    def add_event_listener(self, listener: Callable[[BaseEvent], None]) -> None:
+        """Add an event listener.
+
+        Args:
+            listener: Callback function to be called when events are broadcast.
+        """
+        self._event_listeners.append(listener)
+
     @property
     def agent_profile(self) -> AgentProfile:
         return self.agent_manager.active_profile
@@ -301,7 +310,16 @@ class AgentLoop:
         active_model = self.config.get_active_model()
         provider = self.config.get_provider_for_model(active_model)
         timeout = self.config.api_timeout
-        return BACKEND_FACTORY[provider.backend](provider=provider, timeout=timeout)
+        return BACKEND_FACTORY[provider.backend](
+            provider=provider, timeout=timeout, on_retry=self._on_llm_retry
+        )
+
+    def _on_llm_retry(self, event: LLMRetryEvent) -> None:
+        """Handle LLM retry event by notifying event listeners."""
+        from vibe.core.logger import logger
+
+        logger.debug("on_retry called: " + str(event))
+        self._notify_event_listeners(event)
 
     async def _save_messages(self) -> None:
         await self.session_logger.save_interaction(
