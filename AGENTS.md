@@ -148,61 +148,29 @@ You behave adhering this guidelines strictly.
 ## 🛡️ Safety Rules
 
 ### Follow User's Instructions Precisely
-- ❌ **NEVER make any changes to code or git repository** unless explicitly instructed by the user.
-- ✅ If there is any uncertainty about a task, you MUST ask the user **before** making any significant changes.
-
-**Example 1 - User: "Analyze the git status and create a commit for staged changes."**
-- ❌ NEVER modify the staging area.
-- ❌ NEVER run `git add` or `git reset`. You MUST act as a reporter, not a developer
-- ✅ Use `git status` or `git diff --staged` to analyze changes.
-- ✅ Use `git commit` to create a commit for the currently staged changes.
-
-**Example 2 - User: "Analyze the codebase and create a plan to refactor."**
-- ❌ NEVER execute the planned refactor without the user's permission. You MUST act as a planner, not a developer
-- ✅ Read the code, analyze the codebase, and create a planning document.
-
-**Example 3 - User: "Run all tests."**
-- ❌ NEVER consider a task complete after running only some tests.
-- ❌ NEVER modify the code without the user's permission. You MUST act as a tester, not a developer.
-- ✅ Run all tests with a long timeout parameter if necessary using the bash tool.
-- ✅ You may create a new report file that does not affect existing code or git repository regarding test results.
-
-**Example 4 - User: "Restore files you've modified for feature X."**
-- ❌ NEVER run `git reset --hard` or `git checkout` on unrelated files that may have been changed by the user for other work.
-- ❌ NEVER modify any files you haven't changed.
-- ❌ NEVER modify any files not related to feature X. You are not the developer occupying this repository. Please do not remove others' changes.
-- ✅ Restore files you've modified **and** related to feature X. Run `git checkout /path/to/related_files_to_your_work_for_X`.
+- ❌ NEVER change code/git unless explicitly instructed
+- ✅ Ask user before any significant changes or when uncertain
+- Act as reporter/planner/tester, not developer, unless instructed
 
 ### Git Safety
 - ❌ NEVER use `git reset --hard` or `git checkout <filename>` lightly
-- ❌ NEVER create commits unless explicitly requested by the user
-- ✅ Always make backups before destructive operations
-- ✅ Prefer `git stash --all` for saving changes temporarily
-- ✅ Create commits only when explicitly requested by the user
+- ❌ NEVER create commits unless explicitly requested
+- ✅ Backup before destructive operations; prefer `git stash --all` for temporary saves
 - ✅ Only stage/commit files related to the requested feature
+- ✅ **All commits MUST pass pre-commit hooks** - run `uv run pre-commit run --files <staged_files>` before committing
 
 ### Production Directories
 - ❌ NEVER modify/delete files in `~/.vibe`
-- ❌ NEVER write logs to `~/.vibe/vibe.log` during development/testing
-- ✅ Always use a dedicated log file in the project directory for testing
-- ✅ Only add new files to production directories
+- ❌ NEVER write logs to `~/.vibe/vibe.log` during testing
+- ✅ Use project directory log files for testing; only add new files to production
 
-### Task Specific and Non Future-Proof files
-- ❌ NEVER put specific documents and debug scripts in root directory.
-- ❌ NEVER respond simple text like `Task completed.` as final response.
-- ❌ NEVER create summary using tools if not specified.
-- ✅ Always respond directly to the user instead of creating report files.
-- ✅ Place files in ./tmp/ directory only when necessary. You may put: detailed documents of summary, report and plan etc. for references only when necessary.
-- ✅ Place temporal debug scripts in the ./tmp/ directory only when necessary.
+### Task Files
+- ❌ NEVER put documents/debug scripts in root; NEVER respond with just `Task completed.`
+- ✅ Place temp files in `./tmp/` only when necessary
 
-### Avoid file name based versioning
-- ❌ NEVER use file name based versioning
-    - ❌ *_v2
-    - ❌ *_comprehensive
-    - ❌ *_simple
-    - ❌ *_final
-    etc.
-- ✅ Back up the old file as ./tmp/*_v1.bak or something else before creating a new file with the same name to avoid file name-based versioning while keeping old files.
+### File Versioning
+- ❌ NEVER use filename versioning (`*_v2`, `*_final`, etc.)
+- ✅ Backup old files as `./tmp/*_v1.bak` before recreating
 
 ## Common Requirements
 - Keep codebase and documents simple, clean and logically structured.

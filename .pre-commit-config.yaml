@@ -34,3 +34,26 @@ repos:
       - id: typos
         args: [--write-changes]
         exclude: __snapshots__/.*\.svg$
+
+  - repo: local
+    hooks:
+      - id: custom-precommit-check
+        name: Custom pre-commit check
+        entry: bash scripts/custom_precommit_check.sh
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: pytest
+        name: Run Python tests
+        entry: uv run pytest tests/
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: npm-test
+        name: Run JavaScript tests
+        entry: npm test
+        language: system
+        pass_filenames: false
+        always_run: true
