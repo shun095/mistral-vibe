@@ -109,17 +109,28 @@ async def broadcast_to_clients(app: FastAPI, message: str) -> None:
             clients.discard(websocket)
 
 
-def _create_pydantic_model_from_dict(data: dict) -> Any:
+def _create_pydantic_model_from_dict(data: dict, tool_name: str | None = None) -> Any:
     """Create a Pydantic model from a dictionary with extra fields allowed.
+
+    For known tools with proper result models, use the actual model class.
+    Otherwise, fall back to a dynamic model.
 
     Args:
         data: Dictionary to convert to a Pydantic model.
+        tool_name: Optional tool name to use the proper result model.
 
     Returns:
         A Pydantic model instance with the data.
     """
     from pydantic import BaseModel
 
+    # Try to use the proper result model for known tools
+    if tool_name == "ask_user_question":
+        from vibe.core.tools.builtins.ask_user_question import AskUserQuestionResult
+
+        return AskUserQuestionResult.model_validate(data)
+
+    # Fall back to dynamic model for unknown tools
     class DynamicModel(BaseModel):
         model_config = {"extra": "allow"}
 
@@ -224,6 +235,7 @@ def messages_to_events(  # noqa: PLR0912, PLR0915
     """
     from vibe.core.types import (
         AssistantEvent,
+        ContinueableUserMessageEvent,
         ReasoningEvent,
         Role,
         ToolCallEvent,
@@ -248,10 +260,22 @@ def messages_to_events(  # noqa: PLR0912, PLR0915
 
         # User messages
         if msg.role == Role.user:
-            user_content = msg.content if isinstance(msg.content, str) else ""
-            events.append(
-                UserMessageEvent(content=user_content, message_id=msg.message_id or "")
-            )
+            # Preserve list content (e.g., for images) or use string content
+            user_content = msg.content if msg.content else ""
+
+            # Messages with tool_call_id are ContinueableUserMessageEvent (e.g., from read_image tool)
+            if msg.tool_call_id:
+                events.append(
+                    ContinueableUserMessageEvent(
+                        content=user_content, message_id=msg.message_id
+                    )
+                )
+            else:
+                events.append(
+                    UserMessageEvent(
+                        content=user_content, message_id=msg.message_id or ""
+                    )
+                )
 
         # Assistant messages
         elif msg.role == Role.assistant:
@@ -297,11 +321,13 @@ def messages_to_events(  # noqa: PLR0912, PLR0915
                     if isinstance(args, str):
                         try:
                             args_dict = json.loads(args)
-                            args_model = _create_pydantic_model_from_dict(args_dict)
+                            args_model = _create_pydantic_model_from_dict(
+                                args_dict, tool_name
+                            )
                         except (json.JSONDecodeError, ValueError):
                             pass
                     elif isinstance(args, dict):
-                        args_model = _create_pydantic_model_from_dict(args)
+                        args_model = _create_pydantic_model_from_dict(args, tool_name)
 
                     # Send tool call event with args if available
                     if tool_class is None:
@@ -339,9 +365,10 @@ def messages_to_events(  # noqa: PLR0912, PLR0915
             # Convert content to string for json.loads
             content_str = msg.content if isinstance(msg.content, str) else "{}"
             try:
+                # Try JSON first (new format)
                 result_obj = json.loads(content_str)
             except (json.JSONDecodeError, ValueError):
-                # Fall back to text format parsing with multi-line value support
+                # Fall back to text format parsing with multi-line value support (legacy format)
                 # Pass tool_name and tool_manager for dynamic field detection
                 result_obj = _parse_tool_output(
                     content_str, tool_name=tool_name, tool_manager=tool_manager
@@ -350,7 +377,7 @@ def messages_to_events(  # noqa: PLR0912, PLR0915
             # Create a result model if we have result data
             result_model: Any = None
             if result_obj:
-                result_model = _create_pydantic_model_from_dict(result_obj)
+                result_model = _create_pydantic_model_from_dict(result_obj, tool_name)
 
             if msg.tool_call_id:
                 events.append(

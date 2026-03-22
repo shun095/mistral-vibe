@@ -175,6 +175,43 @@ def test_messages_to_events_parses_text_format_tool_results() -> None:
     assert event.result.file_existed == "false"  # type: ignore
 
 
+def test_messages_to_events_parses_json_format_tool_results() -> None:
+    """Test that messages_to_events parses JSON format tool results (new format)."""
+    from tests.cli.web_ui.conftest import MockToolManager
+    from vibe.core.tools.base import BaseToolState
+    from vibe.core.tools.builtins.write_file import WriteFile, WriteFileConfig
+    from vibe.core.types import ToolResultEvent
+
+    # Need assistant message with tool call to populate tool_call_to_name map
+    tool_call = ToolCall(
+        id="call_json_123",
+        index=0,
+        function=FunctionCall(name="write_file", arguments='{"path": "/test/file.py"}'),
+    )
+    # JSON format (new format used by agent_loop.py)
+    messages = [
+        LLMMessage(role=Role.assistant, tool_calls=[tool_call]),
+        LLMMessage(
+            role=Role.tool,
+            tool_call_id="call_json_123",
+            content='{"path": "/test/file.py", "bytes_written": 24, "file_existed": false, "content": "test"}',
+        ),
+    ]
+    mock_tm = MockToolManager({
+        "write_file": WriteFile(config=WriteFileConfig(), state=BaseToolState())
+    })
+    events = messages_to_events(messages, mock_tm)  # type: ignore[call-arg]
+    assert len(events) == 2  # ToolCallEvent + ToolResultEvent
+    tool_result_events = [e for e in events if isinstance(e, ToolResultEvent)]
+    assert len(tool_result_events) == 1
+    event = tool_result_events[0]
+    assert event.result is not None
+    # JSON format preserves proper types
+    assert event.result.path == "/test/file.py"  # type: ignore
+    assert event.result.bytes_written == 24  # type: ignore
+    assert event.result.file_existed is False  # type: ignore
+
+
 def test_messages_to_events_full_conversation() -> None:
     """Test that messages_to_events converts a full conversation correctly."""
     from vibe.core.types import (
@@ -222,3 +259,121 @@ def test_messages_to_events_full_conversation() -> None:
 
     assert isinstance(events[4], UserMessageEvent)
     assert events[4].content == "Another message"
+
+
+def test_messages_to_events_user_message_with_image() -> None:
+    """Test that messages_to_events preserves list content with images."""
+    from vibe.core.types import UserMessageEvent
+
+    # User message with list content containing text and image
+    messages = [
+        LLMMessage(
+            role=Role.user,
+            content=[
+                {"type": "text", "text": "What's in this image?"},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": "data:image/png;base64,abc123"},
+                },
+            ],
+            message_id="msg_image_1",
+        )
+    ]
+    events = messages_to_events(messages, MockToolManager())  # type: ignore[call-arg])
+
+    assert len(events) == 1
+    assert isinstance(events[0], UserMessageEvent)
+    assert isinstance(events[0].content, list)
+    assert len(events[0].content) == 2
+    assert events[0].content[0] == {"type": "text", "text": "What's in this image?"}
+    assert events[0].content[1] == {
+        "type": "image_url",
+        "image_url": {"url": "data:image/png;base64,abc123"},
+    }
+    assert events[0].message_id == "msg_image_1"
+
+
+def test_messages_to_events_continueable_user_message() -> None:
+    """Test that messages_to_events creates ContinueableUserMessageEvent for messages with tool_call_id."""
+    from vibe.core.types import ContinueableUserMessageEvent
+
+    # User message with tool_call_id (e.g., from read_image tool)
+    messages = [
+        LLMMessage(
+            role=Role.user,
+            content=[
+                {
+                    "type": "text",
+                    "text": "This is an image fetched from /path/to/image.png",
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {"url": "data:image/png;base64,xyz789"},
+                },
+            ],
+            tool_call_id="call_read_image_1",
+            message_id="msg_continueable_1",
+        )
+    ]
+    events = messages_to_events(messages, MockToolManager())  # type: ignore[call-arg])
+
+    assert len(events) == 1
+    assert isinstance(events[0], ContinueableUserMessageEvent)
+    assert isinstance(events[0].content, list)
+    assert len(events[0].content) == 2
+    assert events[0].content[0] == {
+        "type": "text",
+        "text": "This is an image fetched from /path/to/image.png",
+    }
+    assert events[0].content[1] == {
+        "type": "image_url",
+        "image_url": {"url": "data:image/png;base64,xyz789"},
+    }
+    assert events[0].message_id == "msg_continueable_1"
+
+
+def test_messages_to_events_ask_user_question_json_format() -> None:
+    """Test that messages_to_events parses JSON format ask_user_question results."""
+    from tests.cli.web_ui.conftest import MockToolManager
+    from vibe.core.tools.base import BaseToolState
+    from vibe.core.tools.builtins.ask_user_question import (
+        AskUserQuestion,
+        AskUserQuestionConfig,
+    )
+    from vibe.core.types import ToolResultEvent
+
+    # Need assistant message with tool call
+    tool_call = ToolCall(
+        id="call_ask_123",
+        index=0,
+        function=FunctionCall(name="ask_user_question", arguments="{}"),
+    )
+    # JSON format with complex nested structure (list of dicts)
+    messages = [
+        LLMMessage(role=Role.assistant, tool_calls=[tool_call]),
+        LLMMessage(
+            role=Role.tool,
+            tool_call_id="call_ask_123",
+            content='{"answers": [{"question": "What is your name?", "answer": "Alice", "is_other": false}], "cancelled": false}',
+        ),
+    ]
+    mock_tm = MockToolManager({
+        "ask_user_question": AskUserQuestion(
+            config=AskUserQuestionConfig(), state=BaseToolState()
+        )
+    })
+    events = messages_to_events(messages, mock_tm)  # type: ignore[call-arg]
+
+    tool_result_events = [e for e in events if isinstance(e, ToolResultEvent)]
+    assert len(tool_result_events) == 1
+    event = tool_result_events[0]
+
+    assert event.result is not None
+    # JSON format preserves proper types and nested structures
+    assert hasattr(event.result, "answers")  # type: ignore
+    assert hasattr(event.result, "cancelled")  # type: ignore
+    assert event.result.cancelled is False  # type: ignore
+    assert len(event.result.answers) == 1  # type: ignore
+    assert event.result.answers[0].question == "What is your name?"  # type: ignore
+    assert event.result.answers[0].answer == "Alice"  # type: ignore
+    assert event.result.answers[0].is_other is False  # type: ignore

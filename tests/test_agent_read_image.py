@@ -274,17 +274,15 @@ async def test_read_image_integration(tmp_path, monkeypatch, test_case):
 # Assertion functions for backend message tests
 def assert_http_url_messages(messages):
     """Assertions for HTTP URL backend messages test."""
+    import json
+
     # Skip system and user messages, verify message 3: Tool result message
     assert messages[3].role == Role.tool
     assert messages[3].tool_call_id == "call_1"
     assert messages[3].name == "read_image"
 
-    # Parse the content string (format: key: value\nkey: value)
-    content_lines = messages[3].content.strip().split("\n")
-    content_dict = {}
-    for line in content_lines:
-        key, value = line.split(": ", 1)
-        content_dict[key] = value
+    # Parse the content string (JSON format)
+    content_dict = json.loads(messages[3].content)
 
     assert content_dict["source_url"] == "https://example.com/image.jpg"
     assert content_dict["source_type"] == "https"
@@ -316,17 +314,15 @@ def assert_http_url_messages(messages):
 
 def assert_file_url_messages(messages, tmp_path):
     """Assertions for File URL backend messages test."""
+    import json
+
     # Skip system and user messages, verify message 3: Tool result message
     assert messages[3].role == Role.tool
     assert messages[3].tool_call_id == "call_1"
     assert messages[3].name == "read_image"
 
-    # Parse the content string (format: key: value\nkey: value)
-    content_lines = messages[3].content.strip().split("\n")
-    content_dict = {}
-    for line in content_lines:
-        key, value = line.split(": ", 1)
-        content_dict[key] = value
+    # Parse the content string (JSON format)
+    content_dict = json.loads(messages[3].content)
 
     assert "source_url" in content_dict
     assert content_dict["source_type"] == "file"

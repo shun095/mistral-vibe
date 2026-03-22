@@ -183,3 +183,51 @@ def test_serialize_other_event_types() -> None:
 
     assert data["__type"] == "UserMessageEvent"
     assert data["content"] == "Hi there!"
+
+    # Test UserMessageEvent with list content (images)
+    user_event_with_image = UserMessageEvent(
+        content=[
+            {"type": "text", "text": "What's in this image?"},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc123"}},
+        ],
+        message_id="msg_image_1",
+    )
+    data = serialize_event(user_event_with_image)
+
+    assert data["__type"] == "UserMessageEvent"
+    assert isinstance(data["content"], list)
+    assert len(data["content"]) == 2
+    assert data["content"][0] == {"type": "text", "text": "What's in this image?"}
+    assert data["content"][1] == {
+        "type": "image_url",
+        "image_url": {"url": "data:image/png;base64,abc123"},
+    }
+    assert data["message_id"] == "msg_image_1"
+
+    # Test ContinueableUserMessageEvent with list content (images)
+    from vibe.core.types import ContinueableUserMessageEvent
+
+    continueable_event = ContinueableUserMessageEvent(
+        content=[
+            {
+                "type": "text",
+                "text": "This is an image fetched from /path/to/image.png",
+            },
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,xyz789"}},
+        ],
+        message_id="msg_continueable_1",
+    )
+    data = serialize_event(continueable_event)
+
+    assert data["__type"] == "ContinueableUserMessageEvent"
+    assert isinstance(data["content"], list)
+    assert len(data["content"]) == 2
+    assert data["content"][0] == {
+        "type": "text",
+        "text": "This is an image fetched from /path/to/image.png",
+    }
+    assert data["content"][1] == {
+        "type": "image_url",
+        "image_url": {"url": "data:image/png;base64,xyz789"},
+    }
+    assert data["message_id"] == "msg_continueable_1"

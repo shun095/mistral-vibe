@@ -31,10 +31,10 @@ class MockVibeClient {
     }
 
     addImageMessage(imageData) {
-        const messageDiv = { 
-            className: 'message user', 
+        const messageDiv = {
+            className: 'message user',
             type: 'image',
-            imageData: imageData 
+            imageData: imageData
         };
         this.elements.messages.appendChild(messageDiv);
     }
@@ -45,7 +45,7 @@ class MockVibeClient {
 
     handleEvent(event) {
         const eventType = event.type;
-        
+
         switch (eventType) {
             case 'UserMessageEvent':
                 this.stopStreaming();
@@ -134,13 +134,13 @@ describe('UserMessageEvent handling', () => {
         client.handleEvent(event);
 
         expect(mockMessages.children).toHaveLength(2);
-        
+
         // First message should be text
         expect(mockMessages.children[0]).toEqual({
             className: 'message user',
             content: 'Check out this image'
         });
-        
+
         // Second message should be image
         expect(mockMessages.children[1]).toEqual({
             className: 'message user',
@@ -181,23 +181,23 @@ describe('UserMessageEvent handling', () => {
         client.handleEvent(event);
 
         expect(mockMessages.children).toHaveLength(4);
-        
+
         expect(mockMessages.children[0]).toEqual({
             className: 'message user',
             content: 'First message'
         });
-        
+
         expect(mockMessages.children[1]).toEqual({
             className: 'message user',
             type: 'image',
             imageData: 'data:image/png;base64,img1'
         });
-        
+
         expect(mockMessages.children[2]).toEqual({
             className: 'message user',
             content: 'Second message'
         });
-        
+
         expect(mockMessages.children[3]).toEqual({
             className: 'message user',
             type: 'image',
@@ -263,16 +263,60 @@ describe('ContinueableUserMessageEvent handling', () => {
         client.handleEvent(event);
 
         expect(mockMessages.children).toHaveLength(2);
-        
+
         expect(mockMessages.children[0]).toEqual({
             className: 'message user',
             content: 'Image description'
         });
-        
+
         expect(mockMessages.children[1]).toEqual({
             className: 'message user',
             type: 'image',
             imageData: 'data:image/png;base64,desc123'
+        });
+    });
+
+    test('handles ContinueableUserMessageEvent with HTTP URL', () => {
+        const event = {
+            type: 'ContinueableUserMessageEvent',
+            content: [
+                { type: 'text', text: 'Image from HTTP URL' },
+                { type: 'image_url', image_url: { url: 'http://example.com/image.png' } }
+            ]
+        };
+
+        client.handleEvent(event);
+
+        expect(mockMessages.children).toHaveLength(2);
+
+        expect(mockMessages.children[0]).toEqual({
+            className: 'message user',
+            content: 'Image from HTTP URL'
+        });
+
+        expect(mockMessages.children[1]).toEqual({
+            className: 'message user',
+            type: 'image',
+            imageData: 'http://example.com/image.png'
+        });
+    });
+
+    test('handles ContinueableUserMessageEvent with HTTPS URL', () => {
+        const event = {
+            type: 'ContinueableUserMessageEvent',
+            content: [
+                { type: 'image_url', image_url: { url: 'https://example.com/image.jpg' } }
+            ]
+        };
+
+        client.handleEvent(event);
+
+        expect(mockMessages.children).toHaveLength(1);
+
+        expect(mockMessages.children[0]).toEqual({
+            className: 'message user',
+            type: 'image',
+            imageData: 'https://example.com/image.jpg'
         });
     });
 });

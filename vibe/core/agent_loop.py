@@ -733,8 +733,9 @@ class AgentLoop:
             if result_model is None:
                 raise ToolError("Tool did not yield a result")
 
-            result_dict = result_model.model_dump()
-            text = "\n".join(f"{k}: {v}" for k, v in result_dict.items())
+            result_dict = result_model.model_dump(mode="json")
+            # Store as JSON for proper serialization of complex types (lists, nested dicts)
+            text = json.dumps(result_dict)
             extra = tool_instance.get_result_extra(result_model)
             if extra:
                 text += "\n\n" + extra
