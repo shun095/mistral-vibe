@@ -646,12 +646,10 @@ class VibeApp(App):  # noqa: PLR0904
 
         self.agent_loop.telemetry_client.send_slash_command_used(cmd_name, "builtin")
 
-        # Add message to agent_loop.messages BEFORE calling handler
-        # so the handler can find it
-        user_message = LLMMessage(role=Role.user, content=user_input)
-        self.agent_loop.messages.append(user_message)
+        # Store the command input for handlers to access
+        self._last_command_input = user_input
 
-        # Also mount to UI for display
+        # Display in UI but don't add to agent_loop.messages
         await self._mount_and_scroll(UserMessage(user_input))
 
         handler = getattr(self, command.handler)
@@ -1882,12 +1880,12 @@ Enhanced prompt:"""
                 )
                 return
 
-            # Extract new content from command
-            user_input = last_user_msg.content
+            # Extract new content from command (stored in _last_command_input)
+            user_input = getattr(self, "_last_command_input", None)
             if not isinstance(user_input, str):
                 await self._mount_and_scroll(
                     ErrorMessage(
-                        "Invalid message content.", collapsed=self._tools_collapsed
+                        "Invalid command input.", collapsed=self._tools_collapsed
                     )
                 )
                 return

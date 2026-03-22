@@ -106,14 +106,6 @@ class EditHandler:
         await loading_area.mount(loading)
 
         try:
-            # Remove the /edit command message from history
-            with self.agent_loop.messages.silent():
-                if (
-                    self.agent_loop.messages
-                    and self.agent_loop.messages[-1].role == Role.user
-                ):
-                    self.agent_loop.messages.reset(self.agent_loop.messages[:-1])
-
             # Edit the last message in the agent loop
             await self.agent_loop.edit_last_message(self.new_content)
 
