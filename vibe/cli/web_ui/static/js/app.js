@@ -300,13 +300,13 @@ class VibeClient {
                 this._renderUserMessage(event.content);
                 break;
             case 'ApprovalPopupEvent':
-                this.showApprovalPopup(event);
+                // Skip popup events during replay - ToolResultEvent already contains the result
                 break;
             case 'QuestionPopupEvent':
-                this.showQuestionPopup(event);
+                // Skip popup events during replay - ToolResultEvent already contains the result
                 break;
             case 'PopupResponseEvent':
-                this.hidePopup(event);
+                // Skip popup events during replay - ToolResultEvent already contains the result
                 break;
         }
     }
@@ -855,7 +855,8 @@ class VibeClient {
         messageDiv.className = 'message user';
 
         let imageUrl = imageData;
-        if (imageData && !imageData.startsWith('data:')) {
+        // Only add data URI prefix if it's not already a data URL or HTTP(S) URL
+        if (imageData && !imageData.startsWith('data:') && !imageData.startsWith('http://') && !imageData.startsWith('https://')) {
             imageUrl = `data:image/jpeg;base64,${imageData}`;
         }
 
@@ -1286,28 +1287,46 @@ class VibeClient {
     }
 
     formatAskUserQuestionResult(card, result) {
-        // Ensure answers is an array - handle cases where it might be a string or object
-        const answers = Array.isArray(result.answers) ? result.answers : [];
-        const answerCount = answers.length;
-        const cancelled = result.cancelled ? ' (cancelled)' : '';
+        // Server now returns proper JSON, but handle legacy string format for backward compatibility
+        let answers = result.answers;
+        if (typeof answers === 'string') {
+            try {
+                // Legacy format: Python-style list string "[{'question': '...', 'answer': '...'}]"
+                answers = JSON.parse(answers.replace(/'/g, '"').replace(/False/g, 'false').replace(/True/g, 'true'));
+            } catch (e) {
+                answers = [];
+            }
+        }
+        answers = Array.isArray(answers) ? answers : [];
+
+        // Handle cancelled boolean (now proper JSON, but support legacy string format)
+        const cancelled = result.cancelled === true;
 
         this.createCardHeader(card, 'User Answers',
-            '<span class="material-symbols-rounded">chat_outgoing</span>',
-            `${answerCount} answer(s)${cancelled}`);
+            '<span class="material-symbols-rounded">chat</span>',
+            `${answers.length} answer(s)${cancelled ? ' (cancelled)' : ''}`);
 
         const content = card.querySelector('.card-content');
 
         if (answers.length > 0) {
-            answers.forEach(answer => {
+            answers.forEach((answer, index) => {
                 const answerItem = document.createElement('div');
                 answerItem.className = 'answer-item';
+                const questionText = this.escapeHtml(answer.question);
+                const answerText = this.escapeHtml(answer.answer);
+                const otherBadge = answer.is_other ? '<span class="answer-other-badge">(Custom answer)</span>' : '';
+
                 answerItem.innerHTML = `
-                    <div class="answer-question">${this.escapeHtml(answer.question)}</div>
-                    <div class="answer-text">${this.escapeHtml(answer.answer)}</div>
-                    ${answer.is_other ? '<div class="answer-other">(Custom answer)</div>' : ''}
+                    <div class="answer-question">${questionText}</div>
+                    <div class="answer-text">${answerText}${otherBadge}</div>
                 `;
                 content.appendChild(answerItem);
             });
+        } else if (cancelled) {
+            const cancelledText = document.createElement('div');
+            cancelledText.className = 'answer-cancelled';
+            cancelledText.textContent = 'Question was cancelled by the user';
+            content.appendChild(cancelledText);
         }
 
         return card;
