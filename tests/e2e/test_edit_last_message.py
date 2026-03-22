@@ -370,3 +370,50 @@ async def test_edit_command_args_saved_to_history(edit_test_app: VibeApp) -> Non
 
         # Exit the app
         app.exit()
+
+
+@pytest.mark.asyncio
+async def test_slash_command_not_added_to_messages(edit_test_app: VibeApp) -> None:
+    """Test that slash commands are NOT added to agent_loop.messages.
+
+    This verifies the fix for the bug where slash commands were displayed
+    as user messages in the chat history.
+
+    Before fix: /edit command was added to messages, then removed by handler
+    After fix: /edit command is never added to messages
+    """
+    async with edit_test_app.run_test() as pilot:
+        app = edit_test_app
+
+        # Send a regular message first
+        await pilot.press(*"test message")
+        await pilot.press("enter")
+        await pilot.pause()
+
+        # Verify message count: system + 1 user = 2 (before assistant responds)
+        initial_count = len(app.agent_loop.messages)
+        assert initial_count >= 2
+
+        # Send /edit command
+        await pilot.press(*"/edit new content")
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause()
+
+        # Verify that /edit command was NOT added to messages
+        # The message count should not increase by 1 for the /edit command
+        messages_after_edit = len(app.agent_loop.messages)
+        assert messages_after_edit <= initial_count + 2, (
+            f"/edit command should not be added to messages. "
+            f"Expected <= {initial_count + 2}, got {messages_after_edit}"
+        )
+
+        # Verify no message contains "/edit" command text
+        for msg in app.agent_loop.messages:
+            if isinstance(msg.content, str):
+                assert not msg.content.startswith("/edit"), (
+                    f"Slash command should not appear in messages: {msg.content}"
+                )
+
+        # Exit the app
+        app.exit()
