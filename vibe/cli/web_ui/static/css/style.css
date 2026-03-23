@@ -1383,3 +1383,17 @@ body {
 .code-modal-content::-webkit-scrollbar-thumb:hover {
     background: #555;
 }
+
+/* Diff syntax highlighting for edit_file tool results */
+.tool-result-card .diff-block {
+    margin-top: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.tool-result-card .diff-block pre {
+    margin: 0;
+    padding: 0;
+}
