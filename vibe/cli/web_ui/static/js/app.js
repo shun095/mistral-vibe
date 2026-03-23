@@ -32,6 +32,7 @@ class VibeClient {
         this.currentToolCall = null;
         this.currentToolCallId = null;
         this.toolCallMap = new Map(); // Map<toolCallId, toolCallElement>
+        this._preferCollapsed = true; // Track collapse preference
 
         // DOM elements
         this.elements = {
@@ -794,7 +795,7 @@ class VibeClient {
 
     createReasoningMessage() {
         const messageDiv = document.createElement('div');
-        messageDiv.className = 'message reasoning collapsed';
+        messageDiv.className = 'message reasoning' + (this._preferCollapsed ? ' collapsed' : '');
 
         const contentDiv = document.createElement('div');
         contentDiv.className = 'content';
@@ -989,7 +990,7 @@ class VibeClient {
 
     createToolCallElement(toolName, args, statusIcon, statusText) {
         const toolCallDiv = document.createElement('div');
-        toolCallDiv.className = 'message tool-call collapsed';
+        toolCallDiv.className = 'message tool-call' + (this._preferCollapsed ? ' collapsed' : '');
 
         const contentDiv = document.createElement('div');
         contentDiv.className = 'content';
@@ -1835,6 +1836,7 @@ class VibeClient {
 
     toggleAllCards() {
         const allCollapsed = this._getAllCardsCollapsed();
+        this._preferCollapsed = !allCollapsed;
 
         this._getCollapsibleCards().forEach(card => {
             if (allCollapsed) {
@@ -1851,3 +1853,5 @@ class VibeClient {
 document.addEventListener('DOMContentLoaded', () => {
     window.vibeClient = new VibeClient();
 });
+
+export { VibeClient };
