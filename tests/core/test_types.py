@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from vibe.core.types import PromptProgress, PromptProgressEvent, WebNotificationEvent
+from vibe.cli.web_ui.events import WebNotificationEvent
+from vibe.core.types import PromptProgress, PromptProgressEvent
 
 
 class TestPromptProgress:

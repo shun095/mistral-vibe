@@ -398,18 +398,22 @@ def create_app(  # noqa: PLR0915
     port: int = 9092,
     token: str | None = None,
     agent_loop: AgentLoop | None = None,
-    tui_app: Any = None,
+    tui_app: Any | None = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application.
 
     Args:
         port: Port to run the server on (default: 9092).
         token: Authentication token, or None to use VIBE_WEB_TOKEN env var.
-        agent_loop: The AgentLoop instance to sync with.
-        tui_app: The TUI app instance to submit messages to.
+        agent_loop: The AgentLoop instance to sync with (required for standalone mode).
+        tui_app: Optional TUI app instance for integrated mode. If None, WebUI runs
+            in standalone mode and interacts directly with agent_loop.
 
     Returns:
         Configured FastAPI application instance.
+
+    Raises:
+        ValueError: If neither agent_loop nor tui_app is provided.
     """
     app = FastAPI(title="Mistral Vibe Web UI", version="1.0.0")
     app.state.port = port
@@ -419,14 +423,17 @@ def create_app(  # noqa: PLR0915
     templates = Jinja2Templates(directory=base_dir / "templates")
     app.mount("/static", StaticFiles(directory=base_dir / "static"), name="static")
 
-    # Get token for authentication
-    auth_token = None
+    # Get token for authentication - mandatory for security
     try:
         auth_token = get_token_from_env_or_arg(token)
         app.state.auth_token = auth_token
-    except ValueError:
-        # No token set, skip authentication
-        pass
+    except ValueError as e:
+        # Log error and exit - authentication is mandatory
+        logging.error("WebUI authentication is required. %s", str(e))
+        logging.error(
+            "Set the VIBE_WEB_TOKEN environment variable or pass the 'token' argument."
+        )
+        raise SystemExit(1) from e
 
     # Track connected WebSocket clients
     app.state.websocket_clients = set()  # type: ignore
@@ -449,8 +456,8 @@ def create_app(  # noqa: PLR0915
                 pass
 
         # Add event listener to agent loop
-        if hasattr(agent_loop, "_event_listeners"):
-            agent_loop._event_listeners.append(event_listener)
+        if agent_loop is not None:
+            agent_loop.add_event_listener(event_listener)
 
     @app.get("/", response_class=HTMLResponse)
     def index() -> HTMLResponse:
@@ -463,8 +470,6 @@ def create_app(  # noqa: PLR0915
         credentials: HTTPAuthorizationCredentials | None = Depends(security),  # noqa: B008
     ) -> str:
         """Verify the Bearer token."""
-        if auth_token is None:
-            return ""
         if credentials is None:
             raise HTTPException(status_code=401, detail="Missing authentication token")
         if credentials.credentials != auth_token:
@@ -489,12 +494,20 @@ def create_app(  # noqa: PLR0915
         Returns:
             Agent status including whether it's running.
         """
+        # Try TUI first (integrated mode)
         tui_app = getattr(app.state, "tui_app", None)
-        if tui_app is None:
-            return JSONResponse({"running": False})
+        if tui_app is not None:
+            running = tui_app.is_agent_running()
+            return JSONResponse({"running": running})
 
-        running = tui_app.is_agent_running()
-        return JSONResponse({"running": running})
+        # Fall back to agent_loop (standalone mode)
+        agent_loop = getattr(app.state, "agent_loop", None)
+        if agent_loop is not None:
+            # Check if agent_loop has a running flag or task
+            running = getattr(agent_loop, "_agent_running", False)
+            return JSONResponse({"running": running})
+
+        return JSONResponse({"running": False})
 
     @app.post("/api/interrupt")
     def interrupt_agent(token: str = Security(verify_token)) -> JSONResponse:
@@ -601,12 +614,8 @@ def create_app(  # noqa: PLR0915
         query_params = dict(websocket.query_params)
         token_param = query_params.get("token")
 
-        # Get token from environment if not in query
-        if token_param is None:
-            token_param = os.environ.get("VIBE_WEB_TOKEN")
-
-        # Authenticate
-        if auth_token and token_param != auth_token:
+        # Authenticate - token is mandatory
+        if token_param is None or token_param != auth_token:
             await websocket.close(code=401, reason="Invalid or missing token")
             return
 
@@ -647,7 +656,7 @@ def create_app(  # noqa: PLR0915
                 and tui_app._pending_approval_tool
                 and tui_app._pending_approval_args
             ):
-                from vibe.core.types import ApprovalPopupEvent
+                from vibe.core.ui_events import ApprovalPopupEvent
 
                 event = ApprovalPopupEvent(
                     popup_id=tui_app._pending_approval_id,
@@ -665,7 +674,7 @@ def create_app(  # noqa: PLR0915
                 and tui_app._pending_question_id
                 and tui_app._pending_question_args
             ):
-                from vibe.core.types import QuestionPopupEvent
+                from vibe.core.ui_events import QuestionPopupEvent
 
                 event = QuestionPopupEvent(
                     popup_id=tui_app._pending_question_id,

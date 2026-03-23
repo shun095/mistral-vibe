@@ -21,6 +21,7 @@ from vibe.cli.terminal_setup import detect_terminal
 from vibe.core.agents.manager import AgentManager
 from vibe.core.agents.models import AgentProfile, BuiltinAgentName
 from vibe.core.config import Backend, ModelConfig, ProviderConfig, VibeConfig
+from vibe.core.event_bus import EventBus
 from vibe.core.llm.backend.factory import BACKEND_FACTORY
 from vibe.core.llm.exceptions import BackendError
 from vibe.core.llm.format import (
@@ -83,7 +84,6 @@ from vibe.core.types import (
     LLMRetryEvent,
     LLMUsage,
     MessageList,
-    MessageResetEvent,
     PromptProgressEvent,
     RateLimitError,
     ReasoningEvent,
@@ -95,6 +95,7 @@ from vibe.core.types import (
     UserInputCallback,
     UserMessageEvent,
 )
+from vibe.core.ui_events import MessageResetEvent
 from vibe.core.utils import (
     CANCELLATION_TAG,
     TOOL_ERROR_TAG,
@@ -186,7 +187,10 @@ class AgentLoop:
 
         self.message_observer = message_observer
         self.enable_streaming = enable_streaming
-        self._event_listeners: list[Callable[[BaseEvent], None]] = event_listeners or []
+        self._event_bus = EventBus()
+        # Add initial listeners if provided
+        for listener in event_listeners or []:
+            self._event_bus.add_listener(listener)
         self.middleware_pipeline = MiddlewarePipeline()
         self._setup_middleware()
 
@@ -235,11 +239,8 @@ class AgentLoop:
         Args:
             event: The event to broadcast.
         """
-        for listener in self._event_listeners:
-            try:
-                listener(event)
-            except Exception:
-                pass
+        # Use sync dispatch for backward compatibility
+        self._event_bus.dispatch_sync(event)
 
     def add_event_listener(self, listener: Callable[[BaseEvent], None]) -> None:
         """Add an event listener.
@@ -247,7 +248,7 @@ class AgentLoop:
         Args:
             listener: Callback function to be called when events are broadcast.
         """
-        self._event_listeners.append(listener)
+        self._event_bus.add_listener(listener)
 
     @property
     def agent_profile(self) -> AgentProfile:
