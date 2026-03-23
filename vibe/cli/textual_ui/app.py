@@ -101,6 +101,7 @@ from vibe.cli.update_notifier import (
 from vibe.cli.update_notifier.update import do_update
 from vibe.cli.voice_manager import VoiceManager, VoiceManagerPort
 from vibe.cli.voice_manager.voice_manager_port import TranscribeState
+from vibe.cli.web_ui.events import WebNotificationEvent
 from vibe.core.agent_loop import AgentLoop, TeleportError
 from vibe.core.agents import AgentProfile, BuiltinAgentName
 from vibe.core.audio_recorder import AudioRecorder
@@ -131,19 +132,20 @@ from vibe.core.tools.builtins.ask_user_question import (
 from vibe.core.transcribe import make_transcribe_client
 from vibe.core.types import (
     AgentStats,
-    ApprovalPopupEvent,
     ApprovalResponse,
     BaseEvent,
     Content,
     LLMErrorEvent,
     LLMMessage,
     LLMRetryEvent,
+    RateLimitError,
+    Role,
+)
+from vibe.core.ui_events import (
+    ApprovalPopupEvent,
     MessageResetEvent,
     PopupResponseEvent,
     QuestionPopupEvent,
-    RateLimitError,
-    Role,
-    WebNotificationEvent,
 )
 from vibe.core.utils import (
     CancellationReason,

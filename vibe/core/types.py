@@ -510,65 +510,6 @@ type UserInputCallback = Callable[[BaseModel], Awaitable[BaseModel]]
 type SwitchAgentCallback = Callable[[str], Awaitable[None]]
 
 
-class ApprovalPopupEvent(BaseEvent):
-    """Event broadcast when approval popup is shown."""
-
-    popup_id: str = Field(description="Unique ID for this popup instance")
-    tool_name: str = Field(description="Name of the tool requiring approval")
-    tool_args: dict = Field(description="Serialized tool arguments")
-    timestamp: float = Field(description="Timestamp when popup was created")
-
-
-class QuestionPopupEvent(BaseEvent):
-    """Event broadcast when question popup is shown."""
-
-    popup_id: str = Field(description="Unique ID for this popup instance")
-    questions: list[dict] = Field(
-        description="Serialized AskUserQuestionArgs.questions"
-    )
-    content_preview: str | None = Field(
-        default=None, description="Optional preview content"
-    )
-    timestamp: float = Field(description="Timestamp when popup was created")
-
-
-class PopupResponseEvent(BaseEvent):
-    """Event broadcast when popup is answered."""
-
-    popup_id: str = Field(description="Unique ID of the popup being answered")
-    response_type: Literal["approval", "question"] = Field(
-        description="Type of popup response"
-    )
-    response_data: dict = Field(description="Serialized response data")
-    cancelled: bool = Field(description="Whether the popup was cancelled")
-
-
-class MessageResetEvent(BaseEvent):
-    """Event broadcast when message history is reset.
-
-    Triggered by /clear, /compact, /resume, or auto-compact operations.
-    """
-
-    reason: Literal["clear", "compact", "resume", "auto_compact"] = Field(
-        description="Reason for the message reset"
-    )
-
-
-class WebNotificationEvent(BaseEvent):
-    """Event broadcast to trigger browser notifications in WebUI.
-
-    Triggered when user interaction is required or task completes.
-    """
-
-    context: Literal["action_required", "complete"] = Field(
-        description="Context for the notification"
-    )
-    title: str = Field(description="Notification title")
-    message: str | None = Field(
-        default=None, description="Optional notification message"
-    )
-
-
 class LLMErrorEvent(BaseEvent):
     """Event broadcast when agent loop fails to get result from LLM backend.
 

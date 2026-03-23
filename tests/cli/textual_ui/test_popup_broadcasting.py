@@ -21,7 +21,7 @@ class TestApprovalPopupBroadcasting:
     def test_broadcast_approval_popup_sends_event(self) -> None:
         """Test that _broadcast_approval_popup sends ApprovalPopupEvent."""
         from vibe.cli.textual_ui.app import VibeApp
-        from vibe.core.types import ApprovalPopupEvent
+        from vibe.core.ui_events import ApprovalPopupEvent
 
         # Create mock app
         app = MagicMock(spec=VibeApp)
@@ -49,7 +49,8 @@ class TestApprovalPopupBroadcasting:
     def test_broadcast_approval_response_sends_event(self) -> None:
         """Test that _broadcast_approval_response sends PopupResponseEvent."""
         from vibe.cli.textual_ui.app import VibeApp
-        from vibe.core.types import ApprovalResponse, PopupResponseEvent
+        from vibe.core.types import ApprovalResponse
+        from vibe.core.ui_events import PopupResponseEvent
 
         # Create mock app
         app = MagicMock(spec=VibeApp)
@@ -80,7 +81,7 @@ class TestQuestionPopupBroadcasting:
     def test_broadcast_question_popup_sends_event(self) -> None:
         """Test that _broadcast_question_popup sends QuestionPopupEvent."""
         from vibe.cli.textual_ui.app import AskUserQuestionArgs, VibeApp
-        from vibe.core.types import QuestionPopupEvent
+        from vibe.core.ui_events import QuestionPopupEvent
 
         # Create mock app
         app = MagicMock(spec=VibeApp)
@@ -123,7 +124,7 @@ class TestQuestionPopupBroadcasting:
     def test_broadcast_question_response_sends_event(self) -> None:
         """Test that _broadcast_question_response sends PopupResponseEvent."""
         from vibe.cli.textual_ui.app import AskUserQuestionResult, VibeApp
-        from vibe.core.types import PopupResponseEvent
+        from vibe.core.ui_events import PopupResponseEvent
 
         # Create mock app
         app = MagicMock(spec=VibeApp)

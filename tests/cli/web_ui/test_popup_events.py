@@ -14,7 +14,7 @@ class TestApprovalPopupEventSerialization:
     def test_serialize_approval_popup_event(self) -> None:
         """Test that ApprovalPopupEvent is properly serialized."""
         from vibe.cli.web_ui.server import serialize_event
-        from vibe.core.types import ApprovalPopupEvent
+        from vibe.core.ui_events import ApprovalPopupEvent
 
         event = ApprovalPopupEvent(
             popup_id="approval_123",
@@ -36,7 +36,7 @@ class TestApprovalPopupEventSerialization:
     def test_serialize_approval_popup_event_empty_args(self) -> None:
         """Test that ApprovalPopupEvent with empty args is properly serialized."""
         from vibe.cli.web_ui.server import serialize_event
-        from vibe.core.types import ApprovalPopupEvent
+        from vibe.core.ui_events import ApprovalPopupEvent
 
         event = ApprovalPopupEvent(
             popup_id="approval_456",
@@ -59,7 +59,7 @@ class TestQuestionPopupEventSerialization:
     def test_serialize_question_popup_event(self) -> None:
         """Test that QuestionPopupEvent is properly serialized."""
         from vibe.cli.web_ui.server import serialize_event
-        from vibe.core.types import QuestionPopupEvent
+        from vibe.core.ui_events import QuestionPopupEvent
 
         event = QuestionPopupEvent(
             popup_id="question_789",
@@ -90,7 +90,7 @@ class TestQuestionPopupEventSerialization:
     def test_serialize_question_popup_event_no_preview(self) -> None:
         """Test that QuestionPopupEvent without content_preview is properly serialized."""
         from vibe.cli.web_ui.server import serialize_event
-        from vibe.core.types import QuestionPopupEvent
+        from vibe.core.ui_events import QuestionPopupEvent
 
         event = QuestionPopupEvent(
             popup_id="question_999",
@@ -123,7 +123,7 @@ class TestPopupResponseEventSerialization:
     def test_serialize_approval_response_event(self) -> None:
         """Test that PopupResponseEvent for approval is properly serialized."""
         from vibe.cli.web_ui.server import serialize_event
-        from vibe.core.types import PopupResponseEvent
+        from vibe.core.ui_events import PopupResponseEvent
 
         event = PopupResponseEvent(
             popup_id="approval_123",
@@ -143,7 +143,7 @@ class TestPopupResponseEventSerialization:
     def test_serialize_question_response_event(self) -> None:
         """Test that PopupResponseEvent for question is properly serialized."""
         from vibe.cli.web_ui.server import serialize_event
-        from vibe.core.types import PopupResponseEvent
+        from vibe.core.ui_events import PopupResponseEvent
 
         event = PopupResponseEvent(
             popup_id="question_789",
@@ -163,7 +163,7 @@ class TestPopupResponseEventSerialization:
     def test_serialize_cancelled_response_event(self) -> None:
         """Test that PopupResponseEvent with cancelled=True is properly serialized."""
         from vibe.cli.web_ui.server import serialize_event
-        from vibe.core.types import PopupResponseEvent
+        from vibe.core.ui_events import PopupResponseEvent
 
         event = PopupResponseEvent(
             popup_id="approval_456",
@@ -183,7 +183,7 @@ class TestPopupEventTypes:
 
     def test_approval_popup_event_fields(self) -> None:
         """Test that ApprovalPopupEvent has required fields."""
-        from vibe.core.types import ApprovalPopupEvent
+        from vibe.core.ui_events import ApprovalPopupEvent
 
         event = ApprovalPopupEvent(
             popup_id="test_id",
@@ -199,7 +199,7 @@ class TestPopupEventTypes:
 
     def test_question_popup_event_fields(self) -> None:
         """Test that QuestionPopupEvent has required fields."""
-        from vibe.core.types import QuestionPopupEvent
+        from vibe.core.ui_events import QuestionPopupEvent
 
         event = QuestionPopupEvent(
             popup_id="test_id",
@@ -222,7 +222,7 @@ class TestPopupEventTypes:
 
     def test_popup_response_event_fields(self) -> None:
         """Test that PopupResponseEvent has required fields."""
-        from vibe.core.types import PopupResponseEvent
+        from vibe.core.ui_events import PopupResponseEvent
 
         event = PopupResponseEvent(
             popup_id="test_id",

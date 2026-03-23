@@ -276,6 +276,10 @@ def test_websocket_streams_history_before_connected() -> None:
             self.messages = create_sample_conversation()
             self.tool_manager = MockToolManager()
 
+        def add_event_listener(self, _listener):
+            """Mock method to add event listener."""
+            pass
+
     mock_agent_loop = MockAgentLoop()
     app = create_app(token="test-token", agent_loop=mock_agent_loop)  # type: ignore
     client = StarletteTestClient(app)

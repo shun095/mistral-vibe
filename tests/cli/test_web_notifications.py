@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from tests.conftest import build_test_vibe_app, build_test_vibe_config
-from vibe.core.types import WebNotificationEvent
+from vibe.cli.web_ui.events import WebNotificationEvent
 
 
 class TestBroadcastWebNotification:
@@ -21,7 +21,7 @@ class TestBroadcastWebNotification:
             if isinstance(event, WebNotificationEvent):
                 events_received.append(event)
 
-        app.agent_loop._event_listeners.append(event_listener)
+        app.agent_loop.add_event_listener(event_listener)
 
         app._broadcast_web_notification(
             context="action_required",
@@ -47,7 +47,7 @@ class TestBroadcastWebNotification:
             if isinstance(event, WebNotificationEvent):
                 events_received.append(event)
 
-        app.agent_loop._event_listeners.append(event_listener)
+        app.agent_loop.add_event_listener(event_listener)
 
         app._broadcast_web_notification(
             context="action_required", title="Action Required", message="Test message"
@@ -67,7 +67,7 @@ class TestBroadcastWebNotification:
             if isinstance(event, WebNotificationEvent):
                 events_received.append(event)
 
-        app.agent_loop._event_listeners.append(event_listener)
+        app.agent_loop.add_event_listener(event_listener)
 
         app._broadcast_web_notification(
             context="complete",
@@ -93,7 +93,7 @@ class TestBroadcastWebNotification:
             if isinstance(event, WebNotificationEvent):
                 events_received.append(event)
 
-        app.agent_loop._event_listeners.append(event_listener)
+        app.agent_loop.add_event_listener(event_listener)
 
         app._broadcast_web_notification(context="complete", title="Task Complete")
 
@@ -115,7 +115,7 @@ class TestBroadcastWebNotification:
             if isinstance(event, WebNotificationEvent):
                 events_received.append(event)
 
-        app.agent_loop._event_listeners.append(event_listener)
+        app.agent_loop.add_event_listener(event_listener)
 
         app._broadcast_web_notification(
             context="action_required",

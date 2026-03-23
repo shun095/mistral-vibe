@@ -733,9 +733,10 @@ class VibeConfig(BaseSettings):
                     target[key] = value
 
         deep_merge(current_config, updates)
-        # Re-validate through Pydantic model to properly exclude None from nested structures
+        # Re-validate through Pydantic model and dump to dict
         validated = cls.model_validate(current_config)
-        cls.dump_config(validated.model_dump(mode="json", exclude_none=True))
+        dumped = validated.model_dump(mode="json", exclude_none=True)
+        cls.dump_config(dumped)
 
     @classmethod
     def _get_nested_model_class(
@@ -876,7 +877,11 @@ class VibeConfig(BaseSettings):
 
     @classmethod
     def dump_config(cls, config: dict[str, Any]) -> None:
-        """Write config to file, preserving existing comments and excluding defaults."""
+        """Write config to file, preserving existing comments.
+
+        Args:
+            config: Dictionary of non-default values (already filtered by caller).
+        """
         mgr = get_harness_files_manager()
         if not mgr.persist_allowed:
             return
@@ -890,22 +895,24 @@ class VibeConfig(BaseSettings):
         else:
             doc = tomlkit.document()
 
-        # Update document with provided values
-        # Skip providers and models - they're already in the file, just remove defaults
+        # Update document with provided values (already excludes defaults)
+        # Skip providers and models - they're managed separately
         for key, value in config.items():
             if key in {"providers", "models"}:
-                # Skip array-based models - preserve existing with comments
                 continue
 
-            field_info = cls.model_fields.get(key)
-
             if isinstance(value, dict):
-                cls._update_dict_value(doc, key, value, field_info)
+                # Update nested dict values
+                if key not in doc:
+                    doc.add(tomlkit.key(key), tomlkit.table())
+                table = doc[key]
+                if isinstance(table, dict):
+                    for subkey, subvalue in value.items():
+                        table[subkey] = subvalue
             else:
                 doc[key] = value
 
-        # Remove ALL default values from the document (not just updated keys)
-        # This ensures existing default values are cleaned up
+        # Remove any fields that have default values
         cls._remove_defaults_from_doc(doc)
 
         # Write back with preserved comments using tomlkit
