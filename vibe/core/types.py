@@ -356,17 +356,33 @@ class LLMUsage(BaseModel):
         )
 
 
+class PromptProgress(BaseModel):
+    """Prompt processing progress data from LLM backends that support it (e.g., llama-server)."""
+
+    total: int
+    cache: int
+    processed: int
+    time_ms: int
+
+
 class LLMChunk(BaseModel):
     model_config = ConfigDict(frozen=True)
     message: LLMMessage
     usage: LLMUsage | None = None
+    prompt_progress: PromptProgress | None = None
 
     def __add__(self, other: LLMChunk) -> LLMChunk:
         if self.usage is None and other.usage is None:
             new_usage = None
         else:
             new_usage = (self.usage or LLMUsage()) + (other.usage or LLMUsage())
-        return LLMChunk(message=self.message + other.message, usage=new_usage)
+        # Keep the latest prompt_progress if available
+        latest_progress = other.prompt_progress or self.prompt_progress
+        return LLMChunk(
+            message=self.message + other.message,
+            usage=new_usage,
+            prompt_progress=latest_progress,
+        )
 
 
 class BaseEvent(BaseModel, ABC):
@@ -451,6 +467,32 @@ class CompactEndEvent(BaseEvent):
     # should be represented.
     # [RFD](https://agentclientprotocol.com/rfds/session-usage)
     tool_call_id: str
+
+
+class PromptProgressEvent(BaseEvent):
+    """Event for prompt processing progress from LLM backends that support it (e.g., llama-server).
+
+    Fields follow llama-server's prompt_progress format:
+    - total: total number of tokens in the prompt
+    - cache: number of tokens served from cache
+    - processed: number of tokens processed so far
+    - time_ms: elapsed time in milliseconds since prompt processing started
+
+    The overall progress is processed/total, while the actual timed progress
+    is (processed-cache)/(total-cache).
+    """
+
+    total: int
+    cache: int
+    processed: int
+    time_ms: int
+
+    @property
+    def progress_percentage(self) -> float:
+        """Calculate the overall progress percentage (processed/total)."""
+        if self.total == 0:
+            return 0.0
+        return (self.processed / self.total) * 100
 
 
 class OutputFormat(StrEnum):

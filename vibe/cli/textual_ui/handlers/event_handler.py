@@ -19,6 +19,7 @@ from vibe.core.types import (
     CompactEndEvent,
     CompactStartEvent,
     ContinueableUserMessageEvent,
+    PromptProgressEvent,
     ReasoningEvent,
     ToolCallEvent,
     ToolResultEvent,
@@ -49,6 +50,8 @@ class EventHandler:
         loading_widget: LoadingWidget | None = None,
     ) -> ToolCallMessage | None:
         match event:
+            case PromptProgressEvent():
+                await self._handle_prompt_progress(event, loading_widget)
             case ReasoningEvent():
                 await self._handle_reasoning_message(event)
             case AssistantEvent():
@@ -96,6 +99,12 @@ class EventHandler:
                 tool_call_id=event.tool_call_id,
             )
         return event
+
+    async def _handle_prompt_progress(
+        self, event: PromptProgressEvent, loading_widget: LoadingWidget | None = None
+    ) -> None:
+        if loading_widget:
+            loading_widget.set_progress(event.progress_percentage)
 
     async def _handle_tool_call(
         self, event: ToolCallEvent, loading_widget: LoadingWidget | None = None

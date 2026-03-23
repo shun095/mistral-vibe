@@ -123,6 +123,7 @@ class FakeBackend(BackendLike):
         tool_choice: StrToolChoice | AvailableTool | None = None,
         extra_headers: dict[str, str] | None = None,
         metadata: dict[str, str] | None = None,
+        return_progress: bool = False,
     ) -> AsyncGenerator[LLMChunk]:
         if self._exception_to_raise:
             raise self._exception_to_raise
