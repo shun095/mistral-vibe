@@ -1226,15 +1226,21 @@ class VibeClient {
         }
 
         if (result.content) {
-            const lines = result.content.split('\n');
-            content.appendChild(document.createElement('pre')).textContent = lines.slice(0, 50).join('\n');
+            // Use createCodeBlock with "diff" as pseudo-path, then override language
+            const codeBlock = this.createCodeBlock('diff', result.content, content);
 
-            if (lines.length > 50) {
-                const moreDiv = document.createElement('div');
-                moreDiv.style.cssText = 'padding: 8px 12px; color: #a0a0a0; font-style: italic';
-                moreDiv.textContent = `... and ${lines.length - 50} more lines`;
-                content.appendChild(moreDiv);
+            // Override language class to diff (detectLanguageFromPath returns plaintext for "diff")
+            const codeElement = codeBlock.querySelector('code');
+            if (codeElement) {
+                codeElement.className = 'language-diff';
+                // Re-apply syntax highlighting with correct language
+                if (window.hljs) {
+                    window.hljs.highlightElement(codeBlock);
+                }
             }
+
+            // Add diff-block CSS class for styling
+            codeBlock.classList.add('diff-block');
         }
 
         return card;
