@@ -126,6 +126,7 @@ class ReasoningAdapter(APIAdapter):
         provider: ProviderConfig,
         api_key: str | None = None,
         thinking: str = "off",
+        return_progress: bool = False,
     ) -> PreparedRequest:
         merged_messages = merge_consecutive_user_messages(messages)
         if thinking == "off":
@@ -141,6 +142,10 @@ class ReasoningAdapter(APIAdapter):
             tool_choice=tool_choice,
             thinking=thinking,
         )
+
+        # Add return_progress for OpenAI-compatible providers (e.g., llama-server)
+        if return_progress and provider.name != "mistral":
+            payload["return_progress"] = True
 
         if enable_streaming:
             payload["stream"] = True

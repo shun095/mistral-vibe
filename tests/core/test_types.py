@@ -1,10 +1,74 @@
 from __future__ import annotations
 
-"""Tests for core types including WebNotificationEvent."""
+"""Tests for core types including WebNotificationEvent and PromptProgress."""
 
 import pytest
 
-from vibe.core.types import WebNotificationEvent
+from vibe.core.types import PromptProgress, PromptProgressEvent, WebNotificationEvent
+
+
+class TestPromptProgress:
+    """Test PromptProgress model validation and calculations."""
+
+    def test_basic_creation(self) -> None:
+        """Test creating PromptProgress with valid data."""
+        progress = PromptProgress(total=1000, cache=200, processed=500, time_ms=1500)
+        assert progress.total == 1000
+        assert progress.cache == 200
+        assert progress.processed == 500
+        assert progress.time_ms == 1500
+
+    def test_zero_values(self) -> None:
+        """Test PromptProgress with zero values."""
+        progress = PromptProgress(total=0, cache=0, processed=0, time_ms=0)
+        assert progress.total == 0
+        assert progress.cache == 0
+        assert progress.processed == 0
+        assert progress.time_ms == 0
+
+
+class TestPromptProgressEvent:
+    """Test PromptProgressEvent validation and progress calculation."""
+
+    def test_basic_creation(self) -> None:
+        """Test creating PromptProgressEvent with valid data."""
+        event = PromptProgressEvent(total=1000, cache=200, processed=500, time_ms=1500)
+        assert event.total == 1000
+        assert event.cache == 200
+        assert event.processed == 500
+        assert event.time_ms == 1500
+
+    def test_progress_percentage_full(self) -> None:
+        """Test progress percentage calculation at 100%."""
+        event = PromptProgressEvent(total=1000, cache=0, processed=1000, time_ms=2000)
+        assert event.progress_percentage == 100.0
+
+    def test_progress_percentage_half(self) -> None:
+        """Test progress percentage calculation at 50%."""
+        event = PromptProgressEvent(total=1000, cache=0, processed=500, time_ms=1000)
+        assert event.progress_percentage == 50.0
+
+    def test_progress_percentage_with_cache(self) -> None:
+        """Test progress percentage with cached tokens."""
+        event = PromptProgressEvent(total=1000, cache=200, processed=600, time_ms=1500)
+        # Overall progress is processed/total
+        assert event.progress_percentage == 60.0
+
+    def test_progress_percentage_zero_total(self) -> None:
+        """Test progress percentage when total is zero (avoid division by zero)."""
+        event = PromptProgressEvent(total=0, cache=0, processed=0, time_ms=0)
+        assert event.progress_percentage == 0.0
+
+    def test_progress_percentage_partial(self) -> None:
+        """Test progress percentage with partial processing."""
+        event = PromptProgressEvent(total=1000, cache=100, processed=350, time_ms=500)
+        assert event.progress_percentage == 35.0
+
+    def test_serialization(self) -> None:
+        """Test event serializes correctly for JSON transmission."""
+        event = PromptProgressEvent(total=1000, cache=200, processed=500, time_ms=1500)
+        data = event.model_dump(mode="json")
+        assert data == {"total": 1000, "cache": 200, "processed": 500, "time_ms": 1500}
 
 
 class TestWebNotificationEvent:

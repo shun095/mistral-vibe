@@ -21,6 +21,7 @@ from vibe.core.types import (
     LLMMessage,
     LLMRetryEvent,
     LLMUsage,
+    PromptProgress,
     Role,
     StrToolChoice,
 )
@@ -41,6 +42,7 @@ class OpenAIAdapter(APIAdapter):
         tools: list[AvailableTool] | None,
         max_tokens: int | None,
         tool_choice: StrToolChoice | AvailableTool | None,
+        return_progress: bool = False,
     ) -> dict[str, Any]:
         payload = {"model": model_name, "messages": converted_messages}
 
@@ -56,6 +58,8 @@ class OpenAIAdapter(APIAdapter):
             )
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
+        if return_progress:
+            payload["return_progress"] = True
 
         return payload
 
@@ -92,6 +96,7 @@ class OpenAIAdapter(APIAdapter):
         provider: ProviderConfig,
         api_key: str | None = None,
         thinking: str = "off",
+        return_progress: bool = False,
     ) -> PreparedRequest:
         merged_messages = merge_consecutive_user_messages(messages)
         field_name = provider.reasoning_field_name
@@ -102,8 +107,18 @@ class OpenAIAdapter(APIAdapter):
             for msg in merged_messages
         ]
 
+        # Enable return_progress for OpenAI-compatible providers (e.g., llama-server)
+        # but not for Mistral API which doesn't support this parameter
+        should_request_progress = return_progress and provider.name != "mistral"
+
         payload = self.build_payload(
-            model_name, converted_messages, temperature, tools, max_tokens, tool_choice
+            model_name,
+            converted_messages,
+            temperature,
+            tools,
+            max_tokens,
+            tool_choice,
+            return_progress=should_request_progress,
         )
 
         if enable_streaming:
@@ -153,7 +168,18 @@ class OpenAIAdapter(APIAdapter):
             completion_tokens=usage_data.get("completion_tokens", 0),
         )
 
-        return LLMChunk(message=message, usage=usage)
+        # Extract prompt_progress if present (llama-server feature)
+        prompt_progress = None
+        if "prompt_progress" in data:
+            progress_data = data["prompt_progress"]
+            prompt_progress = PromptProgress(
+                total=progress_data.get("total", 0),
+                cache=progress_data.get("cache", 0),
+                processed=progress_data.get("processed", 0),
+                time_ms=progress_data.get("time_ms", 0),
+            )
+
+        return LLMChunk(message=message, usage=usage, prompt_progress=prompt_progress)
 
 
 ADAPTERS: dict[str, APIAdapter] = {
@@ -269,6 +295,7 @@ class GenericBackend:
             provider=self._provider,
             api_key=api_key,
             thinking=model.thinking,
+            return_progress=True,
         )
 
         headers = req.headers
@@ -317,6 +344,7 @@ class GenericBackend:
         tool_choice: StrToolChoice | AvailableTool | None = None,
         extra_headers: dict[str, str] | None = None,
         metadata: dict[str, str] | None = None,
+        return_progress: bool = False,
     ) -> AsyncGenerator[LLMChunk, None]:
         api_key = (
             os.getenv(self._provider.api_key_env_var)
@@ -343,6 +371,7 @@ class GenericBackend:
             provider=self._provider,
             api_key=api_key,
             thinking=model.thinking,
+            return_progress=return_progress,
         )
 
         headers = req.headers

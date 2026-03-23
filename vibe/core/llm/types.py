@@ -71,6 +71,7 @@ class BackendLike(Protocol):
         tool_choice: StrToolChoice | AvailableTool | None,
         extra_headers: dict[str, str] | None,
         metadata: dict[str, str] | None = None,
+        return_progress: bool = False,
     ) -> AsyncGenerator[LLMChunk, None]:
         """Equivalent of the complete method, but yields LLMEvent objects
         instead of a single LLMEvent.

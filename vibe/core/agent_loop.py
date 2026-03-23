@@ -84,6 +84,7 @@ from vibe.core.types import (
     LLMUsage,
     MessageList,
     MessageResetEvent,
+    PromptProgressEvent,
     RateLimitError,
     ReasoningEvent,
     Role,
@@ -630,13 +631,24 @@ class AgentLoop:
 
     async def _stream_assistant_events(
         self,
-    ) -> AsyncGenerator[AssistantEvent | ReasoningEvent | ToolCallEvent]:
+    ) -> AsyncGenerator[
+        AssistantEvent | ReasoningEvent | ToolCallEvent | PromptProgressEvent
+    ]:
         message_id: str | None = None
         emitted_tool_call_ids = set[str]()
 
         async for chunk in self._chat_streaming():
             if message_id is None:
                 message_id = chunk.message.message_id
+
+            # Yield prompt progress event if available
+            if chunk.prompt_progress:
+                yield PromptProgressEvent(
+                    total=chunk.prompt_progress.total,
+                    cache=chunk.prompt_progress.cache,
+                    processed=chunk.prompt_progress.processed,
+                    time_ms=chunk.prompt_progress.time_ms,
+                )
 
             for event in self._build_tool_call_events(
                 chunk.message.tool_calls, emitted_tool_call_ids
@@ -1048,11 +1060,16 @@ class AgentLoop:
                 extra_headers=self._get_extra_headers(provider),
                 max_tokens=max_tokens,
                 metadata=self._build_metadata(),
+                return_progress=True,
             ):
                 processed_message = self.format_handler.process_api_response_message(
                     chunk.message
                 )
-                processed_chunk = LLMChunk(message=processed_message, usage=chunk.usage)
+                processed_chunk = LLMChunk(
+                    message=processed_message,
+                    usage=chunk.usage,
+                    prompt_progress=chunk.prompt_progress,
+                )
                 chunk_agg += processed_chunk
                 usage += chunk.usage or LLMUsage()
                 yield processed_chunk

@@ -7,6 +7,7 @@ from vibe.core.types import (
     LLMChunk,
     LLMMessage,
     LLMUsage,
+    PromptProgress,
     Role,
     ToolCall,
     ToolStreamEvent,
@@ -24,6 +25,7 @@ def mock_llm_chunk(
     tool_call_id: str | None = None,
     prompt_tokens: int = 10,
     completion_tokens: int = 5,
+    prompt_progress: PromptProgress | None = None,
 ) -> LLMChunk:
     message = LLMMessage(
         role=role,
@@ -38,6 +40,7 @@ def mock_llm_chunk(
         usage=LLMUsage(
             prompt_tokens=prompt_tokens, completion_tokens=completion_tokens
         ),
+        prompt_progress=prompt_progress,
     )
 
 
