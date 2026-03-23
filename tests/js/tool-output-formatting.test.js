@@ -16,13 +16,28 @@ describe('Tool Output Formatting', () => {
         // Mock DOM elements
         mockDocument = {
             createElement: jest.fn((tagName) => {
+                const children = [];
                 const mockElement = {
                     className: '',
+                    classList: {
+                        add: jest.fn(),
+                        remove: jest.fn(),
+                        contains: jest.fn(),
+                        toggle: jest.fn()
+                    },
                     style: { cssText: '' },
                     textContent: '',
                     innerHTML: '',
-                    querySelector: jest.fn(),
-                    appendChild: jest.fn(),
+                    querySelector: jest.fn((selector) => {
+                        if (selector === 'code') {
+                            return children.find(c => c._tagName === 'CODE') || null;
+                        }
+                        return null;
+                    }),
+                    appendChild: jest.fn((child) => {
+                        children.push(child);
+                        return child;
+                    }),
                     setAttribute: jest.fn(),
                     addEventListener: jest.fn(),
                     title: ''
@@ -106,10 +121,12 @@ describe('Tool Output Formatting', () => {
                 const codeBlock = document.createElement('pre');
                 codeBlock.style.cssText = 'margin-top: 8px; border-radius: 4px; overflow: hidden; max-height: 400px; overflow-y: auto; cursor: pointer;';
                 codeBlock.title = 'Double-click to view full screen';
+                codeBlock._tagName = 'PRE';
 
                 const code = document.createElement('code');
                 code.className = `language-${language}`;
                 code.textContent = content;
+                code._tagName = 'CODE';
 
                 codeBlock.appendChild(code);
                 container.appendChild(codeBlock);
@@ -171,6 +188,49 @@ describe('Tool Output Formatting', () => {
                     diagnosticsDiv.style.cssText = 'margin-top: 12px; padding: 8px 12px; background-color: var(--bg-tertiary); border-radius: 4px;';
                     diagnosticsDiv.innerHTML = `<div style="font-weight: 600; color: var(--yellow); margin-bottom: 4px;">LSP Diagnostics</div><pre style="margin: 0; font-size: 0.85rem;">${result.lsp_diagnostics}</pre>`;
                     content.appendChild(diagnosticsDiv);
+                }
+
+                return card;
+            },
+            formatEditFileResult: function(card, result) {
+                const blocksApplied = result.blocks_applied || 0;
+                const linesChanged = result.lines_changed || 0;
+
+                this.createCardHeader(card, `Edit: ${result.file || 'file'}`,
+                    '<span class="material-symbols-rounded">edit</span>',
+                    `${blocksApplied} block(s) applied, ${linesChanged} line(s) changed`);
+
+                const content = card.querySelector('.card-content');
+
+                if (result.warnings) {
+                    let warningsArray = result.warnings;
+                    if (typeof warningsArray === 'string') {
+                        try { warningsArray = JSON.parse(warningsArray); } catch (e) { warningsArray = [warningsArray]; }
+                    }
+
+                    if (Array.isArray(warningsArray) && warningsArray.length > 0) {
+                        const warningsDiv = document.createElement('div');
+                        warningsDiv.style.cssText = 'padding: 8px 12px; background-color: #3a2a1a; border-radius: 4px; margin-bottom: 8px';
+                        warningsDiv.innerHTML = `<div style="font-weight: 600; color: #f0ad4e; margin-bottom: 4px;">Warnings</div><ul style="margin: 0; padding-left: 20px; font-size: 0.85rem;">${warningsArray.map(w => `<li>${w}</li>`).join('')}</ul>`;
+                        content.appendChild(warningsDiv);
+                    }
+                }
+
+                if (result.content) {
+                    // Use createCodeBlock with "diff" as pseudo-path, then override language
+                    const codeBlock = this.createCodeBlock('diff', result.content, content);
+
+                    // Override language class to diff
+                    const codeElement = codeBlock.querySelector('code');
+                    if (codeElement) {
+                        codeElement.className = 'language-diff';
+                        if (window.hljs) {
+                            window.hljs.highlightElement(codeBlock);
+                        }
+                    }
+
+                    // Add diff-block CSS class for styling
+                    codeBlock.classList.add('diff-block');
                 }
 
                 return card;
@@ -505,6 +565,113 @@ describe('Tool Output Formatting', () => {
             expect(app.detectLanguageFromPath('./test.cake')).toBe('csharp');
             expect(app.detectLanguageFromPath('./test.php')).toBe('php');
             expect(app.detectLanguageFromPath('./test.sublime-project')).toBe('json');
+        });
+    });
+
+    describe('formatEditFileResult', () => {
+        test('formats edit file result correctly', () => {
+            const result = {
+                file: './src/main.py',
+                blocks_applied: 1,
+                lines_changed: 5,
+                content: '@@ -1,3 +1,8 @@\n-def old_function():\n-    pass\n+def new_function():\n+    # New implementation\n+    return True\n'            };
+
+            const card = app.formatEditFileResult(mockCard, result);
+
+            // Verify header was created with correct info
+            expect(app.createCardHeader).toHaveBeenCalledWith(
+                mockCard,
+                'Edit: ./src/main.py',
+                '<span class="material-symbols-rounded">edit</span>',
+                '1 block(s) applied, 5 line(s) changed'
+            );
+
+            // Verify header properties
+            expect(card.headerTitle).toBe('Edit: ./src/main.py');
+            expect(card.headerSummary).toBe('1 block(s) applied, 5 line(s) changed');
+            expect(card.headerIcon).toContain('edit');
+        });
+
+        test('handles warnings correctly', () => {
+            const result = {
+                file: './src/main.py',
+                blocks_applied: 1,
+                lines_changed: 0,
+                warnings: ['old_string appears 2 times in the file'],
+                content: 'diff content'
+            };
+
+            const card = app.formatEditFileResult(mockCard, result);
+
+            // Verify warnings were processed
+            const content = mockCard.querySelector('.card-content');
+            expect(content.appendChild).toHaveBeenCalled();
+        });
+
+        test('adds diff-block class to code block', () => {
+            const result = {
+                file: './src/main.py',
+                blocks_applied: 1,
+                lines_changed: 3,
+                content: '@@ -1,3 +1,6 @@\n-old\n+new\n'
+            };
+
+            const card = app.formatEditFileResult(mockCard, result);
+
+            // Verify card was created without errors
+            expect(card.headerTitle).toBe('Edit: ./src/main.py');
+        });
+
+        test('displays full diff content without truncation', () => {
+            const longDiff = Array(100).fill('line of diff content').join('\n');
+            const result = {
+                file: './src/main.py',
+                blocks_applied: 1,
+                lines_changed: 100,
+                content: longDiff
+            };
+
+            const card = app.formatEditFileResult(mockCard, result);
+
+            // Verify full content is passed to createCodeBlock
+            expect(card.headerTitle).toBe('Edit: ./src/main.py');
+        });
+
+        test('applies language-diff class to code element', () => {
+            const result = {
+                file: './src/main.py',
+                blocks_applied: 1,
+                lines_changed: 3,
+                content: '@@ -1,3 +1,6 @@\n-old\n+new\n'
+            };
+
+            const card = app.formatEditFileResult(mockCard, result);
+
+            // Verify card was created without errors
+            expect(card.headerTitle).toBe('Edit: ./src/main.py');
+        });
+
+        test('handles missing file gracefully', () => {
+            const result = {
+                blocks_applied: 1,
+                lines_changed: 3,
+                content: 'diff content'
+            };
+
+            const card = app.formatEditFileResult(mockCard, result);
+
+            expect(card.headerTitle).toBe('Edit: file');
+        });
+
+        test('handles missing blocks_applied gracefully', () => {
+            const result = {
+                file: './src/main.py',
+                content: 'diff content'
+            };
+
+            const card = app.formatEditFileResult(mockCard, result);
+
+            expect(card.headerSummary).toBe('0 block(s) applied, 0 line(s) changed');
         });
     });
 });
