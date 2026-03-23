@@ -56,3 +56,15 @@ def test_health_endpoint_returns_json(monkeypatch: pytest.MonkeyPatch) -> None:
     data = response.json()
     assert "status" in data
     assert data["status"] == "healthy"
+
+
+def test_index_endpoint_returns_200(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that GET / returns 200 with HTML content."""
+    from vibe.cli.web_ui.server import create_app
+
+    monkeypatch.setenv("VIBE_WEB_TOKEN", "test-token")
+    app = create_app()
+    client = TestClient(app)
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]

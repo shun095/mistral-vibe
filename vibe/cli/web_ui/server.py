@@ -14,6 +14,7 @@ from fastapi import (
     Depends,
     FastAPI,
     HTTPException,
+    Request,
     Security,
     WebSocket,
     WebSocketDisconnect,
@@ -460,9 +461,9 @@ def create_app(  # noqa: PLR0915
             agent_loop.add_event_listener(event_listener)
 
     @app.get("/", response_class=HTMLResponse)
-    def index() -> HTMLResponse:
+    def index(request: Request) -> HTMLResponse:
         """Serve the main chat interface."""
-        return templates.TemplateResponse("index.html", {"request": {}})
+        return templates.TemplateResponse(request, "index.html")
 
     security = HTTPBearer(auto_error=False)
 
