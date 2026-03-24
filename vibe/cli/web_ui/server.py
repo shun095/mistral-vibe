@@ -457,8 +457,7 @@ def create_app(  # noqa: PLR0915
                 pass
 
         # Add event listener to agent loop
-        if agent_loop is not None:
-            agent_loop.add_event_listener(event_listener)
+        agent_loop.add_event_listener(event_listener)
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request) -> HTMLResponse:
@@ -740,5 +739,79 @@ def create_app(  # noqa: PLR0915
             app.state.websocket_clients.discard(websocket)
         except Exception:
             app.state.websocket_clients.discard(websocket)
+
+    # Test mode endpoints - only available when VIBE_E2E_TEST is set
+    if os.environ.get("VIBE_E2E_TEST") == "true":
+
+        @app.post("/api/test/mock-data")
+        def register_mock_data(
+            mock_data: dict, token: str = Security(verify_token)
+        ) -> JSONResponse:
+            """Register mock data for E2E tests.
+
+            Args:
+                mock_data: Mock response data with fields:
+                    - response_text: str - The response text to return
+                    - tool_calls: list[dict] - Optional list of tool calls
+                    - usage: dict - Optional token usage data
+                token: Authentication token.
+
+            Returns:
+                Confirmation of registration.
+            """
+            from vibe.core.llm.backend.mock import get_mock_store
+            from vibe.core.types import LLMUsage
+
+            store = get_mock_store()
+            response_text = mock_data.get("response_text", "Default mock response")
+
+            # Parse tool calls if provided
+            tool_calls = mock_data.get("tool_calls")
+
+            # Parse usage if provided
+            usage_data = mock_data.get("usage")
+            usage = None
+            if usage_data:
+                usage = LLMUsage(
+                    prompt_tokens=usage_data.get("prompt_tokens", 0),
+                    completion_tokens=usage_data.get("completion_tokens", 0),
+                )
+
+            store.register_response(
+                response_text=response_text, tool_calls=tool_calls, usage=usage
+            )
+
+            return JSONResponse({"success": True, "message": "Mock data registered"})
+
+        @app.post("/api/test/mock-data/reset")
+        def reset_mock_data(token: str = Security(verify_token)) -> JSONResponse:
+            """Reset the mock data store.
+
+            Args:
+                token: Authentication token.
+
+            Returns:
+                Confirmation of reset.
+            """
+            from vibe.core.llm.backend.mock import reset_mock_store
+
+            reset_mock_store()
+            return JSONResponse({"success": True, "message": "Mock data reset"})
+
+        @app.get("/api/test/mock-data/usage")
+        def get_mock_data_usage(token: str = Security(verify_token)) -> JSONResponse:
+            """Get mock data store usage statistics.
+
+            Args:
+                token: Authentication token.
+
+            Returns:
+                Usage statistics.
+            """
+            from vibe.core.llm.backend.mock import get_mock_store
+
+            store = get_mock_store()
+            usage = store.get_usage()
+            return JSONResponse({"usage": usage})
 
     return app
