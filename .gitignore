@@ -209,3 +209,7 @@ coverage/
 
 # Temporary files
 tmp/
+
+# Playwright E2E tests
+playwright-report/
+test-results/

@@ -309,6 +309,17 @@ class AgentLoop:
         )
 
     def _select_backend(self) -> BackendLike:
+        # Use mock backend for E2E tests
+        import os
+
+        if os.environ.get("VIBE_E2E_TEST") == "true":
+            from vibe.core.llm.backend.mock import MockBackend
+
+            active_model = self.config.get_active_model()
+            provider = self.config.get_provider_for_model(active_model)
+            return MockBackend(provider=provider)
+
+        # Use configured backend for production
         active_model = self.config.get_active_model()
         provider = self.config.get_provider_for_model(active_model)
         timeout = self.config.api_timeout
