@@ -201,8 +201,10 @@ def _run_interactive_mode_with_web(
     plan_offer_gateway = HttpWhoAmIGateway()
     tui_app = VibeApp(
         agent_loop=agent_loop,
-        initial_prompt=args.initial_prompt or stdin_prompt,
-        teleport_on_start=args.teleport,
+        startup=StartupOptions(
+            initial_prompt=args.initial_prompt or stdin_prompt,
+            teleport_on_start=args.teleport,
+        ),
         update_notifier=update_notifier,
         update_cache_repository=update_cache_repository,
         plan_offer_gateway=plan_offer_gateway,
