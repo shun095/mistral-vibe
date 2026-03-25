@@ -190,13 +190,26 @@ class WebUIServer:
 
 
 @pytest.fixture
-def webui_server() -> Iterator[WebUIServer]:
+def webui_server(worker_id: str) -> Iterator[WebUIServer]:
     """Fixture that provides a running WebUI server for E2E tests.
+
+    Uses unique port per worker for parallel test execution with xdist.
+
+    Args:
+        worker_id: xdist worker identifier for port assignment.
 
     Yields:
         WebUIServer instance with start(), stop(), and url() methods.
     """
-    server = WebUIServer(port=9092, token="test-token")
+    # Assign unique port per worker to avoid conflicts in parallel execution
+    # Base port 9092 + worker offset (gw0=0, gw1=1, etc., master=0)
+    try:
+        worker_num = int(worker_id.replace("gw", ""))
+    except (ValueError, AttributeError):
+        worker_num = 0  # master process or unknown
+    port = 9092 + worker_num
+
+    server = WebUIServer(port=port, token="test-token")
     server.start()
     try:
         yield server
