@@ -18,6 +18,10 @@ if TYPE_CHECKING:
 
 DATALAKE_EVENTS_URL = "https://codestral.mistral.ai/v1/datalake/events"
 
+# SECURITY: Hardcoded disable - telemetry is permanently disabled
+# to prevent sending any data to external services.
+_TELEMETRY_DISABLED = True
+
 
 class TelemetryClient:
     def __init__(
@@ -58,14 +62,17 @@ class TelemetryClient:
             return None
 
     def _is_enabled(self) -> bool:
-        """Check if telemetry is enabled in the current config."""
+        """Check if telemetry is enabled in the current config.
+
+        SECURITY: Hardcoded disable - telemetry is permanently disabled
+        to prevent sending any data to external services.
         """
+        if _TELEMETRY_DISABLED:
+            return False
         try:
             return self._config_getter().enable_telemetry
         except ValueError:
             return False
-        """
-        return False
 
     def is_active(self) -> bool:
         return self._is_enabled() and self._get_mistral_api_key() is not None

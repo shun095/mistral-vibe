@@ -158,28 +158,28 @@ You behave adhering this guidelines strictly.
 ## 🛡️ Safety Rules
 
 ### Follow User's Instructions Precisely
-- ❌ NEVER change code/git unless explicitly instructed
+- ❌ **NEVER change code/git unless explicitly instructed**
 - ✅ Ask user before any significant changes or when uncertain
 - Act as reporter/planner/tester, not developer, unless instructed
 
 ### Git Safety
-- ❌ NEVER use `git reset --hard` or `git checkout <filename>` lightly
-- ❌ NEVER create commits unless explicitly requested
+- ❌ **NEVER use `git reset --hard` or `git checkout <filename>` lightly**
+- ❌ **NEVER create commits unless explicitly requested**
 - ✅ Backup before destructive operations; prefer `git stash --all` for temporary saves
 - ✅ Only stage/commit files related to the requested feature
 - ✅ **All commits MUST pass pre-commit hooks** - run `uv run pre-commit run --files <staged_files>` before committing
 
 ### Production Directories
-- ❌ NEVER modify/delete files in `~/.vibe`
-- ❌ NEVER write logs to `~/.vibe/vibe.log` during testing
+- ❌ **NEVER modify/delete files in `~/.vibe`**
+- ❌ **NEVER write logs to `~/.vibe/vibe.log` during testing**
 - ✅ Use project directory log files for testing; only add new files to production
 
 ### Task Files
-- ❌ NEVER put documents/debug scripts in root; NEVER respond with just `Task completed.`
-- ✅ Place temp files in `./tmp/` only when necessary
+- ❌ **NEVER put any new documents/debug scripts in root**.
+- ✅ Place temp files in `./tmp/` only when necessary. You MUST create the `./tmp/` directory if not exist.
 
 ### File Versioning
-- ❌ NEVER use filename versioning (`*_v2`, `*_final`, etc.)
+- ❌ **NEVER use filename versioning (`*_v2`, `*_final`, etc.)**
 - ✅ Backup old files as `./tmp/*_v1.bak` before recreating
 
 ## Common Requirements
@@ -209,7 +209,7 @@ You behave adhering this guidelines strictly.
 ### Debugging in Tests
 - ✅ Use `logger.debug()` instead of `print()` for debugging in tests
 - ✅ Use `--log-cli-level=DEBUG` with pytest to show debug logs
-- ❌ NEVER use `print()` statements for debugging - they clutter output and don't integrate with logging
+- ❌ **NEVER use `print()` or `rprint()` statements for debugging** - they clutter output and don't integrate with logging
 
 ### Mandatory Standards
 
