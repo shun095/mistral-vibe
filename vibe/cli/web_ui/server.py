@@ -459,11 +459,6 @@ def create_app(  # noqa: PLR0915
         # Add event listener to agent loop
         agent_loop.add_event_listener(event_listener)
 
-    @app.get("/", response_class=HTMLResponse)
-    def index(request: Request) -> HTMLResponse:
-        """Serve the main chat interface."""
-        return templates.TemplateResponse(request, "index.html")
-
     security = HTTPBearer(auto_error=False)
 
     async def verify_token(
@@ -475,6 +470,48 @@ def create_app(  # noqa: PLR0915
         if credentials.credentials != auth_token:
             raise HTTPException(status_code=401, detail="Invalid authentication token")
         return credentials.credentials
+
+    @app.get("/login", response_class=HTMLResponse)
+    def login_page(request: Request) -> HTMLResponse:
+        """Serve the login page."""
+        return templates.TemplateResponse(request, "login.html")
+
+    @app.post("/api/login")
+    def login(token_data: dict) -> JSONResponse:
+        """Handle login request and set authentication cookie."""
+        token = token_data.get("token", "")
+
+        if token != auth_token:
+            return JSONResponse(
+                {"success": False, "error": "Invalid token"}, status_code=401
+            )
+
+        # Set authentication cookie (httpOnly, secure in production)
+        response = JSONResponse({"success": True})
+        response.set_cookie(
+            key="vibe_auth",
+            value=token,
+            httponly=True,
+            max_age=86400,  # 24 hours
+            samesite="lax",
+        )
+        return response
+
+    @app.post("/api/logout")
+    def logout() -> JSONResponse:
+        """Handle logout request and clear authentication cookie."""
+        response = JSONResponse({"success": True})
+        response.delete_cookie(key="vibe_auth")
+        return response
+
+    @app.get("/", response_class=HTMLResponse)
+    def index(request: Request) -> HTMLResponse:
+        """Serve the main chat interface."""
+        # Check authentication via cookie
+        auth_cookie = request.cookies.get("vibe_auth")
+        if not auth_cookie or auth_cookie != auth_token:
+            raise HTTPException(status_code=307, headers={"Location": "/login"})
+        return templates.TemplateResponse(request, "index.html")
 
     @app.get("/health")
     def health() -> JSONResponse:

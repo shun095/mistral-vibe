@@ -14,7 +14,8 @@ import { showBrowserNotification } from './notification.js';
 
 class VibeClient {
     constructor() {
-        this.token = this.getTokenFromURL();
+        // Get token from localStorage or URL
+        this.token = this.getAuthToken();
         this.historyLoaded = false;
         this.isProcessing = false;
         this.statusPollInterval = null;
@@ -44,6 +45,7 @@ class VibeClient {
             processingIndicator: document.getElementById('processing-indicator'),
             themeToggle: document.getElementById('theme-toggle'),
             toggleCardsBtn: document.getElementById('toggle-cards-btn'),
+            logoutBtn: document.getElementById('logout-btn'),
             imagePreviewContainer: document.getElementById('image-preview-container'),
             imagePreviewImg: document.getElementById('image-preview-img'),
             imagePreviewRemove: document.getElementById('image-preview-remove'),
@@ -102,9 +104,32 @@ class VibeClient {
         this.startStatusPolling();
     }
 
+    getAuthToken() {
+        // Try localStorage first (set after login)
+        const storedToken = localStorage.getItem('vibe_auth_token');
+        if (storedToken) {
+            return storedToken;
+        }
+        // Fall back to URL parameter
+        const params = new URLSearchParams(window.location.search);
+        return params.get('token') || '';
+    }
+
     getTokenFromURL() {
         const params = new URLSearchParams(window.location.search);
         return params.get('token') || '';
+    }
+
+    async logout() {
+        try {
+            await fetch('/api/logout', { method: 'POST' });
+            localStorage.removeItem('vibe_auth_token');
+            window.location.href = '/login';
+        } catch (error) {
+            console.error('Logout error:', error);
+            localStorage.removeItem('vibe_auth_token');
+            window.location.href = '/login';
+        }
     }
 
     bindEvents() {
@@ -127,6 +152,7 @@ class VibeClient {
         this.bindScrollNavigationEvents();
         this.elements.themeToggle.addEventListener('click', () => this.toggleTheme());
         this.elements.toggleCardsBtn.addEventListener('click', () => this.toggleAllCards());
+        this.elements.logoutBtn?.addEventListener('click', () => this.logout());
 
         this.imageAttachment = new ImageAttachmentHandler({
             previewContainer: this.elements.imagePreviewContainer,

@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mistral Vibe - Login</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0" />
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .login-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100dvh;
+            background-color: var(--bg-primary);
+        }
+
+        .login-box {
+            background-color: var(--bg-secondary);
+            padding: 48px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.08);
+            width: 100%;
+            max-width: 400px;
+        }
+
+        .login-box h1 {
+            font-size: 1.75rem;
+            color: var(--blue);
+            margin-bottom: 8px;
+            text-align: center;
+        }
+
+        .login-box .subtitle {
+            text-align: center;
+            color: var(--text-muted);
+            margin-bottom: 32px;
+            font-size: 0.875rem;
+        }
+
+        .form-group {
+            margin-bottom: 24px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 1rem;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--blue);
+        }
+
+        .form-group input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .btn-primary {
+            width: 100%;
+            padding: 12px 24px;
+            background-color: var(--blue);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-primary:hover {
+            background-color: var(--blue-dark);
+        }
+
+        .btn-primary:disabled {
+            background-color: var(--text-muted);
+            cursor: not-allowed;
+        }
+
+        .error-message {
+            background-color: var(--red);
+            color: white;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 24px;
+            font-size: 0.875rem;
+            display: none;
+        }
+
+        .error-message.show {
+            display: block;
+        }
+
+        .login-footer {
+            margin-top: 24px;
+            text-align: center;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-box">
+            <h1><span class="material-symbols-rounded" style="vertical-align: middle;">terminal</span> Mistral Vibe</h1>
+            <p class="subtitle">Enter your authentication token to continue</p>
+
+            <div id="error-message" class="error-message"></div>
+
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="token">Authentication Token</label>
+                    <input
+                        type="password"
+                        id="token"
+                        name="token"
+                        placeholder="Enter your token"
+                        autocomplete="off"
+                        required
+                    >
+                </div>
+
+                <button type="submit" class="btn-primary" id="login-btn">
+                    <span class="material-symbols-rounded">login</span>
+                    Sign In
+                </button>
+            </form>
+
+            <div class="login-footer">
+                Protected by Bearer Token Authentication
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const loginForm = document.getElementById('login-form');
+        const errorMessage = document.getElementById('error-message');
+        const loginBtn = document.getElementById('login-btn');
+
+        // Check if already logged in
+        const existingToken = localStorage.getItem('vibe_auth_token');
+        if (existingToken) {
+            // Try to verify the token
+            fetch('/api/status', {
+                headers: {
+                    'Authorization': `Bearer ${existingToken}`
+                }
+            })
+            .then(response => {
+                if (response.ok) {
+                    // Already authenticated, redirect to main page
+                    window.location.href = '/';
+                }
+            })
+            .catch(() => {
+                // Token invalid, clear it
+                localStorage.removeItem('vibe_auth_token');
+            });
+        }
+
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const token = document.getElementById('token').value.trim();
+
+            if (!token) {
+                showError('Please enter your authentication token');
+                return;
+            }
+
+            // Disable button during login
+            loginBtn.disabled = true;
+            loginBtn.innerHTML = '<span class="material-symbols-rounded">refresh</span> Verifying...';
+
+            try {
+                // Call the login endpoint
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ token: token })
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    // Token is valid, cookie is set by server
+                    localStorage.setItem('vibe_auth_token', token);
+                    window.location.href = '/';
+                } else {
+                    showError(result.error || 'Invalid authentication token. Please try again.');
+                    loginBtn.disabled = false;
+                    loginBtn.innerHTML = '<span class="material-symbols-rounded">login</span> Sign In';
+                }
+            } catch (error) {
+                showError('Connection error. Please check your connection and try again.');
+                loginBtn.disabled = false;
+                loginBtn.innerHTML = '<span class="material-symbols-rounded">login</span> Sign In';
+            }
+        });
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.classList.add('show');
+
+            // Auto-hide after 5 seconds
+            setTimeout(() => {
+                errorMessage.classList.remove('show');
+            }, 5000);
+        }
+
+        // Allow Enter key to submit
+        document.getElementById('token').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                loginForm.dispatchEvent(new Event('submit'));
+            }
+        });
+
+        // Focus on token input on load
+        document.getElementById('token').focus();
+    </script>
+</body>
+</html>
