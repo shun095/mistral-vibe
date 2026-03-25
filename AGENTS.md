@@ -97,6 +97,16 @@ guidelines:
       - Implement __bool__ when enum boolean evaluation should depend on value
       This promotes type-safe constants, self-documenting code, and maintainable value sets.
 
+  - title: "Minimize Git Diffs"
+    description: >
+      When adding features, minimize the diff against `origin/main` (the PR base), not just the previous commit:
+      - Keep existing inline code inline; do not extract to helper functions unless the logic is genuinely new
+      - Use early returns instead of `else:` blocks to avoid reindenting existing code
+      - Do not add docstrings to existing functions; only add to genuinely new functions
+      - Match original indentation from `origin/main` exactly when modifying code
+      - Add new feature code as minimal additions rather than refactoring for "cleaner" structure
+      Always check `git diff origin/main -- <file>` to verify the actual PR diff size.
+
   - title: "No Inline Ignores"
     description: >
       Do not use inline suppressions like `# type: ignore[...]` or `# noqa[...]` in production code.

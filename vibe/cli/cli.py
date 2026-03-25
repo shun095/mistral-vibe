@@ -142,43 +142,6 @@ def _resume_previous_session(
     )
 
 
-def _run_programmatic_mode(
-    args: argparse.Namespace,
-    config: VibeConfig,
-    loaded_session: tuple[list[LLMMessage], Path] | None,
-    initial_agent_name: str,
-) -> None:
-    """Run CLI in programmatic mode with prompt from args or stdin."""
-    stdin_prompt = get_prompt_from_stdin()
-    config.disabled_tools = [*config.disabled_tools, "ask_user_question"]
-    programmatic_prompt = args.prompt or stdin_prompt
-    if not programmatic_prompt:
-        print("Error: No prompt provided for programmatic mode", file=sys.stderr)
-        sys.exit(1)
-
-    output_format = OutputFormat(args.output if hasattr(args, "output") else "text")
-
-    try:
-        final_response = run_programmatic(
-            config=config,
-            prompt=programmatic_prompt,
-            max_turns=args.max_turns,
-            max_price=args.max_price,
-            output_format=output_format,
-            previous_messages=loaded_session[0] if loaded_session else None,
-            agent_name=initial_agent_name,
-        )
-        if final_response:
-            print(final_response)
-        sys.exit(0)
-    except ConversationLimitException as e:
-        print(e, file=sys.stderr)
-        sys.exit(1)
-    except RuntimeError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
-
-
 def _run_interactive_mode_with_web(
     args: argparse.Namespace, agent_loop: AgentLoop, stdin_prompt: str | None
 ) -> None:
@@ -223,44 +186,7 @@ def _run_interactive_mode_with_web(
     web_server_thread.join(timeout=2)
 
 
-def _run_interactive_mode(
-    args: argparse.Namespace,
-    config: VibeConfig,
-    loaded_session: tuple[list[LLMMessage], Path] | None,
-    initial_agent_name: str,
-) -> None:
-    """Run CLI in interactive mode, optionally with web UI."""
-    stdin_prompt = get_prompt_from_stdin()
-    agent_loop = AgentLoop(
-        config,
-        agent_name=initial_agent_name,
-        enable_streaming=True,
-        entrypoint_metadata=EntrypointMetadata(
-            agent_entrypoint="cli",
-            agent_version=__version__,
-            client_name="vibe_cli",
-            client_version=__version__,
-        ),
-    )
-
-    if loaded_session:
-        _resume_previous_session(agent_loop, *loaded_session)
-
-    if args.web:
-        _run_interactive_mode_with_web(args, agent_loop, stdin_prompt)
-    else:
-        run_textual_ui(
-            agent_loop=agent_loop,
-            startup=StartupOptions(
-                initial_prompt=args.initial_prompt or stdin_prompt,
-                teleport_on_start=args.teleport,
-                show_resume_picker=args.resume is True,
-            ),
-        )
-
-
 def run_cli(args: argparse.Namespace) -> None:
-    """Run the CLI with the given arguments."""
     load_dotenv_values()
     bootstrap_config_files()
 
@@ -278,10 +204,66 @@ def run_cli(args: argparse.Namespace) -> None:
 
         loaded_session = load_session(args, config)
 
+        stdin_prompt = get_prompt_from_stdin()
         if args.prompt is not None:
-            _run_programmatic_mode(args, config, loaded_session, initial_agent_name)
+            config.disabled_tools = [*config.disabled_tools, "ask_user_question"]
+            programmatic_prompt = args.prompt or stdin_prompt
+            if not programmatic_prompt:
+                print(
+                    "Error: No prompt provided for programmatic mode", file=sys.stderr
+                )
+                sys.exit(1)
+            output_format = OutputFormat(
+                args.output if hasattr(args, "output") else "text"
+            )
+
+            try:
+                final_response = run_programmatic(
+                    config=config,
+                    prompt=programmatic_prompt,
+                    max_turns=args.max_turns,
+                    max_price=args.max_price,
+                    output_format=output_format,
+                    previous_messages=loaded_session[0] if loaded_session else None,
+                    agent_name=initial_agent_name,
+                )
+                if final_response:
+                    print(final_response)
+                sys.exit(0)
+            except ConversationLimitException as e:
+                print(e, file=sys.stderr)
+                sys.exit(1)
+            except RuntimeError as e:
+                print(f"Error: {e}", file=sys.stderr)
+                sys.exit(1)
         else:
-            _run_interactive_mode(args, config, loaded_session, initial_agent_name)
+            agent_loop = AgentLoop(
+                config,
+                agent_name=initial_agent_name,
+                enable_streaming=True,
+                entrypoint_metadata=EntrypointMetadata(
+                    agent_entrypoint="cli",
+                    agent_version=__version__,
+                    client_name="vibe_cli",
+                    client_version=__version__,
+                ),
+            )
+
+            if loaded_session:
+                _resume_previous_session(agent_loop, *loaded_session)
+
+            if args.web:
+                _run_interactive_mode_with_web(args, agent_loop, stdin_prompt)
+                return
+
+            run_textual_ui(
+                agent_loop=agent_loop,
+                startup=StartupOptions(
+                    initial_prompt=args.initial_prompt or stdin_prompt,
+                    teleport_on_start=args.teleport,
+                    show_resume_picker=args.resume is True,
+                ),
+            )
 
     except (KeyboardInterrupt, EOFError):
         rprint("\n[dim]Bye![/]")
