@@ -769,7 +769,8 @@ class TestToolCallStructure:
                 tool_calls=[
                     ToolCall(
                         function=FunctionCall(
-                            name="bash", arguments='{"command":"npm install foo"}'
+                            name="bash",
+                            arguments='{"command":"npm install foo","timeout":30}',
                         ),
                         type="function",
                         index=0,

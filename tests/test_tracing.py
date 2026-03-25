@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from unittest.mock import MagicMock, patch
 
 from opentelemetry import trace
@@ -364,8 +365,8 @@ class TestIntegration:
         assert (
             tool_attrs["gen_ai.tool.call.arguments"] == '{"action":"read","todos":null}'
         )
-        assert tool_attrs["gen_ai.tool.call.result"] == (
-            "message: Retrieved 0 todos\ntodos: []\ntotal_count: 0"
-        )
+        # Tool result is stored as JSON for proper serialization of complex types
+        result = json.loads(tool_attrs["gen_ai.tool.call.result"])
+        assert result == {"message": "Retrieved 0 todos", "todos": [], "total_count": 0}
         # Conversation ID propagated via baggage from agent_span
         assert tool_attrs["gen_ai.conversation.id"] == agent_loop.session_id

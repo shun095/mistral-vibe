@@ -23,35 +23,35 @@ class TestGitDenylist:
         result = bash.resolve_permission(
             BashArgs(command="git reset --hard", timeout=10)
         )
-        assert result is ToolPermission.NEVER
+        assert result is not None and result.permission == ToolPermission.NEVER
 
     def test_denies_git_reset_hard_with_origin(self, bash: Bash):
         """Test that 'git reset --hard origin/main' is denied."""
         result = bash.resolve_permission(
             BashArgs(command="git reset --hard origin/main", timeout=10)
         )
-        assert result is ToolPermission.NEVER
+        assert result is not None and result.permission == ToolPermission.NEVER
 
     def test_denies_git_reset_hard_in_subdirectory(self, bash: Bash):
         """Test that 'cd /path/to/dir && git reset --hard' is denied."""
         result = bash.resolve_permission(
             BashArgs(command="cd /path/to/dir && git reset --hard", timeout=10)
         )
-        assert result is ToolPermission.NEVER
+        assert result is not None and result.permission == ToolPermission.NEVER
 
     def test_denies_git_checkout(self, bash: Bash):
         """Test that 'git checkout' is denied."""
         result = bash.resolve_permission(
             BashArgs(command="git checkout main", timeout=10)
         )
-        assert result is ToolPermission.NEVER
+        assert result is not None and result.permission == ToolPermission.NEVER
 
     def test_denies_git_checkout_branch(self, bash: Bash):
         """Test that 'git checkout -b new-branch' is denied."""
         result = bash.resolve_permission(
             BashArgs(command="git checkout -b new-branch", timeout=10)
         )
-        assert result is ToolPermission.NEVER
+        assert result is not None and result.permission == ToolPermission.NEVER
 
     def test_allows_safe_git_commands(self, bash: Bash):
         """Test that safe git commands are allowed."""
@@ -67,7 +67,7 @@ class TestGitDenylist:
         for cmd in safe_commands:
             result = bash.resolve_permission(BashArgs(command=cmd, timeout=10))
             # Should not be NEVER (could be None or ALWAYS depending on allowlist)
-            assert result is not ToolPermission.NEVER
+            assert result is None or result.permission != ToolPermission.NEVER
 
     def test_denies_git_reset_hard_with_shell_operators(self, bash: Bash):
         """Test that 'git reset --hard' is denied even with shell operators."""
@@ -79,7 +79,7 @@ class TestGitDenylist:
 
         for cmd in commands:
             result = bash.resolve_permission(BashArgs(command=cmd, timeout=10))
-            assert result is ToolPermission.NEVER
+            assert result is not None and result.permission == ToolPermission.NEVER
 
 
 class TestEditorDenylist:
@@ -101,7 +101,7 @@ class TestEditorDenylist:
     def test_denies_editors(self, bash, command):
         """Test that various text editors are denied."""
         result = bash.resolve_permission(BashArgs(command=command, timeout=10))
-        assert result is ToolPermission.NEVER
+        assert result is not None and result.permission == ToolPermission.NEVER
 
 
 class TestShellDenylist:
@@ -114,7 +114,7 @@ class TestShellDenylist:
     def test_denies_interactive_shells(self, bash, command):
         """Test that interactive shells are denied."""
         result = bash.resolve_permission(BashArgs(command=command, timeout=10))
-        assert result is ToolPermission.NEVER
+        assert result is not None and result.permission == ToolPermission.NEVER
 
 
 class TestDebuggerDenylist:
@@ -124,7 +124,7 @@ class TestDebuggerDenylist:
     def test_denies_debuggers(self, bash, command):
         """Test that debuggers are denied."""
         result = bash.resolve_permission(BashArgs(command=command, timeout=10))
-        assert result is ToolPermission.NEVER
+        assert result is not None and result.permission == ToolPermission.NEVER
 
 
 class TestAllowlist:
@@ -137,7 +137,7 @@ class TestAllowlist:
     def test_allows_allowlisted_commands(self, bash, command):
         """Test that allowlisted commands are automatically allowed."""
         result = bash.resolve_permission(BashArgs(command=command, timeout=10))
-        assert result is ToolPermission.ALWAYS
+        assert result is not None and result.permission == ToolPermission.ALWAYS
 
     def test_mixed_commands_not_always_allowed(self, bash: Bash):
         """Test that mixed commands (allowlisted + non-allowlisted) are not ALWAYS allowed."""
@@ -148,7 +148,7 @@ class TestAllowlist:
         # However, the current implementation returns ALWAYS if ALL commands are allowlisted
         # Since 'echo hello' is the only command extracted (whoami might not be extracted as separate),
         # this returns ALWAYS. This is actually correct behavior.
-        assert result in (ToolPermission.ALWAYS, None)
+        assert result is None or result.permission in (ToolPermission.ALWAYS, None)
 
 
 class TestStandaloneDenylist:
@@ -160,7 +160,7 @@ class TestStandaloneDenylist:
     def test_denies_standalone_commands(self, bash, command):
         """Test that standalone commands without arguments are denied."""
         result = bash.resolve_permission(BashArgs(command=command, timeout=10))
-        assert result is ToolPermission.NEVER
+        assert result is not None and result.permission == ToolPermission.NEVER
 
     @pytest.mark.parametrize(
         "command",
@@ -175,7 +175,7 @@ class TestStandaloneDenylist:
         """Test that standalone commands with arguments are allowed."""
         result = bash.resolve_permission(BashArgs(command=command, timeout=10))
         # Should not be NEVER (could be None or ALWAYS)
-        assert result is not ToolPermission.NEVER
+        assert result is None or result.permission != ToolPermission.NEVER
 
 
 class TestCommandParsing:
@@ -186,35 +186,35 @@ class TestCommandParsing:
         result = bash.resolve_permission(
             BashArgs(command="git reset --hard | cat", timeout=10)
         )
-        assert result is ToolPermission.NEVER
+        assert result is not None and result.permission == ToolPermission.NEVER
 
     def test_parses_and_commands(self, bash: Bash):
         """Test that commands with && are parsed correctly."""
         result = bash.resolve_permission(
             BashArgs(command="echo test && git reset --hard", timeout=10)
         )
-        assert result is ToolPermission.NEVER
+        assert result is not None and result.permission == ToolPermission.NEVER
 
     def test_parses_or_commands(self, bash: Bash):
         """Test that commands with || are parsed correctly."""
         result = bash.resolve_permission(
             BashArgs(command="git reset --hard || echo failed", timeout=10)
         )
-        assert result is ToolPermission.NEVER
+        assert result is not None and result.permission == ToolPermission.NEVER
 
     def test_parses_subshell_commands(self, bash: Bash):
         """Test that commands in subshells are parsed correctly."""
         result = bash.resolve_permission(
             BashArgs(command="(git reset --hard)", timeout=10)
         )
-        assert result is ToolPermission.NEVER
+        assert result is not None and result.permission == ToolPermission.NEVER
 
     def test_parses_background_commands(self, bash: Bash):
         """Test that background commands are parsed correctly."""
         result = bash.resolve_permission(
             BashArgs(command="git reset --hard &", timeout=10)
         )
-        assert result is ToolPermission.NEVER
+        assert result is not None and result.permission == ToolPermission.NEVER
 
 
 class TestEdgeCases:
@@ -243,25 +243,25 @@ class TestEdgeCases:
         result = bash.resolve_permission(
             BashArgs(command="git reset --hard", timeout=10)
         )
-        assert result is ToolPermission.NEVER
+        assert result is not None and result.permission == ToolPermission.NEVER
 
         # 'git reset --hard' with additional flags should also match
         result = bash.resolve_permission(
             BashArgs(command="git reset --hard -q", timeout=10)
         )
-        assert result is ToolPermission.NEVER
+        assert result is not None and result.permission == ToolPermission.NEVER
 
     def test_allowlist_pattern_matching(self, bash: Bash):
         """Test that allowlist uses prefix matching correctly."""
         # 'git status' should be allowlisted
         result = bash.resolve_permission(BashArgs(command="git status", timeout=10))
-        assert result is ToolPermission.ALWAYS
+        assert result is not None and result.permission == ToolPermission.ALWAYS
 
         # 'git status --short' should also be allowlisted (starts with 'git status')
         result = bash.resolve_permission(
             BashArgs(command="git status --short", timeout=10)
         )
-        assert result is ToolPermission.ALWAYS
+        assert result is not None and result.permission == ToolPermission.ALWAYS
 
     def test_denylist_takes_precedence(self, bash: Bash):
         """Test that denylist takes precedence over allowlist."""
@@ -269,7 +269,7 @@ class TestEdgeCases:
         result = bash.resolve_permission(
             BashArgs(command="git reset --hard", timeout=10)
         )
-        assert result is ToolPermission.NEVER
+        assert result is not None and result.permission == ToolPermission.NEVER
 
 
 class TestCustomConfigurations:
@@ -283,12 +283,12 @@ class TestCustomConfigurations:
         result = bash_tool.resolve_permission(
             BashArgs(command="dangerous_command", timeout=10)
         )
-        assert result is ToolPermission.NEVER
+        assert result is not None and result.permission == ToolPermission.NEVER
 
         result = bash_tool.resolve_permission(
             BashArgs(command="another_dangerous arg", timeout=10)
         )
-        assert result is ToolPermission.NEVER
+        assert result is not None and result.permission == ToolPermission.NEVER
 
     def test_custom_allowlist(self):
         """Test that custom allowlist works correctly."""
@@ -298,12 +298,12 @@ class TestCustomConfigurations:
         result = bash_tool.resolve_permission(
             BashArgs(command="safe_command", timeout=10)
         )
-        assert result is ToolPermission.ALWAYS
+        assert result is not None and result.permission == ToolPermission.ALWAYS
 
         result = bash_tool.resolve_permission(
             BashArgs(command="another_safe arg", timeout=10)
         )
-        assert result is ToolPermission.ALWAYS
+        assert result is not None and result.permission == ToolPermission.ALWAYS
 
     def test_custom_allowlist_and_denylist(self):
         """Test that custom allowlist and denylist work together."""
@@ -312,24 +312,24 @@ class TestCustomConfigurations:
 
         # Allowlisted commands should be ALWAYS
         result = bash_tool.resolve_permission(BashArgs(command="echo test", timeout=10))
-        assert result is ToolPermission.ALWAYS
+        assert result is not None and result.permission == ToolPermission.ALWAYS
 
         result = bash_tool.resolve_permission(
             BashArgs(command="cat file.txt", timeout=10)
         )
-        assert result is ToolPermission.ALWAYS
+        assert result is not None and result.permission == ToolPermission.ALWAYS
 
         # Denylisted commands should be NEVER
         result = bash_tool.resolve_permission(
             BashArgs(command="rm file.txt", timeout=10)
         )
-        assert result is ToolPermission.NEVER
+        assert result is not None and result.permission == ToolPermission.NEVER
 
         result = bash_tool.resolve_permission(
             BashArgs(command="mv file1 file2", timeout=10)
         )
-        assert result is ToolPermission.NEVER
+        assert result is not None and result.permission == ToolPermission.NEVER
 
-        # Other commands should return None
+        # Other commands should return ASK (not in allowlist, needs approval)
         result = bash_tool.resolve_permission(BashArgs(command="ls", timeout=10))
-        assert result is None
+        assert result is not None and result.permission == ToolPermission.ASK

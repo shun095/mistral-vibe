@@ -7,24 +7,40 @@ the input form is properly restored.
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+from vibe.cli.textual_ui.app import VibeApp
+from vibe.cli.voice_manager.voice_manager_port import TranscribeState
+from vibe.core.agent_loop import AgentLoop
+from vibe.core.tools.builtins.ask_user_question import (
+    AskUserQuestionArgs,
+    Choice,
+    Question,
+)
+
+
+def _create_mock_app():
+    """Create a mock VibeApp with proper initialization."""
+    mock_agent_loop = MagicMock(spec=AgentLoop)
+    mock_agent_loop.telemetry_client = MagicMock()
+
+    mock_voice_manager = MagicMock()
+    mock_voice_manager.transcribe_state = TranscribeState.IDLE
+
+    with patch.object(VibeApp, "_make_turn_summary", return_value=MagicMock()):
+        with patch.object(VibeApp, "_make_tts_client", return_value=None):
+            with patch.object(
+                VibeApp, "_make_default_voice_manager", return_value=mock_voice_manager
+            ):
+                return VibeApp(agent_loop=mock_agent_loop)
 
 
 @pytest.mark.asyncio
 async def test_interrupt_during_question_popup_restores_input_form() -> None:
     """Test that interrupt during question popup restores input form."""
-    from vibe.cli.textual_ui.app import VibeApp
-    from vibe.core.agent_loop import AgentLoop
-    from vibe.core.tools.builtins.ask_user_question import (
-        AskUserQuestionArgs,
-        Choice,
-        Question,
-    )
-
-    mock_agent_loop = MagicMock(spec=AgentLoop)
-    app = VibeApp(agent_loop=mock_agent_loop)
+    app = _create_mock_app()
     app._agent_running = True
     app._interrupt_requested = True
     app._agent_task = None
@@ -98,11 +114,7 @@ async def test_interrupt_during_question_popup_restores_input_form() -> None:
 @pytest.mark.asyncio
 async def test_interrupt_during_approval_popup_restores_input_form() -> None:
     """Test that interrupt during approval popup restores input form."""
-    from vibe.cli.textual_ui.app import VibeApp
-    from vibe.core.agent_loop import AgentLoop
-
-    mock_agent_loop = MagicMock(spec=AgentLoop)
-    app = VibeApp(agent_loop=mock_agent_loop)
+    app = _create_mock_app()
     app._agent_running = True
     app._interrupt_requested = True
     app._agent_task = None
@@ -163,16 +175,7 @@ async def test_interrupt_during_approval_popup_restores_input_form() -> None:
 @pytest.mark.asyncio
 async def test_interrupt_with_both_popups_restores_input_form() -> None:
     """Test that interrupt with both question and approval popups restores input form."""
-    from vibe.cli.textual_ui.app import VibeApp
-    from vibe.core.agent_loop import AgentLoop
-    from vibe.core.tools.builtins.ask_user_question import (
-        AskUserQuestionArgs,
-        Choice,
-        Question,
-    )
-
-    mock_agent_loop = MagicMock(spec=AgentLoop)
-    app = VibeApp(agent_loop=mock_agent_loop)
+    app = _create_mock_app()
     app._agent_running = True
     app._interrupt_requested = True
     app._agent_task = None
@@ -255,11 +258,7 @@ async def test_interrupt_with_both_popups_restores_input_form() -> None:
 @pytest.mark.asyncio
 async def test_interrupt_no_popups_no_switch_to_input() -> None:
     """Test that interrupt without popups doesn't call switch_to_input_app."""
-    from vibe.cli.textual_ui.app import VibeApp
-    from vibe.core.agent_loop import AgentLoop
-
-    mock_agent_loop = MagicMock(spec=AgentLoop)
-    app = VibeApp(agent_loop=mock_agent_loop)
+    app = _create_mock_app()
     app._agent_running = True
     app._interrupt_requested = True
     app._agent_task = None
