@@ -11,6 +11,10 @@ def test_index_template_loads() -> None:
 
     app = create_app(token="test-token")
     client = TestClient(app)
+
+    # Login first
+    client.post("/api/login", json={"token": "test-token"})
+
     response = client.get("/")
     assert response.status_code == 200
     assert "<!DOCTYPE html>" in response.text
@@ -22,6 +26,10 @@ def test_index_template_includes_title() -> None:
 
     app = create_app(token="test-token")
     client = TestClient(app)
+
+    # Login first
+    client.post("/api/login", json={"token": "test-token"})
+
     response = client.get("/")
     assert "Mistral Vibe" in response.text
 
@@ -32,6 +40,10 @@ def test_index_template_includes_css() -> None:
 
     app = create_app(token="test-token")
     client = TestClient(app)
+
+    # Login first
+    client.post("/api/login", json={"token": "test-token"})
+
     response = client.get("/")
     assert "/static/css/style.css" in response.text
 
@@ -42,6 +54,10 @@ def test_index_template_includes_js() -> None:
 
     app = create_app(token="test-token")
     client = TestClient(app)
+
+    # Login first
+    client.post("/api/login", json={"token": "test-token"})
+
     response = client.get("/")
     assert "/static/js/app.js" in response.text
 
