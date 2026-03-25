@@ -50,31 +50,33 @@ class TestBashGranularPermissions:
 
     def test_allowlisted_command_always(self):
         bash = self._bash()
-        result = bash.resolve_permission(BashArgs(command="git status"))
+        result = bash.resolve_permission(BashArgs(command="git status", timeout=10))
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.ALWAYS
 
     def test_denylisted_command_never(self):
         bash = self._bash()
-        result = bash.resolve_permission(BashArgs(command="vim file.txt"))
+        result = bash.resolve_permission(BashArgs(command="vim file.txt", timeout=10))
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.NEVER
 
     def test_standalone_denylisted_never(self):
         bash = self._bash()
-        result = bash.resolve_permission(BashArgs(command="python"))
+        result = bash.resolve_permission(BashArgs(command="python", timeout=10))
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.NEVER
 
     def test_standalone_denylisted_with_args_not_denied(self):
         bash = self._bash()
-        result = bash.resolve_permission(BashArgs(command="python script.py"))
+        result = bash.resolve_permission(
+            BashArgs(command="python script.py", timeout=10)
+        )
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.ASK
 
     def test_unknown_command_returns_permission_context(self):
         bash = self._bash()
-        result = bash.resolve_permission(BashArgs(command="npm install"))
+        result = bash.resolve_permission(BashArgs(command="npm install", timeout=10))
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.ASK
         assert len(result.required_permissions) == 1
@@ -84,7 +86,9 @@ class TestBashGranularPermissions:
 
     def test_arity_based_prefix(self):
         bash = self._bash()
-        result = bash.resolve_permission(BashArgs(command="docker compose up -d"))
+        result = bash.resolve_permission(
+            BashArgs(command="docker compose up -d", timeout=10)
+        )
         assert isinstance(result, PermissionContext)
         rp = result.required_permissions[0]
         assert rp.session_pattern == "docker compose up *"
@@ -92,7 +96,7 @@ class TestBashGranularPermissions:
     def test_multiple_commands_dedup(self):
         bash = self._bash()
         result = bash.resolve_permission(
-            BashArgs(command="npm install foo && npm install bar")
+            BashArgs(command="npm install foo && npm install bar", timeout=10)
         )
         assert isinstance(result, PermissionContext)
         command_labels = [
@@ -104,7 +108,7 @@ class TestBashGranularPermissions:
 
     def test_cd_excluded_from_command_patterns(self):
         bash = self._bash()
-        result = bash.resolve_permission(BashArgs(command="cd /tmp"))
+        result = bash.resolve_permission(BashArgs(command="cd /tmp", timeout=10))
         assert isinstance(result, PermissionContext)
         assert all(
             rp.scope is not PermissionScope.COMMAND_PATTERN
@@ -113,7 +117,9 @@ class TestBashGranularPermissions:
 
     def test_outside_directory_detection(self):
         bash = self._bash()
-        result = bash.resolve_permission(BashArgs(command="mkdir /tmp/test"))
+        result = bash.resolve_permission(
+            BashArgs(command="mkdir /tmp/test", timeout=10)
+        )
         assert isinstance(result, PermissionContext)
         outside = [
             rp
@@ -124,7 +130,9 @@ class TestBashGranularPermissions:
 
     def test_outside_directory_has_glob_pattern(self):
         bash = self._bash()
-        result = bash.resolve_permission(BashArgs(command="mkdir /tmp/test"))
+        result = bash.resolve_permission(
+            BashArgs(command="mkdir /tmp/test", timeout=10)
+        )
         assert isinstance(result, PermissionContext)
         outside = [
             rp
@@ -136,7 +144,9 @@ class TestBashGranularPermissions:
     def test_in_workdir_no_outside_directory(self):
         bash = self._bash()
         (self.workdir / "subdir").mkdir()
-        result = bash.resolve_permission(BashArgs(command="mkdir subdir/child"))
+        result = bash.resolve_permission(
+            BashArgs(command="mkdir subdir/child", timeout=10)
+        )
         assert isinstance(result, PermissionContext)
         outside = [
             rp
@@ -147,7 +157,9 @@ class TestBashGranularPermissions:
 
     def test_rm_uses_arity_based_pattern(self):
         bash = self._bash()
-        result = bash.resolve_permission(BashArgs(command="rm -rf /tmp/something"))
+        result = bash.resolve_permission(
+            BashArgs(command="rm -rf /tmp/something", timeout=10)
+        )
         assert isinstance(result, PermissionContext)
         cmd_perms = [
             rp
@@ -159,7 +171,9 @@ class TestBashGranularPermissions:
 
     def test_sensitive_sudo_exact_pattern(self):
         bash = self._bash()
-        result = bash.resolve_permission(BashArgs(command="sudo apt install foo"))
+        result = bash.resolve_permission(
+            BashArgs(command="sudo apt install foo", timeout=10)
+        )
         assert isinstance(result, PermissionContext)
         cmd_perms = [
             rp
@@ -170,7 +184,7 @@ class TestBashGranularPermissions:
 
     def test_rmdir_uses_arity_based_pattern(self):
         bash = self._bash()
-        result = bash.resolve_permission(BashArgs(command="rmdir foo"))
+        result = bash.resolve_permission(BashArgs(command="rmdir foo", timeout=10))
         assert isinstance(result, PermissionContext)
         cmd_perms = [
             rp
@@ -181,14 +195,16 @@ class TestBashGranularPermissions:
 
     def test_sensitive_bypasses_allowlist(self):
         bash = self._bash(allowlist=["sudo"])
-        result = bash.resolve_permission(BashArgs(command="sudo ls"))
+        result = bash.resolve_permission(BashArgs(command="sudo ls", timeout=10))
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.ASK
 
     def test_allowlisted_outside_dir_still_asks(self):
         bash = self._bash()
         # cat is allowlisted but /etc/passwd is outside workdir
-        result = bash.resolve_permission(BashArgs(command="cat /etc/passwd"))
+        result = bash.resolve_permission(
+            BashArgs(command="cat /etc/passwd", timeout=10)
+        )
         assert isinstance(result, PermissionContext)
         outside = [
             rp
@@ -201,7 +217,7 @@ class TestBashGranularPermissions:
         bash = self._bash()
         (self.workdir / "src").mkdir()
         result = bash.resolve_permission(
-            BashArgs(command="cat src/../../../etc/passwd")
+            BashArgs(command="cat src/../../../etc/passwd", timeout=10)
         )
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.ASK
@@ -216,20 +232,22 @@ class TestBashGranularPermissions:
         bash = self._bash()
         (self.workdir / "foo").mkdir()
         (self.workdir / "foo" / "bar.txt").touch()
-        result = bash.resolve_permission(BashArgs(command="cat foo/bar.txt"))
+        result = bash.resolve_permission(
+            BashArgs(command="cat foo/bar.txt", timeout=10)
+        )
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.ALWAYS
 
     def test_allowlisted_in_workdir_auto_approves(self):
         bash = self._bash()
-        result = bash.resolve_permission(BashArgs(command="cat README.md"))
+        result = bash.resolve_permission(BashArgs(command="cat README.md", timeout=10))
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.ALWAYS
 
     def test_mixed_allowlisted_and_not(self):
         bash = self._bash()
         result = bash.resolve_permission(
-            BashArgs(command="echo hello && npm install foo")
+            BashArgs(command="echo hello && npm install foo", timeout=10)
         )
         assert isinstance(result, PermissionContext)
         cmd_perms = [
@@ -242,11 +260,13 @@ class TestBashGranularPermissions:
 
     def test_empty_command_returns_none(self):
         bash = self._bash()
-        assert bash.resolve_permission(BashArgs(command="")) is None
+        assert bash.resolve_permission(BashArgs(command="", timeout=10)) is None
 
     def test_chmod_plus_skipped_as_flag(self):
         bash = self._bash()
-        result = bash.resolve_permission(BashArgs(command="chmod +x /tmp/script.sh"))
+        result = bash.resolve_permission(
+            BashArgs(command="chmod +x /tmp/script.sh", timeout=10)
+        )
         assert isinstance(result, PermissionContext)
         outside = [
             rp
@@ -269,11 +289,11 @@ class TestReadFileGranularPermissions:
     def test_in_workdir_normal_file_returns_none(self):
         (self.workdir / "test.py").touch()
         tool = self._read_file()
-        assert tool.resolve_permission(ReadFileArgs(path="test.py")) is None
+        assert tool.resolve_permission(ReadFileArgs(path="test.py", offset=0)) is None
 
     def test_outside_workdir_returns_permission_context(self):
         tool = self._read_file()
-        result = tool.resolve_permission(ReadFileArgs(path="/tmp/file.txt"))
+        result = tool.resolve_permission(ReadFileArgs(path="/tmp/file.txt", offset=0))
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.ASK
         outside = [
@@ -286,7 +306,7 @@ class TestReadFileGranularPermissions:
     def test_sensitive_env_file_returns_permission_context(self):
         (self.workdir / ".env").touch()
         tool = self._read_file()
-        result = tool.resolve_permission(ReadFileArgs(path=".env"))
+        result = tool.resolve_permission(ReadFileArgs(path=".env", offset=0))
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.ASK
         sensitive = [
@@ -300,7 +320,7 @@ class TestReadFileGranularPermissions:
     def test_sensitive_env_local_file(self):
         (self.workdir / ".env.local").touch()
         tool = self._read_file()
-        result = tool.resolve_permission(ReadFileArgs(path=".env.local"))
+        result = tool.resolve_permission(ReadFileArgs(path=".env.local", offset=0))
         assert isinstance(result, PermissionContext)
         sensitive = [
             rp
@@ -311,7 +331,7 @@ class TestReadFileGranularPermissions:
 
     def test_sensitive_outside_both_permissions(self):
         tool = self._read_file()
-        result = tool.resolve_permission(ReadFileArgs(path="/tmp/.env"))
+        result = tool.resolve_permission(ReadFileArgs(path="/tmp/.env", offset=0))
         assert isinstance(result, PermissionContext)
         scopes = {rp.scope for rp in result.required_permissions}
         assert PermissionScope.FILE_PATTERN in scopes
@@ -319,14 +339,14 @@ class TestReadFileGranularPermissions:
 
     def test_denylisted_returns_never(self):
         tool = self._read_file(denylist=["*/secret*"])
-        result = tool.resolve_permission(ReadFileArgs(path="secret.key"))
+        result = tool.resolve_permission(ReadFileArgs(path="secret.key", offset=0))
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.NEVER
 
     def test_allowlisted_returns_always(self):
         tool = self._read_file(allowlist=["*/README*"])
         result = tool.resolve_permission(
-            ReadFileArgs(path=str(self.workdir / "README.md"))
+            ReadFileArgs(path=str(self.workdir / "README.md"), offset=0)
         )
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.ALWAYS
@@ -334,7 +354,9 @@ class TestReadFileGranularPermissions:
     def test_custom_sensitive_patterns(self):
         (self.workdir / "credentials.json").touch()
         tool = self._read_file(sensitive_patterns=["*/credentials*"])
-        result = tool.resolve_permission(ReadFileArgs(path="credentials.json"))
+        result = tool.resolve_permission(
+            ReadFileArgs(path="credentials.json", offset=0)
+        )
         assert isinstance(result, PermissionContext)
 
 
@@ -443,7 +465,9 @@ class TestApprovalFlowSimulation:
             )
         ]
         bash = Bash(config=BashToolConfig(), state=BaseToolState())
-        result = bash.resolve_permission(BashArgs(command="mkdir another_dir"))
+        result = bash.resolve_permission(
+            BashArgs(command="mkdir another_dir", timeout=10)
+        )
         assert isinstance(result, PermissionContext)
         uncovered = [
             rp
@@ -461,7 +485,7 @@ class TestApprovalFlowSimulation:
             )
         ]
         bash = Bash(config=BashToolConfig(), state=BaseToolState())
-        result = bash.resolve_permission(BashArgs(command="npm install"))
+        result = bash.resolve_permission(BashArgs(command="npm install", timeout=10))
         assert isinstance(result, PermissionContext)
         uncovered = [
             rp
@@ -473,7 +497,9 @@ class TestApprovalFlowSimulation:
 
     def test_outside_dir_approved_covers_subsequent(self):
         bash = Bash(config=BashToolConfig(), state=BaseToolState())
-        result = bash.resolve_permission(BashArgs(command="mkdir /tmp/newdir"))
+        result = bash.resolve_permission(
+            BashArgs(command="mkdir /tmp/newdir", timeout=10)
+        )
         assert isinstance(result, PermissionContext)
         outside_rps = [
             rp
@@ -510,7 +536,9 @@ class TestApprovalFlowSimulation:
             )
         ]
         bash = Bash(config=BashToolConfig(), state=BaseToolState())
-        result = bash.resolve_permission(BashArgs(command="rm -rf /tmp/something"))
+        result = bash.resolve_permission(
+            BashArgs(command="rm -rf /tmp/something", timeout=10)
+        )
         assert isinstance(result, PermissionContext)
         cmd_perms = [
             rp
@@ -530,7 +558,9 @@ class TestApprovalFlowSimulation:
             )
         ]
         bash = Bash(config=BashToolConfig(), state=BaseToolState())
-        result = bash.resolve_permission(BashArgs(command="sudo apt install bar"))
+        result = bash.resolve_permission(
+            BashArgs(command="sudo apt install bar", timeout=10)
+        )
         assert isinstance(result, PermissionContext)
         cmd_perms = [
             rp

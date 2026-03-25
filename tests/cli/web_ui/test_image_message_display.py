@@ -8,6 +8,32 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from vibe.cli.textual_ui.app import VibeApp
+from vibe.cli.voice_manager.voice_manager_port import TranscribeState
+from vibe.core.agent_loop import AgentLoop
+
+
+def _create_mock_app():
+    """Create a mock VibeApp with proper initialization."""
+    mock_agent_loop = MagicMock(spec=AgentLoop)
+    mock_agent_loop.messages = []
+    mock_agent_loop.tool_manager = MagicMock()
+    mock_agent_loop.tool_manager.available_tools = []
+    mock_agent_loop.config = MagicMock()
+    mock_agent_loop.config.auto_approve = False
+    mock_agent_loop._notify_event_listeners = MagicMock()
+    mock_agent_loop.telemetry_client = MagicMock()
+
+    mock_voice_manager = MagicMock()
+    mock_voice_manager.transcribe_state = TranscribeState.IDLE
+
+    with patch.object(VibeApp, "_make_turn_summary", return_value=MagicMock()):
+        with patch.object(VibeApp, "_make_tts_client", return_value=None):
+            with patch.object(
+                VibeApp, "_make_default_voice_manager", return_value=mock_voice_manager
+            ):
+                return VibeApp(agent_loop=mock_agent_loop)
+
 
 class TestTUIImageMessageDisplay:
     """Test that image messages are displayed correctly without duplicates."""
@@ -19,20 +45,7 @@ class TestTUIImageMessageDisplay:
         This test verifies the fix for the bug where text+image messages resulted
         in two separate widgets (UserMessage + ImageMessage) being mounted.
         """
-        from vibe.cli.textual_ui.app import VibeApp
-        from vibe.core.agent_loop import AgentLoop
-
-        # Create mock agent loop
-        mock_agent_loop = MagicMock(spec=AgentLoop)
-        mock_agent_loop.messages = []
-        mock_agent_loop.tool_manager = MagicMock()
-        mock_agent_loop.tool_manager.available_tools = []
-        mock_agent_loop.config = MagicMock()
-        mock_agent_loop.config.auto_approve = False
-        mock_agent_loop._notify_event_listeners = MagicMock()
-
-        # Create TUI app
-        app = VibeApp(agent_loop=mock_agent_loop)
+        app = _create_mock_app()
 
         # Track mounted widgets
         mounted_widgets = []
@@ -74,20 +87,7 @@ class TestTUIImageMessageDisplay:
         self,
     ) -> None:
         """Test that image-only messages (no text) mount only one ImageMessage widget."""
-        from vibe.cli.textual_ui.app import VibeApp
-        from vibe.core.agent_loop import AgentLoop
-
-        # Create mock agent loop
-        mock_agent_loop = MagicMock(spec=AgentLoop)
-        mock_agent_loop.messages = []
-        mock_agent_loop.tool_manager = MagicMock()
-        mock_agent_loop.tool_manager.available_tools = []
-        mock_agent_loop.config = MagicMock()
-        mock_agent_loop.config.auto_approve = False
-        mock_agent_loop._notify_event_listeners = MagicMock()
-
-        # Create TUI app
-        app = VibeApp(agent_loop=mock_agent_loop)
+        app = _create_mock_app()
 
         # Track mounted widgets
         mounted_widgets = []
@@ -123,20 +123,7 @@ class TestTUIImageMessageDisplay:
     @pytest.mark.asyncio
     async def test_handle_user_message_with_image_content_structure(self) -> None:
         """Test that _handle_user_message_with_image creates correct content structure."""
-        from vibe.cli.textual_ui.app import VibeApp
-        from vibe.core.agent_loop import AgentLoop
-
-        # Create mock agent loop
-        mock_agent_loop = MagicMock(spec=AgentLoop)
-        mock_agent_loop.messages = []
-        mock_agent_loop.tool_manager = MagicMock()
-        mock_agent_loop.tool_manager.available_tools = []
-        mock_agent_loop.config = MagicMock()
-        mock_agent_loop.config.auto_approve = False
-        mock_agent_loop._notify_event_listeners = MagicMock()
-
-        # Create TUI app
-        app = VibeApp(agent_loop=mock_agent_loop)
+        app = _create_mock_app()
 
         async def mock_mount_and_scroll(widget):
             # Do nothing, just prevent actual mounting

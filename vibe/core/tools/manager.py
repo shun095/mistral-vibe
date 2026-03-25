@@ -224,30 +224,23 @@ class ToolManager:
             default_config = BaseToolConfig()
 
         user_overrides = self._config.tools.get(tool_name)
-        if user_overrides is None:  # noqa: PLR1702
-            merged_dict = default_config.model_dump()
-        else:
-            # Only merge fields that are explicitly set in user_overrides
-            # to avoid overwriting default values (e.g., allowlist, denylist)
-            # with empty lists from BaseToolConfig
-            default_dict = default_config.model_dump()
-            override_dict = user_overrides.model_dump()
+        if user_overrides is None:
+            return config_class()
 
-            # Check which fields are actually different from defaults
-            merged_dict = default_dict.copy()
-            for key, value in override_dict.items():
-                # Only override if the value is different from the default
-                # Special handling for lists: empty list in override means "use default"
-                if key in default_dict:
-                    if isinstance(value, list) and isinstance(default_dict[key], list):
-                        # Only override if the override list is not empty
-                        # Empty list means "use default values"
-                        if value:
-                            merged_dict[key] = value
-                    elif value != default_dict[key]:
+        # user_overrides is dict[str, Any], not a BaseModel
+        default_dict = default_config.model_dump()
+        merged_dict = default_dict.copy()
+
+        for key, value in user_overrides.items():
+            if key in default_dict:
+                if isinstance(value, list) and isinstance(default_dict[key], list):
+                    if value:  # Empty list means "use default"
                         merged_dict[key] = value
+                elif value != default_dict[key]:
+                    merged_dict[key] = value
+            else:
+                merged_dict[key] = value
 
-        merged_dict = {**default_config.model_dump(), **user_overrides}
         return config_class.model_validate(merged_dict)
 
     def get(self, tool_name: str) -> BaseTool:

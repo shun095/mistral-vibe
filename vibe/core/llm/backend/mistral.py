@@ -81,9 +81,7 @@ class MistralMapper:
                         chunks.append(TextChunk(type="text", text=msg.content))
                     content = chunks
                 else:
-                    assistant_content = (
-                        msg.content if isinstance(msg.content, str) else ""
-                    )
+                    content = msg.content if isinstance(msg.content, str) else ""
 
                 return AssistantMessage(
                     role="assistant",

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import cast
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -12,17 +12,31 @@ from vibe.cli.textual_ui.app import VibeApp
 from vibe.cli.textual_ui.widgets.compact import CompactMessage
 
 
-@pytest.mark.asyncio
-async def test_queue_message_during_compaction():
-    """Test that messages are queued during compaction without interrupting it."""
-    # Create a mock agent loop
+def _create_mock_app():
+    """Create a mock VibeApp with proper initialization."""
+    from vibe.cli.voice_manager.voice_manager_port import TranscribeState
+
     mock_agent_loop = MagicMock()
     mock_agent_loop.config = MagicMock()
     mock_agent_loop.agent_profile = MagicMock()
     mock_agent_loop.agent_profile.safety = "NEUTRAL"
+    mock_agent_loop.telemetry_client = MagicMock()
 
-    # Create the app
-    app = VibeApp(agent_loop=mock_agent_loop)
+    mock_voice_manager = MagicMock()
+    mock_voice_manager.transcribe_state = TranscribeState.IDLE
+
+    with patch.object(VibeApp, "_make_turn_summary", return_value=MagicMock()):
+        with patch.object(VibeApp, "_make_tts_client", return_value=None):
+            with patch.object(
+                VibeApp, "_make_default_voice_manager", return_value=mock_voice_manager
+            ):
+                return VibeApp(agent_loop=mock_agent_loop)
+
+
+@pytest.mark.asyncio
+async def test_queue_message_during_compaction():
+    """Test that messages are queued during compaction without interrupting it."""
+    app = _create_mock_app()
 
     # Mock the event handler and compact message
     app.event_handler = MagicMock()
@@ -63,14 +77,7 @@ async def test_queue_message_during_compaction():
 @pytest.mark.asyncio
 async def test_update_queued_message():
     """Test that submitting a new message updates the queued message."""
-    # Create a mock agent loop
-    mock_agent_loop = MagicMock()
-    mock_agent_loop.config = MagicMock()
-    mock_agent_loop.agent_profile = MagicMock()
-    mock_agent_loop.agent_profile.safety = "NEUTRAL"
-
-    # Create the app
-    app = VibeApp(agent_loop=mock_agent_loop)
+    app = _create_mock_app()
 
     # Mock the event handler and compact message
     app.event_handler = MagicMock()
@@ -108,14 +115,7 @@ async def test_update_queued_message():
 @pytest.mark.asyncio
 async def test_clear_queued_message_with_escape():
     """Test that ESC key clears the queued message during compaction."""
-    # Create a mock agent loop
-    mock_agent_loop = MagicMock()
-    mock_agent_loop.config = MagicMock()
-    mock_agent_loop.agent_profile = MagicMock()
-    mock_agent_loop.agent_profile.safety = "NEUTRAL"
-
-    # Create the app
-    app = VibeApp(agent_loop=mock_agent_loop)
+    app = _create_mock_app()
 
     # Mock the event handler and compact message
     app.event_handler = MagicMock()
@@ -153,14 +153,7 @@ async def test_clear_queued_message_with_escape():
 @pytest.mark.asyncio
 async def test_process_queued_message_after_compaction():
     """Test that queued message is processed after compaction ends."""
-    # Create a mock agent loop
-    mock_agent_loop = MagicMock()
-    mock_agent_loop.config = MagicMock()
-    mock_agent_loop.agent_profile = MagicMock()
-    mock_agent_loop.agent_profile.safety = "NEUTRAL"
-
-    # Create the app
-    app = VibeApp(agent_loop=mock_agent_loop)
+    app = _create_mock_app()
 
     # Queue a message
     test_message = "Test message"
@@ -206,14 +199,7 @@ async def test_process_queued_message_after_compaction():
 @pytest.mark.asyncio
 async def test_no_interruption_during_compaction():
     """Test that compaction continues when messages are queued."""
-    # Create a mock agent loop
-    mock_agent_loop = MagicMock()
-    mock_agent_loop.config = MagicMock()
-    mock_agent_loop.agent_profile = MagicMock()
-    mock_agent_loop.agent_profile.safety = "NEUTRAL"
-
-    # Create the app
-    app = VibeApp(agent_loop=mock_agent_loop)
+    app = _create_mock_app()
 
     # Mock the event handler and compact message
     app.event_handler = MagicMock()
@@ -260,17 +246,13 @@ async def test_no_interruption_during_compaction():
 @pytest.mark.asyncio
 async def test_clear_queued_message_after_compaction_failure():
     """Test that queued message is cleared (not processed) after compaction fails."""
-    # Create a mock agent loop
-    mock_agent_loop = MagicMock()
-    mock_agent_loop.config = MagicMock()
-    mock_agent_loop.agent_profile = MagicMock()
-    mock_agent_loop.agent_profile.safety = "NEUTRAL"
-    mock_agent_loop.messages = ["msg1", "msg2"]  # At least 2 messages
-    mock_agent_loop.stats = MagicMock()
-    mock_agent_loop.stats.context_tokens = 1000
+    # Create the app with proper initialization
+    app = _create_mock_app()
 
-    # Create the app
-    app = VibeApp(agent_loop=mock_agent_loop)
+    # Set up messages and stats
+    app.agent_loop.messages = ["msg1", "msg2"]
+    app.agent_loop.stats = MagicMock()
+    app.agent_loop.stats.context_tokens = 1000
 
     # Queue a message
     test_message = "Test message"

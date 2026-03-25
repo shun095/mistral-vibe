@@ -204,14 +204,28 @@ class TestTUIImageMessageHandling:
     @pytest.fixture
     def mock_tui_app(self):
         """Create a mock TUI app for testing."""
+        from unittest.mock import patch
+
         from vibe.cli.textual_ui.app import VibeApp
+        from vibe.cli.voice_manager.voice_manager_port import TranscribeState
         from vibe.core.agent_loop import AgentLoop
 
         # Create mock agent loop
         mock_agent_loop = MagicMock(spec=AgentLoop)
+        mock_agent_loop.telemetry_client = MagicMock()
 
-        # Create TUI app (but don't run it)
-        app = VibeApp(agent_loop=mock_agent_loop)
+        mock_voice_manager = MagicMock()
+        mock_voice_manager.transcribe_state = TranscribeState.IDLE
+
+        # Create TUI app with patched initialization
+        with patch.object(VibeApp, "_make_turn_summary", return_value=MagicMock()):
+            with patch.object(VibeApp, "_make_tts_client", return_value=None):
+                with patch.object(
+                    VibeApp,
+                    "_make_default_voice_manager",
+                    return_value=mock_voice_manager,
+                ):
+                    app = VibeApp(agent_loop=mock_agent_loop)
         return app
 
     def test_submit_message_from_web_with_image(self, mock_tui_app) -> None:

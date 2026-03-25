@@ -27,6 +27,7 @@ class TestApprovalPopupBroadcasting:
         app = MagicMock(spec=VibeApp)
         app.agent_loop = MagicMock()
         app.agent_loop._notify_event_listeners = MagicMock()
+        app.agent_loop.telemetry_client = MagicMock()
 
         # Call the method
         VibeApp._broadcast_approval_popup(
@@ -56,6 +57,7 @@ class TestApprovalPopupBroadcasting:
         app = MagicMock(spec=VibeApp)
         app.agent_loop = MagicMock()
         app.agent_loop._notify_event_listeners = MagicMock()
+        app.agent_loop.telemetry_client = MagicMock()
 
         # Call the method
         result = (ApprovalResponse.YES, "Approved via TUI")
@@ -87,6 +89,7 @@ class TestQuestionPopupBroadcasting:
         app = MagicMock(spec=VibeApp)
         app.agent_loop = MagicMock()
         app.agent_loop._notify_event_listeners = MagicMock()
+        app.agent_loop.telemetry_client = MagicMock()
 
         # Create question args
         from vibe.core.tools.builtins.ask_user_question import Choice, Question
@@ -130,6 +133,7 @@ class TestQuestionPopupBroadcasting:
         app = MagicMock(spec=VibeApp)
         app.agent_loop = MagicMock()
         app.agent_loop._notify_event_listeners = MagicMock()
+        app.agent_loop.telemetry_client = MagicMock()
 
         # Create result
         from vibe.core.tools.builtins.ask_user_question import Answer
@@ -278,7 +282,8 @@ class TestWebResponseHandlers:
             app._pending_approval = future
             app._pending_approval_id = "approval_123"
             app._pending_approval_tool = "bash"
-            app._set_tool_permission_always = MagicMock()
+            app._pending_approval_required_permissions = None
+            app.agent_loop = MagicMock()
             app.call_later = MagicMock()
 
             VibeApp.handle_web_approval_response(
@@ -290,9 +295,7 @@ class TestWebResponseHandlers:
             )
 
             # Verify tool permission was set for session
-            app._set_tool_permission_always.assert_called_once_with(
-                "bash", save_permanently=False
-            )
+            app.agent_loop.approve_always.assert_called_once_with("bash", None)
             assert future.done()
 
             # Verify cleanup happened
@@ -317,6 +320,8 @@ class TestWebResponseHandlers:
             app._pending_approval_id = "approval_123"
             app._pending_approval_tool = "bash"
             app.agent_loop = MagicMock()
+            app.agent_loop.approve_always = MagicMock()
+            app.agent_loop.telemetry_client = MagicMock()
             app.call_later = MagicMock()
 
             VibeApp.handle_web_approval_response(
