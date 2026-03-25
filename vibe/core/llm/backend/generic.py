@@ -25,7 +25,7 @@ from vibe.core.types import (
     Role,
     StrToolChoice,
 )
-from vibe.core.utils import apply_retry_decorator
+from vibe.core.utils.retry import apply_retry_decorator
 
 if TYPE_CHECKING:
     from vibe.core.config import ModelConfig, ProviderConfig
