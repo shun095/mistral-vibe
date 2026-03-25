@@ -11,6 +11,10 @@ import keyring.errors
 
 GITHUB_CLIENT_ID = "Ov23liJ7sk5kFDMEyvDT"
 
+# SECURITY: Hardcoded disable - GitHub authentication is permanently disabled
+# to prevent sending any data to external services.
+_GITHUB_AUTH_DISABLED = True
+
 _SERVICE_NAME = "vibe"
 _KEYRING_USERNAME = "github_token"
 _DEVICE_CODE_URL = "https://github.com/login/device/code"
@@ -95,6 +99,8 @@ class GitHubAuthProvider:
         return None
 
     async def _is_token_valid(self, token: str) -> bool:
+        if _GITHUB_AUTH_DISABLED:
+            return False
         client = self._get_client()
         try:
             response = await client.get(
@@ -109,6 +115,11 @@ class GitHubAuthProvider:
             return False
 
     async def start_device_flow(self, open_browser: bool = True) -> DeviceFlowHandle:
+        if _GITHUB_AUTH_DISABLED:
+            raise GitHubAuthError(
+                "GitHub authentication is disabled for security reasons. "
+                "External authentication services have been hardcoded disabled."
+            )
         client = self._get_client()
         response = await client.post(
             _DEVICE_CODE_URL,
@@ -150,6 +161,11 @@ class GitHubAuthProvider:
         expires_in: int,
         interval: int,
     ) -> str:
+        if _GITHUB_AUTH_DISABLED:
+            raise GitHubAuthError(
+                "GitHub authentication is disabled for security reasons. "
+                "External authentication services have been hardcoded disabled."
+            )
         elapsed = 0.0
         while elapsed < expires_in:
             await asyncio.sleep(interval)

@@ -108,6 +108,9 @@ class TestNuageClientStartWorkflow:
         )
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(
+        reason="Teleport disabled for security - prevents external workflow calls"
+    )
     async def test_start_workflow_success(
         self, nuage: NuageClient, mock_client: MagicMock
     ) -> None:
@@ -125,6 +128,9 @@ class TestNuageClientStartWorkflow:
         assert "workflows/workflow-id/execute" in call_args[0][0]
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(
+        reason="Teleport disabled for security - prevents external workflow calls"
+    )
     async def test_start_workflow_failure(
         self, nuage: NuageClient, mock_client: MagicMock
     ) -> None:
@@ -138,6 +144,9 @@ class TestNuageClientStartWorkflow:
             await nuage.start_workflow(params)
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(
+        reason="Teleport disabled for security - prevents external workflow calls"
+    )
     async def test_start_workflow_unauthorized_hint(
         self, nuage: NuageClient, mock_client: MagicMock
     ) -> None:
@@ -163,6 +172,9 @@ class TestNuageClientSendGithubToken:
         )
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(
+        reason="Teleport disabled for security - prevents external workflow calls"
+    )
     async def test_send_github_token_success(
         self,
         nuage: NuageClient,
@@ -204,6 +216,9 @@ class TestNuageClientSendGithubToken:
         assert mock_client.post.call_count == 2
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(
+        reason="Teleport disabled for security - prevents external workflow calls"
+    )
     async def test_query_public_key_failure(
         self, nuage: NuageClient, mock_client: MagicMock
     ) -> None:
@@ -216,6 +231,9 @@ class TestNuageClientSendGithubToken:
             await nuage._query_public_key("exec-123")
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(
+        reason="Teleport disabled for security - prevents external workflow calls"
+    )
     async def test_signal_encrypted_token_failure(
         self, nuage: NuageClient, mock_client: MagicMock
     ) -> None:
@@ -243,6 +261,9 @@ class TestNuageClientCreateLeChatThread:
         )
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(
+        reason="Teleport disabled for security - prevents external workflow calls"
+    )
     async def test_create_le_chat_thread_success(
         self,
         nuage: NuageClient,
@@ -286,6 +307,9 @@ class TestNuageClientCreateLeChatThread:
         assert url == "https://chat.example.com/thread/123"
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(
+        reason="Teleport disabled for security - prevents external workflow calls"
+    )
     async def test_create_le_chat_thread_failure(
         self,
         nuage: NuageClient,

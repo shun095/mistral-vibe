@@ -100,6 +100,9 @@ class TestGitHubAuthProviderStartDeviceFlow:
         return GitHubAuthProvider(client=mock_client)
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(
+        reason="GitHub auth disabled for security - prevents external OAuth calls"
+    )
     async def test_start_device_flow_success(
         self, provider: GitHubAuthProvider, mock_client: MagicMock
     ) -> None:
@@ -122,6 +125,9 @@ class TestGitHubAuthProviderStartDeviceFlow:
         assert handle.expires_in == 900
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(
+        reason="GitHub auth disabled for security - prevents external OAuth calls"
+    )
     async def test_start_device_flow_without_browser(
         self, provider: GitHubAuthProvider, mock_client: MagicMock
     ) -> None:
@@ -140,6 +146,9 @@ class TestGitHubAuthProviderStartDeviceFlow:
             mock_browser.open.assert_not_called()
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(
+        reason="GitHub auth disabled for security - prevents external OAuth calls"
+    )
     async def test_start_device_flow_failure(
         self, provider: GitHubAuthProvider, mock_client: MagicMock
     ) -> None:
@@ -162,6 +171,9 @@ class TestGitHubAuthProviderPollForToken:
         return GitHubAuthProvider(client=mock_client)
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(
+        reason="GitHub auth disabled for security - prevents external OAuth calls"
+    )
     async def test_poll_returns_token_on_success(
         self, provider: GitHubAuthProvider, mock_client: MagicMock
     ) -> None:
@@ -176,6 +188,9 @@ class TestGitHubAuthProviderPollForToken:
         assert token == "ghp_new_token"
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(
+        reason="GitHub auth disabled for security - prevents external OAuth calls"
+    )
     async def test_poll_handles_slow_down(
         self, provider: GitHubAuthProvider, mock_client: MagicMock
     ) -> None:
@@ -194,6 +209,9 @@ class TestGitHubAuthProviderPollForToken:
         assert token == "ghp_token"
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(
+        reason="GitHub auth disabled for security - prevents external OAuth calls"
+    )
     async def test_poll_raises_on_expired_token(
         self, provider: GitHubAuthProvider, mock_client: MagicMock
     ) -> None:
@@ -208,6 +226,9 @@ class TestGitHubAuthProviderPollForToken:
                 )
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(
+        reason="GitHub auth disabled for security - prevents external OAuth calls"
+    )
     async def test_poll_raises_on_access_denied(
         self, provider: GitHubAuthProvider, mock_client: MagicMock
     ) -> None:
@@ -222,6 +243,9 @@ class TestGitHubAuthProviderPollForToken:
                 )
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(
+        reason="GitHub auth disabled for security - prevents external OAuth calls"
+    )
     async def test_poll_raises_on_timeout(
         self, provider: GitHubAuthProvider, mock_client: MagicMock
     ) -> None:
@@ -266,6 +290,9 @@ class TestGitHubAuthProviderWaitForToken:
         return GitHubAuthProvider(client=mock_client)
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(
+        reason="GitHub auth disabled for security - prevents external OAuth calls"
+    )
     async def test_wait_for_token_polls_and_saves(
         self, provider: GitHubAuthProvider, mock_client: MagicMock
     ) -> None:

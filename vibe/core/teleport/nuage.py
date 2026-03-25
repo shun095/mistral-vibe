@@ -10,6 +10,10 @@ from pydantic import BaseModel, Field
 from vibe.core.auth import EncryptedPayload, encrypt
 from vibe.core.teleport.errors import ServiceTeleportError
 
+# SECURITY: Hardcoded disable - Teleport/Nuage workflow is permanently disabled
+# to prevent sending any data to external services.
+_TELEPORT_DISABLED = True
+
 
 class GitRepoConfig(BaseModel):
     url: str
@@ -112,6 +116,11 @@ class NuageClient:
         }
 
     async def start_workflow(self, params: WorkflowParams) -> str:
+        if _TELEPORT_DISABLED:
+            raise ServiceTeleportError(
+                "Teleport/Nuage workflow is disabled for security reasons. "
+                "External workflow services have been hardcoded disabled."
+            )
         response = await self._http_client.post(
             f"{self._base_url}/v1/workflows/{self._workflow_id}/execute",
             headers=self._headers(),
@@ -138,6 +147,11 @@ class NuageClient:
         await self._signal_encrypted_token(execution_id, encrypted)
 
     async def _query_public_key(self, execution_id: str) -> bytes:
+        if _TELEPORT_DISABLED:
+            raise ServiceTeleportError(
+                "Teleport/Nuage workflow is disabled for security reasons. "
+                "External workflow services have been hardcoded disabled."
+            )
         response = await self._http_client.post(
             f"{self._base_url}/v1/workflows/executions/{execution_id}/queries",
             headers=self._headers(),

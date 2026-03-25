@@ -14,12 +14,21 @@ from vibe.cli.plan_offer.ports.whoami_gateway import (
 BASE_URL = "https://console.mistral.ai"
 WHOAMI_PATH = "/api/vibe/whoami"
 
+# SECURITY: Hardcoded disable - Plan Offer whoami is permanently disabled
+# to prevent sending any data to external services.
+_PLAN_OFFER_DISABLED = True
+
 
 class HttpWhoAmIGateway:
     def __init__(self, base_url: str = BASE_URL) -> None:
         self._base_url = base_url.rstrip("/")
 
     async def whoami(self, api_key: str) -> WhoAmIResponse:
+        if _PLAN_OFFER_DISABLED:
+            raise WhoAmIGatewayError(
+                "Plan Offer whoami is disabled for security reasons. "
+                "External whoami services have been hardcoded disabled."
+            )
         url = f"{self._base_url}{WHOAMI_PATH}"
         headers = {"Authorization": f"Bearer {api_key}"}
         try:

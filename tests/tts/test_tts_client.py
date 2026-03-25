@@ -38,6 +38,9 @@ class TestMistralTTSClientInit:
 
 class TestMistralTTSClient:
     @pytest.mark.asyncio
+    @pytest.mark.skip(
+        reason="TTS disabled for security - prevents external service calls"
+    )
     async def test_speak_returns_decoded_audio(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -70,6 +73,9 @@ class TestMistralTTSClient:
         await client.close()
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(
+        reason="TTS disabled for security - prevents external service calls"
+    )
     async def test_speak_raises_on_http_error(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
