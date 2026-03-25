@@ -247,6 +247,7 @@ class ToolManager:
                     elif value != default_dict[key]:
                         merged_dict[key] = value
 
+        merged_dict = {**default_config.model_dump(), **user_overrides}
         return config_class.model_validate(merged_dict)
 
     def get(self, tool_name: str) -> BaseTool:

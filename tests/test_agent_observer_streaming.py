@@ -22,7 +22,6 @@ from vibe.core.middleware import (
     MiddlewareResult,
     ResetReason,
 )
-from vibe.core.tools.base import BaseToolConfig, ToolPermission
 from vibe.core.tools.builtins.todo import TodoArgs
 from vibe.core.types import (
     ApprovalResponse,
@@ -55,9 +54,7 @@ class InjectBeforeMiddleware:
 
 
 def make_config(
-    *,
-    enabled_tools: list[str] | None = None,
-    tools: dict[str, BaseToolConfig] | None = None,
+    *, enabled_tools: list[str] | None = None, tools: dict[str, dict] | None = None
 ) -> VibeConfig:
     return build_test_vibe_config(
         system_prompt_id="tests",
@@ -219,8 +216,7 @@ async def test_act_handles_streaming_with_tool_call_events_in_sequence() -> None
     ])
     agent = build_test_agent_loop(
         config=make_config(
-            enabled_tools=["todo"],
-            tools={"todo": BaseToolConfig(permission=ToolPermission.ALWAYS)},
+            enabled_tools=["todo"], tools={"todo": {"permission": "always"}}
         ),
         backend=backend,
         agent_name=BuiltinAgentName.AUTO_APPROVE,
@@ -269,8 +265,7 @@ async def test_act_handles_tool_call_chunk_with_content() -> None:
     ])
     agent = build_test_agent_loop(
         config=make_config(
-            enabled_tools=["todo"],
-            tools={"todo": BaseToolConfig(permission=ToolPermission.ALWAYS)},
+            enabled_tools=["todo"], tools={"todo": {"permission": "always"}}
         ),
         backend=backend,
         agent_name=BuiltinAgentName.AUTO_APPROVE,
@@ -325,8 +320,7 @@ async def test_act_merges_streamed_tool_call_arguments() -> None:
     ])
     agent = build_test_agent_loop(
         config=make_config(
-            enabled_tools=["todo"],
-            tools={"todo": BaseToolConfig(permission=ToolPermission.ALWAYS)},
+            enabled_tools=["todo"], tools={"todo": {"permission": "always"}}
         ),
         backend=backend,
         agent_name=BuiltinAgentName.AUTO_APPROVE,
@@ -388,8 +382,7 @@ async def test_act_handles_user_cancellation_during_streaming() -> None:
     ])
     agent = build_test_agent_loop(
         config=make_config(
-            enabled_tools=["todo"],
-            tools={"todo": BaseToolConfig(permission=ToolPermission.ASK)},
+            enabled_tools=["todo"], tools={"todo": {"permission": "ask"}}
         ),
         backend=backend,
         agent_name=BuiltinAgentName.DEFAULT,
@@ -399,7 +392,7 @@ async def test_act_handles_user_cancellation_during_streaming() -> None:
     agent.middleware_pipeline.add(middleware)
 
     async def _reject_callback(
-        _name: str, _args: BaseModel, _id: str
+        _name: str, _args: BaseModel, _id: str, _rp: list | None = None
     ) -> tuple[ApprovalResponse, str | None]:
         return (
             ApprovalResponse.NO,

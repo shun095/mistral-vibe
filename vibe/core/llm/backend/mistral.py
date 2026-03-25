@@ -14,6 +14,7 @@ from mistralai.client.models import (
     AssistantMessageContent,
     ChatCompletionRequestMessage,
     ChatCompletionStreamRequestToolChoice,
+    ContentChunk,
     FileChunk,
     Function,
     FunctionCall as MistralFunctionCall,
@@ -45,7 +46,8 @@ from vibe.core.types import (
     StrToolChoice,
     ToolCall,
 )
-from vibe.core.utils import apply_retry_decorator, get_server_url_from_api_base
+from vibe.core.utils.http import get_server_url_from_api_base
+from vibe.core.utils.retry import apply_retry_decorator
 
 if TYPE_CHECKING:
     from vibe.core.config import ModelConfig, ProviderConfig
@@ -67,22 +69,17 @@ class MistralMapper:
                 return UserMessage(role="user", content=content)
             case Role.assistant:
                 if msg.reasoning_content:
-                    text_content = msg.content if isinstance(msg.content, str) else ""
-                    reasoning_text = (
-                        msg.reasoning_content
-                        if isinstance(msg.reasoning_content, str)
-                        else ""
-                    )
-                    assistant_content: AssistantMessageContent = cast(
-                        AssistantMessageContent,
-                        [
-                            ThinkChunk(
-                                type="thinking",
-                                thinking=[TextChunk(type="text", text=reasoning_text)],
-                            ),
-                            TextChunk(type="text", text=text_content),
-                        ],
-                    )
+                    chunks: list[ContentChunk] = [
+                        ThinkChunk(
+                            type="thinking",
+                            thinking=[
+                                TextChunk(type="text", text=msg.reasoning_content)
+                            ],
+                        )
+                    ]
+                    if msg.content:
+                        chunks.append(TextChunk(type="text", text=msg.content))
+                    content = chunks
                 else:
                     assistant_content = (
                         msg.content if isinstance(msg.content, str) else ""
@@ -90,7 +87,7 @@ class MistralMapper:
 
                 return AssistantMessage(
                     role="assistant",
-                    content=assistant_content,
+                    content=content,
                     tool_calls=[
                         MistralToolCall(
                             function=MistralFunctionCall(
@@ -401,7 +398,9 @@ class MistralBackend:
                 json.dumps(kwargs.copy(), indent=2, default=str, ensure_ascii=False),
             )
 
-            async for chunk in await self._get_client().chat.stream_async(**kwargs):
+            stream = await self._get_client().chat.stream_async(**kwargs)
+            correlation_id = stream.response.headers.get("mistral-correlation-id")
+            async for chunk in stream:
                 logger.debug(
                     "Mistral Backend Streaming Response Chunk: %s",
                     json.dumps(
@@ -435,6 +434,7 @@ class MistralBackend:
                         if chunk.data.usage
                         else 0,
                     ),
+                    correlation_id=correlation_id,
                 )
 
         except SDKError as e:
