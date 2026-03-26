@@ -9,7 +9,8 @@ import { Page, Locator } from "@playwright/test";
  */
 export const Selectors = {
   // Status indicator
-  statusIndicator: "#status",
+  statusIndicator: "#status-dot",
+  contextProgress: "#context-progress",
 
   // Chat interface
   messageInput: "#message-input",
@@ -95,7 +96,7 @@ export async function waitForConnected(
   await page.waitForFunction(
     (selector) => {
       const el = document.querySelector(selector);
-      return el && el.textContent === "Connected";
+      return el && el.classList.contains("connected");
     },
     Selectors.statusIndicator,
     { timeout }

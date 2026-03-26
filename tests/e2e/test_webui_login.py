@@ -49,7 +49,7 @@ def test_login_with_valid_token(page: Page, webui_server: WebUIServer) -> None:
     assert page.is_visible("#messages")  # Messages container
     assert page.is_visible("#message-input")  # Message input textarea
     assert page.is_visible("#send-btn")  # Send button
-    assert page.is_visible("#status")  # Connection status
+    assert page.is_visible("#status-dot")  # Connection status indicator
 
 
 def test_login_with_invalid_token(page: Page, webui_server: WebUIServer) -> None:

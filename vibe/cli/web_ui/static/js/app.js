@@ -37,12 +37,13 @@ class VibeClient {
 
         // DOM elements
         this.elements = {
-            status: document.getElementById('status'),
+            statusDot: document.getElementById('status-dot'),
             messages: document.getElementById('messages'),
             input: document.getElementById('message-input'),
             sendBtn: document.getElementById('send-btn'),
             interruptBtn: document.getElementById('interrupt-btn'),
             processingIndicator: document.getElementById('processing-indicator'),
+            contextProgress: document.getElementById('context-progress'),
             themeToggle: document.getElementById('theme-toggle'),
             toggleCardsBtn: document.getElementById('toggle-cards-btn'),
             logoutBtn: document.getElementById('logout-btn'),
@@ -186,6 +187,7 @@ class VibeClient {
         const data = await this.apiClient.getStatus();
         if (data) {
             this.updateProcessingState(data.running);
+            this.updateContextProgress(data.context_tokens, data.max_tokens);
         }
     }
 
@@ -215,7 +217,7 @@ class VibeClient {
     // WebSocket callbacks (thin delegates)
     _onWsOpen() {
         this.updateStatus('Connected', true);
-        this.elements.sendBtn.disabled = false;
+        this.updateSendButtonState();
     }
 
     _onWsMessage(message) {
@@ -295,6 +297,9 @@ class VibeClient {
                 break;
             case 'LLMErrorEvent':
                 this.handleLLMError(event);
+                break;
+            case 'PromptProgressEvent':
+                this.handlePromptProgress(event);
                 break;
         }
     }
@@ -418,6 +423,56 @@ class VibeClient {
 
         this.elements.messages.appendChild(errorDiv);
         scrollUtils.scrollToBottom(this.elements.messages);
+    }
+
+    /**
+     * Handle prompt progress event
+     * @param {Object} event - PromptProgressEvent with total, cache, processed, time_ms
+     */
+    handlePromptProgress(event) {
+        const { total, cache, processed, time_ms } = event;
+        if (total === 0) return;
+
+        const percentage = Math.round((processed / total) * 100);
+        this.updateProcessingIndicator(percentage);
+    }
+
+    /**
+     * Update processing indicator with progress percentage
+     * @param {number} percentage - Progress percentage (0-100)
+     */
+    updateProcessingIndicator(percentage) {
+        const spinner = this.elements.processingIndicator.querySelector('.processing-spinner');
+        const percentageSpan = this.elements.processingIndicator.querySelector('.processing-percentage');
+
+        if (percentageSpan) {
+            percentageSpan.textContent = `${percentage}%`;
+        }
+    }
+
+    /**
+     * Update context progress display
+     * @param {number} currentTokens - Current token count
+     * @param {number} maxTokens - Maximum token limit
+     */
+    updateContextProgress(currentTokens, maxTokens) {
+        if (!this.elements.contextProgress || !maxTokens || maxTokens === 0) return;
+
+        const percentage = Math.round((currentTokens / maxTokens) * 100);
+        const currentK = Math.round(currentTokens / 1000);
+        const maxK = Math.round(maxTokens / 1000);
+
+        this.elements.contextProgress.textContent = `${percentage}% (${currentK}k/${maxK}k tokens)`;
+
+        // Update color class based on usage
+        this.elements.contextProgress.classList.remove('low', 'medium', 'high');
+        if (percentage >= 90) {
+            this.elements.contextProgress.classList.add('high');
+        } else if (percentage >= 75) {
+            this.elements.contextProgress.classList.add('medium');
+        } else {
+            this.elements.contextProgress.classList.add('low');
+        }
     }
 
     // Message streamer callbacks (thin delegates to UI methods)
@@ -1006,11 +1061,17 @@ class VibeClient {
     }
 
     updateStatus(text, connected = false) {
-        this.elements.status.textContent = text;
+        // Remove all status classes
+        this.elements.statusDot.classList.remove('connected', 'error');
+
         if (connected) {
-            this.elements.status.classList.add('connected');
+            this.elements.statusDot.classList.add('connected');
+            this.elements.statusDot.title = 'Connected';
+        } else if (text === 'Error') {
+            this.elements.statusDot.classList.add('error');
+            this.elements.statusDot.title = 'Error';
         } else {
-            this.elements.status.classList.remove('connected');
+            this.elements.statusDot.title = 'Disconnected';
         }
     }
 

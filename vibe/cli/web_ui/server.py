@@ -509,9 +509,21 @@ def create_app(  # noqa: PLR0915
         """Serve the main chat interface."""
         # Check authentication via cookie
         auth_cookie = request.cookies.get("vibe_auth")
-        if not auth_cookie or auth_cookie != auth_token:
-            raise HTTPException(status_code=307, headers={"Location": "/login"})
-        return templates.TemplateResponse(request, "index.html")
+        if auth_cookie == auth_token:
+            return templates.TemplateResponse(request, "index.html")
+
+        # URL token auth is for testing/E2E only, disabled in production by default
+        # WARNING: Never enable in production - tokens in URLs can be logged, cached, or leaked
+        allow_url_token = (
+            os.environ.get("VIBE_ALLOW_URL_TOKEN", "false").lower() == "true"
+        )
+        if allow_url_token:
+            token_param = request.query_params.get("token")
+            if token_param == auth_token:
+                return templates.TemplateResponse(request, "index.html")
+
+        # Redirect to login page if no valid authentication
+        raise HTTPException(status_code=307, headers={"Location": "/login"})
 
     @app.get("/health")
     def health() -> JSONResponse:
@@ -529,22 +541,39 @@ def create_app(  # noqa: PLR0915
             token: Authentication token.
 
         Returns:
-            Agent status including whether it's running.
+            Agent status including whether it's running and context token usage.
         """
         # Try TUI first (integrated mode)
         tui_app = getattr(app.state, "tui_app", None)
         if tui_app is not None:
             running = tui_app.is_agent_running()
-            return JSONResponse({"running": running})
+            agent_loop = getattr(tui_app, "agent_loop", None)
+            if agent_loop is not None:
+                return JSONResponse({
+                    "running": running,
+                    "context_tokens": agent_loop.stats.context_tokens,
+                    "max_tokens": agent_loop.config.get_active_model().auto_compact_threshold,
+                })
+            # TUI exists but no agent_loop, return with zero tokens
+            return JSONResponse({
+                "running": running,
+                "context_tokens": 0,
+                "max_tokens": 0,
+            })
 
         # Fall back to agent_loop (standalone mode)
         agent_loop = getattr(app.state, "agent_loop", None)
         if agent_loop is not None:
             # Check if agent_loop has a running flag or task
             running = getattr(agent_loop, "_agent_running", False)
-            return JSONResponse({"running": running})
+            return JSONResponse({
+                "running": running,
+                "context_tokens": agent_loop.stats.context_tokens,
+                "max_tokens": agent_loop.config.get_active_model().auto_compact_threshold,
+            })
 
-        return JSONResponse({"running": False})
+        # No agent_loop available, return with zero tokens
+        return JSONResponse({"running": False, "context_tokens": 0, "max_tokens": 0})
 
     @app.post("/api/interrupt")
     def interrupt_agent(token: str = Security(verify_token)) -> JSONResponse:
