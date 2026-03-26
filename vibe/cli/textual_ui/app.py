@@ -152,14 +152,17 @@ from vibe.core.tts.tts_client_port import TTSClientPort
 from vibe.core.types import (
     AgentStats,
     ApprovalResponse,
+    AssistantEvent,
     Backend,
     BaseEvent,
+    BashCommandEvent,
     Content,
     LLMErrorEvent,
     LLMMessage,
     LLMRetryEvent,
     RateLimitError,
     Role,
+    UserMessageEvent,
 )
 from vibe.core.ui_events import (
     ApprovalPopupEvent,
@@ -342,23 +345,11 @@ class VibeApp(App):  # noqa: PLR0904
         self._agent_running = False
         self._interrupt_requested = False
         self._agent_task: asyncio.Task | None = None
-        self._tui_ready = False
-        self._web_message_queue: list[dict[str, str | dict[str, str] | None]] = []
-
         self._enhancement_running = False
         self._enhancement_task: asyncio.Task | None = None
-
         self._loading_widget: LoadingWidget | None = None
-        self._pending_approval: asyncio.Future | None = None
-        self._pending_approval_id: str | None = None
-        self._pending_approval_tool: str | None = None
-        self._pending_approval_args: dict | None = None
-        self._pending_approval_required_permissions: list[RequiredPermission] | None
-        self._pending_question: asyncio.Future | None = None
-        self._pending_question_id: str | None = None
-        self._pending_question_args: dict | None = None
-        self._queued_message: str | None = None
         self._user_interaction_lock = asyncio.Lock()
+        self._initialize_web_broadcast_state()
 
         self.event_handler: EventHandler | None = None
 
@@ -401,6 +392,22 @@ class VibeApp(App):  # noqa: PLR0904
         self._audio_player = AudioPlayer()
         self._speak_task: asyncio.Task[None] | None = None
         self._cancel_summary: Callable[[], bool] | None = None
+
+    def _initialize_web_broadcast_state(self) -> None:
+        """Initialize web UI broadcast-related state."""
+        self._tui_ready = False
+        self._web_message_queue: list[dict[str, str | dict[str, str] | None]] = []
+        self._pending_approval: asyncio.Future | None = None
+        self._pending_approval_id: str | None = None
+        self._pending_approval_tool: str | None = None
+        self._pending_approval_args: dict | None = None
+        self._pending_approval_required_permissions: list[RequiredPermission] | None = (
+            None
+        )
+        self._pending_question: asyncio.Future | None = None
+        self._pending_question_id: str | None = None
+        self._pending_question_args: dict | None = None
+        self._queued_message: str | None = None
 
     @property
     def config(self) -> VibeConfig:
@@ -870,20 +877,51 @@ class VibeApp(App):  # noqa: PLR0904
             )
             output = stdout or stderr or "(no output)"
             exit_code = result.returncode
+
+            # Mount the widget in TUI
             await self._mount_and_scroll(
                 BashOutputMessage(command, str(Path.cwd()), output, exit_code)
             )
+
+            # Emit events to agent_loop for web UI broadcasting
+            # Emit user message event for the bash command
+            user_event = UserMessageEvent(content=f"!{command}", message_id="")
+            self.agent_loop._notify_event_listeners(user_event)
+
+            # Emit bash command event for web UI
+            bash_event = BashCommandEvent(
+                command=command, exit_code=exit_code, output=output, message_id=None
+            )
+            self.agent_loop._notify_event_listeners(bash_event)
+
         except subprocess.TimeoutExpired:
+            error_msg = "Command timed out after 30 seconds"
             await self._mount_and_scroll(
-                ErrorMessage(
-                    "Command timed out after 30 seconds",
-                    collapsed=self._tools_collapsed,
-                )
+                ErrorMessage(error_msg, collapsed=self._tools_collapsed)
             )
+
+            # Emit error event to web UI
+            user_event = UserMessageEvent(content=f"!{command}", message_id="")
+            self.agent_loop._notify_event_listeners(user_event)
+
+            assistant_event = AssistantEvent(
+                content=f"Error: {error_msg}", message_id=None
+            )
+            self.agent_loop._notify_event_listeners(assistant_event)
         except Exception as e:
+            error_msg = f"Command failed: {e}"
             await self._mount_and_scroll(
-                ErrorMessage(f"Command failed: {e}", collapsed=self._tools_collapsed)
+                ErrorMessage(error_msg, collapsed=self._tools_collapsed)
             )
+
+            # Emit error event to web UI
+            user_event = UserMessageEvent(content=f"!{command}", message_id="")
+            self.agent_loop._notify_event_listeners(user_event)
+
+            assistant_event = AssistantEvent(
+                content=f"Error: {error_msg}", message_id=None
+            )
+            self.agent_loop._notify_event_listeners(assistant_event)
 
     async def _handle_user_message(self, message: str) -> None:
         user_message = UserMessage(message)
@@ -1268,7 +1306,10 @@ class VibeApp(App):  # noqa: PLR0904
             # Handle different approval types
             if approval_type == "session" and self._pending_approval_tool:
                 # Set tool permission for this session (not permanent)
-                self.agent_loop.approve_always(self._pending_approval_tool, self._pending_approval_required_permissions)
+                self.agent_loop.approve_always(
+                    self._pending_approval_tool,
+                    self._pending_approval_required_permissions,
+                )
             elif approval_type == "auto-approve":
                 # Switch to auto-approve mode
                 if self.agent_loop:
@@ -1330,7 +1371,12 @@ class VibeApp(App):  # noqa: PLR0904
                 await self._handle_user_message_with_image(message, image_data)
                 continue
 
-            # Check for teleport command first
+            # Check for !command (bash execution) first
+            if message.startswith("!"):
+                await self._handle_bash_command(message[1:])
+                continue
+
+            # Check for teleport command
             if message.startswith("&"):
                 if self.config.nuage_enabled:
                     await self._handle_teleport_command(message[1:])
