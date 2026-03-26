@@ -15,9 +15,13 @@ export interface WebUIFixtures {
 // Extend the base test with our custom fixtures
 export const test = base.extend<WebUIFixtures>({
   // Server fixture - starts before tests, stops after
-  webServer: async ({}, use) => {
+  // Uses unique port per worker to enable parallel execution
+  webServer: async ({}, use, testInfo) => {
+    // Assign unique port per worker (base port 9093 + worker index)
+    const workerPort = 9093 + testInfo.workerIndex;
+
     const server = new ServerManager({
-      port: 9093,
+      port: workerPort,
       token: "test-token-123",
     });
 

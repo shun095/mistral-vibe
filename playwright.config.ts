@@ -14,7 +14,7 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  workers: 4, // Run up to 4 tests in parallel (each with its own server)
   timeout: 120000, // 120 seconds for tests (server startup can be slow)
   expect: {
     timeout: 30000, // 30 seconds for expect assertions

@@ -5,8 +5,8 @@ import logging
 from pathlib import Path
 from typing import ClassVar
 
-from vibe.core.config import LSPServerConfig
 from vibe.core.lsp.client import LSPClient
+from vibe.core.lsp.config import LSPServerConfig
 from vibe.core.lsp.detector import LSPServerDetector
 from vibe.core.lsp.server import LSPServer, LSPServerRegistry
 from vibe.core.lsp.types import LSPServerHandle
