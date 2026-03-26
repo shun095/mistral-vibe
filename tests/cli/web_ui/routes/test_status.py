@@ -23,17 +23,36 @@ def test_status_endpoint_returns_false_without_tui_app() -> None:
     client = TestClient(app)
     response = client.get("/api/status", headers={"Authorization": "Bearer test-token"})
     assert response.status_code == 200
-    assert response.json() == {"running": False}
+    data = response.json()
+    assert data["running"] is False
+    assert data["context_tokens"] == 0
+    assert data["max_tokens"] == 0
 
 
 def test_status_endpoint_returns_true_when_running() -> None:
     """Test that /api/status returns running=True when agent is running."""
     from vibe.cli.web_ui.server import create_app
 
-    # Create a mock TUI app
+    # Create a mock TUI app with agent_loop
+    class MockConfig:
+        def get_active_model(self):
+            class Model:
+                auto_compact_threshold = 128000
+
+            return Model()
+
+    class MockStats:
+        context_tokens = 1000
+
+    class MockAgentLoop:
+        config = MockConfig()
+        stats = MockStats()
+
     class MockTUIApp:
         def is_agent_running(self) -> bool:
             return True
+
+        agent_loop = MockAgentLoop()
 
     mock_tui_app = MockTUIApp()
     app = create_app(token="test-token", tui_app=mock_tui_app)  # type: ignore
@@ -41,14 +60,17 @@ def test_status_endpoint_returns_true_when_running() -> None:
     response = client.get("/api/status", headers={"Authorization": "Bearer test-token"})
 
     assert response.status_code == 200
-    assert response.json() == {"running": True}
+    data = response.json()
+    assert data["running"] is True
+    assert data["context_tokens"] == 1000
+    assert data["max_tokens"] == 128000
 
 
 def test_status_endpoint_returns_false_when_not_running() -> None:
     """Test that /api/status returns running=False when agent is not running."""
     from vibe.cli.web_ui.server import create_app
 
-    # Create a mock TUI app
+    # Create a mock TUI app without agent_loop
     class MockTUIApp:
         def is_agent_running(self) -> bool:
             return False
@@ -59,7 +81,10 @@ def test_status_endpoint_returns_false_when_not_running() -> None:
     response = client.get("/api/status", headers={"Authorization": "Bearer test-token"})
 
     assert response.status_code == 200
-    assert response.json() == {"running": False}
+    data = response.json()
+    assert data["running"] is False
+    assert data["context_tokens"] == 0
+    assert data["max_tokens"] == 0
 
 
 def test_interrupt_endpoint_requires_auth() -> None:

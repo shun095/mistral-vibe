@@ -90,6 +90,7 @@ export class ServerManager {
     const env = {
       ...process.env,
       VIBE_WEB_TOKEN: this.config.token,
+      VIBE_ALLOW_URL_TOKEN: "true", // Enable URL token auth for E2E tests
       VIBE_E2E_TEST: "true",
       PYTHONUNBUFFERED: "1",
     };

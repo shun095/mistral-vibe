@@ -12,18 +12,18 @@
 <body>
     <div class="container">
         <header class="header">
-            <h1>Mistral Vibe</h1>
             <div class="header-actions">
+                <div id="context-progress" class="context-progress" title="Context token usage"></div>
                 <button id="toggle-cards-btn" class="theme-toggle-btn" title="Toggle all cards">
                     <span class="material-symbols-rounded">remove</span>
                 </button>
                 <button id="theme-toggle" class="theme-toggle-btn" title="Toggle dark mode">
                     <span class="material-symbols-rounded">dark_mode</span>
                 </button>
-                <button id="logout-btn" class="theme-toggle-btn" title="Logout" style="margin-left: 8px;">
+                <button id="logout-btn" class="theme-toggle-btn" title="Logout">
                     <span class="material-symbols-rounded">logout</span>
                 </button>
-                <div class="status" id="status">Disconnected</div>
+                <div class="status-dot" id="status-dot"></div>
             </div>
         </header>
 
@@ -42,7 +42,9 @@
 
             <div class="input-area">
                 <div id="processing-indicator" class="processing-indicator" style="display: none;">
-                    <div class="processing-spinner"></div>
+                    <div class="processing-spinner">
+                        <span class="processing-percentage"></span>
+                    </div>
                 </div>
                 <div id="image-preview-container" class="image-preview-container" style="display: none;">
                     <div class="image-preview">

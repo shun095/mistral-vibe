@@ -13,13 +13,13 @@ test.describe("Basic Chat Flow", () => {
     // Wait for chat interface to be visible
     await expect(page.locator(Selectors.messageInput)).toBeVisible();
 
-    // Wait for WebSocket to connect (status should show "Connected")
+    // Wait for WebSocket to connect (status-dot should have "connected" class)
     await page.waitForFunction(
       (selector) => {
         const el = document.querySelector(selector);
-        return el && el.textContent === "Connected";
+        return el && el.classList.contains("connected");
       },
-      "#status",
+      Selectors.statusIndicator,
       { timeout: 10000 }
     );
   });
