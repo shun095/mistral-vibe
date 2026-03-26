@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from vibe.core.config import LSPServerConfig
+from vibe.core.lsp.config import LSPServerConfig
 from vibe.core.lsp.server import LSPServerRegistry
 
 

@@ -26,6 +26,7 @@ from tomlkit.exceptions import TOMLKitError
 
 from vibe.core.config.harness_files import get_harness_files_manager
 from vibe.core.logger import logger
+from vibe.core.lsp.config import LSPServerConfig
 from vibe.core.paths import GLOBAL_ENV_FILE, SESSION_LOG_DIR
 from vibe.core.prompts import SystemPrompt
 from vibe.core.types import Backend
@@ -239,42 +240,6 @@ class MCPStdio(_MCPBase):
 MCPServer = Annotated[
     MCPHttp | MCPStreamableHttp | MCPStdio, Field(discriminator="transport")
 ]
-
-
-# FIXME: root_markers configuration and implementation to use the configuration should be added.
-class LSPServerConfig(BaseModel):
-    """Configuration for an LSP (Language Server Protocol) server."""
-
-    name: str = Field(
-        description="Name of the LSP server (e.g., 'pyright', 'tsserver')"
-    )
-    command: list[str] = Field(
-        description="Command to start the LSP server (e.g., ['pyright-langserver', '--stdio'])"
-    )
-    enabled: bool = Field(
-        default=True, description="Whether this LSP server is enabled"
-    )
-    file_patterns: list[str] = Field(
-        default_factory=list,
-        description=(
-            "File patterns this server should handle (e.g., ['*.py', '*.pyi']). "
-            "Empty list means handle all files."
-        ),
-    )
-    timeout_seconds: float = Field(
-        default=10.0, description="Timeout for server startup in seconds"
-    )
-    auto_start: bool = Field(
-        default=True, description="Whether to automatically start this server"
-    )
-    env: dict[str, str] | None = Field(
-        default=None,
-        description="Environment variables to set for the LSP server process",
-    )
-    cwd: str | None = Field(
-        default=None,
-        description="Working directory for the LSP server (defaults to project root)",
-    )
 
 
 def _default_alias_to_name(data: Any) -> Any:
