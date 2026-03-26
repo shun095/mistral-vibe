@@ -448,6 +448,15 @@ class ToolResultEvent(BaseEvent):
     tool_call_id: str
 
 
+class BashCommandEvent(BaseEvent):
+    """Event for bash command execution results."""
+
+    command: str
+    exit_code: int
+    output: str
+    message_id: str | None = None
+
+
 class ToolStreamEvent(BaseEvent):
     tool_name: str
     message: str

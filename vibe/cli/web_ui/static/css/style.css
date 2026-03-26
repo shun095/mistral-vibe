@@ -4,6 +4,7 @@
     --bg-primary: #dcdfe7;
     --bg-secondary: #cdd2e5;
     --bg-tertiary: #bdc3de;
+    --bg-code: #e4e7eb;
 
     /* Text colors */
     --text-primary: #33374c;
@@ -27,6 +28,16 @@
     /* UI colors */
     --border-color: #bdc3de;
     --hover-bg: #c5c9d8;
+
+    /* Bash command colors (reusing existing palette) */
+    --bash-icon-color: var(--blue);
+    --bash-command-text: var(--green);
+    --success-bg: rgba(102, 142, 61, 0.15);
+    --success-text: var(--green);
+    --success-border: rgba(102, 142, 61, 0.3);
+    --error-bg: rgba(204, 81, 122, 0.15);
+    --error-text: var(--red);
+    --error-border: rgba(204, 81, 122, 0.3);
 }
 
 /* Dark Mode Colors - Iceberg Dark Palette */
@@ -34,6 +45,7 @@
     --bg-primary: #161821;
     --bg-secondary: #1e2132;
     --bg-tertiary: #272c42;
+    --bg-code: #1a1b26;
 
     --text-primary: #c6c8d1;
     --text-secondary: #d2d4de;
@@ -54,6 +66,16 @@
 
     --border-color: #272c42;
     --hover-bg: #272c42;
+
+    /* Bash command colors (reusing existing palette) */
+    --bash-icon-color: var(--blue);
+    --bash-command-text: var(--green);
+    --success-bg: rgba(180, 190, 130, 0.15);
+    --success-text: var(--green);
+    --success-border: rgba(180, 190, 130, 0.3);
+    --error-bg: rgba(226, 120, 120, 0.15);
+    --error-text: var(--red);
+    --error-border: rgba(226, 120, 120, 0.3);
 }
 
 * {

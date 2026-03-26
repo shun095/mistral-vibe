@@ -292,6 +292,9 @@ class VibeClient {
             case 'MessageResetEvent':
                 this.handleMessageReset(event.reason);
                 break;
+            case 'BashCommandEvent':
+                this._renderBashCommandResult(event);
+                break;
             case 'WebNotificationEvent':
                 this.handleWebNotification(event);
                 break;
@@ -330,6 +333,9 @@ class VibeClient {
                 break;
             case 'ContinueableUserMessageEvent':
                 this._renderUserMessage(event.content);
+                break;
+            case 'BashCommandEvent':
+                this._renderBashCommandResult(event);
                 break;
             case 'ApprovalPopupEvent':
                 // Skip popup events during replay - ToolResultEvent already contains the result
@@ -509,6 +515,51 @@ class VibeClient {
     _onAssistantEnd() {
         this.currentAssistantMessage = null;
         this.currentAssistantText = '';
+    }
+
+    _renderBashCommandResult(event) {
+        // Create bash command card from event data
+        const { command, exit_code: exitCode, output } = event;
+        const isSuccess = exitCode === 0;
+
+        // Capture scroll height BEFORE appending
+        const previousScrollHeight = this.elements.messages.scrollHeight;
+
+        // Create message div
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message bash-command';
+        this.elements.messages.appendChild(messageDiv);
+
+        // Header with command
+        const header = document.createElement('div');
+        header.className = 'bash-card-header';
+        header.innerHTML = `
+            <div class="bash-card-title">
+                <span class="material-symbols-rounded">${isSuccess ? 'terminal' : 'error'}</span>
+                <span>Bash Command</span>
+            </div>
+            <div class="bash-exit-code ${isSuccess ? 'success' : 'failure'}">
+                Exit code: ${exitCode}
+            </div>
+        `;
+
+        // Command line
+        const commandDiv = document.createElement('div');
+        commandDiv.className = 'bash-command-line';
+        commandDiv.textContent = this.escapeHtml(command);
+
+        // Output
+        const outputDiv = document.createElement('div');
+        outputDiv.className = 'bash-output';
+        const pre = document.createElement('pre');
+        pre.textContent = output || '(no output)';
+        outputDiv.appendChild(pre);
+
+        messageDiv.appendChild(header);
+        messageDiv.appendChild(commandDiv);
+        messageDiv.appendChild(outputDiv);
+
+        this._scrollAfterUpdate(previousScrollHeight);
     }
 
     _onToolCallStart(data) {
@@ -1034,6 +1085,20 @@ class VibeClient {
         if (!content && !imageData) return;
 
         if (content && !imageData) {
+            // Check for !command (bash execution) first
+            if (content.startsWith('!')) {
+                this.elements.input.value = '';
+                this.autoResizeTextarea();
+                this.updateSendButtonState();
+
+                // Forward to TUI for execution via websocket
+                if (this.wsClient.isConnected()) {
+                    const message = { type: 'user_message', content };
+                    this.wsClient.send(message);
+                }
+                return;
+            }
+
             const command = this.slashRegistry.getCommand(content);
             if (command) {
                 const result = await this.slashRegistry.execute(command.name, command.args);

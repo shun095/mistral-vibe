@@ -231,3 +231,46 @@ def test_serialize_other_event_types() -> None:
         "image_url": {"url": "data:image/png;base64,xyz789"},
     }
     assert data["message_id"] == "msg_continueable_1"
+
+
+def test_serialize_bash_command_event() -> None:
+    """Test that BashCommandEvent is properly serialized."""
+    from vibe.cli.web_ui.server import serialize_event
+    from vibe.core.types import BashCommandEvent
+
+    # Test successful command
+    success_event = BashCommandEvent(
+        command="ls -la", exit_code=0, output="file1.txt\nfile2.txt", message_id=None
+    )
+    data = serialize_event(success_event)
+
+    assert data["__type"] == "BashCommandEvent"
+    assert data["command"] == "ls -la"
+    assert data["exit_code"] == 0
+    assert data["output"] == "file1.txt\nfile2.txt"
+    assert "message_id" not in data  # exclude_none=True
+
+    # Test failed command
+    failure_event = BashCommandEvent(
+        command="nonexistent_command",
+        exit_code=127,
+        output="bash: nonexistent_command: command not found",
+        message_id=None,
+    )
+    data = serialize_event(failure_event)
+
+    assert data["__type"] == "BashCommandEvent"
+    assert data["command"] == "nonexistent_command"
+    assert data["exit_code"] == 127
+    assert "bash:" in data["output"]
+
+    # Test command with no output
+    no_output_event = BashCommandEvent(
+        command="true", exit_code=0, output="", message_id=None
+    )
+    data = serialize_event(no_output_event)
+
+    assert data["__type"] == "BashCommandEvent"
+    assert data["command"] == "true"
+    assert data["exit_code"] == 0
+    assert data["output"] == ""

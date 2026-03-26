@@ -18,6 +18,7 @@ export const Selectors = {
   messageContainer: "#messages",
   userMessage: ".message.user",
   assistantMessage: ".message.assistant",
+  bashCommand: ".message.bash-command",
   systemMessage: ".message.system",
 
   // Tool approval
