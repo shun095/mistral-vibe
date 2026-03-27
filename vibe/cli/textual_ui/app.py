@@ -2503,7 +2503,7 @@ Enhanced prompt:"""
         self.agent_loop.telemetry_client.send_user_cancelled_action("interrupt_agent")
         self.run_worker(self._interrupt_agent_loop(), exclusive=False)
 
-    def action_interrupt(self) -> None:  # noqa: PLR0911
+    def action_interrupt(self) -> None:  # noqa: PLR0911, PLR0912
         if self._voice_manager.transcribe_state != TranscribeState.IDLE:
             self._voice_manager.cancel_recording()
             return
@@ -2556,6 +2556,7 @@ Enhanced prompt:"""
                 self._mount_and_scroll(ErrorMessage("Queued message cleared")),
                 exclusive=False,
             )
+            return
 
         if self._current_bottom_app == BottomApp.Rewind:
             self.run_worker(self._exit_rewind_mode(), exclusive=False)

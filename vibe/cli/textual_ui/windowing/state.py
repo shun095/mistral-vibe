@@ -75,7 +75,12 @@ class SessionWindowing:
             else:
                 backfill_end = self._backfill_cursor
         else:
-            backfill_end = max(len(history_messages) - visible_history_widgets_count, 0)
+            # When visible_indices is empty (e.g., during streaming when _history_widget_indices
+            # is not yet populated), don't calculate backfill based on widget count difference.
+            # Instead, preserve existing backfill state or reset to 0 if no backfill was set.
+            # This prevents false positives where the "Load more messages" button appears
+            # incorrectly for short conversations.
+            backfill_end = self._backfill_cursor
         backfill_end = min(backfill_end, len(history_messages))
         self._backfill_messages = history_messages[:backfill_end]
         self._backfill_cursor = len(self._backfill_messages)
