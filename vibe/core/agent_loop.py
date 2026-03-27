@@ -159,6 +159,7 @@ def _should_raise_rate_limit_error(e: Exception) -> bool:
     return isinstance(e, BackendError) and e.status == HTTPStatus.TOO_MANY_REQUESTS
 
 
+# ruff: noqa: PLR0904
 class AgentLoop:
     def __init__(
         self,
@@ -544,7 +545,7 @@ class AgentLoop:
                 self.telemetry_client.send_auto_compact_triggered()
 
                 try:
-                    summary = await self.compact(reason="auto_compact")
+                    summary = await self.compact()
 
                     yield CompactEndEvent(
                         tool_call_id=tool_call_id,
@@ -595,12 +596,6 @@ class AgentLoop:
     async def _conversation_loop(
         self, user_msg: Content | None = None
     ) -> AsyncGenerator[BaseEvent]:
-        """Run the conversation loop.
-
-        Args:
-            user_msg: New user message to add (string or multi-part content).
-                If None, extracts last user message from history (used for edit operations).
-        """
         # Use strategy pattern to handle message preparation
         handler = create_message_handler(user_msg)
 
@@ -779,7 +774,7 @@ class AgentLoop:
                 )
             )
 
-    async def _process_one_tool_call(  # noqa: PLR0915
+    async def _process_one_tool_call(
         self, tool_call: ResolvedToolCall
     ) -> AsyncGenerator[
         ToolResultEvent
@@ -795,9 +790,15 @@ class AgentLoop:
             async for event in self._execute_tool_call(span, tool_call):
                 yield event
 
+    # ruff: noqa: PLR0915
     async def _execute_tool_call(
         self, span: trace.Span, tool_call: ResolvedToolCall
-    ) -> AsyncGenerator[ToolResultEvent | ToolStreamEvent]:
+    ) -> AsyncGenerator[
+        ToolResultEvent
+        | ToolStreamEvent
+        | AssistantEvent
+        | ContinueableUserMessageEvent
+    ]:
         try:
             tool_instance = self.tool_manager.get(tool_call.tool_name)
         except Exception as exc:
@@ -1427,9 +1428,7 @@ class AgentLoop:
         # Update the current user message ID for tracking
         self._current_user_message_id = edited_message_id
 
-    async def compact(
-        self, reason: Literal["compact", "auto_compact"] = "compact"
-    ) -> str:
+    async def compact(self) -> str:
         try:
             with self.messages.silent():
                 self._clean_message_history()
@@ -1493,7 +1492,7 @@ class AgentLoop:
             self.middleware_pipeline.reset(reset_reason=ResetReason.COMPACT)
 
             # Notify listeners that history was compacted
-            self._notify_event_listeners(MessageResetEvent(reason=reason))
+            self._notify_event_listeners(MessageResetEvent(reason="compact"))
 
             return summary_content or ""
 

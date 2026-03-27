@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from vibe.cli.textual_ui.app import VibeApp
+from vibe.cli.textual_ui.app import PendingPopupState, VibeApp
 from vibe.cli.voice_manager.voice_manager_port import TranscribeState
 from vibe.core.agent_loop import AgentLoop
 from vibe.core.tools.builtins.ask_user_question import (
@@ -59,8 +59,10 @@ async def test_interrupt_during_question_popup_restores_input_form() -> None:
             )
         ]
     )
-    app._pending_question = asyncio.Future()
-    app._pending_question_id = "question_test_123"
+    pending_question = PendingPopupState()
+    pending_question.future = asyncio.Future()
+    pending_question.popup_id = "question_test_123"
+    app._pending_question = pending_question
 
     # Mock event_handler
     mock_event_handler = MagicMock()
@@ -103,9 +105,9 @@ async def test_interrupt_during_question_popup_restores_input_form() -> None:
 
     await app._interrupt_agent_loop()
 
-    # Verify question was cancelled
-    assert app._pending_question is None
-    assert app._pending_question_id is None
+    # Verify question was cleared
+    assert app._pending_question.future is None
+    assert app._pending_question.popup_id is None
 
     # Verify input form was restored
     assert switch_to_input_called is True
@@ -120,8 +122,10 @@ async def test_interrupt_during_approval_popup_restores_input_form() -> None:
     app._agent_task = None
 
     # Set up pending approval
-    app._pending_approval = asyncio.Future()
-    app._pending_approval_id = "approval_test_123"
+    pending_approval = PendingPopupState()
+    pending_approval.future = asyncio.Future()
+    pending_approval.popup_id = "approval_test_123"
+    app._pending_approval = pending_approval
 
     # Mock event_handler
     mock_event_handler = MagicMock()
@@ -164,9 +168,9 @@ async def test_interrupt_during_approval_popup_restores_input_form() -> None:
 
     await app._interrupt_agent_loop()
 
-    # Verify approval was cancelled
-    assert app._pending_approval is None
-    assert app._pending_approval_id is None
+    # Verify approval was cleared
+    assert app._pending_approval.future is None
+    assert app._pending_approval.popup_id is None
 
     # Verify input form was restored
     assert switch_to_input_called is True
@@ -181,8 +185,10 @@ async def test_interrupt_with_both_popups_restores_input_form() -> None:
     app._agent_task = None
 
     # Set up both pending approval and question
-    app._pending_approval = asyncio.Future()
-    app._pending_approval_id = "approval_test_123"
+    pending_approval = PendingPopupState()
+    pending_approval.future = asyncio.Future()
+    pending_approval.popup_id = "approval_test_123"
+    app._pending_approval = pending_approval
 
     _ = AskUserQuestionArgs(
         questions=[
@@ -197,8 +203,10 @@ async def test_interrupt_with_both_popups_restores_input_form() -> None:
             )
         ]
     )
-    app._pending_question = asyncio.Future()
-    app._pending_question_id = "question_test_123"
+    pending_question = PendingPopupState()
+    pending_question.future = asyncio.Future()
+    pending_question.popup_id = "question_test_123"
+    app._pending_question = pending_question
 
     # Mock event_handler
     mock_event_handler = MagicMock()
@@ -247,9 +255,9 @@ async def test_interrupt_with_both_popups_restores_input_form() -> None:
 
     await app._interrupt_agent_loop()
 
-    # Verify both were cancelled
-    assert app._pending_approval is None
-    assert app._pending_question is None
+    # Verify both were cleared
+    assert app._pending_approval.future is None
+    assert app._pending_question.future is None
 
     # Verify input form was restored (called twice - once for each popup)
     assert switch_to_input_call_count == 2
@@ -262,8 +270,10 @@ async def test_interrupt_no_popups_no_switch_to_input() -> None:
     app._agent_running = True
     app._interrupt_requested = True
     app._agent_task = None
-    app._pending_approval = None
-    app._pending_question = None
+    # Popups are already initialized as PendingPopupState() in _initialize_web_broadcast_state
+    # Just ensure they're empty (no active future)
+    assert app._pending_approval.future is None
+    assert app._pending_question.future is None
 
     # Mock event_handler
     mock_event_handler = MagicMock()
