@@ -303,7 +303,7 @@ body {
     cursor: pointer;
     user-select: none;
     padding: 10px 12px;
-    border-radius: 4px;
+    border-radius: 12px 12px 12px 4px;
 }
 
 .message.reasoning .reasoning-header:hover {
@@ -358,7 +358,7 @@ body {
     cursor: pointer;
     user-select: none;
     padding: 10px 12px;
-    border-radius: 4px;
+    border-radius: 12px 12px 12px 4px;
 }
 
 .message.tool-call .tool-header:hover {
