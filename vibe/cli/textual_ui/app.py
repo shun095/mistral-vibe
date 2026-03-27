@@ -7,13 +7,36 @@ from enum import StrEnum, auto
 import gc
 import os
 from pathlib import Path
-import re
 import signal
 import subprocess
 import time
 from typing import Any, ClassVar, Literal, assert_never, cast
 from uuid import uuid4
 from weakref import WeakKeyDictionary
+
+
+@dataclass
+class PendingPopupState:
+    """Holds state for pending approval/question popups."""
+
+    future: asyncio.Future | None = None
+    popup_id: str | None = None
+    tool_name: str | None = None
+    args: dict | None = None
+    required_permissions: list[RequiredPermission] | None = None
+
+    def is_active(self) -> bool:
+        """Check if there's an active pending popup."""
+        return self.future is not None and not self.future.done()
+
+    def clear(self) -> None:
+        """Clear all pending state."""
+        self.future = None
+        self.popup_id = None
+        self.tool_name = None
+        self.args = None
+        self.required_permissions = None
+
 
 from pydantic import BaseModel
 
@@ -162,12 +185,7 @@ from vibe.core.types import (
     Role,
     UserMessageEvent,
 )
-from vibe.core.ui_events import (
-    ApprovalPopupEvent,
-    MessageResetEvent,
-    PopupResponseEvent,
-    QuestionPopupEvent,
-)
+from vibe.core.ui_events import MessageResetEvent
 from vibe.core.utils import (
     CancellationReason,
     get_user_cancellation_message,
@@ -245,12 +263,6 @@ async def prune_oldest_children(
 
     Walks children back-to-front to find how much to keep (up to *low_mark*
     of visible height), then removes everything before that point.
-
-    Args:
-        messages_area: The container widget to prune.
-        low_mark: The minimum height to keep.
-        high_mark: The threshold above which pruning is triggered.
-        protected_widgets: Set of widgets that should not be pruned.
     """
     total_height = messages_area.virtual_size.height
     if total_height <= high_mark:
@@ -398,16 +410,8 @@ class VibeApp(App):  # noqa: PLR0904
         """Initialize web UI broadcast-related state."""
         self._tui_ready = False
         self._web_message_queue: list[dict[str, str | dict[str, str] | None]] = []
-        self._pending_approval: asyncio.Future | None = None
-        self._pending_approval_id: str | None = None
-        self._pending_approval_tool: str | None = None
-        self._pending_approval_args: dict | None = None
-        self._pending_approval_required_permissions: list[RequiredPermission] | None = (
-            None
-        )
-        self._pending_question: asyncio.Future | None = None
-        self._pending_question_id: str | None = None
-        self._pending_question_args: dict | None = None
+        self._pending_approval = PendingPopupState()
+        self._pending_question = PendingPopupState()
         self._queued_message: str | None = None
 
     @property
@@ -593,23 +597,32 @@ class VibeApp(App):  # noqa: PLR0904
     async def on_approval_app_approval_granted(
         self, message: ApprovalApp.ApprovalGranted
     ) -> None:
-        if self._pending_approval and not self._pending_approval.done():
-            self._pending_approval.set_result((ApprovalResponse.YES, None))
+        if (
+            self._pending_approval.is_active()
+            and self._pending_approval.future is not None
+        ):
+            self._pending_approval.future.set_result((ApprovalResponse.YES, None))
 
     async def on_approval_app_approval_granted_always_tool(
         self, message: ApprovalApp.ApprovalGrantedAlwaysTool
     ) -> None:
         self.agent_loop.approve_always(message.tool_name, message.required_permissions)
 
-        if self._pending_approval and not self._pending_approval.done():
-            self._pending_approval.set_result((ApprovalResponse.YES, None))
+        if (
+            self._pending_approval.is_active()
+            and self._pending_approval.future is not None
+        ):
+            self._pending_approval.future.set_result((ApprovalResponse.YES, None))
 
     async def on_approval_app_approval_enable_auto_approve(
         self, message: ApprovalApp.ApprovalEnableAutoApprove
     ) -> None:
         # Approve the current tool
-        if self._pending_approval and not self._pending_approval.done():
-            self._pending_approval.set_result((ApprovalResponse.YES, None))
+        if (
+            self._pending_approval.is_active()
+            and self._pending_approval.future is not None
+        ):
+            self._pending_approval.future.set_result((ApprovalResponse.YES, None))
 
         # Switch to auto-approve mode
         if self.agent_loop:
@@ -619,24 +632,33 @@ class VibeApp(App):  # noqa: PLR0904
     async def on_approval_app_approval_rejected(
         self, message: ApprovalApp.ApprovalRejected
     ) -> None:
-        if self._pending_approval and not self._pending_approval.done():
+        if (
+            self._pending_approval.is_active()
+            and self._pending_approval.future is not None
+        ):
             feedback = str(
                 get_user_cancellation_message(CancellationReason.OPERATION_CANCELLED)
             )
-            self._pending_approval.set_result((ApprovalResponse.NO, feedback))
+            self._pending_approval.future.set_result((ApprovalResponse.NO, feedback))
 
         if self._loading_widget and self._loading_widget.parent:
             await self._remove_loading_widget()
 
     async def on_question_app_answered(self, message: QuestionApp.Answered) -> None:
-        if self._pending_question and not self._pending_question.done():
+        if (
+            self._pending_question.is_active()
+            and self._pending_question.future is not None
+        ):
             result = AskUserQuestionResult(answers=message.answers, cancelled=False)
-            self._pending_question.set_result(result)
+            self._pending_question.future.set_result(result)
 
     async def on_question_app_cancelled(self, message: QuestionApp.Cancelled) -> None:
-        if self._pending_question and not self._pending_question.done():
+        if (
+            self._pending_question.is_active()
+            and self._pending_question.future is not None
+        ):
             result = AskUserQuestionResult(answers=[], cancelled=True)
-            self._pending_question.set_result(result)
+            self._pending_question.future.set_result(result)
 
     def on_chat_text_area_feedback_key_pressed(
         self, message: ChatTextArea.FeedbackKeyPressed
@@ -1071,101 +1093,25 @@ class VibeApp(App):  # noqa: PLR0904
         self, popup_id: str, tool: str, args: BaseModel
     ) -> None:
         """Broadcast approval popup event to web UI."""
-        if (
-            hasattr(self, "_web_broadcast_manager")
-            and self._web_broadcast_manager is not None
-        ):
-            self._web_broadcast_manager._broadcast_approval_popup(popup_id, tool, args)
-            return
-
-        # Fallback to original implementation for tests/mocks
-        try:
-            event = ApprovalPopupEvent(
-                popup_id=popup_id,
-                tool_name=tool,
-                tool_args=args.model_dump(mode="json", exclude_none=True),
-                timestamp=time.time(),
-            )
-            self.agent_loop._notify_event_listeners(event)
-        except Exception:
-            pass
+        self._web_broadcast_manager._broadcast_approval_popup(popup_id, tool, args)
 
     def _broadcast_approval_response(
         self, popup_id: str, result: tuple[ApprovalResponse, str | None]
     ) -> None:
         """Broadcast approval response event to web UI."""
-        if (
-            hasattr(self, "_web_broadcast_manager")
-            and self._web_broadcast_manager is not None
-        ):
-            self._web_broadcast_manager._broadcast_approval_response(popup_id, result)
-            return
-
-        # Fallback to original implementation for tests/mocks
-        try:
-            response, feedback = result
-            event = PopupResponseEvent(
-                popup_id=popup_id,
-                response_type="approval",
-                response_data={"response": response.value, "feedback": feedback},
-                cancelled=False,
-            )
-            self.agent_loop._notify_event_listeners(event)
-        except Exception:
-            pass
+        self._web_broadcast_manager._broadcast_approval_response(popup_id, result)
 
     def _broadcast_question_popup(
         self, popup_id: str, args: AskUserQuestionArgs
     ) -> None:
         """Broadcast question popup event to web UI."""
-        if (
-            hasattr(self, "_web_broadcast_manager")
-            and self._web_broadcast_manager is not None
-        ):
-            self._web_broadcast_manager._broadcast_question_popup(popup_id, args)
-            return
-
-        # Fallback to original implementation for tests/mocks
-        try:
-            event = QuestionPopupEvent(
-                popup_id=popup_id,
-                questions=[
-                    q.model_dump(mode="json", exclude_none=True) for q in args.questions
-                ],
-                content_preview=args.content_preview,
-                timestamp=time.time(),
-            )
-            self.agent_loop._notify_event_listeners(event)
-        except Exception:
-            pass
+        self._web_broadcast_manager._broadcast_question_popup(popup_id, args)
 
     def _broadcast_question_response(
         self, popup_id: str, result: AskUserQuestionResult
     ) -> None:
         """Broadcast question response event to web UI."""
-        if (
-            hasattr(self, "_web_broadcast_manager")
-            and self._web_broadcast_manager is not None
-        ):
-            self._web_broadcast_manager._broadcast_question_response(popup_id, result)
-            return
-
-        # Fallback to original implementation for tests/mocks
-        try:
-            event = PopupResponseEvent(
-                popup_id=popup_id,
-                response_type="question",
-                response_data={
-                    "answers": [
-                        a.model_dump(mode="json", exclude_none=True)
-                        for a in result.answers
-                    ]
-                },
-                cancelled=result.cancelled,
-            )
-            self.agent_loop._notify_event_listeners(event)
-        except Exception:
-            pass
+        self._web_broadcast_manager._broadcast_question_response(popup_id, result)
 
     def _broadcast_web_notification(
         self,
@@ -1174,123 +1120,23 @@ class VibeApp(App):  # noqa: PLR0904
         message: str | None = None,
     ) -> None:
         """Broadcast web notification event to WebUI."""
-        if (
-            hasattr(self, "_web_broadcast_manager")
-            and self._web_broadcast_manager is not None
-        ):
-            self._web_broadcast_manager._broadcast_web_notification(
-                context, title, message
-            )
-            return
-
-        # Fallback to original implementation for tests/mocks
-        if not getattr(self.config, "enable_web_notifications", True):
-            return
-
-        try:
-            from vibe.cli.web_ui.events import WebNotificationEvent
-
-            event = WebNotificationEvent(context=context, title=title, message=message)
-            self.agent_loop._notify_event_listeners(event)
-        except Exception:
-            pass
+        self._web_broadcast_manager._broadcast_web_notification(context, title, message)
 
     def _broadcast_llm_error_event(self, error: Exception) -> None:
         """Broadcast LLM error event to WebUI."""
-        if (
-            hasattr(self, "_web_broadcast_manager")
-            and self._web_broadcast_manager is not None
-        ):
-            self._web_broadcast_manager._broadcast_llm_error_event(error)
-            return
-
-        # Fallback to original implementation for tests/mocks
-        try:
-            from vibe.core.types import LLMErrorEvent
-
-            event = LLMErrorEvent(
-                error_message=str(error),
-                error_type=type(error).__name__,
-                provider=self._extract_error_provider(error),
-                model=self._extract_error_model(error),
-            )
-            self.agent_loop._notify_event_listeners(event)
-        except Exception:
-            pass
+        self._web_broadcast_manager._broadcast_llm_error_event(error)
 
     def _extract_error_provider(self, error: Exception) -> str | None:
         """Extract provider name from LLM error."""
-        if (
-            hasattr(self, "_web_broadcast_manager")
-            and self._web_broadcast_manager is not None
-        ):
-            return self._web_broadcast_manager._extract_error_provider(error)
-
-        # Fallback to original implementation for tests/mocks
-        from vibe.core.agent_loop import AgentLoopLLMResponseError
-        from vibe.core.llm.exceptions import BackendError
-        from vibe.core.types import RateLimitError
-
-        if isinstance(error, (RateLimitError, BackendError)):
-            return getattr(error, "provider", None)
-
-        if isinstance(error, (AgentLoopLLMResponseError, ValueError)):
-            return None
-
-        if isinstance(error, RuntimeError):
-            match = re.search(r"from ([^ ]+) \(model:", str(error))
-            if match:
-                return match.group(1)
-
-        return None
+        return self._web_broadcast_manager._extract_error_provider(error)
 
     def _extract_error_model(self, error: Exception) -> str | None:
         """Extract model name from LLM error."""
-        if (
-            hasattr(self, "_web_broadcast_manager")
-            and self._web_broadcast_manager is not None
-        ):
-            return self._web_broadcast_manager._extract_error_model(error)
-
-        # Fallback to original implementation for tests/mocks
-        from vibe.core.agent_loop import AgentLoopLLMResponseError
-        from vibe.core.llm.exceptions import BackendError
-        from vibe.core.types import RateLimitError
-
-        if isinstance(error, (RateLimitError, BackendError)):
-            return getattr(error, "model", None)
-
-        if isinstance(error, (AgentLoopLLMResponseError, ValueError)):
-            return None
-
-        if isinstance(error, RuntimeError):
-            match = re.search(r"\(model: ([^)]+)\)", str(error))
-            if match:
-                return match.group(1)
-
-        return None
+        return self._web_broadcast_manager._extract_error_model(error)
 
     def _show_retry_notification(self, event: LLMRetryEvent) -> None:
-        """Show a toast notification when LLM request is being retried.
-
-        Args:
-            event: LLMRetryEvent containing retry details.
-        """
-        if (
-            hasattr(self, "_web_broadcast_manager")
-            and self._web_broadcast_manager is not None
-        ):
-            self._web_broadcast_manager._show_retry_notification(event)
-            return
-
-        # Fallback to original implementation for tests/mocks
-        provider_info = f" ({event.provider})" if event.provider else ""
-        self.notify(
-            f"Request failed, retrying... (attempt {event.attempt}/{event.max_attempts}){provider_info}",
-            title="Retrying",
-            severity="warning",
-            timeout=3,
-        )
+        """Show a toast notification when LLM request is being retried."""
+        self._web_broadcast_manager._show_retry_notification(event)
 
     def handle_web_approval_response(
         self,
@@ -1299,106 +1145,29 @@ class VibeApp(App):  # noqa: PLR0904
         feedback: str | None,
         approval_type: Literal["once", "session", "auto-approve"] = "once",
     ) -> None:
-        """Handle approval response from web UI.
-
-        Args:
-            popup_id: Unique ID of the popup.
-            response: Approval response (YES or NO).
-            feedback: Optional feedback from user.
-            approval_type: Type of approval ('once', 'session', 'auto-approve').
-        """
-        if (
-            hasattr(self, "_web_broadcast_manager")
-            and self._web_broadcast_manager is not None
-        ):
-            self._web_broadcast_manager.handle_web_approval_response(
-                popup_id=popup_id,
-                response=response,
-                feedback=feedback,
-                approval_type=approval_type,
-                pending_approval=self._pending_approval,
-                pending_approval_id=self._pending_approval_id,
-                pending_approval_tool=self._pending_approval_tool,
-                pending_approval_required_permissions=self._pending_approval_required_permissions,
-                switch_to_input_callback=self._switch_to_input_app,
-                call_later_callback=self.call_later,
-            )
-            # Clean up pending approval state (done after manager call)
-            if self._pending_approval and self._pending_approval_id == popup_id:
-                self._pending_approval = None
-                self._pending_approval_id = None
-                self._pending_approval_tool = None
-                self._pending_approval_args = None
-                self._pending_approval_required_permissions = None
-            return
-
-        # Fallback to original implementation for tests/mocks
-        from vibe.core.agents import BuiltinAgentName
-
-        if (
-            self._pending_approval
-            and not getattr(self._pending_approval, "done", lambda: True)()
-            and self._pending_approval_id == popup_id
-        ):
-            # Handle different approval types
-            if approval_type == "session" and self._pending_approval_tool:
-                # Set tool permission for this session (not permanent)
-                self.agent_loop.approve_always(
-                    self._pending_approval_tool,
-                    self._pending_approval_required_permissions,
-                )
-            elif approval_type == "auto-approve":
-                # Switch to auto-approve mode
-                self.call_later(
-                    lambda: self.agent_loop.switch_agent(BuiltinAgentName.AUTO_APPROVE)
-                )
-
-            self._pending_approval.set_result((response, feedback))
-            # Schedule cleanup to switch back to input
-            self.call_later(self._switch_to_input_app)
-
-            # Clean up pending approval state
-            self._pending_approval = None
-            self._pending_approval_id = None
-            self._pending_approval_tool = None
-            self._pending_approval_args = None
-            self._pending_approval_required_permissions = None
+        """Handle approval response from web UI."""
+        self._web_broadcast_manager.handle_web_approval_response(
+            popup_id=popup_id,
+            response=response,
+            feedback=feedback,
+            approval_type=approval_type,
+            pending_approval=self._pending_approval,
+            switch_to_input_callback=self._switch_to_input_app,
+            call_later_callback=self.call_later,
+        )
 
     def handle_web_question_response(
         self, popup_id: str, answers: list[Answer], cancelled: bool
     ) -> None:
-        """Handle question response from web UI.
-
-        Args:
-            popup_id: Unique ID of the popup.
-            answers: List of answers from user.
-            cancelled: Whether the popup was cancelled.
-        """
-        if (
-            hasattr(self, "_web_broadcast_manager")
-            and self._web_broadcast_manager is not None
-        ):
-            self._web_broadcast_manager.handle_web_question_response(
-                popup_id=popup_id,
-                answers=answers,
-                cancelled=cancelled,
-                pending_question=self._pending_question,
-                pending_question_id=self._pending_question_id,
-                switch_to_input_callback=self._switch_to_input_app,
-                call_later_callback=self.call_later,
-            )
-            return
-
-        # Fallback to original implementation for tests/mocks
-        if (
-            self._pending_question
-            and not getattr(self._pending_question, "done", lambda: True)()
-            and self._pending_question_id == popup_id
-        ):
-            result = AskUserQuestionResult(answers=answers, cancelled=cancelled)
-            self._pending_question.set_result(result)
-            # Schedule cleanup to switch back to input
-            self.call_later(self._switch_to_input_app)
+        """Handle question response from web UI."""
+        self._web_broadcast_manager.handle_web_question_response(
+            popup_id=popup_id,
+            answers=answers,
+            cancelled=cancelled,
+            pending_question=self._pending_question,
+            switch_to_input_callback=self._switch_to_input_app,
+            call_later_callback=self.call_later,
+        )
 
     async def _process_web_messages(self) -> None:
         """Process messages from the web UI queue and interrupt requests."""
@@ -1527,17 +1296,13 @@ class VibeApp(App):  # noqa: PLR0904
             # Broadcast approval popup event to web UI
             self._web_broadcast_manager._broadcast_approval_popup(popup_id, tool, args)
 
-            self._pending_approval = asyncio.Future()
-            self._pending_approval_id = popup_id
-            self._pending_approval_tool = (
-                tool  # Store tool name for web response handling
-            )
-            self._pending_approval_args = args.model_dump(
+            self._pending_approval.future = asyncio.Future()
+            self._pending_approval.popup_id = popup_id
+            self._pending_approval.tool_name = tool
+            self._pending_approval.args = args.model_dump(
                 mode="json", exclude_none=True
             )
-            self._pending_approval_required_permissions = (
-                required_permissions  # Store for web response handling
-            )
+            self._pending_approval.required_permissions = required_permissions
             self._terminal_notifier.notify(NotificationContext.ACTION_REQUIRED)
             self._web_broadcast_manager._broadcast_web_notification(
                 "action_required",
@@ -1547,7 +1312,7 @@ class VibeApp(App):  # noqa: PLR0904
             try:
                 with paused_timer(self._loading_widget):
                     await self._switch_to_approval_app(tool, args, required_permissions)
-                    result = await self._pending_approval
+                    result = await self._pending_approval.future
 
                 # Broadcast approval response event
                 self._web_broadcast_manager._broadcast_approval_response(
@@ -1558,11 +1323,7 @@ class VibeApp(App):  # noqa: PLR0904
             except asyncio.CancelledError:
                 raise
             finally:
-                self._pending_approval = None
-                self._pending_approval_id = None
-                self._pending_approval_tool = None
-                self._pending_approval_args = None
-                self._pending_approval_required_permissions = None
+                self._pending_approval.clear()
                 await self._switch_to_input_app()
 
     async def _user_input_callback(self, args: BaseModel) -> BaseModel:
@@ -1577,9 +1338,9 @@ class VibeApp(App):  # noqa: PLR0904
                 popup_id, question_args
             )
 
-            self._pending_question = asyncio.Future()
-            self._pending_question_id = popup_id
-            self._pending_question_args = question_args.model_dump(
+            self._pending_question.future = asyncio.Future()
+            self._pending_question.popup_id = popup_id
+            self._pending_question.args = question_args.model_dump(
                 mode="json", exclude_none=True
             )
             self._terminal_notifier.notify(NotificationContext.ACTION_REQUIRED)
@@ -1591,7 +1352,7 @@ class VibeApp(App):  # noqa: PLR0904
             try:
                 with paused_timer(self._loading_widget):
                     await self._switch_to_question_app(question_args)
-                    result = await self._pending_question
+                    result = await self._pending_question.future
 
                 # Broadcast question response event
                 self._web_broadcast_manager._broadcast_question_response(
@@ -1600,9 +1361,7 @@ class VibeApp(App):  # noqa: PLR0904
 
                 return result
             finally:
-                self._pending_question = None
-                self._pending_question_id = None
-                self._pending_question_args = None
+                self._pending_question.clear()
                 await self._switch_to_input_app()
 
     async def _handle_turn_error(self) -> None:
@@ -1780,6 +1539,7 @@ class VibeApp(App):  # noqa: PLR0904
         )
         return TeleportPushResponseEvent(approved=ok)
 
+    # ruff: noqa: PLR0915
     async def _interrupt_agent_loop(self) -> None:
         if not self._agent_running:
             return
@@ -1788,13 +1548,27 @@ class VibeApp(App):  # noqa: PLR0904
         # (request_interrupt_from_web or Escape key handler)
 
         # Clean up pending approvals/questions
-        if self._pending_approval and not self._pending_approval.done():
-            self._pending_approval.cancel()
-            self._pending_approval = None
-            self._pending_approval_id = None
-            self._pending_approval_tool = None
-            self._pending_approval_args = None
-            self._pending_approval_required_permissions = None
+        if (
+            self._pending_approval.is_active()
+            and self._pending_approval.future is not None
+        ):
+            feedback = str(
+                get_user_cancellation_message(CancellationReason.TOOL_INTERRUPTED)
+            )
+            # Cancel and set result - handle case where cancel() might complete the future
+            try:
+                self._pending_approval.future.cancel()
+            except Exception:
+                pass
+            try:
+                self._pending_approval.future.set_result((
+                    ApprovalResponse.NO,
+                    feedback,
+                ))
+            except asyncio.InvalidStateError:
+                # Future was already completed by cancel()
+                pass
+            self._pending_approval.clear()
             # Remove approval app widget if present
             try:
                 approval_app = self.query_one("#approval-app")
@@ -1805,11 +1579,22 @@ class VibeApp(App):  # noqa: PLR0904
             # Restore input form
             await self._switch_to_input_app()
 
-        if self._pending_question and not self._pending_question.done():
-            self._pending_question.cancel()
-            self._pending_question = None
-            self._pending_question_id = None
-            self._pending_question_args = None
+        if (
+            self._pending_question.is_active()
+            and self._pending_question.future is not None
+        ):
+            try:
+                self._pending_question.future.cancel()
+            except Exception:
+                pass
+            try:
+                self._pending_question.future.set_result(
+                    AskUserQuestionResult(answers=[], cancelled=True)
+                )
+            except asyncio.InvalidStateError:
+                # Future was already completed by cancel()
+                pass
+            self._pending_question.clear()
             # Remove question app widget if present
             try:
                 question_app = self.query_one("#question-app")
@@ -1819,16 +1604,6 @@ class VibeApp(App):  # noqa: PLR0904
                 pass
             # Restore input form
             await self._switch_to_input_app()
-
-        if self._pending_approval and not self._pending_approval.done():
-            feedback = str(
-                get_user_cancellation_message(CancellationReason.TOOL_INTERRUPTED)
-            )
-            self._pending_approval.set_result((ApprovalResponse.NO, feedback))
-        if self._pending_question and not self._pending_question.done():
-            self._pending_question.set_result(
-                AskUserQuestionResult(answers=[], cancelled=True)
-            )
 
         if self._agent_task and not self._agent_task.done():
             self._agent_task.cancel()

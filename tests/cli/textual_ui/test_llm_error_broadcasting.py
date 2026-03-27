@@ -10,25 +10,28 @@ class TestLLMErrorBroadcasting:
 
     def test_broadcast_llm_error_event_with_rate_limit_error(self) -> None:
         """Test that _broadcast_llm_error_event sends LLMErrorEvent for RateLimitError."""
-        from vibe.cli.textual_ui.app import VibeApp
+        from vibe.cli.textual_ui.web_broadcast_manager import WebBroadcastManager
+        from vibe.core.agent_loop import AgentLoop
         from vibe.core.types import LLMErrorEvent, RateLimitError
 
-        # Create mock app with proper method delegation
-        app = MagicMock(spec=VibeApp)
-        app.agent_loop = MagicMock()
-        app.agent_loop._notify_event_listeners = MagicMock()
-        app._extract_error_provider = lambda e: getattr(e, "provider", None)
-        app._extract_error_model = lambda e: getattr(e, "model", None)
+        # Create mock agent_loop to capture events
+        mock_agent_loop = MagicMock(spec=AgentLoop)
+        mock_agent_loop._notify_event_listeners = MagicMock()
+
+        # Create manager with real implementation
+        manager = WebBroadcastManager(
+            agent_loop=mock_agent_loop, config=MagicMock(), notify_callback=None
+        )
 
         # Create RateLimitError
         error = RateLimitError(provider="mistral", model="mistral-large-latest")
 
-        # Call the method
-        VibeApp._broadcast_llm_error_event(app, error)
+        # Call the method directly on manager
+        manager._broadcast_llm_error_event(error)
 
         # Verify event was sent
-        assert app.agent_loop._notify_event_listeners.called
-        event = app.agent_loop._notify_event_listeners.call_args[0][0]
+        assert mock_agent_loop._notify_event_listeners.called
+        event = mock_agent_loop._notify_event_listeners.call_args[0][0]
 
         assert isinstance(event, LLMErrorEvent)
         assert "Rate limits exceeded" in event.error_message
@@ -38,7 +41,8 @@ class TestLLMErrorBroadcasting:
 
     def test_broadcast_llm_error_event_with_backend_error(self) -> None:
         """Test that _broadcast_llm_error_event sends LLMErrorEvent for BackendError."""
-        from vibe.cli.textual_ui.app import VibeApp
+        from vibe.cli.textual_ui.web_broadcast_manager import WebBroadcastManager
+        from vibe.core.agent_loop import AgentLoop
         from vibe.core.llm.exceptions import BackendError
         from vibe.core.types import LLMErrorEvent
 
@@ -55,19 +59,21 @@ class TestLLMErrorBroadcasting:
             payload_summary=MagicMock(),
         )
 
-        # Create mock app with proper method delegation
-        app = MagicMock(spec=VibeApp)
-        app.agent_loop = MagicMock()
-        app.agent_loop._notify_event_listeners = MagicMock()
-        app._extract_error_provider = lambda e: getattr(e, "provider", None)
-        app._extract_error_model = lambda e: getattr(e, "model", None)
+        # Create mock agent_loop to capture events
+        mock_agent_loop = MagicMock(spec=AgentLoop)
+        mock_agent_loop._notify_event_listeners = MagicMock()
 
-        # Call the method
-        VibeApp._broadcast_llm_error_event(app, error)
+        # Create manager with real implementation
+        manager = WebBroadcastManager(
+            agent_loop=mock_agent_loop, config=MagicMock(), notify_callback=None
+        )
+
+        # Call the method directly on manager
+        manager._broadcast_llm_error_event(error)
 
         # Verify event was sent
-        assert app.agent_loop._notify_event_listeners.called
-        event = app.agent_loop._notify_event_listeners.call_args[0][0]
+        assert mock_agent_loop._notify_event_listeners.called
+        event = mock_agent_loop._notify_event_listeners.call_args[0][0]
 
         assert isinstance(event, LLMErrorEvent)
         assert "Invalid API key" in event.error_message
@@ -77,8 +83,8 @@ class TestLLMErrorBroadcasting:
 
     def test_broadcast_llm_error_event_with_agent_loop_llm_response_error(self) -> None:
         """Test that _broadcast_llm_error_event sends LLMErrorEvent for AgentLoopLLMResponseError."""
-        from vibe.cli.textual_ui.app import VibeApp
-        from vibe.core.agent_loop import AgentLoopLLMResponseError
+        from vibe.cli.textual_ui.web_broadcast_manager import WebBroadcastManager
+        from vibe.core.agent_loop import AgentLoop, AgentLoopLLMResponseError
         from vibe.core.types import LLMErrorEvent
 
         # Create AgentLoopLLMResponseError
@@ -86,19 +92,21 @@ class TestLLMErrorBroadcasting:
             "Usage data missing in non-streaming completion response"
         )
 
-        # Create mock app with proper method delegation
-        app = MagicMock(spec=VibeApp)
-        app.agent_loop = MagicMock()
-        app.agent_loop._notify_event_listeners = MagicMock()
-        app._extract_error_provider = lambda e: None
-        app._extract_error_model = lambda e: None
+        # Create mock agent_loop to capture events
+        mock_agent_loop = MagicMock(spec=AgentLoop)
+        mock_agent_loop._notify_event_listeners = MagicMock()
 
-        # Call the method
-        VibeApp._broadcast_llm_error_event(app, error)
+        # Create manager with real implementation
+        manager = WebBroadcastManager(
+            agent_loop=mock_agent_loop, config=MagicMock(), notify_callback=None
+        )
+
+        # Call the method directly on manager
+        manager._broadcast_llm_error_event(error)
 
         # Verify event was sent
-        assert app.agent_loop._notify_event_listeners.called
-        event = app.agent_loop._notify_event_listeners.call_args[0][0]
+        assert mock_agent_loop._notify_event_listeners.called
+        event = mock_agent_loop._notify_event_listeners.call_args[0][0]
 
         assert isinstance(event, LLMErrorEvent)
         assert "Usage data missing" in event.error_message
@@ -108,7 +116,8 @@ class TestLLMErrorBroadcasting:
 
     def test_broadcast_llm_error_event_with_runtime_error(self) -> None:
         """Test that _broadcast_llm_error_event sends LLMErrorEvent for RuntimeError."""
-        from vibe.cli.textual_ui.app import VibeApp
+        from vibe.cli.textual_ui.web_broadcast_manager import WebBroadcastManager
+        from vibe.core.agent_loop import AgentLoop
         from vibe.core.types import LLMErrorEvent
 
         # Create RuntimeError with provider/model in message
@@ -116,19 +125,21 @@ class TestLLMErrorBroadcasting:
             "API error from openai (model: gpt-4o): Connection timeout"
         )
 
-        # Create mock app with proper method delegation
-        app = MagicMock(spec=VibeApp)
-        app.agent_loop = MagicMock()
-        app.agent_loop._notify_event_listeners = MagicMock()
-        app._extract_error_provider = lambda e: "openai"
-        app._extract_error_model = lambda e: "gpt-4o"
+        # Create mock agent_loop to capture events
+        mock_agent_loop = MagicMock(spec=AgentLoop)
+        mock_agent_loop._notify_event_listeners = MagicMock()
 
-        # Call the method
-        VibeApp._broadcast_llm_error_event(app, error)
+        # Create manager with real implementation
+        manager = WebBroadcastManager(
+            agent_loop=mock_agent_loop, config=MagicMock(), notify_callback=None
+        )
+
+        # Call the method directly on manager
+        manager._broadcast_llm_error_event(error)
 
         # Verify event was sent
-        assert app.agent_loop._notify_event_listeners.called
-        event = app.agent_loop._notify_event_listeners.call_args[0][0]
+        assert mock_agent_loop._notify_event_listeners.called
+        event = mock_agent_loop._notify_event_listeners.call_args[0][0]
 
         assert isinstance(event, LLMErrorEvent)
         assert "API error from openai" in event.error_message
@@ -138,25 +149,28 @@ class TestLLMErrorBroadcasting:
 
     def test_broadcast_llm_error_event_with_generic_exception(self) -> None:
         """Test that _broadcast_llm_error_event sends LLMErrorEvent for generic exceptions."""
-        from vibe.cli.textual_ui.app import VibeApp
+        from vibe.cli.textual_ui.web_broadcast_manager import WebBroadcastManager
+        from vibe.core.agent_loop import AgentLoop
         from vibe.core.types import LLMErrorEvent
 
         # Create generic exception
         error = ValueError("Something went wrong")
 
-        # Create mock app with proper method delegation
-        app = MagicMock(spec=VibeApp)
-        app.agent_loop = MagicMock()
-        app.agent_loop._notify_event_listeners = MagicMock()
-        app._extract_error_provider = lambda e: None
-        app._extract_error_model = lambda e: None
+        # Create mock agent_loop to capture events
+        mock_agent_loop = MagicMock(spec=AgentLoop)
+        mock_agent_loop._notify_event_listeners = MagicMock()
 
-        # Call the method
-        VibeApp._broadcast_llm_error_event(app, error)
+        # Create manager with real implementation
+        manager = WebBroadcastManager(
+            agent_loop=mock_agent_loop, config=MagicMock(), notify_callback=None
+        )
+
+        # Call the method directly on manager
+        manager._broadcast_llm_error_event(error)
 
         # Verify event was sent
-        assert app.agent_loop._notify_event_listeners.called
-        event = app.agent_loop._notify_event_listeners.call_args[0][0]
+        assert mock_agent_loop._notify_event_listeners.called
+        event = mock_agent_loop._notify_event_listeners.call_args[0][0]
 
         assert isinstance(event, LLMErrorEvent)
         assert event.error_message == "Something went wrong"
@@ -166,173 +180,28 @@ class TestLLMErrorBroadcasting:
 
     def test_broadcast_llm_error_event_handles_notification_error(self) -> None:
         """Test that _broadcast_llm_error_event handles errors gracefully."""
-        from vibe.cli.textual_ui.app import VibeApp
+        from vibe.cli.textual_ui.web_broadcast_manager import WebBroadcastManager
+        from vibe.core.agent_loop import AgentLoop
         from vibe.core.types import RateLimitError
 
-        # Create mock app with failing agent_loop
-        app = MagicMock(spec=VibeApp)
-        app.agent_loop = MagicMock()
-        app.agent_loop._notify_event_listeners.side_effect = Exception(
+        # Create mock agent_loop that raises on notification
+        mock_agent_loop = MagicMock(spec=AgentLoop)
+        mock_agent_loop._notify_event_listeners.side_effect = Exception(
             "Notification failed"
         )
-        app._extract_error_provider = lambda e: "test"
-        app._extract_error_model = lambda e: "test-model"
+
+        # Create manager with real implementation
+        manager = WebBroadcastManager(
+            agent_loop=mock_agent_loop, config=MagicMock(), notify_callback=None
+        )
 
         # Create RateLimitError
         error = RateLimitError(provider="test", model="test-model")
 
         # Call the method - should not raise
-        result = VibeApp._broadcast_llm_error_event(app, error)
+        result = manager._broadcast_llm_error_event(error)
 
         # Should return None (no exception raised)
         assert result is None
-        # But should have attempted to notify
-        assert app.agent_loop._notify_event_listeners.called
-
-
-class TestExtractErrorProvider:
-    """Test _extract_error_provider helper method."""
-
-    def test_extract_provider_from_rate_limit_error(self) -> None:
-        """Test provider extraction from RateLimitError."""
-        from vibe.cli.textual_ui.app import VibeApp
-        from vibe.core.types import RateLimitError
-
-        app = VibeApp.__new__(VibeApp)  # Create instance without calling __init__
-        error = RateLimitError(provider="mistral", model="mistral-large-latest")
-
-        provider = VibeApp._extract_error_provider(app, error)
-
-        assert provider == "mistral"
-
-    def test_extract_provider_from_backend_error(self) -> None:
-        """Test provider extraction from BackendError."""
-        from vibe.cli.textual_ui.app import VibeApp
-        from vibe.core.llm.exceptions import BackendError
-
-        app = VibeApp.__new__(VibeApp)
-        error = BackendError(
-            provider="anthropic",
-            endpoint="https://api.anthropic.com/v1/messages",
-            status=401,
-            reason="Unauthorized",
-            headers={},
-            body_text="Invalid API key",
-            parsed_error="Invalid API key",
-            model="claude-3-5-sonnet",
-            payload_summary=MagicMock(),
-        )
-
-        provider = VibeApp._extract_error_provider(app, error)
-
-        assert provider == "anthropic"
-
-    def test_extract_provider_from_agent_loop_llm_response_error(self) -> None:
-        """Test provider extraction from AgentLoopLLMResponseError returns None."""
-        from vibe.cli.textual_ui.app import VibeApp
-        from vibe.core.agent_loop import AgentLoopLLMResponseError
-
-        app = VibeApp.__new__(VibeApp)
-        error = AgentLoopLLMResponseError("Usage data missing")
-
-        provider = VibeApp._extract_error_provider(app, error)
-
-        assert provider is None
-
-    def test_extract_provider_from_runtime_error(self) -> None:
-        """Test provider extraction from RuntimeError."""
-        from vibe.cli.textual_ui.app import VibeApp
-
-        app = VibeApp.__new__(VibeApp)
-        error = RuntimeError(
-            "API error from openai (model: gpt-4o): Connection timeout"
-        )
-
-        provider = VibeApp._extract_error_provider(app, error)
-
-        assert provider == "openai"
-
-    def test_extract_provider_from_value_error(self) -> None:
-        """Test provider extraction from ValueError returns None."""
-        from vibe.cli.textual_ui.app import VibeApp
-
-        app = VibeApp.__new__(VibeApp)
-        error = ValueError("Something went wrong")
-
-        provider = VibeApp._extract_error_provider(app, error)
-
-        assert provider is None
-
-
-class TestExtractErrorModel:
-    """Test _extract_error_model helper method."""
-
-    def test_extract_model_from_rate_limit_error(self) -> None:
-        """Test model extraction from RateLimitError."""
-        from vibe.cli.textual_ui.app import VibeApp
-        from vibe.core.types import RateLimitError
-
-        app = VibeApp.__new__(VibeApp)
-        error = RateLimitError(provider="mistral", model="mistral-large-latest")
-
-        model = VibeApp._extract_error_model(app, error)
-
-        assert model == "mistral-large-latest"
-
-    def test_extract_model_from_backend_error(self) -> None:
-        """Test model extraction from BackendError."""
-        from vibe.cli.textual_ui.app import VibeApp
-        from vibe.core.llm.exceptions import BackendError
-
-        app = VibeApp.__new__(VibeApp)
-        error = BackendError(
-            provider="anthropic",
-            endpoint="https://api.anthropic.com/v1/messages",
-            status=401,
-            reason="Unauthorized",
-            headers={},
-            body_text="Invalid API key",
-            parsed_error="Invalid API key",
-            model="claude-3-5-sonnet",
-            payload_summary=MagicMock(),
-        )
-
-        model = VibeApp._extract_error_model(app, error)
-
-        assert model == "claude-3-5-sonnet"
-
-    def test_extract_model_from_agent_loop_llm_response_error(self) -> None:
-        """Test model extraction from AgentLoopLLMResponseError returns None."""
-        from vibe.cli.textual_ui.app import VibeApp
-        from vibe.core.agent_loop import AgentLoopLLMResponseError
-
-        app = VibeApp.__new__(VibeApp)
-        error = AgentLoopLLMResponseError("Usage data missing")
-
-        model = VibeApp._extract_error_model(app, error)
-
-        assert model is None
-
-    def test_extract_model_from_runtime_error(self) -> None:
-        """Test model extraction from RuntimeError."""
-        from vibe.cli.textual_ui.app import VibeApp
-
-        app = VibeApp.__new__(VibeApp)
-        error = RuntimeError(
-            "API error from openai (model: gpt-4o): Connection timeout"
-        )
-
-        model = VibeApp._extract_error_model(app, error)
-
-        assert model == "gpt-4o"
-
-    def test_extract_model_from_value_error(self) -> None:
-        """Test model extraction from ValueError returns None."""
-        from vibe.cli.textual_ui.app import VibeApp
-
-        app = VibeApp.__new__(VibeApp)
-        error = ValueError("Something went wrong")
-
-        model = VibeApp._extract_error_model(app, error)
-
-        assert model is None
+        # Should still have attempted to notify
+        assert mock_agent_loop._notify_event_listeners.called

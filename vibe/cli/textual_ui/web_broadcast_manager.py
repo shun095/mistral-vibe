@@ -6,7 +6,6 @@ including approval popups, question popups, notifications, and error events.
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Callable
 import re
 import time
@@ -332,16 +331,13 @@ class WebBroadcastManager:
     # Web Response Handlers (WebUI → TUI)
     # =========================================================================
 
-    def handle_web_approval_response(  # noqa: PLR0913, PLR0917
+    def handle_web_approval_response(
         self,
         popup_id: str,
         response: ApprovalResponse,
         feedback: str | None,
         approval_type: Literal["once", "session", "auto-approve"] = "once",
-        pending_approval: asyncio.Future | None = None,
-        pending_approval_id: str | None = None,
-        pending_approval_tool: str | None = None,
-        pending_approval_required_permissions: list | None = None,
+        pending_approval: object | None = None,  # PendingPopupState
         switch_to_input_callback: Callable[[], object] | None = None,
         call_later_callback: Callable[[Callable[[], object]], object] | None = None,
     ) -> None:
@@ -352,26 +348,30 @@ class WebBroadcastManager:
             response: Approval response (YES or NO).
             feedback: Optional feedback from user.
             approval_type: Type of approval ('once', 'session', 'auto-approve').
-            pending_approval: The pending approval Future/Task.
-            pending_approval_id: The ID of the pending approval.
-            pending_approval_tool: The tool requiring approval.
-            pending_approval_required_permissions: Required permissions for the tool.
+            pending_approval: The PendingPopupState object.
             switch_to_input_callback: Callback to switch back to input app.
             call_later_callback: Callback to schedule future execution.
         """
         from vibe.core.agents import BuiltinAgentName
 
+        if pending_approval is None:
+            return
+
+        # Access PendingPopupState attributes
+        future = getattr(pending_approval, "future", None)
+        popup_id_state = getattr(pending_approval, "popup_id", None)
+        tool_name = getattr(pending_approval, "tool_name", None)
+        required_permissions = getattr(pending_approval, "required_permissions", None)
+
         if (
-            pending_approval
-            and not getattr(pending_approval, "done", lambda: True)()
-            and pending_approval_id == popup_id
+            future
+            and not getattr(future, "done", lambda: True)()
+            and popup_id_state == popup_id
         ):
             # Handle different approval types
-            if approval_type == "session" and pending_approval_tool:
+            if approval_type == "session" and tool_name:
                 # Set tool permission for this session (not permanent)
-                self.agent_loop.approve_always(
-                    pending_approval_tool, pending_approval_required_permissions
-                )
+                self.agent_loop.approve_always(tool_name, required_permissions)
             elif approval_type == "auto-approve":
                 # Switch to auto-approve mode
                 if call_later_callback and self.agent_loop:
@@ -381,7 +381,7 @@ class WebBroadcastManager:
                         )
                     )
 
-            pending_approval.set_result((response, feedback))
+            future.set_result((response, feedback))
             # Schedule cleanup to switch back to input
             if call_later_callback and switch_to_input_callback:
                 call_later_callback(switch_to_input_callback)
@@ -391,8 +391,7 @@ class WebBroadcastManager:
         popup_id: str,
         answers: list[Answer],
         cancelled: bool,
-        pending_question: asyncio.Future | None = None,
-        pending_question_id: str | None = None,
+        pending_question: object | None = None,  # PendingPopupState
         switch_to_input_callback: Callable[[], object] | None = None,
         call_later_callback: Callable[[Callable[[], object]], object] | None = None,
     ) -> None:
@@ -402,18 +401,24 @@ class WebBroadcastManager:
             popup_id: Unique ID of the popup.
             answers: List of answers from user.
             cancelled: Whether the popup was cancelled.
-            pending_question: The pending question Future/Task.
-            pending_question_id: The ID of the pending question.
+            pending_question: The PendingPopupState object.
             switch_to_input_callback: Callback to switch back to input app.
             call_later_callback: Callback to schedule future execution.
         """
+        if pending_question is None:
+            return
+
+        # Access PendingPopupState attributes
+        future = getattr(pending_question, "future", None)
+        popup_id_state = getattr(pending_question, "popup_id", None)
+
         if (
-            pending_question
-            and not getattr(pending_question, "done", lambda: True)()
-            and pending_question_id == popup_id
+            future
+            and not getattr(future, "done", lambda: True)()
+            and popup_id_state == popup_id
         ):
             result = AskUserQuestionResult(answers=answers, cancelled=cancelled)
-            pending_question.set_result(result)
+            future.set_result(result)
             # Schedule cleanup to switch back to input
             if call_later_callback and switch_to_input_callback:
                 call_later_callback(switch_to_input_callback)
