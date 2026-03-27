@@ -6,6 +6,14 @@ from typing import Any, cast
 from vibe.core.types import Content, LLMMessage, Role
 
 
+def strip_reasoning(msg: LLMMessage) -> LLMMessage:
+    if msg.role != Role.assistant or not msg.reasoning_content:
+        return msg
+    return msg.model_copy(
+        update={"reasoning_content": None, "reasoning_signature": None}
+    )
+
+
 def merge_consecutive_user_messages(messages: Sequence[LLMMessage]) -> list[LLMMessage]:
     """Merge consecutive user messages into a single message.
 
