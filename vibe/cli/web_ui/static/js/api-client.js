@@ -139,6 +139,51 @@ export class APIClient {
             return null;
         }
     }
+
+    /**
+     * List available sessions
+     * @returns {Promise<Array>} Array of session objects
+     */
+    async listSessions() {
+        try {
+            const response = await fetch('/api/sessions', {
+                headers: this._getHeaders()
+            });
+
+            if (!response.ok) {
+                return [];
+            }
+
+            const data = await response.json();
+            return data.sessions || [];
+        } catch (error) {
+            console.error('[APIClient] Failed to list sessions:', error);
+            return [];
+        }
+    }
+
+    /**
+     * Resume a specific session
+     * @param {string} sessionId - Session ID to resume
+     * @returns {Promise<Object>} Result with 'success' and optional 'error' field
+     */
+    async resumeSession(sessionId) {
+        try {
+            const response = await fetch(`/api/sessions/${sessionId}/resume`, {
+                method: 'POST',
+                headers: this._getJsonHeaders()
+            });
+
+            if (!response.ok) {
+                return { success: false, error: 'Failed to resume session' };
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error(`[APIClient] Failed to resume session ${sessionId}:`, error);
+            return { success: false, error: error.message };
+        }
+    }
 }
 
 // CommonJS export for testing (Jest)

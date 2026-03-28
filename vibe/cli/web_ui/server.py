@@ -30,6 +30,8 @@ if TYPE_CHECKING:
     from vibe.core.tools.base import BaseTool
     from vibe.core.types import BaseEvent, LLMMessage
 
+from vibe.core.session.session_loader import SessionLoader
+
 
 def get_token_from_env_or_arg(token: str | None) -> str:
     """Get authentication token from argument or environment variable.
@@ -649,6 +651,90 @@ def create_app(  # noqa: PLR0915
 
         tui_app.submit_message_from_web(command_text)
         return JSONResponse({"success": True})
+
+    @app.get("/api/sessions")
+    def list_sessions(token: str = Security(verify_token)) -> JSONResponse:
+        """List available sessions for resuming.
+
+        Args:
+            token: Authentication token.
+
+        Returns:
+            List of sessions with metadata.
+        """
+        tui_app = getattr(app.state, "tui_app", None)
+        if tui_app is None:
+            return JSONResponse({"sessions": []})
+
+        try:
+            session_config = tui_app.config.session_logging
+            cwd = str(Path.cwd())
+            raw_sessions = SessionLoader.list_sessions(session_config, cwd=cwd)
+
+            if not raw_sessions:
+                return JSONResponse({"sessions": []})
+
+            sessions = sorted(
+                raw_sessions, key=lambda s: s.get("end_time") or "", reverse=True
+            )
+
+            latest_messages = {
+                s["session_id"]: SessionLoader.get_first_user_message(
+                    s["session_id"], session_config
+                )
+                for s in sessions
+            }
+
+            sessions_data = []
+            for session in sessions:
+                sessions_data.append({
+                    "session_id": session["session_id"],
+                    "short_id": session["session_id"][:8],
+                    "title": session.get("title"),
+                    "end_time": session.get("end_time"),
+                    "first_message": latest_messages.get(session["session_id"], ""),
+                })
+
+            return JSONResponse({"sessions": sessions_data})
+        except Exception as e:
+            logging.warning("Error listing sessions: %s", e)
+            return JSONResponse({"sessions": []})
+
+    @app.post("/api/sessions/{session_id}/resume")
+    async def resume_session(
+        session_id: str, token: str = Security(verify_token)
+    ) -> JSONResponse:
+        """Resume a specific session by submitting to TUI for processing.
+
+        Args:
+            session_id: The session ID to resume.
+            token: Authentication token.
+
+        Returns:
+            Success status. TUI will broadcast MessageResetEvent when complete.
+        """
+        tui_app = getattr(app.state, "tui_app", None)
+        if tui_app is None:
+            return JSONResponse({"success": False, "error": "No TUI app available"})
+
+        try:
+            session_config = tui_app.config.session_logging
+            session_path = SessionLoader.find_session_by_id(session_id, session_config)
+
+            if not session_path:
+                return JSONResponse({
+                    "success": False,
+                    "error": f"Session {session_id[:8]} not found",
+                })
+
+            # Submit to TUI for processing - it will handle the resume and broadcast events
+            tui_app.submit_message_from_web(f"/resume {session_id}")
+            return JSONResponse({"success": True, "session_id": session_id})
+        except ValueError as e:
+            return JSONResponse({"success": False, "error": str(e)})
+        except Exception as e:
+            logging.warning("Error resuming session: %s", e)
+            return JSONResponse({"success": False, "error": str(e)})
 
     @app.get("/api/messages")
     def get_messages(token: str = Security(verify_token)) -> JSONResponse:

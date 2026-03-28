@@ -1780,6 +1780,18 @@ Enhanced prompt:"""
             )
             return
 
+        # Extract session_id from command input if provided (e.g., "/resume abc123")
+        session_id = None
+        if hasattr(self, "_last_command_input") and self._last_command_input:
+            parts = self._last_command_input.split(maxsplit=1)
+            if len(parts) > 1:
+                session_id = parts[1].strip()
+
+        # If session_id is provided, resume it directly without showing picker
+        if session_id:
+            await self._resume_session_by_id(session_id)
+            return
+
         cwd = str(Path.cwd())
         raw_sessions = SessionLoader.list_sessions(session_config, cwd=cwd)
 
@@ -1803,20 +1815,19 @@ Enhanced prompt:"""
         picker = SessionPickerApp(sessions=sessions, latest_messages=latest_messages)
         await self._switch_from_input(picker)
 
-    async def on_session_picker_app_session_selected(
-        self, event: SessionPickerApp.SessionSelected
-    ) -> None:
-        await self._switch_to_input_app()
+    async def _resume_session_by_id(self, session_id: str) -> None:
+        """Resume a session by its ID without showing the picker.
 
+        Args:
+            session_id: The session ID to resume.
+        """
         session_config = self.config.session_logging
-        session_path = SessionLoader.find_session_by_id(
-            event.session_id, session_config
-        )
+        session_path = SessionLoader.find_session_by_id(session_id, session_config)
 
         if not session_path:
             await self._mount_and_scroll(
                 ErrorMessage(
-                    f"Session `{event.session_id[:8]}` not found.",
+                    f"Session `{session_id[:8]}` not found.",
                     collapsed=self._tools_collapsed,
                 )
             )
@@ -1832,9 +1843,9 @@ Enhanced prompt:"""
                 msg for msg in loaded_messages if msg.role != Role.system
             ]
 
-            self.agent_loop.session_id = event.session_id
+            self.agent_loop.session_id = session_id
             self.agent_loop.session_logger.resume_existing_session(
-                event.session_id, session_path
+                session_id, session_path
             )
 
             self.agent_loop.messages.reset(
@@ -1853,15 +1864,18 @@ Enhanced prompt:"""
             self.agent_loop._notify_event_listeners(MessageResetEvent(reason="resume"))
 
             await self._mount_and_scroll(
-                UserCommandMessage(f"Resumed session `{event.session_id[:8]}`")
+                UserCommandMessage(f"Resumed session `{session_id[:8]}`")
             )
-
         except ValueError as e:
             await self._mount_and_scroll(
-                ErrorMessage(
-                    f"Failed to load session: {e}", collapsed=self._tools_collapsed
-                )
+                ErrorMessage(str(e), collapsed=self._tools_collapsed)
             )
+
+    async def on_session_picker_app_session_selected(
+        self, event: SessionPickerApp.SessionSelected
+    ) -> None:
+        await self._switch_to_input_app()
+        await self._resume_session_by_id(event.session_id)
 
     async def on_session_picker_app_cancelled(
         self, event: SessionPickerApp.Cancelled

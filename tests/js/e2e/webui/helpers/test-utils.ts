@@ -29,6 +29,12 @@ export const Selectors = {
 
   // Image attachment
   attachImageBtn: "#attach-image-btn",
+
+  // Session picker
+  sessionPickerModal: "#session-picker-modal",
+  sessionPickerContent: "#session-picker-content",
+  sessionPickerClose: "#session-picker-close",
+  sessionPickerItem: ".session-picker-item",
 };
 
 /**
