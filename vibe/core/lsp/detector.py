@@ -17,9 +17,11 @@ class LSPServerDetector:
         """Initialize the detector with optional configuration.
 
         Args:
-            config: Dictionary of server name to LSPServerConfig mapping
+            config: Dictionary of server name to LSPServerConfig mapping.
+                   If None, falls back to built-in registry servers.
+                   If empty dict {}, disables all LSP servers.
         """
-        self.config = config or {}
+        self.config = config
 
     def detect_server_for_file(self, file_path: Path) -> str | None:
         """Detect the appropriate LSP server based on file extension.
@@ -72,7 +74,9 @@ class LSPServerDetector:
         servers: list[str] = []
 
         # Try to match with configured servers first
-        if self.config:  # noqa: PLR1702
+        # If config is None, skip configured servers and use only registry
+        # If config is empty dict {}, skip both configured and registry (LSP disabled)
+        if self.config is not None:  # noqa: PLR1702
             for server_name, server_config in self.config.items():
                 if not server_config.file_patterns:
                     # Server handles all files
@@ -91,11 +95,14 @@ class LSPServerDetector:
                             servers.append(server_name)
                             break
 
-        # Get built-in servers for this file extension
-        registry_servers = LSPServerRegistry.get_servers_for_file(file_path)
+            # Only fall back to registry servers if config was not explicitly empty
+            if self.config:
+                registry_servers = LSPServerRegistry.get_servers_for_file(file_path)
+                # Combine servers, removing duplicates while preserving order
+                # (configured servers first, then registry servers)
+                return list(dict.fromkeys(servers + registry_servers))
+            # Config is empty dict, return empty list (LSP disabled)
+            return []
 
-        # Combine servers, removing duplicates while preserving order
-        # (configured servers first, then registry servers)
-        result = list(dict.fromkeys(servers + registry_servers))
-
-        return result
+        # Config is None, fall back to registry servers only
+        return LSPServerRegistry.get_servers_for_file(file_path)

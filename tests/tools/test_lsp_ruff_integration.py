@@ -230,6 +230,9 @@ async def test_ruff_real_server_diagnostics(tmp_path: Path):
     """
     from vibe.core.lsp import LSPClientManager
 
+    # Enable LSP diagnostics for this test
+    LSPClientManager.enable_diagnostics()
+
     # Create a test Python file with linting errors
     test_file = tmp_path / "test_with_errors.py"
     test_file.write_text("""
@@ -285,6 +288,9 @@ async def test_ruff_and_pyright_combined_real_diagnostics(tmp_path: Path):
     """
     from vibe.core.config import LSPServerConfig
     from vibe.core.lsp import LSPClientManager
+
+    # Enable LSP diagnostics for this test
+    LSPClientManager.enable_diagnostics()
 
     # Create a test Python file with both linting and type errors
     test_file = tmp_path / "test_combined_errors.py"

@@ -24,6 +24,7 @@ class LSPClientManager:
     _handles: ClassVar[dict[str, LSPServerHandle]] = {}
     _config: ClassVar[dict[str, LSPServerConfig]] = {}
     _lock: ClassVar[asyncio.Lock] = asyncio.Lock()
+    _diagnostics_disabled: ClassVar[bool] = False
 
     def __init__(self, config: list[LSPServerConfig] | None = None) -> None:
         # Initialize instance-level references to class-level fields
@@ -37,7 +38,9 @@ class LSPClientManager:
                     self.config[server_config.name] = server_config
 
         # Initialize detector after config is populated
-        self.detector = LSPServerDetector(self.config)
+        # Pass None if config is empty to fall back to registry servers
+        detector_config = self.config if self.config else None
+        self.detector = LSPServerDetector(detector_config)
 
     pass
 
@@ -161,6 +164,16 @@ class LSPClientManager:
         # Start a new instance
         await self.start_server(server_name)
 
+    @classmethod
+    def disable_diagnostics(cls) -> None:
+        """Disable LSP diagnostics globally (e.g., for tests)."""
+        cls._diagnostics_disabled = True
+
+    @classmethod
+    def enable_diagnostics(cls) -> None:
+        """Enable LSP diagnostics globally."""
+        cls._diagnostics_disabled = False
+
     async def get_diagnostics_from_all_servers(
         self, file_path: Path
     ) -> DiagnosticsList:
@@ -176,6 +189,10 @@ class LSPClientManager:
         Returns:
             Combined list of diagnostics from all applicable servers
         """
+        if LSPClientManager._diagnostics_disabled:
+            logger.debug("LSP diagnostics are disabled globally")
+            return []
+
         if file_path is None:
             raise ValueError("file_path is required")
 

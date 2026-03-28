@@ -714,6 +714,9 @@ class TestIntegration:
         """Test LSPClientManager integration with diagnostic retrieval."""
         import tempfile
 
+        # Enable LSP diagnostics for this test
+        LSPClientManager.enable_diagnostics()
+
         # Create a temporary file
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write("print('test')\n")
