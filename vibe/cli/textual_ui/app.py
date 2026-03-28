@@ -424,6 +424,22 @@ class VibeApp(App):  # noqa: PLR0904
         self._pending_question = PendingPopupState()
         self._queued_message: str | None = None
 
+    def get_pending_approval_state(self) -> PendingPopupState | None:
+        """Get the pending approval popup state if active.
+
+        Returns:
+            PendingPopupState if there's a pending approval, None otherwise.
+        """
+        return self._pending_approval if self._pending_approval.is_active() else None
+
+    def get_pending_question_state(self) -> PendingPopupState | None:
+        """Get the pending question popup state if active.
+
+        Returns:
+            PendingPopupState if there's a pending question, None otherwise.
+        """
+        return self._pending_question if self._pending_question.is_active() else None
+
     @property
     def config(self) -> VibeConfig:
         return self.agent_loop.config
