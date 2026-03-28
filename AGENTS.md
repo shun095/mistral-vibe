@@ -165,9 +165,11 @@ You behave adhering this guidelines strictly.
 ### Git Safety
 - ❌ **NEVER use `git reset --hard` or `git checkout <filename>` lightly**
 - ❌ **NEVER create commits unless explicitly requested**
+- ❌ **NEVER skip pre-commit hooks with `--no-verify`** - hooks enforce critical quality gates
 - ✅ Backup before destructive operations; prefer `git stash --all` for temporary saves
 - ✅ Only stage/commit files related to the requested feature
 - ✅ **All commits MUST pass pre-commit hooks** - run `uv run pre-commit run --files <staged_files>` before committing
+- ✅ **Specify 600s timeout when running `git commit`** - pre-commit hooks may need extended time for type checking and linting
 
 ### Production Directories
 - ❌ **NEVER modify/delete files in `~/.vibe`**
@@ -233,10 +235,12 @@ You behave adhering this guidelines strictly.
 # Install dependencies
 uv sync              # Python dependencies
 npm install          # JavaScript dependencies (Jest)
+npm run playwright:install  # Playwright browsers
 
 # Run all tests
 uv run pytest tests/ # Python tests
-npm test             # JavaScript tests
+npm test             # JavaScript unit tests (Jest)
+npm run test:e2e     # WebUI E2E tests (Playwright)
 
 # Run with debug logging
 uv run pytest tests/ --log-cli-level=DEBUG
@@ -247,9 +251,34 @@ npm test -- vibe-client.test.js
 
 # JavaScript coverage
 npm run test:coverage
+
+# E2E test variants
+npm run test:e2e:ui       # Run with interactive UI
+npm run test:e2e:debug    # Run with debugger
+npm run test:e2e:headed   # Run with visible browser
+npm run test:e2e:chromium # Run on Chromium only
 ```
 
 **Custom test scripts are unacceptable** - they cannot reproduce real user interaction.
+
+### `npm run test:e2e` - WebUI E2E Tests
+
+**What it does:** Runs Playwright end-to-end tests against the Mistral Vibe WebUI.
+
+**Location:** `tests/js/e2e/webui/tests/`
+
+**Tested scenarios:**
+- `auth.spec.ts` - Authentication flows
+- `basic-chat.spec.ts` - Chat interface and message exchange
+- `bash-command.spec.ts` - Bash command execution
+- `tool-approval.spec.ts` - Tool approval workflows
+
+**Configuration:** `playwright.config.ts`
+- Runs on Chromium, Firefox, and WebKit (Safari)
+- 120s timeout per test, 30s for assertions
+- Auto-retries 2x in CI
+- Generates HTML report in `playwright-report/`
+- Captures traces, screenshots, and videos on failure
 
 ### Writing Unit Tests
 
