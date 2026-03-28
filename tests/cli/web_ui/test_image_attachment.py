@@ -29,8 +29,8 @@ class TestWebSocketImageAttachment:
 
         # Create mock TUI app with proper defaults to avoid popup re-emit errors
         mock_tui_app = MagicMock()
-        mock_tui_app._pending_approval_id = None
-        mock_tui_app._pending_question_id = None
+        mock_tui_app.get_pending_approval_state = MagicMock(return_value=None)
+        mock_tui_app.get_pending_question_state = MagicMock(return_value=None)
         app.state.tui_app = mock_tui_app
 
         with client.websocket_connect(f"/ws?token={token}") as websocket:
@@ -62,8 +62,8 @@ class TestWebSocketImageAttachment:
 
         # Create mock TUI app with proper defaults
         mock_tui_app = MagicMock()
-        mock_tui_app._pending_approval_id = None
-        mock_tui_app._pending_question_id = None
+        mock_tui_app.get_pending_approval_state = MagicMock(return_value=None)
+        mock_tui_app.get_pending_question_state = MagicMock(return_value=None)
         app.state.tui_app = mock_tui_app
 
         with client.websocket_connect(f"/ws?token={token}") as websocket:
@@ -94,8 +94,8 @@ class TestWebSocketImageAttachment:
 
         # Create mock TUI app with proper defaults
         mock_tui_app = MagicMock()
-        mock_tui_app._pending_approval_id = None
-        mock_tui_app._pending_question_id = None
+        mock_tui_app.get_pending_approval_state = MagicMock(return_value=None)
+        mock_tui_app.get_pending_question_state = MagicMock(return_value=None)
         app.state.tui_app = mock_tui_app
 
         with client.websocket_connect(f"/ws?token={token}") as websocket:
@@ -124,8 +124,8 @@ class TestWebSocketImageAttachment:
 
         # Create mock TUI app with proper defaults
         mock_tui_app = MagicMock()
-        mock_tui_app._pending_approval_id = None
-        mock_tui_app._pending_question_id = None
+        mock_tui_app.get_pending_approval_state = MagicMock(return_value=None)
+        mock_tui_app.get_pending_question_state = MagicMock(return_value=None)
         app.state.tui_app = mock_tui_app
 
         with client.websocket_connect(f"/ws?token={token}") as websocket:
@@ -150,8 +150,8 @@ class TestWebSocketImageAttachment:
 
         # Create mock TUI app with proper defaults
         mock_tui_app = MagicMock()
-        mock_tui_app._pending_approval_id = None
-        mock_tui_app._pending_question_id = None
+        mock_tui_app.get_pending_approval_state = MagicMock(return_value=None)
+        mock_tui_app.get_pending_question_state = MagicMock(return_value=None)
         app.state.tui_app = mock_tui_app
 
         with client.websocket_connect(f"/ws?token={token}") as websocket:

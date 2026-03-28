@@ -8,7 +8,7 @@ import logging
 import os
 from pathlib import Path
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from fastapi import (
     Depends,
@@ -23,6 +23,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
 
 if TYPE_CHECKING:
     from vibe.core.agent_loop import AgentLoop
@@ -76,7 +77,9 @@ def serialize_event(event: BaseEvent) -> dict:
     if isinstance(event, ToolCallEvent):
         if event.args is not None:
             try:
-                data["args"] = event.args.model_dump(mode="json", exclude_none=True)
+                data["args"] = cast(BaseModel, event.args).model_dump(
+                    mode="json", exclude_none=True
+                )
             except Exception:
                 data["args"] = str(event.args)
 
@@ -85,7 +88,9 @@ def serialize_event(event: BaseEvent) -> dict:
         # Serialize result if present
         if event.result is not None:
             try:
-                data["result"] = event.result.model_dump(mode="json", exclude_none=True)
+                data["result"] = cast(BaseModel, event.result).model_dump(
+                    mode="json", exclude_none=True
+                )
             except Exception:
                 data["result"] = str(event.result)
 
@@ -716,41 +721,40 @@ def create_app(  # noqa: PLR0915
         tui_app = getattr(app.state, "tui_app", None)
         if tui_app:
             # Re-emit pending approval popup
-            if (
-                hasattr(tui_app, "_pending_approval_id")
-                and tui_app._pending_approval_id
-                and tui_app._pending_approval_tool
-                and tui_app._pending_approval_args
-            ):
-                from vibe.core.ui_events import ApprovalPopupEvent
+            pending_approval = getattr(tui_app, "get_pending_approval_state", None)
+            if pending_approval:
+                approval_state = pending_approval()
+                if approval_state and approval_state.popup_id:
+                    from vibe.core.ui_events import ApprovalPopupEvent
 
-                event = ApprovalPopupEvent(
-                    popup_id=tui_app._pending_approval_id,
-                    tool_name=tui_app._pending_approval_tool,
-                    tool_args=tui_app._pending_approval_args,
-                    timestamp=time.time(),
-                )
-                serialized = serialize_event(event)
-                message = json.dumps({"type": "event", "event": serialized})
-                await websocket.send_text(message)
+                    event = ApprovalPopupEvent(
+                        popup_id=approval_state.popup_id,
+                        tool_name=approval_state.tool_name or "",
+                        tool_args=approval_state.args or {},
+                        timestamp=time.time(),
+                    )
+                    serialized = serialize_event(event)
+                    message = json.dumps({"type": "event", "event": serialized})
+                    await websocket.send_text(message)
 
             # Re-emit pending question popup
-            if (
-                hasattr(tui_app, "_pending_question_id")
-                and tui_app._pending_question_id
-                and tui_app._pending_question_args
-            ):
-                from vibe.core.ui_events import QuestionPopupEvent
+            pending_question = getattr(tui_app, "get_pending_question_state", None)
+            if pending_question:
+                question_state = pending_question()
+                if question_state and question_state.popup_id:
+                    from vibe.core.ui_events import QuestionPopupEvent
 
-                event = QuestionPopupEvent(
-                    popup_id=tui_app._pending_question_id,
-                    questions=tui_app._pending_question_args.get("questions", []),
-                    content_preview=None,
-                    timestamp=time.time(),
-                )
-                serialized = serialize_event(event)
-                message = json.dumps({"type": "event", "event": serialized})
-                await websocket.send_text(message)
+                    event = QuestionPopupEvent(
+                        popup_id=question_state.popup_id,
+                        questions=question_state.args.get("questions", [])
+                        if question_state.args
+                        else [],
+                        content_preview=None,
+                        timestamp=time.time(),
+                    )
+                    serialized = serialize_event(event)
+                    message = json.dumps({"type": "event", "event": serialized})
+                    await websocket.send_text(message)
 
         try:
             while True:
