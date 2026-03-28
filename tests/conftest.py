@@ -185,11 +185,13 @@ def build_test_vibe_config(**kwargs) -> VibeConfig:
     resolved_enable_update_checks = (
         False if enable_update_checks is None else enable_update_checks
     )
+    lsp_servers = kwargs.pop("lsp_servers", [])
     if kwargs.get("models"):
         kwargs.setdefault("active_model", kwargs["models"][0].alias)
     return VibeConfig(
         session_logging=resolved_session_logging,
         enable_update_checks=resolved_enable_update_checks,
+        lsp_servers=lsp_servers,
         **kwargs,
     )
 
@@ -263,12 +265,17 @@ def build_test_vibe_app(
 
 @pytest.fixture(autouse=True)
 def _cleanup_lsp_client_manager() -> Generator[None]:
-    """Clean up LSPClientManager state between tests.
+    """Clean up LSPClientManager state between tests and disable LSP diagnostics.
 
     This fixture ensures that the class-level state of LSPClientManager
     is reset between tests to prevent test pollution.
+    It also disables LSP diagnostics by default to speed up tests.
+    LSP-specific tests can re-enable diagnostics using LSPClientManager.enable_diagnostics().
     """
     from vibe.core.lsp.client_manager import LSPClientManager
+
+    # Disable LSP diagnostics by default to speed up tests
+    LSPClientManager.disable_diagnostics()
 
     # Store the current state
     clients_before = LSPClientManager._clients.copy()

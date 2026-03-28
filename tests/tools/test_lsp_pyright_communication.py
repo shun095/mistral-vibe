@@ -58,6 +58,9 @@ async def test_pyright_real_server_initialization(tmp_path: Path):
 @pytest.mark.timeout(30)
 async def test_pyright_real_server_diagnostics(tmp_path: Path):
     """Test that we can get diagnostics from a real pyright server."""
+    # Enable LSP diagnostics for this test
+    LSPClientManager.enable_diagnostics()
+
     manager = LSPClientManager()
 
     # Create a test Python file with intentional errors
@@ -134,6 +137,9 @@ async def test_pyright_server_lifecycle(tmp_path: Path):
 @pytest.mark.timeout(30)
 async def test_pyright_with_valid_code(tmp_path: Path):
     """Test pyright with valid code (should have no errors)."""
+    # Enable LSP diagnostics for this test
+    LSPClientManager.enable_diagnostics()
+
     manager = LSPClientManager()
 
     # Create a test Python file with valid code
