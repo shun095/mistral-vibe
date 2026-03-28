@@ -1481,3 +1481,140 @@ body {
     margin: 0;
     padding: 0;
 }
+
+/* Session Picker Modal */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+}
+
+.modal-content {
+    position: relative;
+    background-color: var(--bg-secondary);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    max-width: 700px;
+    width: 90%;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.modal-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    color: var(--text-primary);
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-close:hover {
+    background-color: var(--hover-bg);
+    color: var(--text-primary);
+}
+
+.modal-body {
+    padding: 0;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.session-picker-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.session-picker-item {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+.session-picker-item:hover {
+    background-color: var(--hover-bg);
+}
+
+.session-picker-item:last-child {
+    border-bottom: none;
+}
+
+.session-picker-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.session-picker-short-id {
+    font-family: monospace;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    background-color: var(--bg-tertiary);
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+.session-picker-time {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.session-picker-message {
+    font-size: 0.95rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.session-picker-loading {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-muted);
+}
+
+.session-picker-empty {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-muted);
+}

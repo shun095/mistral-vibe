@@ -240,4 +240,120 @@ describe('APIClient', () => {
             );
         });
     });
+
+    describe('Session Management', () => {
+        test('fetches /api/sessions with correct headers', async () => {
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({
+                    sessions: [
+                        {
+                            session_id: 'abc123def456',
+                            short_id: 'abc123de',
+                            end_time: '2024-01-15T10:30:00Z',
+                            first_message: 'Hello, world!'
+                        }
+                    ]
+                })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.listSessions();
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/sessions', {
+                headers: {
+                    'Authorization': 'Bearer test-token-123'
+                }
+            });
+            expect(result).toHaveLength(1);
+            expect(result[0]).toHaveProperty('session_id', 'abc123def456');
+        });
+
+        test('returns empty array when no sessions available', async () => {
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ sessions: [] })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.listSessions();
+
+            expect(result).toEqual([]);
+        });
+
+        test('returns empty array when session endpoint fails', async () => {
+            const mockResponse = {
+                ok: false
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.listSessions();
+
+            expect(result).toEqual([]);
+        });
+
+        test('returns empty array when fetch throws error', async () => {
+            global.fetch.mockRejectedValue(new Error('Network error'));
+
+            const result = await apiClient.listSessions();
+
+            expect(result).toEqual([]);
+        });
+
+        test('sends POST to /api/sessions/{id}/resume with correct headers', async () => {
+            const sessionId = 'test-session-123';
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({
+                    success: true,
+                    session_id: sessionId
+                })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.resumeSession(sessionId);
+
+            expect(global.fetch).toHaveBeenCalledWith(
+                `/api/sessions/${sessionId}/resume`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer test-token-123',
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
+            expect(result).toEqual({
+                success: true,
+                session_id: sessionId
+            });
+        });
+
+        test('returns error object when resume fails', async () => {
+            const sessionId = 'invalid-session';
+            const mockResponse = {
+                ok: false
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.resumeSession(sessionId);
+
+            expect(result).toEqual({
+                success: false,
+                error: 'Failed to resume session'
+            });
+        });
+
+        test('returns error object when resume fetch throws error', async () => {
+            const sessionId = 'test-session';
+            global.fetch.mockRejectedValue(new Error('Network error'));
+
+            const result = await apiClient.resumeSession(sessionId);
+
+            expect(result).toEqual({
+                success: false,
+                error: 'Network error'
+            });
+        });
+    });
 });

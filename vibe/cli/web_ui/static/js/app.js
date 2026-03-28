@@ -52,6 +52,9 @@ class VibeClient {
             imagePreviewRemove: document.getElementById('image-preview-remove'),
             attachImageBtn: document.getElementById('attach-image-btn'),
             imageFileInput: document.getElementById('image-file-input'),
+            sessionPickerModal: document.getElementById('session-picker-modal'),
+            sessionPickerContent: document.getElementById('session-picker-content'),
+            sessionPickerClose: document.getElementById('session-picker-close'),
         };
 
         // Initialize modules
@@ -168,6 +171,8 @@ class VibeClient {
         this.elements.imagePreviewRemove.addEventListener('click', () => this.imageAttachment.removeImage());
         this.elements.attachImageBtn.addEventListener('click', () => this.elements.imageFileInput.click());
         this.elements.imageFileInput.addEventListener('change', (e) => this.imageAttachment.handleFileSelect(e));
+
+        this.bindSessionPickerEvents();
     }
 
     autoResizeTextarea() {
@@ -1101,6 +1106,15 @@ class VibeClient {
 
             const command = this.slashRegistry.getCommand(content);
             if (command) {
+                // Special handling for /resume command - show the session picker
+                if (command.name === 'resume') {
+                    this.elements.input.value = '';
+                    this.autoResizeTextarea();
+                    this.updateSendButtonState();
+                    this.showSessionPicker();
+                    return;
+                }
+
                 const result = await this.slashRegistry.execute(command.name, command.args);
 
                 if (result.success) {
@@ -2005,6 +2019,110 @@ class VibeClient {
         });
 
         this.updateToggleCardsIcon();
+    }
+
+    // =========================================================================
+    // Session Picker
+    // =========================================================================
+
+    async showSessionPicker() {
+        this.elements.sessionPickerModal.style.display = 'flex';
+        this.elements.sessionPickerContent.innerHTML = '<div class="session-picker-loading">Loading sessions...</div>';
+
+        try {
+            const sessions = await this.apiClient.listSessions();
+
+            if (sessions.length === 0) {
+                this.elements.sessionPickerContent.innerHTML = '<div class="session-picker-empty">No sessions found.</div>';
+                return;
+            }
+
+            const ul = document.createElement('ul');
+            ul.className = 'session-picker-list';
+
+            sessions.forEach(session => {
+                const li = document.createElement('li');
+                li.className = 'session-picker-item';
+                li.innerHTML = `
+                    <div class="session-picker-item-header">
+                        <span class="session-picker-short-id">${this.escapeHtml(session.short_id)}</span>
+                        <span class="session-picker-time">${this._formatSessionTime(session.end_time)}</span>
+                    </div>
+                    <div class="session-picker-message">${this.escapeHtml(session.first_message || '(no messages)')}</div>
+                `;
+                li.addEventListener('click', () => this.resumeSession(session.session_id));
+                ul.appendChild(li);
+            });
+
+            this.elements.sessionPickerContent.innerHTML = '';
+            this.elements.sessionPickerContent.appendChild(ul);
+        } catch (error) {
+            console.error('Failed to load sessions:', error);
+            this.elements.sessionPickerContent.innerHTML = '<div class="session-picker-empty">Failed to load sessions.</div>';
+        }
+    }
+
+    hideSessionPicker(showCancelledMessage = false) {
+        this.elements.sessionPickerModal.style.display = 'none';
+
+        if (showCancelledMessage) {
+            this.addMessage('system', 'Resume cancelled.');
+        }
+    }
+
+    _formatSessionTime(isoTime) {
+        if (!isoTime) return 'unknown';
+
+        try {
+            const dt = new Date(isoTime);
+            const now = new Date();
+            const delta = now - dt;
+            const seconds = Math.floor(delta / 1000);
+
+            const minutes = Math.floor(seconds / 60);
+            const hours = Math.floor(seconds / 3600);
+            const days = Math.floor(seconds / 86400);
+            const weeks = Math.floor(seconds / 604800);
+
+            if (seconds < 60) return 'just now';
+            if (minutes < 60) return `${minutes}m ago`;
+            if (hours < 24) return `${hours}h ago`;
+            if (days < 7) return `${days}d ago`;
+            return `${weeks}w ago`;
+        } catch {
+            return 'unknown';
+        }
+    }
+
+    async resumeSession(sessionId) {
+        this.hideSessionPicker();
+
+        try {
+            const result = await this.apiClient.resumeSession(sessionId);
+
+            if (!result.success) {
+                this.addMessage('system', `Failed to resume session: ${result.error}`);
+            }
+            // If successful, TUI will handle the resume and broadcast MessageResetEvent
+            // WebUI will update via websocket event
+        } catch (error) {
+            console.error('Failed to resume session:', error);
+            this.addMessage('system', `Failed to resume session: ${error.message}`);
+        }
+    }
+
+    bindSessionPickerEvents() {
+        this.elements.sessionPickerClose.addEventListener('click', () => this.hideSessionPicker(true));
+
+        this.elements.sessionPickerModal.querySelector('.modal-overlay').addEventListener('click', () => {
+            this.hideSessionPicker(true);
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && this.elements.sessionPickerModal.style.display === 'flex') {
+                this.hideSessionPicker(true);
+            }
+        });
     }
 }
 
