@@ -116,9 +116,38 @@ dev = [
     "debugpy>=1.8.19",
     "coverage>=7.13.2",
     "pytest-cov>=7.0.0",
+    "import-linter>=2.11",
 ]
 
 build = ["pyinstaller>=6.17.0", "truststore>=0.10.4"]
+
+[tool.importlinter]
+root_package = "vibe"
+exclude_type_checking_imports = true
+
+# core は acp を依存してはいけない
+[[tool.importlinter.contracts]]
+name = "Core has no dependencies on ACP"
+type = "forbidden"
+source_modules = ["vibe.core.*"]
+forbidden_modules = ["vibe.acp.*"]
+
+# core は cli を依存してはいけない（origin/main に存在する terminal_setup 依存のみ許可）
+[[tool.importlinter.contracts]]
+name = "Core has no dependencies on CLI"
+type = "forbidden"
+source_modules = ["vibe.core.*"]
+forbidden_modules = ["vibe.cli.*"]
+ignore_imports = [
+    "vibe.core.agent_loop -> vibe.cli.terminal_setup",
+]
+
+# cli/acp は互いに依存してはいけない
+[[tool.importlinter.contracts]]
+name = "CLI and ACP are independent"
+type = "forbidden"
+source_modules = ["vibe.cli.*"]
+forbidden_modules = ["vibe.acp.*"]
 
 [tool.pyright]
 pythonVersion = "3.12"
