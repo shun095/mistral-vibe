@@ -68,9 +68,8 @@ class HistoryReplayHandler(MessageHandlerStrategy):
         if user_msg is not None:
             raise ValueError("HistoryReplayHandler should not receive a new message")
 
-        from vibe.cli.textual_ui.windowing.history import non_system_history_messages
-
-        history_messages = non_system_history_messages(messages)
+        # Filter out system messages
+        history_messages = [msg for msg in messages if msg.role != Role.system]
         last_user_message: LLMMessage | None = None
 
         for msg in reversed(history_messages):
