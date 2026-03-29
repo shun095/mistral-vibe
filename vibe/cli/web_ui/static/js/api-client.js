@@ -184,6 +184,27 @@ export class APIClient {
             return { success: false, error: error.message };
         }
     }
+
+    /**
+     * Get prompt history entries
+     * @returns {Promise<Object>} Object with 'entries' array
+     */
+    async getPromptHistory() {
+        try {
+            const response = await fetch('/api/prompt-history', {
+                headers: this._getHeaders()
+            });
+
+            if (!response.ok) {
+                return { entries: [] };
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error('[APIClient] Failed to fetch prompt history:', error);
+            return { entries: [] };
+        }
+    }
 }
 
 // CommonJS export for testing (Jest)

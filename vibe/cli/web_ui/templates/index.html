@@ -61,7 +61,10 @@
                     rows="1"
                 ></textarea>
                 <input type="file" id="image-file-input" accept="image/png,image/jpeg,image/webp" style="display: none;">
-                <button id="attach-image-btn" title="Attach image from file"><span class="material-symbols-rounded">add_photo_alternate</span></button>
+                <div class="input-actions">
+                    <button id="attach-image-btn" class="input-action-btn" title="Attach image from file"><span class="material-symbols-rounded">add_photo_alternate</span></button>
+                    <button id="prompt-history-btn" class="input-action-btn" title="Prompt history"><span class="material-symbols-rounded">history</span></button>
+                </div>
                 <button id="send-btn" disabled title="Send"><span class="material-symbols-rounded">send</span></button>
                 <button id="interrupt-btn" class="interrupt-btn" title="Interrupt" style="display: none;">
                     <span class="material-symbols-rounded">stop</span>
@@ -82,6 +85,27 @@
             </div>
             <div id="session-picker-content" class="modal-body">
                 <div class="session-picker-loading">Loading sessions...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Prompt History Modal -->
+    <div id="prompt-history-modal" class="modal" style="display: none;">
+        <div class="modal-overlay"></div>
+        <div class="modal-content prompt-history-modal-content">
+            <div class="modal-header">
+                <h2>Prompt History</h2>
+                <button id="prompt-history-close" class="modal-close" title="Close">
+                    <span class="material-symbols-rounded">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="prompt-history-search-container">
+                    <input type="text" id="prompt-history-search" class="prompt-history-search" placeholder="Search prompts...">
+                </div>
+                <div id="prompt-history-content" class="prompt-history-list">
+                    <div class="prompt-history-loading">Loading history...</div>
+                </div>
             </div>
         </div>
     </div>

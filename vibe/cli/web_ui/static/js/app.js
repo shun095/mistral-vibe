@@ -55,6 +55,11 @@ class VibeClient {
             sessionPickerModal: document.getElementById('session-picker-modal'),
             sessionPickerContent: document.getElementById('session-picker-content'),
             sessionPickerClose: document.getElementById('session-picker-close'),
+            promptHistoryBtn: document.getElementById('prompt-history-btn'),
+            promptHistoryModal: document.getElementById('prompt-history-modal'),
+            promptHistoryContent: document.getElementById('prompt-history-content'),
+            promptHistoryClose: document.getElementById('prompt-history-close'),
+            promptHistorySearch: document.getElementById('prompt-history-search'),
         };
 
         // Initialize modules
@@ -173,6 +178,7 @@ class VibeClient {
         this.elements.imageFileInput.addEventListener('change', (e) => this.imageAttachment.handleFileSelect(e));
 
         this.bindSessionPickerEvents();
+        this.bindPromptHistoryEvents();
     }
 
     autoResizeTextarea() {
@@ -2042,7 +2048,7 @@ class VibeClient {
 
             sessions.forEach(session => {
                 const li = document.createElement('li');
-                li.className = 'session-picker-item';
+                li.className = 'modal-list-item session-picker-item';
                 li.innerHTML = `
                     <div class="session-picker-item-header">
                         <span class="session-picker-short-id">${this.escapeHtml(session.short_id)}</span>
@@ -2121,6 +2127,99 @@ class VibeClient {
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && this.elements.sessionPickerModal.style.display === 'flex') {
                 this.hideSessionPicker(true);
+            }
+        });
+    }
+
+    // =========================================================================
+    // Prompt History
+    // =========================================================================
+
+    _promptHistoryEntries = [];
+    _filteredPromptHistoryEntries = [];
+
+    async showPromptHistory() {
+        this.elements.promptHistoryModal.style.display = 'flex';
+        this.elements.promptHistoryContent.innerHTML = '<div class="prompt-history-loading">Loading history...</div>';
+        this.elements.promptHistorySearch.value = '';
+
+        try {
+            const result = await this.apiClient.getPromptHistory();
+            this._promptHistoryEntries = result.entries || [];
+            this._filteredPromptHistoryEntries = [...this._promptHistoryEntries];
+            this._renderPromptHistoryList();
+        } catch (error) {
+            console.error('Failed to load prompt history:', error);
+            this.elements.promptHistoryContent.innerHTML = '<div class="prompt-history-empty">Failed to load history.</div>';
+        }
+    }
+
+    hidePromptHistory() {
+        this.elements.promptHistoryModal.style.display = 'none';
+    }
+
+    _renderPromptHistoryList() {
+        if (this._filteredPromptHistoryEntries.length === 0) {
+            this.elements.promptHistoryContent.innerHTML = '<div class="prompt-history-no-results">No matching prompts.</div>';
+            return;
+        }
+
+        const ul = document.createElement('ul');
+        ul.className = 'prompt-history-list';
+
+        this._filteredPromptHistoryEntries.forEach(prompt => {
+            const li = document.createElement('li');
+            li.className = 'modal-list-item prompt-history-item';
+            li.innerHTML = `<div class="prompt-history-item-text">${this.escapeHtml(prompt)}</div>`;
+            li.addEventListener('click', () => this.insertPromptAtCursor(prompt));
+            ul.appendChild(li);
+        });
+
+        this.elements.promptHistoryContent.innerHTML = '';
+        this.elements.promptHistoryContent.appendChild(ul);
+    }
+
+    _filterPromptHistory(query) {
+        const lowerQuery = query.toLowerCase();
+        this._filteredPromptHistoryEntries = this._promptHistoryEntries.filter(prompt =>
+            prompt.toLowerCase().includes(lowerQuery)
+        );
+        this._renderPromptHistoryList();
+    }
+
+    insertPromptAtCursor(prompt) {
+        const textarea = this.elements.input;
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const text = textarea.value;
+
+        // Insert prompt at cursor position
+        const newText = text.substring(0, start) + prompt + text.substring(end);
+        textarea.value = newText;
+
+        // Move cursor to end of inserted text
+        const newCursorPos = start + prompt.length;
+        textarea.setSelectionRange(newCursorPos, newCursorPos);
+        textarea.focus();
+
+        this.hidePromptHistory();
+    }
+
+    bindPromptHistoryEvents() {
+        this.elements.promptHistoryBtn.addEventListener('click', () => this.showPromptHistory());
+        this.elements.promptHistoryClose.addEventListener('click', () => this.hidePromptHistory());
+
+        this.elements.promptHistoryModal.querySelector('.modal-overlay').addEventListener('click', () => {
+            this.hidePromptHistory();
+        });
+
+        this.elements.promptHistorySearch.addEventListener('input', (e) => {
+            this._filterPromptHistory(e.target.value);
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && this.elements.promptHistoryModal.style.display === 'flex') {
+                this.hidePromptHistory();
             }
         });
     }
