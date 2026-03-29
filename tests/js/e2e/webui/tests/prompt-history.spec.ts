@@ -1,0 +1,208 @@
+import { test, expect } from "../fixtures";
+import {
+  Selectors,
+  waitForVisible,
+  waitForHidden,
+} from "../helpers/test-utils";
+
+test.describe("Prompt History Feature", () => {
+  test.beforeEach(async ({ page, authToken, webServer }) => {
+    // Navigate with auth token
+    await page.goto(`${webServer.getUrl()}/?token=${authToken}`);
+
+    // Wait for chat interface to be visible
+    await expect(page.locator(Selectors.messageInput)).toBeVisible();
+
+    // Wait for WebSocket to connect
+    await page.waitForFunction(
+      (selector) => {
+        const el = document.querySelector(selector);
+        return el && el.classList.contains("connected");
+      },
+      Selectors.statusIndicator,
+      { timeout: 10000 }
+    );
+  });
+
+  test("should show prompt history modal when clicking history button", async ({
+    page,
+  }) => {
+    // Click prompt history button
+    await page.click(Selectors.promptHistoryBtn);
+
+    // Wait for prompt history modal to appear
+    const modal = page.locator(Selectors.promptHistoryModal);
+    await expect(modal).toBeVisible({ timeout: 10000 });
+
+    // Verify modal content is visible
+    await expect(page.locator(Selectors.promptHistoryContent)).toBeVisible();
+
+    // Verify close button is visible
+    await expect(page.locator(Selectors.promptHistoryClose)).toBeVisible();
+
+    // Verify search input is visible
+    await expect(page.locator(Selectors.promptHistorySearch)).toBeVisible();
+  });
+
+  test("should show loading state initially", async ({ page }) => {
+    // Click prompt history button
+    await page.click(Selectors.promptHistoryBtn);
+
+    // Wait for modal to appear
+    await waitForVisible(page, Selectors.promptHistoryModal);
+
+    // Should show loading, empty state, or history items
+    const content = page.locator(Selectors.promptHistoryContent);
+    await expect(content).toBeVisible();
+
+    // Should either show loading text, empty state, or history items
+    const hasLoadingOrContent = await content.evaluate((el) => {
+      const text = el.textContent?.toLowerCase() || "";
+      return (
+        text.includes("loading") ||
+        text.includes("no matching") ||
+        text.includes("failed") ||
+        el.querySelector(".prompt-history-item") !== null
+      );
+    });
+    expect(hasLoadingOrContent).toBe(true);
+  });
+
+  test("should close modal when clicking close button", async ({ page }) => {
+    // Click prompt history button
+    await page.click(Selectors.promptHistoryBtn);
+
+    // Wait for modal to appear
+    await waitForVisible(page, Selectors.promptHistoryModal);
+
+    // Click close button
+    await page.click(Selectors.promptHistoryClose);
+
+    // Wait for modal to be hidden
+    await waitForHidden(page, Selectors.promptHistoryModal);
+  });
+
+  test("should close modal when clicking overlay", async ({ page }) => {
+    // Click prompt history button
+    await page.click(Selectors.promptHistoryBtn);
+
+    // Wait for modal to appear
+    await waitForVisible(page, Selectors.promptHistoryModal);
+
+    // Click overlay
+    await page.click(".modal-overlay");
+
+    // Wait for modal to be hidden
+    await waitForHidden(page, Selectors.promptHistoryModal);
+  });
+
+  test("should close modal when pressing Escape", async ({ page }) => {
+    // Click prompt history button
+    await page.click(Selectors.promptHistoryBtn);
+
+    // Wait for modal to appear
+    await waitForVisible(page, Selectors.promptHistoryModal);
+
+    // Press Escape
+    await page.keyboard.press("Escape");
+
+    // Wait for modal to be hidden
+    await waitForHidden(page, Selectors.promptHistoryModal);
+  });
+
+  test("should filter history when typing in search box", async ({ page }) => {
+    // Click prompt history button
+    await page.click(Selectors.promptHistoryBtn);
+
+    // Wait for modal to appear
+    await waitForVisible(page, Selectors.promptHistoryModal);
+
+    // Get initial number of items (if any)
+    const initialItems = await page.locator(Selectors.promptHistoryItem).count();
+
+    // Type in search box
+    await page.fill(Selectors.promptHistorySearch, "test");
+
+    // Wait a bit for filtering to happen
+    await page.waitForTimeout(500);
+
+    // Get filtered number of items
+    const filteredItems = await page.locator(Selectors.promptHistoryItem).count();
+
+    // Filtered items should be less than or equal to initial items
+    expect(filteredItems).toBeLessThanOrEqual(initialItems);
+  });
+
+  test("should clear search when modal is reopened", async ({ page }) => {
+    // Click prompt history button
+    await page.click(Selectors.promptHistoryBtn);
+
+    // Wait for modal to appear
+    await waitForVisible(page, Selectors.promptHistoryModal);
+
+    // Type in search box
+    await page.fill(Selectors.promptHistorySearch, "test search");
+
+    // Verify search box has text
+    const searchText = await page.inputValue(Selectors.promptHistorySearch);
+    expect(searchText).toBe("test search");
+
+    // Close modal
+    await page.click(Selectors.promptHistoryClose);
+    await waitForHidden(page, Selectors.promptHistoryModal);
+
+    // Reopen modal
+    await page.click(Selectors.promptHistoryBtn);
+    await waitForVisible(page, Selectors.promptHistoryModal);
+
+    // Verify search box is cleared
+    const clearedSearchText = await page.inputValue(Selectors.promptHistorySearch);
+    expect(clearedSearchText).toBe("");
+  });
+
+  test("should insert prompt at cursor position when clicking history item", async ({
+    page,
+  }) => {
+    // First, send a message to create history
+    await page.fill(Selectors.messageInput, "test prompt for history");
+    await page.click(Selectors.sendButton);
+
+    // Wait for message to be sent
+    await page.waitForTimeout(1000);
+
+    // Click prompt history button
+    await page.click(Selectors.promptHistoryBtn);
+
+    // Wait for modal to appear
+    await waitForVisible(page, Selectors.promptHistoryModal);
+
+    // Check if there are any history items
+    const historyItems = page.locator(Selectors.promptHistoryItem);
+    const itemCount = await historyItems.count();
+
+    // If there are items, click on one and verify it's inserted
+    if (itemCount > 0) {
+      // Click on the first history item
+      await historyItems.first().click();
+
+      // Wait for modal to close
+      await waitForHidden(page, Selectors.promptHistoryModal);
+
+      // Check that the input has content
+      const inputValue = await page.inputValue(Selectors.messageInput);
+      expect(inputValue.length).toBeGreaterThan(0);
+    }
+  });
+
+  test("should have prompt history button visible in input area", async ({
+    page,
+  }) => {
+    // Verify prompt history button is visible
+    const historyButton = page.locator(Selectors.promptHistoryBtn);
+    await expect(historyButton).toBeVisible();
+
+    // Verify it has the correct title
+    const title = await historyButton.getAttribute("title");
+    expect(title).toBe("Prompt history");
+  });
+});

@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from vibe.core.tools.base import BaseTool
     from vibe.core.types import BaseEvent, LLMMessage
 
+from vibe.core.paths import HISTORY_FILE
 from vibe.core.session.session_loader import SessionLoader
 
 
@@ -402,6 +403,39 @@ def messages_to_events(  # noqa: PLR0912, PLR0915
     return events
 
 
+# Maximum number of history entries to return in prompt history API
+MAX_HISTORY_ENTRIES = 100
+
+
+def _load_prompt_history(history_path: Path) -> list[str]:
+    """Load prompt history from file.
+
+    Args:
+        history_path: Path to history file.
+
+    Returns:
+        List of prompt history entries.
+    """
+    history = []
+    if not history_path.exists():
+        return history
+
+    try:
+        with history_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                    history.append(entry if isinstance(entry, str) else str(entry))
+                except json.JSONDecodeError:
+                    history.append(line)
+    except (OSError, UnicodeDecodeError):
+        pass
+    return history
+
+
 def create_app(  # noqa: PLR0915
     port: int = 9092,
     token: str | None = None,
@@ -757,6 +791,21 @@ def create_app(  # noqa: PLR0915
         except Exception as e:
             logging.warning("Error converting messages to events: %s", e)
             return JSONResponse({"events": []})
+
+    @app.get("/api/prompt-history")
+    def get_prompt_history(token: str = Security(verify_token)) -> JSONResponse:
+        """Get prompt history from HISTORY_FILE.
+
+        Args:
+            token: Authentication token.
+
+        Returns:
+            List of prompt history entries (newest first, limited to MAX_HISTORY_ENTRIES).
+        """
+        history = _load_prompt_history(HISTORY_FILE.path)
+        # Return newest entries first, limited to MAX_HISTORY_ENTRIES
+        limited_history = history[-MAX_HISTORY_ENTRIES:][::-1]
+        return JSONResponse({"entries": limited_history})
 
     @app.websocket("/ws")
     async def websocket_endpoint(  # noqa: PLR0914, PLR0912, PLR0915

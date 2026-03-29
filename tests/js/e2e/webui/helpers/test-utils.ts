@@ -35,6 +35,14 @@ export const Selectors = {
   sessionPickerContent: "#session-picker-content",
   sessionPickerClose: "#session-picker-close",
   sessionPickerItem: ".session-picker-item",
+
+  // Prompt history
+  promptHistoryBtn: "#prompt-history-btn",
+  promptHistoryModal: "#prompt-history-modal",
+  promptHistoryContent: "#prompt-history-content",
+  promptHistoryClose: "#prompt-history-close",
+  promptHistorySearch: "#prompt-history-search",
+  promptHistoryItem: ".prompt-history-item",
 };
 
 /**
