@@ -117,3 +117,40 @@ export async function waitForConnected(
     { timeout }
   );
 }
+
+/**
+ * Clear conversation history using /clear command.
+ */
+export async function clearHistory(page: Page): Promise<void> {
+  await sendMessage(page, "/clear");
+  // Wait for the clear command to be processed
+  await waitForResponse(page, 5000);
+}
+
+/**
+ * Reset test state by clearing history and reloading the page.
+ * This is faster than restarting the server.
+ */
+export async function resetTestState(
+  page: Page,
+  webServerUrl: string,
+  authToken: string
+): Promise<void> {
+  // Try to clear history first if page is loaded
+  try {
+    await page.fill(Selectors.messageInput, "/clear");
+    await page.click(Selectors.sendButton);
+    await waitForResponse(page, 3000);
+  } catch {
+    // Ignore errors if page is not ready
+  }
+
+  // Reload page with auth token to get fresh state
+  await page.goto(`${webServerUrl}/?token=${authToken}`);
+
+  // Wait for chat interface to be visible
+  await page.locator(Selectors.messageInput).waitFor({ state: "visible", timeout: 10000 });
+
+  // Wait for WebSocket to connect
+  await waitForConnected(page, 10000);
+}
