@@ -6,24 +6,6 @@ import {
 } from "../helpers/test-utils";
 
 test.describe("Basic Chat Flow", () => {
-  test.beforeEach(async ({ page, authToken, webServer }) => {
-    // Navigate with auth token
-    await page.goto(`${webServer.getUrl()}/?token=${authToken}`);
-
-    // Wait for chat interface to be visible
-    await expect(page.locator(Selectors.messageInput)).toBeVisible();
-
-    // Wait for WebSocket to connect (status-dot should have "connected" class)
-    await page.waitForFunction(
-      (selector) => {
-        const el = document.querySelector(selector);
-        return el && el.classList.contains("connected");
-      },
-      Selectors.statusIndicator,
-      { timeout: 10000 }
-    );
-  });
-
   test("should display the chat interface", async ({ page }) => {
     await expect(page.locator(Selectors.messageContainer)).toBeVisible();
     await expect(page.locator(Selectors.messageInput)).toBeVisible();

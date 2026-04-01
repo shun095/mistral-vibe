@@ -2,14 +2,11 @@ import { test, expect } from "../fixtures";
 import { Selectors, sendMessage, waitForResponse } from "../helpers/test-utils";
 
 test.describe("Tool Approval Flow", () => {
-  test.beforeEach(async ({ page, webServer, authToken }) => {
-    await page.goto(`${webServer.getUrl()}/?token=${authToken}`);
-  });
-
   test("should show approval popup for write_file tool", async ({
     page,
     mockBackend,
   }) => {
+    // Page is already loaded with auth by fixture
     // write_file requires ToolPermission.ASK by default
     await mockBackend.registerToolCall(
       "write_file",
@@ -35,6 +32,7 @@ test.describe("Tool Approval Flow", () => {
     page,
     mockBackend,
   }) => {
+    // Page is already loaded with auth by fixture
     // Register TWO mock responses:
     // 1. Tool call (agent requests to write file)
     // 2. Post-approval response (agent confirms file was written)
@@ -66,6 +64,7 @@ test.describe("Tool Approval Flow", () => {
     page,
     mockBackend,
   }) => {
+    // Page is already loaded with auth by fixture
     // Register TWO mock responses:
     // 1. Tool call (agent requests to write file)
     // 2. Post-rejection response (agent acknowledges rejection)
@@ -102,6 +101,7 @@ test.describe("Tool Approval Flow", () => {
     page,
     mockBackend,
   }) => {
+    // Page is already loaded with auth by fixture
     await mockBackend.registerToolCall(
       "write_file",
       JSON.stringify({

@@ -2,26 +2,29 @@ import { test, expect } from "../fixtures";
 import { Selectors } from "../helpers/test-utils";
 
 test.describe("Authentication", () => {
-  test("should redirect to login page without auth", async ({ page, webServer }) => {
-    await page.goto(webServer.getUrl());
+  test("should redirect to login page without auth", async ({ webServer, context }) => {
+    // For this test, we need to navigate without auth
+    // Create a new page in the same context to avoid affecting the main authenticated session
+    const newPage = await context.newPage();
 
-    // Should redirect to login page
-    await expect(page).toHaveURL(/.*\/login$/);
+    try {
+      await newPage.goto(webServer.getUrl());
 
-    // Login box should be visible
-    const loginBox = page.locator(".login-box");
-    await expect(loginBox).toBeVisible();
+      // Should redirect to login page
+      await expect(newPage).toHaveURL(/.*\/login$/);
+
+      // Login box should be visible
+      const loginBox = newPage.locator(".login-box");
+      await expect(loginBox).toBeVisible();
+    } finally {
+      await newPage.close();
+    }
   });
 
   test("should accept token from URL and attempt connection", async ({
     page,
-    authToken,
-    webServer,
   }) => {
-    // Navigate with token in URL
-    await page.goto(`${webServer.getUrl()}/?token=${authToken}`);
-
-    // The page should load and attempt to connect
+    // Page is already loaded with auth by fixture
     // Status indicator should be visible
     await expect(page.locator(Selectors.statusIndicator)).toBeVisible({ timeout: 15000 });
 
@@ -30,9 +33,8 @@ test.describe("Authentication", () => {
     await expect(page.locator(Selectors.sendButton)).toBeVisible({ timeout: 15000 });
   });
 
-  test("should show system message when authenticated", async ({ page, authToken, webServer }) => {
-    await page.goto(`${webServer.getUrl()}/?token=${authToken}`);
-
+  test("should show system message when authenticated", async ({ page }) => {
+    // Page is already loaded with auth by fixture
     // Should show system welcome message (may take a moment to load)
     const systemMessage = page.locator(Selectors.systemMessage);
     await expect(systemMessage).toBeVisible({ timeout: 15000 });
@@ -41,19 +43,14 @@ test.describe("Authentication", () => {
 
   test("should have send button disabled when input is empty", async ({
     page,
-    authToken,
-    webServer,
   }) => {
-    await page.goto(`${webServer.getUrl()}/?token=${authToken}`);
-
-    // Wait for chat interface to load
-    await expect(page.locator(Selectors.messageInput)).toBeVisible({ timeout: 15000 });
+    // Page is already loaded with auth by fixture
 
     // Send button should be disabled when input is empty
     await expect(page.locator(Selectors.sendButton)).toBeDisabled();
 
     // Type something - send button should become enabled
-    await page.locator(Selectors.messageInput).type("Test message", { delay: 10 });
+    await page.locator(Selectors.messageInput).fill("Test message");
     await expect(page.locator(Selectors.sendButton)).toBeEnabled({ timeout: 5000 });
   });
 });

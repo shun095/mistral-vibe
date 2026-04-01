@@ -6,27 +6,10 @@ import {
 } from "../helpers/test-utils";
 
 test.describe("Prompt History Feature", () => {
-  test.beforeEach(async ({ page, authToken, webServer }) => {
-    // Navigate with auth token
-    await page.goto(`${webServer.getUrl()}/?token=${authToken}`);
-
-    // Wait for chat interface to be visible
-    await expect(page.locator(Selectors.messageInput)).toBeVisible();
-
-    // Wait for WebSocket to connect
-    await page.waitForFunction(
-      (selector) => {
-        const el = document.querySelector(selector);
-        return el && el.classList.contains("connected");
-      },
-      Selectors.statusIndicator,
-      { timeout: 10000 }
-    );
-  });
-
   test("should show prompt history modal when clicking history button", async ({
     page,
   }) => {
+    // Page is already loaded with auth by fixture
     // Click prompt history button
     await page.click(Selectors.promptHistoryBtn);
 
@@ -45,6 +28,7 @@ test.describe("Prompt History Feature", () => {
   });
 
   test("should show loading state initially", async ({ page }) => {
+    // Page is already loaded with auth by fixture
     // Click prompt history button
     await page.click(Selectors.promptHistoryBtn);
 
@@ -69,6 +53,7 @@ test.describe("Prompt History Feature", () => {
   });
 
   test("should close modal when clicking close button", async ({ page }) => {
+    // Page is already loaded with auth by fixture
     // Click prompt history button
     await page.click(Selectors.promptHistoryBtn);
 
@@ -83,20 +68,31 @@ test.describe("Prompt History Feature", () => {
   });
 
   test("should close modal when clicking overlay", async ({ page }) => {
+    // Page is already loaded with auth by fixture
     // Click prompt history button
     await page.click(Selectors.promptHistoryBtn);
 
     // Wait for modal to appear
     await waitForVisible(page, Selectors.promptHistoryModal);
 
-    // Click overlay
-    await page.click(".modal-overlay");
+    // Get the modal content element
+    const modalContent = page.locator(Selectors.promptHistoryModal).first();
+    const modalBox = await modalContent.boundingBox();
+
+    if (modalBox) {
+      // Calculate a point outside the modal but within viewport
+      // Click to the left of the modal
+      const clickX = Math.max(10, modalBox.x - 10);
+      const clickY = modalBox.y + modalBox.height / 2;
+      await page.mouse.click(clickX, clickY);
+    }
 
     // Wait for modal to be hidden
     await waitForHidden(page, Selectors.promptHistoryModal);
   });
 
   test("should close modal when pressing Escape", async ({ page }) => {
+    // Page is already loaded with auth by fixture
     // Click prompt history button
     await page.click(Selectors.promptHistoryBtn);
 
@@ -111,6 +107,7 @@ test.describe("Prompt History Feature", () => {
   });
 
   test("should filter history when typing in search box", async ({ page }) => {
+    // Page is already loaded with auth by fixture
     // Click prompt history button
     await page.click(Selectors.promptHistoryBtn);
 
@@ -134,6 +131,7 @@ test.describe("Prompt History Feature", () => {
   });
 
   test("should clear search when modal is reopened", async ({ page }) => {
+    // Page is already loaded with auth by fixture
     // Click prompt history button
     await page.click(Selectors.promptHistoryBtn);
 
@@ -163,6 +161,7 @@ test.describe("Prompt History Feature", () => {
   test("should insert prompt at cursor position when clicking history item", async ({
     page,
   }) => {
+    // Page is already loaded with auth by fixture
     // First, send a message to create history
     await page.fill(Selectors.messageInput, "test prompt for history");
     await page.click(Selectors.sendButton);
@@ -197,6 +196,7 @@ test.describe("Prompt History Feature", () => {
   test("should have prompt history button visible in input area", async ({
     page,
   }) => {
+    // Page is already loaded with auth by fixture
     // Verify prompt history button is visible
     const historyButton = page.locator(Selectors.promptHistoryBtn);
     await expect(historyButton).toBeVisible();
