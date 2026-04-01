@@ -5,6 +5,9 @@
 import * as child_process from "child_process";
 import * as http from "http";
 import * as net from "net";
+import * as os from "os";
+import * as path from "path";
+import * as fs from "fs";
 
 export interface ServerConfig {
   port: number;
@@ -16,6 +19,7 @@ export class ServerManager {
   private config: ServerConfig;
   private started: boolean = false;
   private actualPort: number | null = null;
+  private e2eTestDir: string | null = null;
 
   constructor(config: ServerConfig) {
     this.config = config;
@@ -87,15 +91,20 @@ export class ServerManager {
     // Kill any existing process on the port
     await this.killProcessOnPort(port);
 
+    // Set up E2E test directory with mock data
+    this.e2eTestDir = this.setupE2eTestDir();
+
     const env = {
       ...process.env,
       VIBE_WEB_TOKEN: this.config.token,
       VIBE_ALLOW_URL_TOKEN: "true", // Enable URL token auth for E2E tests
       VIBE_E2E_TEST: "true",
+      VIBE_E2E_TEST_DIR: this.e2eTestDir,
       PYTHONUNBUFFERED: "1",
     };
 
     console.log(`Starting Vibe CLI with WebUI on port ${port}...`);
+    console.log(`Using E2E test directory: ${this.e2eTestDir}`);
 
     return new Promise((resolve, reject) => {
       // Start uv run vibe --web
@@ -156,6 +165,7 @@ export class ServerManager {
         this.started = false;
         this.process = null;
         console.log("Vibe CLI stopped");
+        this.cleanupE2eTestDir();
       });
     });
   }
@@ -238,5 +248,50 @@ export class ServerManager {
 
   getPort(): number {
     return this.actualPort || this.config.port;
+  }
+
+  /**
+   * Set up E2E test directory with mock data.
+   */
+  private setupE2eTestDir(): string {
+    const testDir = path.join(os.tmpdir(), `vibe-e2e-test-${process.pid}-${Date.now()}`);
+
+    // Clean up any existing test directory
+    if (fs.existsSync(testDir)) {
+      fs.rmSync(testDir, { recursive: true, force: true });
+    }
+
+    // Create directory structure
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.mkdirSync(path.join(testDir, "logs", "session"), { recursive: true });
+
+    // Create mock history file with sample prompts
+    const historyFile = path.join(testDir, "vibehistory");
+    const samplePrompts = [
+      "What is the capital of France?",
+      "How do I install Python packages?",
+      "Explain the concept of recursion in programming",
+      "Write a Python function to reverse a string",
+      "What is the difference between list and tuple in Python?",
+    ];
+
+    fs.writeFileSync(historyFile, samplePrompts.join("\n"), "utf-8");
+
+    console.log(`Created E2E test directory: ${testDir}`);
+    return testDir;
+  }
+
+  /**
+   * Clean up E2E test directory.
+   */
+  private cleanupE2eTestDir(): void {
+    if (this.e2eTestDir && fs.existsSync(this.e2eTestDir)) {
+      try {
+        fs.rmSync(this.e2eTestDir, { recursive: true, force: true });
+        console.log(`Cleaned up E2E test directory: ${this.e2eTestDir}`);
+      } catch (err) {
+        console.warn(`Failed to clean up E2E test directory: ${err}`);
+      }
+    }
   }
 }
