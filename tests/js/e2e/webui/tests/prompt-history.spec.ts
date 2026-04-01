@@ -14,8 +14,7 @@ test.describe("Prompt History Feature", () => {
     await page.click(Selectors.promptHistoryBtn);
 
     // Wait for prompt history modal to appear
-    const modal = page.locator(Selectors.promptHistoryModal);
-    await expect(modal).toBeVisible({ timeout: 10000 });
+    await waitForVisible(page, Selectors.promptHistoryModal);
 
     // Verify modal content is visible
     await expect(page.locator(Selectors.promptHistoryContent)).toBeVisible();

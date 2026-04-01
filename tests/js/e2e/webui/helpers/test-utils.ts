@@ -136,21 +136,34 @@ export async function resetTestState(
   webServerUrl: string,
   authToken: string
 ): Promise<void> {
-  // Try to clear history first if page is loaded
-  try {
-    await page.fill(Selectors.messageInput, "/clear");
-    await page.click(Selectors.sendButton);
-    await waitForResponse(page, 3000);
-  } catch {
-    // Ignore errors if page is not ready
+  // Check if page is closed before trying to reset
+  if (page.isClosed()) {
+    return;
   }
 
+  // Skip clearing history in teardown - just reload to get fresh state
+  // This speeds up teardown significantly
+
   // Reload page with auth token to get fresh state
-  await page.goto(`${webServerUrl}/?token=${authToken}`);
+  try {
+    await page.goto(`${webServerUrl}/?token=${authToken}`, { timeout: 5000 });
+  } catch {
+    // Ignore navigation errors in teardown
+    return;
+  }
 
-  // Wait for chat interface to be visible
-  await page.locator(Selectors.messageInput).waitFor({ state: "visible", timeout: 10000 });
+  // Check if page is still open before waiting
+  if (page.isClosed()) {
+    return;
+  }
 
-  // Wait for WebSocket to connect
-  await waitForConnected(page, 10000);
+  // Wait for chat interface to be visible with short timeout
+  try {
+    await page.locator(Selectors.messageInput).waitFor({ state: "visible", timeout: 5000 });
+  } catch {
+    // Ignore if page doesn't load in time - next test will handle it
+  }
+
+  // Skip waiting for WebSocket connection to speed up test teardown
+  // The next test will wait for WebSocket connection in its setup
 }
