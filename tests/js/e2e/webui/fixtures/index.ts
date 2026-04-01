@@ -5,7 +5,7 @@
 import { test as base, Page, APIRequestContext } from "@playwright/test";
 import { ServerManager } from "./server-manager";
 import { MockBackendClient } from "./mock-backend";
-import { resetTestState, Selectors } from "../helpers/test-utils";
+import { resetTestState, Selectors, waitForConnected } from "../helpers/test-utils";
 
 export interface WebUIFixtures {
   webServer: ServerManager;
@@ -69,6 +69,9 @@ export const test = base.extend<WebUIFixtures & { page: Page }>({
     // Wait for initial load
     await page.locator(Selectors.messageInput).waitFor({ state: "visible", timeout: 15000 });
 
+    // Wait for WebSocket to connect
+    await waitForConnected(page, 10000);
+
     await use(page);
 
     // After test, reset state for next test using /clear + reload
@@ -80,7 +83,11 @@ export const test = base.extend<WebUIFixtures & { page: Page }>({
       }
     } catch (error) {
       // Ignore errors - page might be closed by the test
-      // console.warn("Failed to reset test state:", error);
+      // Only log if it's not a "page closed" error
+      const errorMsg = String(error);
+      if (!errorMsg.includes("page is closed") && !errorMsg.includes("Target page")) {
+        console.warn("Failed to reset test state:", error);
+      }
     }
   },
 
