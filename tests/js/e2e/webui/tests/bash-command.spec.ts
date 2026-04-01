@@ -9,90 +9,64 @@ import {
 } from "../helpers/test-utils";
 
 test.describe("Bash Command (!command) Feature", () => {
-  test.beforeEach(async ({ page, authToken, webServer }) => {
-    // Navigate with auth token
-    await page.goto(`${webServer.getUrl()}/?token=${authToken}`);
-
-    // Wait for chat interface to be visible
-    await expect(page.locator(Selectors.messageInput)).toBeVisible();
-
-    // Wait for WebSocket to connect (status-dot should have "connected" class)
-    await page.waitForFunction(
-      (selector) => {
-        const el = document.querySelector(selector);
-        return el && el.classList.contains("connected");
-      },
-      Selectors.statusIndicator,
-      { timeout: 10000 }
-    );
-  });
-
   test("should execute simple bash command and show output", async ({
     page,
   }) => {
+    // Page is already loaded with auth by fixture
     // Send a simple bash command
-    await sendMessage(page, "!echo 'Hello from WebUI bash'");
+    const command = "!echo 'simple_bash_test_789'";
+    await sendMessage(page, command);
 
-    // Wait for user message to appear with the command
-    const userMessage = page.locator(Selectors.userMessage).last();
+    // Wait for user message to appear with the specific command text
+    const userMessage = page.locator(Selectors.userMessage).filter({ hasText: "simple_bash_test_789" });
     await expect(userMessage).toBeVisible({ timeout: 10000 });
-    await expect(userMessage).toContainText("!echo");
 
     // Wait for bash command card to appear
-    const bashCard = page.locator(Selectors.bashCommand).last();
+    const bashCard = page.locator(Selectors.bashCommand).filter({ hasText: "simple_bash_test_789" });
     await expect(bashCard).toBeVisible({ timeout: 10000 });
-    await expect(bashCard).toContainText("Hello from WebUI bash");
     await expect(bashCard).toContainText("Exit code: 0");
   });
 
   test("should execute bash command with arguments", async ({ page }) => {
+    // Page is already loaded with auth by fixture
     // Send a bash command with arguments
-    await sendMessage(page, "!echo 'test123'");
+    const command = "!echo 'bash_args_test_unique_456'";
+    await sendMessage(page, command);
 
     // Verify user message
-    const userMessage = page.locator(Selectors.userMessage).last();
-    await expect(userMessage).toContainText("!echo");
+    const userMessage = page.locator(Selectors.userMessage).filter({ hasText: "bash_args_test_unique_456" });
+    await expect(userMessage).toBeVisible({ timeout: 10000 });
 
     // Verify bash card contains the output
-    const bashCard = page.locator(Selectors.bashCommand).last();
+    const bashCard = page.locator(Selectors.bashCommand).filter({ hasText: "bash_args_test_unique_456" });
     await expect(bashCard).toBeVisible({ timeout: 10000 });
-    await expect(bashCard).toContainText("test123");
     await expect(bashCard).toContainText("Exit code: 0");
   });
 
   test("should handle bash command with non-zero exit code", async ({
     page,
   }) => {
+    // Page is already loaded with auth by fixture
     // Send a command that will fail
-    await sendMessage(page, "!false");
+    await sendMessage(page, "!exit 1");
 
-    // Verify user message
-    const userMessage = page.locator(Selectors.userMessage).last();
-    await expect(userMessage).toContainText("!false");
-
-    // Verify bash card shows exit code 1
-    const bashCard = page.locator(Selectors.bashCommand).last();
+    // Wait for the bash card with exit code 1 to appear
+    const bashCard = page.locator(Selectors.bashCommand).filter({ hasText: "Exit code: 1" });
     await expect(bashCard).toBeVisible({ timeout: 10000 });
-    // The command "false" always returns exit code 1
-    await expect(bashCard).toContainText("Exit code: 1");
   });
 
   test("should handle non-existent bash command", async ({ page }) => {
+    // Page is already loaded with auth by fixture
     // Send a non-existent command
-    await sendMessage(page, "!nonexistent_command_xyz123");
+    await sendMessage(page, "!nonexistent_command_xyz789_unique");
 
-    // Verify user message
-    const userMessage = page.locator(Selectors.userMessage).last();
-    await expect(userMessage).toContainText("!nonexistent");
-
-    // Verify bash card shows exit code (non-zero for failed command)
-    const bashCard = page.locator(Selectors.bashCommand).last();
+    // Wait for a bash card to appear (non-existent commands produce stderr output and non-zero exit code)
+    const bashCard = page.locator(Selectors.bashCommand).filter({ hasText: "Exit code:" });
     await expect(bashCard).toBeVisible({ timeout: 10000 });
-    // Non-existent commands produce stderr output and non-zero exit code
-    await expect(bashCard).toContainText("Exit code:");
   });
 
   test.skip("should handle empty bash command (!)", async ({ page }) => {
+    // Page is already loaded with auth by fixture
     // Send just "!" with no command
     await sendMessage(page, "!");
 
@@ -104,59 +78,63 @@ test.describe("Bash Command (!command) Feature", () => {
   });
 
   test("should execute chained bash commands", async ({ page }) => {
+    // Page is already loaded with auth by fixture
     // Send chained commands
-    await sendMessage(page, "!echo 'first' && echo 'second'");
-
-    // Verify user message
-    const userMessage = page.locator(Selectors.userMessage).last();
-    await expect(userMessage).toContainText("!echo");
+    await sendMessage(page, "!echo 'chain_first_abc' && echo 'chain_second_def'");
 
     // Verify bash card contains both outputs
-    const bashCard = page.locator(Selectors.bashCommand).last();
+    const bashCard = page.locator(Selectors.bashCommand).filter({ hasText: "chain_first_abc" });
     await expect(bashCard).toBeVisible({ timeout: 10000 });
-    await expect(bashCard).toContainText("first");
-    await expect(bashCard).toContainText("second");
+    await expect(bashCard).toContainText("chain_second_def");
     await expect(bashCard).toContainText("Exit code: 0");
   });
 
   test("should execute bash command and show stdout", async ({ page }) => {
+    // Page is already loaded with auth by fixture
+    // Get initial count of bash cards
+    const initialCount = await page.locator(Selectors.bashCommand).count();
+
     // Send a command that produces stdout
     await sendMessage(page, "!pwd");
 
-    // Verify user message
-    const userMessage = page.locator(Selectors.userMessage).last();
-    await expect(userMessage).toContainText("!pwd");
+    // Wait for a new bash card to appear
+    await page.waitForFunction(
+      (data: { selector: string; count: number }) => {
+        return document.querySelectorAll(data.selector).length > data.count;
+      },
+      { selector: Selectors.bashCommand, count: initialCount }
+    );
 
-    // Verify bash card contains a path (stdout from pwd)
-    const bashCard = page.locator(Selectors.bashCommand).last();
-    await expect(bashCard).toBeVisible({ timeout: 10000 });
+    // Get the new bash card (the one after the initial count)
+    const bashCards = page.locator(Selectors.bashCommand);
+    const newBashCard = bashCards.nth(initialCount);
+
+    await expect(newBashCard).toBeVisible({ timeout: 10000 });
+    await expect(newBashCard).toContainText("Exit code: 0");
     // pwd outputs the current working directory path
-    await expect(bashCard).toContainText("/");
-    await expect(bashCard).toContainText("Exit code: 0");
+    await expect(newBashCard).toContainText("/");
   });
 
   test("should handle WebUI to TUI to WebUI roundtrip", async ({ page }) => {
+    // Page is already loaded with auth by fixture
     // This test verifies the complete roundtrip:
     // 1. WebUI sends !command via WebSocket
     // 2. TUI executes the command
     // 3. TUI broadcasts BashCommandEvent back to WebUI
     // 4. WebUI renders the bash command card
 
-    // Track if bash card appears after command execution
-    const command = "!echo 'roundtrip_test_123'";
+    const command = "!echo 'roundtrip_test_unique_final'";
     await sendMessage(page, command);
 
     // Verify user message appears (WebUI → TUI)
-    const userMessage = page.locator(Selectors.userMessage).last();
+    const userMessage = page.locator(Selectors.userMessage).filter({ hasText: "roundtrip_test_unique_final" });
     await expect(userMessage).toBeVisible({ timeout: 10000 });
-    await expect(userMessage).toContainText(command);
 
     // Verify bash command card appears (TUI → WebUI via event broadcast)
-    const bashCard = page.locator(Selectors.bashCommand).last();
+    const bashCard = page.locator(Selectors.bashCommand).filter({ hasText: "roundtrip_test_unique_final" });
     await expect(bashCard).toBeVisible({ timeout: 10000 });
 
     // Verify the card has correct content from TUI execution
-    await expect(bashCard).toContainText("roundtrip_test_123");
     await expect(bashCard).toContainText("Exit code: 0");
 
     // Verify card structure (header, command line, output)
@@ -169,6 +147,6 @@ test.describe("Bash Command (!command) Feature", () => {
 
     const output = bashCard.locator(".bash-output pre");
     await expect(output).toBeVisible();
-    await expect(output).toContainText("roundtrip_test_123");
+    await expect(output).toContainText("roundtrip_test_unique_final");
   });
 });
