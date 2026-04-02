@@ -25,7 +25,7 @@ class RetryNotificationApp(BaseSnapshotTestApp):
             provider="mistral",
             model="mistral-large",
         )
-        self._show_retry_notification(event1)
+        self._web_broadcast_manager._show_retry_notification(event1)
 
         # Show second retry notification
         event2 = LLMRetryEvent(
@@ -36,7 +36,7 @@ class RetryNotificationApp(BaseSnapshotTestApp):
             provider="mistral",
             model="mistral-large",
         )
-        self._show_retry_notification(event2)
+        self._web_broadcast_manager._show_retry_notification(event2)
 
 
 def test_snapshot_shows_retry_notification_with_provider(
@@ -71,7 +71,7 @@ class RetryNotificationNoProviderApp(BaseSnapshotTestApp):
             provider=None,
             model=None,
         )
-        self._show_retry_notification(event)
+        self._web_broadcast_manager._show_retry_notification(event)
 
 
 def test_snapshot_shows_retry_notification_without_provider(

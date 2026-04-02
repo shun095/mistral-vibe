@@ -7,7 +7,7 @@ from vibe.cli.web_ui.events import WebNotificationEvent
 
 
 class TestBroadcastWebNotification:
-    """Test _broadcast_web_notification method."""
+    """Test _broadcast_web_notification method via web_broadcast_manager."""
 
     def test_broadcasts_event_when_enabled(self) -> None:
         """Test that notification event is broadcast when enabled."""
@@ -23,7 +23,7 @@ class TestBroadcastWebNotification:
 
         app.agent_loop.add_event_listener(event_listener)
 
-        app._broadcast_web_notification(
+        app._web_broadcast_manager._broadcast_web_notification(
             context="action_required",
             title="Action Required",
             message="Tool 'bash' needs approval",
@@ -49,7 +49,7 @@ class TestBroadcastWebNotification:
 
         app.agent_loop.add_event_listener(event_listener)
 
-        app._broadcast_web_notification(
+        app._web_broadcast_manager._broadcast_web_notification(
             context="action_required", title="Action Required", message="Test message"
         )
 
@@ -69,7 +69,7 @@ class TestBroadcastWebNotification:
 
         app.agent_loop.add_event_listener(event_listener)
 
-        app._broadcast_web_notification(
+        app._web_broadcast_manager._broadcast_web_notification(
             context="complete",
             title="Task Complete",
             message="Assistant has finished processing",
@@ -95,7 +95,9 @@ class TestBroadcastWebNotification:
 
         app.agent_loop.add_event_listener(event_listener)
 
-        app._broadcast_web_notification(context="complete", title="Task Complete")
+        app._web_broadcast_manager._broadcast_web_notification(
+            context="complete", title="Task Complete"
+        )
 
         assert len(events_received) == 1
         event = events_received[0]
@@ -117,12 +119,12 @@ class TestBroadcastWebNotification:
 
         app.agent_loop.add_event_listener(event_listener)
 
-        app._broadcast_web_notification(
+        app._web_broadcast_manager._broadcast_web_notification(
             context="action_required",
             title="Action Required",
             message="First notification",
         )
-        app._broadcast_web_notification(
+        app._web_broadcast_manager._broadcast_web_notification(
             context="complete", title="Task Complete", message="Second notification"
         )
 
