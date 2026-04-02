@@ -24,11 +24,13 @@ export default defineConfig({
     ["list"],
   ],
   outputDir: "test-results/webui",
+  globalSetup: require.resolve("./tests/js/e2e/webui/global-setup"),
+  globalTeardown: require.resolve("./tests/js/e2e/webui/global-teardown"),
 
   use: {
     trace: "on-first-retry",
-    screenshot: "only-on-failure",
-    video: "retain-on-failure",
+    screenshot: "on",
+    video: "on",
   },
 
   projects: [
