@@ -23,8 +23,8 @@ async def test_retry_notification_shows_toast_with_provider(vibe_app: VibeApp) -
             model="mistral-large",
         )
 
-        # Call the notification method
-        vibe_app._show_retry_notification(event)
+        # Call the notification method via web_broadcast_manager
+        vibe_app._web_broadcast_manager._show_retry_notification(event)
 
         # Give the app a moment to process the notification
         await pilot.pause()
@@ -59,8 +59,8 @@ async def test_retry_notification_shows_toast_without_provider(
             model=None,
         )
 
-        # Call the notification method
-        vibe_app._show_retry_notification(event)
+        # Call the notification method via web_broadcast_manager
+        vibe_app._web_broadcast_manager._show_retry_notification(event)
 
         # Give the app a moment to process the notification
         await pilot.pause()
@@ -102,11 +102,11 @@ async def test_multiple_retry_notifications_accumulate(vibe_app: VibeApp) -> Non
             model=None,
         )
 
-        # Call the notification method for both events
-        vibe_app._show_retry_notification(event1)
+        # Call the notification method for both events via web_broadcast_manager
+        vibe_app._web_broadcast_manager._show_retry_notification(event1)
         await pilot.pause()
 
-        vibe_app._show_retry_notification(event2)
+        vibe_app._web_broadcast_manager._show_retry_notification(event2)
         await pilot.pause()
 
         # Query Toast widgets

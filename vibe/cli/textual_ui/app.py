@@ -182,7 +182,6 @@ from vibe.core.types import (
     BashCommandEvent,
     Content,
     LLMMessage,
-    LLMRetryEvent,
     RateLimitError,
     Role,
     UserMessageEvent,
@@ -1117,55 +1116,6 @@ class VibeApp(App):  # noqa: PLR0904
         if not self._tui_ready:
             return
         self._interrupt_requested = True
-
-    def _broadcast_approval_popup(
-        self, popup_id: str, tool: str, args: BaseModel
-    ) -> None:
-        """Broadcast approval popup event to web UI."""
-        self._web_broadcast_manager._broadcast_approval_popup(popup_id, tool, args)
-
-    def _broadcast_approval_response(
-        self, popup_id: str, result: tuple[ApprovalResponse, str | None]
-    ) -> None:
-        """Broadcast approval response event to web UI."""
-        self._web_broadcast_manager._broadcast_approval_response(popup_id, result)
-
-    def _broadcast_question_popup(
-        self, popup_id: str, args: AskUserQuestionArgs
-    ) -> None:
-        """Broadcast question popup event to web UI."""
-        self._web_broadcast_manager._broadcast_question_popup(popup_id, args)
-
-    def _broadcast_question_response(
-        self, popup_id: str, result: AskUserQuestionResult
-    ) -> None:
-        """Broadcast question response event to web UI."""
-        self._web_broadcast_manager._broadcast_question_response(popup_id, result)
-
-    def _broadcast_web_notification(
-        self,
-        context: Literal["action_required", "complete"],
-        title: str,
-        message: str | None = None,
-    ) -> None:
-        """Broadcast web notification event to WebUI."""
-        self._web_broadcast_manager._broadcast_web_notification(context, title, message)
-
-    def _broadcast_llm_error_event(self, error: Exception) -> None:
-        """Broadcast LLM error event to WebUI."""
-        self._web_broadcast_manager._broadcast_llm_error_event(error)
-
-    def _extract_error_provider(self, error: Exception) -> str | None:
-        """Extract provider name from LLM error."""
-        return self._web_broadcast_manager._extract_error_provider(error)
-
-    def _extract_error_model(self, error: Exception) -> str | None:
-        """Extract model name from LLM error."""
-        return self._web_broadcast_manager._extract_error_model(error)
-
-    def _show_retry_notification(self, event: LLMRetryEvent) -> None:
-        """Show a toast notification when LLM request is being retried."""
-        self._web_broadcast_manager._show_retry_notification(event)
 
     def handle_web_approval_response(
         self,
