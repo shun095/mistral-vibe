@@ -19,12 +19,13 @@ def _create_mock_app():
     mock_voice_manager = MagicMock()
     mock_voice_manager.transcribe_state = TranscribeState.IDLE
 
-    with patch.object(VibeApp, "_make_turn_summary", return_value=MagicMock()):
-        with patch.object(VibeApp, "_make_tts_client", return_value=None):
-            with patch.object(
-                VibeApp, "_make_default_voice_manager", return_value=mock_voice_manager
-            ):
-                return VibeApp(agent_loop=mock_agent_loop)
+    with patch.object(
+        VibeApp, "_make_default_narrator_manager", return_value=MagicMock()
+    ):
+        with patch.object(
+            VibeApp, "_make_default_voice_manager", return_value=mock_voice_manager
+        ):
+            return VibeApp(agent_loop=mock_agent_loop)
 
 
 @pytest.mark.asyncio

@@ -218,14 +218,13 @@ class TestTUIImageMessageHandling:
         mock_voice_manager.transcribe_state = TranscribeState.IDLE
 
         # Create TUI app with patched initialization
-        with patch.object(VibeApp, "_make_turn_summary", return_value=MagicMock()):
-            with patch.object(VibeApp, "_make_tts_client", return_value=None):
-                with patch.object(
-                    VibeApp,
-                    "_make_default_voice_manager",
-                    return_value=mock_voice_manager,
-                ):
-                    app = VibeApp(agent_loop=mock_agent_loop)
+        with patch.object(
+            VibeApp, "_make_default_narrator_manager", return_value=MagicMock()
+        ):
+            with patch.object(
+                VibeApp, "_make_default_voice_manager", return_value=mock_voice_manager
+            ):
+                app = VibeApp(agent_loop=mock_agent_loop)
         return app
 
     def test_submit_message_from_web_with_image(self, mock_tui_app) -> None:
