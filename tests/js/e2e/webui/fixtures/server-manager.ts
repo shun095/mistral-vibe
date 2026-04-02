@@ -20,6 +20,7 @@ export class ServerManager {
   private started: boolean = false;
   private actualPort: number | null = null;
   private e2eTestDir: string | null = null;
+  private serverPidFile: string | null = null;
 
   constructor(config: ServerConfig) {
     this.config = config;
@@ -84,8 +85,13 @@ export class ServerManager {
       return;
     }
 
-    // Find an available port
-    const port = await this.findAvailablePort(this.config.port);
+    // Use the specified port directly (pre-allocated by global setup)
+    // Only find available port if the specified port is in use
+    let port = this.config.port;
+    if (!(await this.isPortAvailable(port))) {
+      console.log(`Port ${port} is in use, finding available port...`);
+      port = await this.findAvailablePort(port);
+    }
     this.actualPort = port;
 
     // Kill any existing process on the port
@@ -118,6 +124,13 @@ export class ServerManager {
         env,
         stdio: ["ignore", "pipe", "pipe"],
       });
+
+      // Save server PID to file for global teardown
+      if (this.process.pid) {
+        this.serverPidFile = `/tmp/vibe-e2e-server-${this.actualPort}.pid`;
+        fs.writeFileSync(this.serverPidFile, String(this.process.pid), "utf-8");
+        console.log(`Server PID ${this.process.pid} saved to ${this.serverPidFile}`);
+      }
 
       // Capture stdout/stderr for debugging
       let stdout = "";
@@ -291,6 +304,16 @@ export class ServerManager {
         console.log(`Cleaned up E2E test directory: ${this.e2eTestDir}`);
       } catch (err) {
         console.warn(`Failed to clean up E2E test directory: ${err}`);
+      }
+    }
+
+    // Clean up PID file
+    if (this.serverPidFile && fs.existsSync(this.serverPidFile)) {
+      try {
+        fs.unlinkSync(this.serverPidFile);
+        console.log(`Cleaned up PID file: ${this.serverPidFile}`);
+      } catch (err) {
+        console.warn(`Failed to clean up PID file: ${err}`);
       }
     }
   }
