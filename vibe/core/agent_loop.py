@@ -182,9 +182,9 @@ class AgentLoop:
         self.agent_manager = AgentManager(
             lambda: self._base_config, initial_agent=agent_name
         )
-        self._mcp_registry = MCPRegistry()
+        self.mcp_registry = MCPRegistry()
         self.tool_manager = ToolManager(
-            lambda: self.config, mcp_registry=self._mcp_registry
+            lambda: self.config, mcp_registry=self.mcp_registry
         )
         self.skill_manager = SkillManager(lambda: self.config)
         self.format_handler = APIToolFormatHandler()
@@ -403,11 +403,14 @@ class AgentLoop:
             self.agent_profile,
         )
 
-    async def act(self, msg: Content) -> AsyncGenerator[BaseEvent]:
+    async def act(
+        self, msg: Content, client_message_id: str | None = None
+    ) -> AsyncGenerator[BaseEvent]:
         """Process a user message (text or multi-part content).
 
         Args:
             msg: User message as string or multi-part content list (e.g., for images).
+            client_message_id: Optional message ID from the client for tracking.
         """
         self._clean_message_history()
         self.rewind_manager.create_checkpoint()
@@ -416,7 +419,9 @@ class AgentLoop:
         except ValueError:
             model_name = None
         async with agent_span(model=model_name, session_id=self.session_id):
-            async for event in self._conversation_loop(msg):
+            async for event in self._conversation_loop(
+                msg, client_message_id=client_message_id
+            ):
                 yield event
 
     async def act_without_adding_message(self) -> AsyncGenerator[BaseEvent]:
@@ -601,10 +606,10 @@ class AgentLoop:
         return headers
 
     async def _conversation_loop(
-        self, user_msg: Content | None = None
+        self, user_msg: Content | None = None, client_message_id: str | None = None
     ) -> AsyncGenerator[BaseEvent]:
         # Use strategy pattern to handle message preparation
-        handler = create_message_handler(user_msg)
+        handler = create_message_handler(user_msg, client_message_id)
 
         try:
             content, message_id = handler.prepare_message(self.messages, user_msg)
@@ -719,11 +724,14 @@ class AgentLoop:
         AssistantEvent | ReasoningEvent | ToolCallEvent | PromptProgressEvent
     ]:
         message_id: str | None = None
+        reasoning_message_id: str | None = None
         emitted_tool_call_ids = set[str]()
 
         async for chunk in self._chat_streaming():
             if message_id is None:
                 message_id = chunk.message.message_id
+            if reasoning_message_id is None:
+                reasoning_message_id = chunk.message.reasoning_message_id
 
             # Yield prompt progress event if available
             if chunk.prompt_progress:
@@ -746,7 +754,9 @@ class AgentLoop:
                     if isinstance(chunk.message.reasoning_content, str)
                     else ""
                 )
-                yield ReasoningEvent(content=reasoning_content, message_id=message_id)
+                yield ReasoningEvent(
+                    content=reasoning_content, message_id=reasoning_message_id
+                )
 
             if chunk.message.content:
                 content = (
@@ -1250,7 +1260,8 @@ class AgentLoop:
                 return ToolDecision(
                     verdict=ToolExecutionResponse.SKIP,
                     approval_type=ToolPermission.NEVER,
-                    feedback=f"Tool '{tool_name}' is permanently disabled",
+                    feedback=ctx.reason
+                    or f"Tool '{tool_name}' is permanently disabled",
                 )
             case _:
                 uncovered = [
@@ -1560,7 +1571,7 @@ class AgentLoop:
             self._max_price = max_price
 
         self.tool_manager = ToolManager(
-            lambda: self.config, mcp_registry=self._mcp_registry
+            lambda: self.config, mcp_registry=self.mcp_registry
         )
         self.skill_manager = SkillManager(lambda: self.config)
 

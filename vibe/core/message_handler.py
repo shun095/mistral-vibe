@@ -41,13 +41,18 @@ class MessageHandlerStrategy(ABC):
 class NewMessageHandler(MessageHandlerStrategy):
     """Handler for new user messages that should be added to history."""
 
+    def __init__(self, client_message_id: str | None = None) -> None:
+        self.client_message_id = client_message_id
+
     def prepare_message(
         self, messages: MessageList, user_msg: Content | None
     ) -> tuple[Content, str]:
         if user_msg is None:
             raise ValueError("NewMessageHandler requires a user message")
 
-        user_message = LLMMessage(role=Role.user, content=user_msg)
+        user_message = LLMMessage(
+            role=Role.user, content=user_msg, message_id=self.client_message_id
+        )
         messages.append(user_message)
 
         if user_message.message_id is None:
@@ -91,16 +96,19 @@ class HistoryReplayHandler(MessageHandlerStrategy):
         return False
 
 
-def create_message_handler(user_msg: Content | None) -> MessageHandlerStrategy:
+def create_message_handler(
+    user_msg: Content | None, client_message_id: str | None = None
+) -> MessageHandlerStrategy:
     """Factory function to create the appropriate message handler.
 
     Args:
         user_msg: New user message (if any), can be string or multi-part content.
             If None, uses history replay.
+        client_message_id: Optional message ID from the client for tracking.
 
     Returns:
         The appropriate MessageHandlerStrategy instance.
     """
     if user_msg is not None:
-        return NewMessageHandler()
+        return NewMessageHandler(client_message_id=client_message_id)
     return HistoryReplayHandler()

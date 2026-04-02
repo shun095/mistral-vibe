@@ -10,24 +10,23 @@ import httpx
 from vibe.core.types import LLMRetryEvent
 
 
-def _is_retryable_backend_error(e: Exception) -> bool:  # noqa: PLR0911
+def _is_retryable_http_error(e: Exception) -> bool:  # noqa: PLR0911
     """Check if an exception is retryable for LLM backend operations.
 
-    Handles both HTTP status errors and network/transport errors.
+    Handles both HTTP status code errors and network/transport errors.
     """
     # HTTP status code errors (retry on server errors and rate limits)
     if isinstance(e, httpx.HTTPStatusError):
-        return e.response.status_code in {408, 409, 425, 429, 500, 502, 503, 504}
+        return e.response.status_code in {408, 409, 425, 429, 500, 502, 503, 504, 529}
 
     # Network/transport errors (retry on transient network issues)
     if isinstance(e, httpx.RequestError):
         error_str = str(e).lower()
         if "readtimeout" in error_str:
             return True
-        # Incomplete chunked read (the specific error we need to fix)
+        # Incomplete chunked read
         if "server disconnected without sending a response" in error_str:
             return True
-        # Incomplete chunked read (the specific error we need to fix)
         if "incomplete chunked read" in error_str:
             return True
         # Peer closed connection
@@ -66,41 +65,43 @@ def async_retry[T, **P](
     def decorator(func: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]:
         @functools.wraps(func)
         async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            last_exc = None
             tries = config.get("tries", 3)
             delay_seconds = config.get("delay_seconds", 0.5)
             backoff_factor = config.get("backoff_factor", 2.0)
-            is_retryable = config.get("is_retryable", _is_retryable_backend_error)
+            is_retryable = config.get("is_retryable", _is_retryable_http_error)
+            on_retry = config.get("on_retry")
+            provider = config.get("provider")
+            model = config.get("model")
 
-            last_exc: Exception | None = None
             for attempt in range(tries):
                 try:
                     return await func(*args, **kwargs)
                 except Exception as e:
                     last_exc = e
-                    # Don't retry on last attempt or if error is not retryable
-                    if attempt >= tries - 1 or not is_retryable(e):
-                        break
-
-                    current_delay = (delay_seconds * (backoff_factor**attempt)) + (
-                        0.05 * attempt
-                    )
-                    on_retry = config.get("on_retry")
-                    if on_retry is not None:
-                        retry_event = LLMRetryEvent(
-                            attempt=attempt + 1,
-                            max_attempts=tries,
-                            error_message=str(e),
-                            delay_seconds=current_delay,
-                            provider=config.get("provider"),
-                            model=config.get("model"),
+                    if attempt < tries - 1 and is_retryable(e):
+                        current_delay = (delay_seconds * (backoff_factor**attempt)) + (
+                            0.05 * attempt
                         )
-                        on_retry(retry_event)
-                    await asyncio.sleep(current_delay)
 
-            # Re-raise the original error to preserve error type
-            if last_exc is not None:
-                raise last_exc
-            raise RuntimeError("Unreachable")
+                        # Invoke on_retry callback if provided
+                        if on_retry is not None:
+                            retry_event = LLMRetryEvent(
+                                attempt=attempt + 1,
+                                max_attempts=tries,
+                                error_message=str(last_exc),
+                                delay_seconds=current_delay,
+                                provider=provider,
+                                model=model,
+                            )
+                            on_retry(retry_event)
+
+                        await asyncio.sleep(current_delay)
+                        continue
+                    raise e
+            raise RuntimeError(
+                f"Retries exhausted. Last error: {last_exc}"
+            ) from last_exc
 
         return wrapper
 
@@ -115,7 +116,14 @@ def apply_retry_decorator(
     Args:
         obj: Object instance containing the method to decorate.
         method_name: Name of the method to apply retry logic to.
-        config: Retry configuration dict.
+        config: Retry configuration dict with keys:
+            - tries: Number of retry attempts
+            - delay_seconds: Initial delay between retries
+            - backoff_factor: Multiplier for delay on each retry
+            - is_retryable: Function to determine if exception should trigger retry
+            - on_retry: Optional callback invoked before each retry
+            - provider: Optional provider name for retry event
+            - model: Optional model name for retry event
         is_streaming: Whether the method is an async generator.
 
     """
@@ -152,49 +160,47 @@ def async_generator_retry[T, **P](
         func: Callable[P, AsyncGenerator[T]],
     ) -> Callable[P, AsyncGenerator[T]]:
         @functools.wraps(func)
-        async def wrapper(*args: P.args, **kwargs: P.kwargs) -> AsyncGenerator[T]:  # type: ignore[misc]
+        async def wrapper(*args: P.args, **kwargs: P.kwargs) -> AsyncGenerator[T]:
+            last_exc = None
             tries = config.get("tries", 3)
             delay_seconds = config.get("delay_seconds", 0.5)
             backoff_factor = config.get("backoff_factor", 2.0)
-            is_retryable = config.get("is_retryable", _is_retryable_backend_error)
+            is_retryable = config.get("is_retryable", _is_retryable_http_error)
+            on_retry = config.get("on_retry")
+            provider = config.get("provider")
+            model = config.get("model")
 
-            from vibe.core.logger import logger
-
-            last_exc: Exception | None = None
             for attempt in range(tries):
                 try:
                     async for item in func(*args, **kwargs):
                         yield item
                     return
                 except Exception as e:
-                    logger.debug(f"Retrying... Attempt: {attempt}")
                     last_exc = e
-                    # Don't retry on last attempt or if error is not retryable
-                    if attempt >= tries - 1 or not is_retryable(e):
-                        break
-
-                    current_delay = (delay_seconds * (backoff_factor**attempt)) + (
-                        0.05 * attempt
-                    )
-                    on_retry = config.get("on_retry")
-                    if on_retry is not None:
-                        retry_event = LLMRetryEvent(
-                            attempt=attempt + 1,
-                            max_attempts=tries,
-                            error_message=str(e),
-                            delay_seconds=current_delay,
-                            provider=config.get("provider"),
-                            model=config.get("model"),
+                    if attempt < tries - 1 and is_retryable(e):
+                        current_delay = (delay_seconds * (backoff_factor**attempt)) + (
+                            0.05 * attempt
                         )
-                        on_retry(retry_event)  # Call callback to broadcast event
-                    await asyncio.sleep(current_delay)
 
-            # Re-raise the original error to preserve error type
-            if last_exc is not None:
-                raise last_exc
-            raise RuntimeError("Unreachable")
+                        # Invoke on_retry callback if provided
+                        if on_retry is not None:
+                            retry_event = LLMRetryEvent(
+                                attempt=attempt + 1,
+                                max_attempts=tries,
+                                error_message=str(last_exc),
+                                delay_seconds=current_delay,
+                                provider=provider,
+                                model=model,
+                            )
+                            on_retry(retry_event)
+
+                        await asyncio.sleep(current_delay)
+                        continue
+                    raise e
+            raise RuntimeError(
+                f"Retries exhausted. Last error: {last_exc}"
+            ) from last_exc
 
         return wrapper
 
     return decorator
-
