@@ -43,6 +43,9 @@ export const Selectors = {
   promptHistoryClose: "#prompt-history-close",
   promptHistorySearch: "#prompt-history-search",
   promptHistoryItem: ".prompt-history-item",
+
+  // Interrupt/Stop button
+  interruptBtn: "#interrupt-btn",
 };
 
 /**
@@ -128,8 +131,8 @@ export async function clearHistory(page: Page): Promise<void> {
 }
 
 /**
- * Reset test state by clearing history and reloading the page.
- * This is faster than restarting the server.
+ * Reset test state by interrupting any ongoing processing and reloading the page.
+ * This ensures clean state between tests.
  */
 export async function resetTestState(
   page: Page,
@@ -141,14 +144,59 @@ export async function resetTestState(
     return;
   }
 
-  // Skip clearing history in teardown - just reload to get fresh state
-  // This speeds up teardown significantly
-
-  // Reload page with auth token to get fresh state
   try {
-    await page.goto(`${webServerUrl}/?token=${authToken}`, { timeout: 5000 });
-  } catch {
-    // Ignore navigation errors in teardown
+    // CRITICAL: Click interrupt button FIRST if processing is ongoing
+    // This stops the processing and should close any approval popup
+    const interruptBtn = page.locator(Selectors.interruptBtn);
+    const isInterruptVisible = await interruptBtn.isVisible().catch(() => false);
+
+    if (isInterruptVisible) {
+      console.log("Reset: interrupt button visible, clicking it to stop processing...");
+      try {
+        await interruptBtn.click({ timeout: 3000 });
+        console.log("Reset: clicked interrupt button");
+        // Wait for processing to stop and popup to close
+        await page.waitForTimeout(1000);
+      } catch {
+        console.log("Reset: failed to click interrupt button");
+      }
+    }
+
+    // After interrupting, check if approval popup is still visible and close it
+    const approvalPopup = page.locator(Selectors.approvalPopup);
+    const isApprovalVisible = await approvalPopup.isVisible().catch(() => false);
+
+    if (isApprovalVisible) {
+      console.log("Reset: approval popup still visible after interrupt, closing it...");
+      // Try No button first (most reliable way to dismiss)
+      const noButton = approvalPopup.locator('.popup-btn.no:has-text("No")').first();
+      try {
+        await noButton.click({ timeout: 2000 });
+        console.log("Reset: clicked No button on approval popup");
+        await page.waitForTimeout(500);
+      } catch {
+        // Try close button
+        const closeButton = approvalPopup.locator('.popup-close, .modal-close').first();
+        try {
+          await closeButton.click({ timeout: 2000 });
+          console.log("Reset: clicked close button on approval popup");
+          await page.waitForTimeout(500);
+        } catch {
+          console.log("Reset: could not close popup, will reload anyway");
+        }
+      }
+    }
+
+    // Just reload the page - don't use /clear as it consumes mock responses
+
+    // Reload page with auth token to get fresh state
+    console.log("Reset: reloading page...");
+    await page.goto(`${webServerUrl}/?token=${authToken}`, {
+      timeout: 10000,
+      waitUntil: "domcontentloaded"
+    });
+  } catch (navigateError) {
+    console.warn("Reset: navigation failed:", String(navigateError));
     return;
   }
 
@@ -157,13 +205,33 @@ export async function resetTestState(
     return;
   }
 
-  // Wait for chat interface to be visible with short timeout
+  // Wait for chat interface to be visible
   try {
-    await page.locator(Selectors.messageInput).waitFor({ state: "visible", timeout: 5000 });
-  } catch {
-    // Ignore if page doesn't load in time - next test will handle it
-  }
+    await page.locator(Selectors.messageInput).waitFor({ state: "visible", timeout: 8000 });
 
-  // Skip waiting for WebSocket connection to speed up test teardown
-  // The next test will wait for WebSocket connection in its setup
+    // Wait for WebSocket to connect
+    await page.waitForFunction(
+      (selector) => {
+        const el = document.querySelector(selector);
+        return el && el.classList.contains("connected");
+      },
+      Selectors.statusIndicator,
+      { timeout: 8000 }
+    );
+
+    // Wait for message input to be enabled (not disabled)
+    await page.waitForFunction(
+      (selector) => {
+        const el = document.querySelector(selector);
+        return el && !el.hasAttribute("disabled");
+      },
+      Selectors.messageInput,
+      { timeout: 8000 }
+    );
+
+    console.log("Reset: page ready after reload");
+  } catch (error) {
+    // Log but don't fail - the next test's page fixture setup will handle readiness
+    console.warn("Reset: page readiness check failed:", String(error));
+  }
 }

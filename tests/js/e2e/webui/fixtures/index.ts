@@ -6,6 +6,28 @@ import { test as base, Page, APIRequestContext } from "@playwright/test";
 import { ServerManager } from "./server-manager";
 import { MockBackendClient } from "./mock-backend";
 import { resetTestState, Selectors, waitForConnected } from "../helpers/test-utils";
+import * as fs from "fs";
+import * as os from "os";
+
+// Pre-allocated ports from global setup
+const portsFile = os.tmpdir() + "/vibe-e2e-ports.json";
+let preAllocatedPorts: number[] = [];
+let portsLoaded = false;
+
+function getPreAllocatedPorts(): number[] {
+  if (portsLoaded) {
+    return preAllocatedPorts;
+  }
+  try {
+    const data = fs.readFileSync(portsFile, "utf-8");
+    preAllocatedPorts = JSON.parse(data);
+    portsLoaded = true;
+  } catch {
+    // Fallback: will generate ports based on worker index
+    portsLoaded = true;
+  }
+  return preAllocatedPorts;
+}
 
 export interface WebUIFixtures {
   webServer: ServerManager;
@@ -13,98 +35,96 @@ export interface WebUIFixtures {
   authToken: string;
 }
 
-// Cache server instances per worker to avoid restart between tests
-export const workerServers = new Map<number, ServerManager>();
-
-// Cleanup all servers when process exits
-process.on("exit", () => {
-  console.log("Process exit: stopping all servers...");
-  workerServers.forEach((server) => {
-    try {
-      // Note: This is synchronous, so we can't await
-      // The servers will be killed when the process exits anyway
-      console.log(`Stopping server on port ${server.getPort()}...`);
-    } catch (error) {
-      console.warn("Failed to stop server:", error);
-    }
-  });
-});
-
 // Extend the base test with our custom fixtures
 export const test = base.extend<WebUIFixtures & { page: Page }>({
-  // Server fixture - starts once per worker, stops after all tests
-  // Uses unique port per worker to enable parallel execution across browsers
-  // Cached per worker to avoid restart between tests
+  // Server fixture - start a fresh server for each test to ensure clean state
+  // This is important for tool approval tests where server state must be isolated
   webServer: async ({}, use, testInfo) => {
-    // Use workerIndex as the cache key
+    // Get pre-allocated port for this worker
     const workerIndex = testInfo.workerIndex;
+    const availablePorts = getPreAllocatedPorts();
+    let port: number;
 
-    // Check if we already have a server for this worker
-    let server = workerServers.get(workerIndex);
-
-    if (!server) {
-      // Create server manager with a starting port
-      // ServerManager will find an available port automatically
-      const startPort = 9093 + workerIndex;
-      server = new ServerManager({
-        port: startPort,
-        token: "test-token-123",
-      });
-      await server.start(); // This will find available port if startPort is in use
-      workerServers.set(workerIndex, server);
-      console.log(`Worker ${workerIndex} started server on port ${server.getPort()}`);
+    if (availablePorts.length > 0 && workerIndex < availablePorts.length) {
+      // Use pre-allocated port
+      port = availablePorts[workerIndex];
+      console.log(`Test ${testInfo.title} using pre-allocated port ${port}`);
+    } else {
+      // Fallback: use worker index offset
+      port = 9093 + workerIndex;
+      console.log(`Test ${testInfo.title} using fallback port ${port}`);
     }
+
+    // Create a fresh server for each test
+    const server = new ServerManager({
+      port,
+      token: "test-token-123",
+    });
+    await server.start();
+    console.log(`Test ${testInfo.title} started server on port ${server.getPort()}`);
 
     await use(server);
 
-    // Don't stop the server here - it will be reused for next test in same worker
-    // Server will be stopped when the worker shuts down
+    // Stop the server after each test to ensure clean state
+    await server.stop();
   },
 
-  // Page fixture with automatic state reset between tests
-  page: async ({ page, webServer, authToken }, use) => {
-    // Navigate to the app with auth token
-    await page.goto(`${webServer.getUrl()}/?token=${authToken}`);
-
-    // Wait for initial load
-    await page.locator(Selectors.messageInput).waitFor({ state: "visible", timeout: 15000 });
-
-    // Wait for WebSocket to connect
-    await waitForConnected(page, 10000);
-
-    await use(page);
-
-    // After test, reset state for next test using /clear + reload
-    // This is much faster than restarting the server
-    try {
-      // Check if page is still open before trying to reset
-      if (!page.isClosed()) {
-        await resetTestState(page, webServer.getUrl(), authToken);
-      }
-    } catch (error) {
-      // Ignore errors - page might be closed by the test
-      // Only log if it's not a "page closed" error
-      const errorMsg = String(error);
-      if (!errorMsg.includes("page is closed") && !errorMsg.includes("Target page")) {
-        console.warn("Failed to reset test state:", error);
-      }
-    }
-  },
-
-  // Mock backend client fixture
+  // Mock backend client fixture - always available
   mockBackend: async ({ webServer }, use) => {
     const mockBackend = new MockBackendClient(
       webServer.getUrl(),
       webServer.getToken()
     );
 
-    // Reset mock data before each test
-    await mockBackend.reset();
-
     await use(mockBackend);
+    // No teardown - reset is handled in page fixture
+  },
 
-    // Cleanup after each test
+  // Page fixture with automatic state reset between tests
+  // Depends on mockBackend to ensure mock data is reset before and after each test
+  page: async ({ page, webServer, authToken, mockBackend }, use) => {
+    // Reset mock data BEFORE navigating to ensure clean state
     await mockBackend.reset();
+
+    // Navigate to the app with auth token
+    await page.goto(`${webServer.getUrl()}/?token=${authToken}`);
+
+    // Wait for initial load - message input must be visible
+    await page.locator(Selectors.messageInput).waitFor({ state: "visible", timeout: 15000 });
+
+    // Wait for WebSocket to connect
+    await waitForConnected(page, 10000);
+
+    // Wait for message input to be enabled (not disabled)
+    await page.waitForFunction(
+      (selector) => {
+        const el = document.querySelector(selector);
+        return el && !el.hasAttribute("disabled");
+      },
+      Selectors.messageInput,
+      { timeout: 10000 }
+    );
+
+    await use(page);
+
+    // After test, reset mock data and page state
+    // This ensures the next test starts with clean state
+    try {
+      // Reset mock data before page reload
+      await mockBackend.reset();
+
+      // Check if page is still open before trying to reset
+      if (!page.isClosed()) {
+        await resetTestState(page, webServer.getUrl(), authToken);
+        // resetTestState() already waits for page readiness, no need to wait again here
+      }
+    } catch (error) {
+      // Ignore errors - page might be closed by the test
+      const errorMsg = String(error);
+      if (!errorMsg.includes("page is closed") && !errorMsg.includes("Target page")) {
+        console.warn("Failed to reset test state:", error);
+      }
+    }
   },
 
   // Auth token fixture
