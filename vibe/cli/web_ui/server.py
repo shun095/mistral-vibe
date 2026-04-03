@@ -515,6 +515,10 @@ def create_app(  # noqa: PLR0915
     @app.get("/login", response_class=HTMLResponse)
     def login_page(request: Request) -> HTMLResponse:
         """Serve the login page."""
+        # Check if already authenticated - redirect to main page
+        auth_cookie = request.cookies.get("vibe_auth")
+        if auth_cookie == auth_token:
+            raise HTTPException(status_code=307, headers={"Location": "/"})
         return templates.TemplateResponse(request, "login.html")
 
     @app.post("/api/login")

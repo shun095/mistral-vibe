@@ -155,27 +155,6 @@
         const errorMessage = document.getElementById('error-message');
         const loginBtn = document.getElementById('login-btn');
 
-        // Check if already logged in
-        const existingToken = localStorage.getItem('vibe_auth_token');
-        if (existingToken) {
-            // Try to verify the token
-            fetch('/api/status', {
-                headers: {
-                    'Authorization': `Bearer ${existingToken}`
-                }
-            })
-            .then(response => {
-                if (response.ok) {
-                    // Already authenticated, redirect to main page
-                    window.location.href = '/';
-                }
-            })
-            .catch(() => {
-                // Token invalid, clear it
-                localStorage.removeItem('vibe_auth_token');
-            });
-        }
-
         loginForm.addEventListener('submit', async (e) => {
             e.preventDefault();
 
