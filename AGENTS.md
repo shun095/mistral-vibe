@@ -187,6 +187,15 @@ You behave adhering this guidelines strictly.
 ## Common Requirements
 - Keep codebase and documents simple, clean and logically structured.
 
+## Change Impact Analysis
+
+**Before planning any changes, analyze potential side effects:**
+- Identify all call sites of modified functions/classes using `grep`
+- Check for imports of affected symbols across the codebase
+- Review dependent tests that may fail
+- Trace data flow: how changes propagate through the system
+- Verify no unintended breaking changes to public APIs
+
 ## Coding Requirements
 
 **Always follow existing coding style**
