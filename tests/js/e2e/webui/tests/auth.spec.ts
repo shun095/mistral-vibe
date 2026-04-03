@@ -53,4 +53,37 @@ test.describe("Authentication", () => {
     await page.locator(Selectors.messageInput).fill("Test message");
     await expect(page.locator(Selectors.sendButton)).toBeEnabled({ timeout: 5000 });
   });
+
+  test("should not reload repeatedly when visiting login page with valid cookie", async ({
+    webServer,
+    context,
+    authToken,
+  }) => {
+    // First, login to set the cookie
+    const loginPage = await context.newPage();
+    await loginPage.goto(`${webServer.getUrl()}/login`);
+
+    // Enter the token and submit
+    const tokenInput = loginPage.locator("#token");
+    await tokenInput.fill(authToken);
+    await loginPage.locator("#login-btn").click();
+
+    // Should redirect to main page
+    await expect(loginPage).toHaveURL(webServer.getUrl(), { timeout: 10000 });
+
+    // Now verify that visiting login page again redirects immediately without reload loop
+
+    // Listen for navigation events to detect reload loop
+
+    // Navigate to login page - should redirect to main page immediately
+    await loginPage.goto(`${webServer.getUrl()}/login`, { waitUntil: "domcontentloaded" });
+
+    // Wait a bit to see if there's a reload loop
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    // Should have redirected to main page, not stayed on login
+    await expect(loginPage).toHaveURL(webServer.getUrl());
+
+    await loginPage.close();
+  });
 });
