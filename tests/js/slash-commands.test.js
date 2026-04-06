@@ -115,7 +115,6 @@ describe('SlashCommandRegistry', () => {
             expect(mockFetch).toHaveBeenCalledWith('/api/command/execute', {
                 method: 'POST',
                 headers: {
-                    'Authorization': 'Bearer test-token',
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({ command: 'clean', args: '' }),
@@ -213,8 +212,7 @@ describe('SlashAutocomplete', () => {
         document.body.appendChild(inputElement);
 
         registry = new SlashCommandRegistry();
-        registry.token = 'test-token';
-        
+
         // Pre-load some commands
         registry.commands.set('/clean', { description: 'Clear history' });
         registry.commands.set('/clear', { description: 'Clear history' });
@@ -256,7 +254,7 @@ describe('SlashAutocomplete', () => {
         test('shows container when suggestions available', async () => {
             inputElement.value = '/c';
             await autocomplete.showSuggestions('/c');
-            
+
             expect(autocomplete.visible).toBe(true);
             expect(autocomplete.container.style.display).toBe('block');
         });
@@ -264,21 +262,21 @@ describe('SlashAutocomplete', () => {
         test('hides container when no suggestions', async () => {
             inputElement.value = '/xyz';
             await autocomplete.showSuggestions('/xyz');
-            
+
             expect(autocomplete.visible).toBe(false);
             expect(autocomplete.container.style.display).toBe('none');
         });
 
         test('renders correct number of suggestions', async () => {
             await autocomplete.showSuggestions('/c');
-            
+
             const items = autocomplete.container.querySelectorAll('li');
             expect(items).toHaveLength(4); // /clean, /clear, /compact, /config
         });
 
         test('sets initial selection to last item', async () => {
             await autocomplete.showSuggestions('/c');
-            
+
             expect(autocomplete.selectedIndex).toBe(autocomplete.suggestions.length - 1);
         });
     });
@@ -293,9 +291,9 @@ describe('SlashAutocomplete', () => {
             const event = new KeyboardEvent('keydown', { key: 'ArrowDown' });
             const preventDefault = jest.fn();
             event.preventDefault = preventDefault;
-            
+
             autocomplete.handleKeydown(event);
-            
+
             expect(preventDefault).toHaveBeenCalled();
             expect(autocomplete.selectedIndex).toBeLessThan(autocomplete.suggestions.length);
         });
@@ -304,9 +302,9 @@ describe('SlashAutocomplete', () => {
             const event = new KeyboardEvent('keydown', { key: 'ArrowUp' });
             const preventDefault = jest.fn();
             event.preventDefault = preventDefault;
-            
+
             autocomplete.handleKeydown(event);
-            
+
             expect(preventDefault).toHaveBeenCalled();
         });
 
@@ -314,30 +312,30 @@ describe('SlashAutocomplete', () => {
             const event = new KeyboardEvent('keydown', { key: 'Enter' });
             const preventDefault = jest.fn();
             event.preventDefault = preventDefault;
-            
+
             autocomplete.handleKeydown(event);
-            
+
             expect(preventDefault).toHaveBeenCalled();
             expect(autocomplete.visible).toBe(false);
         });
 
         test('handles Escape key', () => {
             const event = new KeyboardEvent('keydown', { key: 'Escape' });
-            
+
             autocomplete.handleKeydown(event);
-            
+
             expect(autocomplete.visible).toBe(false);
         });
 
         test('ignores keys when not visible', () => {
             autocomplete.hide();
-            
+
             const event = new KeyboardEvent('keydown', { key: 'ArrowDown' });
             const preventDefault = jest.fn();
             event.preventDefault = preventDefault;
-            
+
             autocomplete.handleKeydown(event);
-            
+
             expect(preventDefault).not.toHaveBeenCalled();
         });
     });
@@ -346,7 +344,7 @@ describe('SlashAutocomplete', () => {
         test('replaces last word with completion', () => {
             inputElement.value = '/cle';
             autocomplete.complete('/clean');
-            
+
             expect(inputElement.value).toBe('/clean');
         });
 
@@ -354,16 +352,16 @@ describe('SlashAutocomplete', () => {
             // The complete method replaces the last word in the input
             inputElement.value = 'test content /cle';
             autocomplete.complete('/clean');
-            
+
             expect(inputElement.value).toBe('test content /clean');
         });
 
         test('hides autocomplete after completion', () => {
             inputElement.value = '/c';
             autocomplete.visible = true;
-            
+
             autocomplete.complete('/clean');
-            
+
             expect(autocomplete.visible).toBe(false);
         });
     });
@@ -371,9 +369,9 @@ describe('SlashAutocomplete', () => {
     describe('hide', () => {
         test('hides container and resets state', async () => {
             await autocomplete.showSuggestions('/c');
-            
+
             autocomplete.hide();
-            
+
             expect(autocomplete.visible).toBe(false);
             expect(autocomplete.container.style.display).toBe('none');
             expect(autocomplete.suggestions).toHaveLength(0);
@@ -384,27 +382,27 @@ describe('SlashAutocomplete', () => {
     describe('handleInput', () => {
         test('hides when input does not start with /', async () => {
             await autocomplete.showSuggestions('/c');
-            
+
             inputElement.value = 'hello';
             autocomplete.handleInput();
-            
+
             expect(autocomplete.visible).toBe(false);
         });
 
         test('shows suggestions when input starts with /', async () => {
             inputElement.value = '/c';
             autocomplete.handleInput();
-            
+
             // This is async, so we check that it's attempting to show
             // The actual visibility check would need to await
         });
 
         test('hides when last word does not start with /', async () => {
             await autocomplete.showSuggestions('/c');
-            
+
             inputElement.value = '/clean test';
             autocomplete.handleInput();
-            
+
             expect(autocomplete.visible).toBe(false);
         });
     });

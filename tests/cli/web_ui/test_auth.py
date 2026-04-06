@@ -16,13 +16,9 @@ def test_endpoint_requires_token() -> None:
     assert response.status_code == 401
 
 
-def test_endpoint_accepts_valid_token() -> None:
+def test_endpoint_accepts_valid_token(authenticated_client) -> None:
     """Test that API endpoint returns 200 with valid token."""
-    from vibe.cli.web_ui.server import create_app
-
-    app = create_app(token="test-token")
-    client = TestClient(app)
-    response = client.get("/api/stats", headers={"Authorization": "Bearer test-token"})
+    response = authenticated_client.get("/api/stats")
     # For now, just check it doesn't return 401
     assert response.status_code != 401
 

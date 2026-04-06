@@ -33,7 +33,9 @@ class TestWebSocketImageAttachment:
         mock_tui_app.get_pending_question_state = MagicMock(return_value=None)
         app.state.tui_app = mock_tui_app
 
-        with client.websocket_connect(f"/ws?token={token}") as websocket:
+        with client.websocket_connect(
+            "/ws", headers={"Cookie": f"vibe_auth={token}"}
+        ) as websocket:
             # Skip connected message
             websocket.receive_json()
 
@@ -66,7 +68,9 @@ class TestWebSocketImageAttachment:
         mock_tui_app.get_pending_question_state = MagicMock(return_value=None)
         app.state.tui_app = mock_tui_app
 
-        with client.websocket_connect(f"/ws?token={token}") as websocket:
+        with client.websocket_connect(
+            "/ws", headers={"Cookie": f"vibe_auth={token}"}
+        ) as websocket:
             # Skip connected message
             websocket.receive_json()
 
@@ -98,7 +102,9 @@ class TestWebSocketImageAttachment:
         mock_tui_app.get_pending_question_state = MagicMock(return_value=None)
         app.state.tui_app = mock_tui_app
 
-        with client.websocket_connect(f"/ws?token={token}") as websocket:
+        with client.websocket_connect(
+            "/ws", headers={"Cookie": f"vibe_auth={token}"}
+        ) as websocket:
             # Skip connected message
             websocket.receive_json()
 
@@ -128,7 +134,9 @@ class TestWebSocketImageAttachment:
         mock_tui_app.get_pending_question_state = MagicMock(return_value=None)
         app.state.tui_app = mock_tui_app
 
-        with client.websocket_connect(f"/ws?token={token}") as websocket:
+        with client.websocket_connect(
+            "/ws", headers={"Cookie": f"vibe_auth={token}"}
+        ) as websocket:
             # Skip connected message
             websocket.receive_json()
 
@@ -154,7 +162,9 @@ class TestWebSocketImageAttachment:
         mock_tui_app.get_pending_question_state = MagicMock(return_value=None)
         app.state.tui_app = mock_tui_app
 
-        with client.websocket_connect(f"/ws?token={token}") as websocket:
+        with client.websocket_connect(
+            "/ws", headers={"Cookie": f"vibe_auth={token}"}
+        ) as websocket:
             # Skip connected message
             websocket.receive_json()
 
@@ -182,7 +192,9 @@ class TestWebSocketImageAttachment:
 
         # Don't set tui_app on app.state
 
-        with client.websocket_connect(f"/ws?token={token}") as websocket:
+        with client.websocket_connect(
+            "/ws", headers={"Cookie": f"vibe_auth={token}"}
+        ) as websocket:
             # Skip connected message
             websocket.receive_json()
 

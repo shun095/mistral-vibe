@@ -7,7 +7,6 @@
 
 export class WebSocketClient {
     constructor(options = {}) {
-        this.token = options.token || '';
         this.maxReconnectAttempts = options.maxReconnectAttempts || 5;
         this.reconnectDelay = options.reconnectDelay || 1000;
 
@@ -27,13 +26,14 @@ export class WebSocketClient {
     }
 
     /**
-     * Build WebSocket URL from current location and token
+     * Build WebSocket URL from current location
+     * Authentication is handled via HTTP-only cookie
      * @returns {string} WebSocket URL
      */
     _buildUrl() {
         const protocol = window.location?.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = window.location?.host || 'localhost';
-        return `${protocol}//${host}/ws?token=${this.token}`;
+        return `${protocol}//${host}/ws`;
     }
 
     /**

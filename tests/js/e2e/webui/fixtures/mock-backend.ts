@@ -21,11 +21,11 @@ export interface MockResponse {
 
 export class MockBackendClient {
   private baseUrl: string;
-  private token: string;
+  private authToken: string;
 
-  constructor(baseUrl: string, token: string) {
+  constructor(baseUrl: string, authToken: string) {
     this.baseUrl = baseUrl;
-    this.token = token;
+    this.authToken = authToken;
   }
 
   /**
@@ -36,7 +36,7 @@ export class MockBackendClient {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${this.token}`,
+        Cookie: `vibe_auth=${this.authToken}`,
       },
       body: JSON.stringify(mock),
     });
@@ -61,7 +61,7 @@ export class MockBackendClient {
     const response = await fetch(`${this.baseUrl}/api/test/mock-data/reset`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${this.token}`,
+        Cookie: `vibe_auth=${this.authToken}`,
       },
     });
 
@@ -86,7 +86,7 @@ export class MockBackendClient {
   }> {
     const response = await fetch(`${this.baseUrl}/api/test/mock-data/usage`, {
       headers: {
-        Authorization: `Bearer ${this.token}`,
+        Cookie: `vibe_auth=${this.authToken}`,
       },
     });
 

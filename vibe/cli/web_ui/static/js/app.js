@@ -14,8 +14,7 @@ import { showBrowserNotification } from './notification.js';
 
 class VibeClient {
     constructor() {
-        // Get token from localStorage or URL
-        this.token = this.getAuthToken();
+        // Authentication is handled via HTTP-only cookie, no token in JS
         this.historyLoaded = false;
         this.isProcessing = false;
         this.statusPollInterval = null;
@@ -70,19 +69,17 @@ class VibeClient {
     _initModules() {
         this.questionHandler = new QuestionHandler();
         this.slashRegistry = new SlashCommandRegistry();
-        this.slashRegistry.token = this.token;
         this.slashAutocomplete = null;
         this.imageAttachment = null;
 
         this.wsClient = new WebSocketClient({
-            token: this.token,
             onOpen: () => this._onWsOpen(),
             onMessage: (msg) => this._onWsMessage(msg),
             onClose: () => this._onWsClose(),
             onError: (err) => this._onWsError(err)
         });
 
-        this.apiClient = new APIClient(this.token);
+        this.apiClient = new APIClient();
 
         this.messageStreamer = new MessageStreamer({
             onReasoningStart: (data) => this._onReasoningStart(data),
@@ -113,30 +110,12 @@ class VibeClient {
         this.startStatusPolling();
     }
 
-    getAuthToken() {
-        // Try localStorage first (set after login)
-        const storedToken = localStorage.getItem('vibe_auth_token');
-        if (storedToken) {
-            return storedToken;
-        }
-        // Fall back to URL parameter
-        const params = new URLSearchParams(window.location.search);
-        return params.get('token') || '';
-    }
-
-    getTokenFromURL() {
-        const params = new URLSearchParams(window.location.search);
-        return params.get('token') || '';
-    }
-
     async logout() {
         try {
             await fetch('/api/logout', { method: 'POST' });
-            localStorage.removeItem('vibe_auth_token');
             window.location.href = '/login';
         } catch (error) {
             console.error('Logout error:', error);
-            localStorage.removeItem('vibe_auth_token');
             window.location.href = '/login';
         }
     }

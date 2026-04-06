@@ -65,7 +65,15 @@ def web_ui_app():
 
 @pytest.fixture
 def web_ui_client(web_ui_app):
-    """Create a test client for the WebUI app."""
+    """Create a test client for the WebUI app with auth cookie set."""
+    client = TestClient(web_ui_app)
+    client.cookies.set("vibe_auth", "test-token")
+    return client
+
+
+@pytest.fixture
+def web_ui_client_no_auth(web_ui_app):
+    """Create a test client for the WebUI app without authentication."""
     return TestClient(web_ui_app)
 
 
@@ -74,9 +82,7 @@ class TestListCommands:
 
     def test_list_commands_success(self, web_ui_client):
         """Test command listing endpoint returns commands."""
-        response = web_ui_client.get(
-            "/api/commands", headers={"Authorization": "Bearer test-token"}
-        )
+        response = web_ui_client.get("/api/commands")
         assert response.status_code == 200
         data = response.json()
         assert "commands" in data
@@ -84,9 +90,7 @@ class TestListCommands:
 
     def test_list_commands_has_clear(self, web_ui_client):
         """Test that /clear command is listed."""
-        response = web_ui_client.get(
-            "/api/commands", headers={"Authorization": "Bearer test-token"}
-        )
+        response = web_ui_client.get("/api/commands")
         commands = response.json()["commands"]
         clear_cmd = next((c for c in commands if c["name"] == "clear"), None)
         assert clear_cmd is not None
@@ -95,18 +99,16 @@ class TestListCommands:
 
     def test_list_commands_has_aliases(self, web_ui_client):
         """Test that commands with multiple aliases show all aliases."""
-        response = web_ui_client.get(
-            "/api/commands", headers={"Authorization": "Bearer test-token"}
-        )
+        response = web_ui_client.get("/api/commands")
         commands = response.json()["commands"]
         config_cmd = next((c for c in commands if c["name"] == "config"), None)
         assert config_cmd is not None
         assert "/config" in config_cmd["aliases"]
         assert "/model" in config_cmd["aliases"]
 
-    def test_list_commands_no_auth(self, web_ui_client):
+    def test_list_commands_no_auth(self, web_ui_client_no_auth):
         """Test command listing without authentication."""
-        response = web_ui_client.get("/api/commands")
+        response = web_ui_client_no_auth.get("/api/commands")
         assert response.status_code == 401
 
 
@@ -116,9 +118,7 @@ class TestExecuteCommand:
     def test_clean_command(self, web_ui_client, web_ui_app):
         """Test /clean command clears history."""
         response = web_ui_client.post(
-            "/api/command/execute",
-            json={"command": "clean", "args": ""},
-            headers={"Authorization": "Bearer test-token"},
+            "/api/command/execute", json={"command": "clean", "args": ""}
         )
         assert response.status_code == 200
         assert response.json()["success"] is True
@@ -129,9 +129,7 @@ class TestExecuteCommand:
     def test_clear_command_alias(self, web_ui_client, web_ui_app):
         """Test /clear command (alias for clean)."""
         response = web_ui_client.post(
-            "/api/command/execute",
-            json={"command": "clear", "args": ""},
-            headers={"Authorization": "Bearer test-token"},
+            "/api/command/execute", json={"command": "clear", "args": ""}
         )
         assert response.status_code == 200
         assert response.json()["success"] is True
@@ -142,9 +140,7 @@ class TestExecuteCommand:
     def test_restart_command(self, web_ui_client, web_ui_app):
         """Test /restart command."""
         response = web_ui_client.post(
-            "/api/command/execute",
-            json={"command": "restart", "args": ""},
-            headers={"Authorization": "Bearer test-token"},
+            "/api/command/execute", json={"command": "restart", "args": ""}
         )
         assert response.status_code == 200
         assert response.json()["success"] is True
@@ -155,9 +151,7 @@ class TestExecuteCommand:
     def test_config_command(self, web_ui_client, web_ui_app):
         """Test /config command."""
         response = web_ui_client.post(
-            "/api/command/execute",
-            json={"command": "config", "args": ""},
-            headers={"Authorization": "Bearer test-token"},
+            "/api/command/execute", json={"command": "config", "args": ""}
         )
         assert response.status_code == 200
         assert response.json()["success"] is True
@@ -168,9 +162,7 @@ class TestExecuteCommand:
     def test_resume_command(self, web_ui_client, web_ui_app):
         """Test /resume command."""
         response = web_ui_client.post(
-            "/api/command/execute",
-            json={"command": "resume", "args": ""},
-            headers={"Authorization": "Bearer test-token"},
+            "/api/command/execute", json={"command": "resume", "args": ""}
         )
         assert response.status_code == 200
         assert response.json()["success"] is True
@@ -183,7 +175,6 @@ class TestExecuteCommand:
         response = web_ui_client.post(
             "/api/command/execute",
             json={"command": "edit", "args": "new message content"},
-            headers={"Authorization": "Bearer test-token"},
         )
         assert response.status_code == 200
         assert response.json()["success"] is True
@@ -194,9 +185,7 @@ class TestExecuteCommand:
     def test_edit_command_without_content(self, web_ui_client, web_ui_app):
         """Test /edit command without content."""
         response = web_ui_client.post(
-            "/api/command/execute",
-            json={"command": "edit", "args": ""},
-            headers={"Authorization": "Bearer test-token"},
+            "/api/command/execute", json={"command": "edit", "args": ""}
         )
         assert response.status_code == 200
         assert response.json()["success"] is True
@@ -207,9 +196,7 @@ class TestExecuteCommand:
     def test_unknown_command(self, web_ui_client, web_ui_app):
         """Test handling of unknown commands."""
         response = web_ui_client.post(
-            "/api/command/execute",
-            json={"command": "unknown", "args": ""},
-            headers={"Authorization": "Bearer test-token"},
+            "/api/command/execute", json={"command": "unknown", "args": ""}
         )
         assert response.status_code == 200
         assert response.json()["success"] is True
@@ -229,7 +216,6 @@ class TestExecuteCommand:
         response = web_ui_client.post(
             "/api/command/execute",
             json={"command": "fetch", "args": "https://example.com"},
-            headers={"Authorization": "Bearer test-token"},
         )
         assert response.status_code == 200
         assert response.json()["success"] is True
@@ -237,9 +223,9 @@ class TestExecuteCommand:
             "/fetch https://example.com"
         )
 
-    def test_execute_command_no_auth(self, web_ui_client):
+    def test_execute_command_no_auth(self, web_ui_client_no_auth):
         """Test command execution without authentication."""
-        response = web_ui_client.post(
+        response = web_ui_client_no_auth.post(
             "/api/command/execute", json={"command": "clean", "args": ""}
         )
         assert response.status_code == 401
@@ -308,6 +294,14 @@ def web_ui_app_with_sessions():
 @pytest.fixture
 def web_ui_client_with_sessions(web_ui_app_with_sessions):
     """Create a test client for the WebUI app with sessions."""
+    client = TestClient(web_ui_app_with_sessions)
+    client.cookies.set("vibe_auth", "test-token")
+    return client
+
+
+@pytest.fixture
+def web_ui_client_with_sessions_no_auth(web_ui_app_with_sessions):
+    """Create a test client for the WebUI app with sessions, no auth."""
     return TestClient(web_ui_app_with_sessions)
 
 
@@ -342,9 +336,7 @@ class TestListSessions:
             mock_get_first_user_message,
         )
 
-        response = web_ui_client_with_sessions.get(
-            "/api/sessions", headers={"Authorization": "Bearer test-token"}
-        )
+        response = web_ui_client_with_sessions.get("/api/sessions")
         assert response.status_code == 200
         data = response.json()
         assert "sessions" in data
@@ -364,16 +356,14 @@ class TestListSessions:
             session_loader.SessionLoader, "list_sessions", mock_list_sessions
         )
 
-        response = web_ui_client_with_sessions.get(
-            "/api/sessions", headers={"Authorization": "Bearer test-token"}
-        )
+        response = web_ui_client_with_sessions.get("/api/sessions")
         assert response.status_code == 200
         data = response.json()
         assert data["sessions"] == []
 
-    def test_list_sessions_no_auth(self, web_ui_client_with_sessions):
+    def test_list_sessions_no_auth(self, web_ui_client_with_sessions_no_auth):
         """Test session listing without authentication."""
-        response = web_ui_client_with_sessions.get("/api/sessions")
+        response = web_ui_client_with_sessions_no_auth.get("/api/sessions")
         assert response.status_code == 401
 
 
@@ -395,8 +385,7 @@ class TestResumeSession:
         )
 
         response = web_ui_client_with_sessions.post(
-            f"/api/sessions/{session_id}/resume",
-            headers={"Authorization": "Bearer test-token"},
+            f"/api/sessions/{session_id}/resume"
         )
         assert response.status_code == 200
         data = response.json()
@@ -420,17 +409,16 @@ class TestResumeSession:
         )
 
         response = web_ui_client_with_sessions.post(
-            "/api/sessions/invalid-session-id/resume",
-            headers={"Authorization": "Bearer test-token"},
+            "/api/sessions/00000000-0000-0000-0000-000000000000/resume"
         )
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is False
         assert "not found" in data["error"].lower()
 
-    def test_resume_session_no_auth(self, web_ui_client_with_sessions):
+    def test_resume_session_no_auth(self, web_ui_client_with_sessions_no_auth):
         """Test session resume without authentication."""
-        response = web_ui_client_with_sessions.post(
+        response = web_ui_client_with_sessions_no_auth.post(
             "/api/sessions/test-session-id/resume"
         )
         assert response.status_code == 401

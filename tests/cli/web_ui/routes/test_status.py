@@ -15,13 +15,9 @@ def test_status_endpoint_requires_auth() -> None:
     assert response.status_code == 401
 
 
-def test_status_endpoint_returns_false_without_tui_app() -> None:
+def test_status_endpoint_returns_false_without_tui_app(authenticated_client) -> None:
     """Test that /api/status returns running=False when no TUI app."""
-    from vibe.cli.web_ui.server import create_app
-
-    app = create_app(token="test-token")
-    client = TestClient(app)
-    response = client.get("/api/status", headers={"Authorization": "Bearer test-token"})
+    response = authenticated_client.get("/api/status")
     assert response.status_code == 200
     data = response.json()
     assert data["running"] is False
@@ -57,7 +53,8 @@ def test_status_endpoint_returns_true_when_running() -> None:
     mock_tui_app = MockTUIApp()
     app = create_app(token="test-token", tui_app=mock_tui_app)  # type: ignore
     client = TestClient(app)
-    response = client.get("/api/status", headers={"Authorization": "Bearer test-token"})
+    client.cookies.set("vibe_auth", "test-token")
+    response = client.get("/api/status")
 
     assert response.status_code == 200
     data = response.json()
@@ -78,7 +75,8 @@ def test_status_endpoint_returns_false_when_not_running() -> None:
     mock_tui_app = MockTUIApp()
     app = create_app(token="test-token", tui_app=mock_tui_app)  # type: ignore
     client = TestClient(app)
-    response = client.get("/api/status", headers={"Authorization": "Bearer test-token"})
+    client.cookies.set("vibe_auth", "test-token")
+    response = client.get("/api/status")
 
     assert response.status_code == 200
     data = response.json()
@@ -103,9 +101,8 @@ def test_interrupt_endpoint_returns_error_without_tui_app() -> None:
 
     app = create_app(token="test-token")
     client = TestClient(app)
-    response = client.post(
-        "/api/interrupt", headers={"Authorization": "Bearer test-token"}
-    )
+    client.cookies.set("vibe_auth", "test-token")
+    response = client.post("/api/interrupt")
 
     assert response.status_code == 200
     data = response.json()
@@ -128,9 +125,8 @@ def test_interrupt_endpoint_calls_request_interrupt() -> None:
     mock_tui_app = MockTUIApp()
     app = create_app(token="test-token", tui_app=mock_tui_app)  # type: ignore
     client = TestClient(app)
-    response = client.post(
-        "/api/interrupt", headers={"Authorization": "Bearer test-token"}
-    )
+    client.cookies.set("vibe_auth", "test-token")
+    response = client.post("/api/interrupt")
 
     assert response.status_code == 200
     assert response.json() == {"success": True}

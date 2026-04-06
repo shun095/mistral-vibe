@@ -136,8 +136,7 @@ export async function clearHistory(page: Page): Promise<void> {
  */
 export async function resetTestState(
   page: Page,
-  webServerUrl: string,
-  authToken: string
+  webServerUrl: string
 ): Promise<void> {
   // Check if page is closed before trying to reset
   if (page.isClosed()) {
@@ -189,9 +188,9 @@ export async function resetTestState(
 
     // Just reload the page - don't use /clear as it consumes mock responses
 
-    // Reload page with auth token to get fresh state
+    // Reload page - cookie-based auth will persist
     console.log("Reset: reloading page...");
-    await page.goto(`${webServerUrl}/?token=${authToken}`, {
+    await page.goto(webServerUrl, {
       timeout: 10000,
       waitUntil: "domcontentloaded"
     });

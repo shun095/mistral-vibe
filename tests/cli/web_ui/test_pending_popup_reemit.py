@@ -99,7 +99,9 @@ def test_websocket_receives_pending_approval_popup_on_connect(
     app = create_app(token="test-token", tui_app=mock_tui_app)
     client = StarletteTestClient(app)
 
-    with client.websocket_connect("/ws?token=test-token") as websocket:
+    with client.websocket_connect(
+        "/ws", headers={"Cookie": "vibe_auth=test-token"}
+    ) as websocket:
         # Receive connected message
         connected_msg = websocket.receive_json()
         assert connected_msg["type"] == "connected"
@@ -127,7 +129,9 @@ def test_websocket_receives_pending_question_popup_on_connect(
     app = create_app(token="test-token", tui_app=mock_tui_app)
     client = StarletteTestClient(app)
 
-    with client.websocket_connect("/ws?token=test-token") as websocket:
+    with client.websocket_connect(
+        "/ws", headers={"Cookie": "vibe_auth=test-token"}
+    ) as websocket:
         # Receive connected message
         connected_msg = websocket.receive_json()
         assert connected_msg["type"] == "connected"
@@ -155,7 +159,9 @@ def test_websocket_no_popup_when_none_pending() -> None:
     app = create_app(token="test-token", tui_app=mock_tui_app)
     client = StarletteTestClient(app)
 
-    with client.websocket_connect("/ws?token=test-token") as websocket:
+    with client.websocket_connect(
+        "/ws", headers={"Cookie": "vibe_auth=test-token"}
+    ) as websocket:
         # Receive connected message
         connected_msg = websocket.receive_json()
         assert connected_msg["type"] == "connected"

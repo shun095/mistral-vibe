@@ -284,7 +284,9 @@ def test_websocket_streams_history_before_connected() -> None:
     app = create_app(token="test-token", agent_loop=mock_agent_loop)  # type: ignore
     client = StarletteTestClient(app)
 
-    with client.websocket_connect("/ws?token=test-token") as websocket:
+    with client.websocket_connect(
+        "/ws", headers={"Cookie": "vibe_auth=test-token"}
+    ) as websocket:
         # Collect all messages until we receive 'connected'
         messages = []
         while True:

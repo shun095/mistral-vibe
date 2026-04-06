@@ -183,7 +183,7 @@
 
                 if (response.ok && result.success) {
                     // Token is valid, cookie is set by server
-                    localStorage.setItem('vibe_auth_token', token);
+                    // No localStorage storage - authentication is cookie-based only
                     window.location.href = '/';
                 } else {
                     showError(result.error || 'Invalid authentication token. Please try again.');
