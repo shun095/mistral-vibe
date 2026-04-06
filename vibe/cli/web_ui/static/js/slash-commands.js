@@ -1,31 +1,31 @@
 /**
  * Slash Command Registry and Handler
  */
+
+const JSON_HEADERS = { 'Content-Type': 'application/json' };
+
 export class SlashCommandRegistry {
     constructor() {
         this.commands = new Map();
         this.loaded = false;
-        this.token = '';
     }
 
     async loadCommands() {
         if (this.loaded) {
             return;
         }
-        
+
         try {
-            const response = await fetch('/api/commands', {
-                headers: { 'Authorization': `Bearer ${this.token}` }
-            });
+            const response = await fetch('/api/commands');
             const data = await response.json();
-            
+
             data.commands.forEach(cmd => {
                 this.commands.set(cmd.name, cmd);
                 cmd.aliases.forEach(alias => {
                     this.commands.set(alias, cmd);
                 });
             });
-            
+
             this.loaded = true;
         } catch (error) {
             console.error('[SlashCommands] Failed to load commands:', error);
@@ -36,11 +36,11 @@ export class SlashCommandRegistry {
         // Parse input like "/clean" or "/help"
         const match = input.match(/^\/(\w+)(?:\s+(.*))?$/);
         if (!match) return null;
-        
+
         const [, commandName, args] = match;
-        const cmd = this.commands.get(`/${commandName}`) || 
+        const cmd = this.commands.get(`/${commandName}`) ||
                     this.commands.get(commandName);
-        
+
         return {
             command: cmd,
             name: commandName,
@@ -52,16 +52,13 @@ export class SlashCommandRegistry {
         try {
             const response = await fetch('/api/command/execute', {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${this.token}`,
-                    'Content-Type': 'application/json'
-                },
+                headers: JSON_HEADERS,
                 body: JSON.stringify({
                     command: commandName,
                     args: args
                 })
             });
-            
+
             return await response.json();
         } catch (error) {
             console.error(`Failed to execute command ${commandName}:`, error);
@@ -91,7 +88,7 @@ export class SlashAutocomplete {
         this.visible = false;
         this.selectedIndex = -1;
         this.suggestions = [];
-        
+
         this.container = this.createContainer();
         this.bindEvents();
     }
@@ -108,7 +105,7 @@ export class SlashAutocomplete {
         this.input.addEventListener('input', () => this.handleInput());
         this.input.addEventListener('keydown', (e) => this.handleKeydown(e));
         document.addEventListener('click', (e) => {
-            if (!e.target.closest('.slash-autocomplete') && 
+            if (!e.target.closest('.slash-autocomplete') &&
                 !e.target.closest('#message-input')) {
                 this.hide();
             }
@@ -124,7 +121,7 @@ export class SlashAutocomplete {
 
         const words = value.split(/\s+/);
         const lastWord = words[words.length - 1];
-        
+
         if (lastWord.startsWith('/')) {
             this.showSuggestions(lastWord);
         } else {
@@ -138,7 +135,7 @@ export class SlashAutocomplete {
         }
 
         this.suggestions = this.registry.getCompletions(prefix);
-        
+
         if (this.suggestions.length === 0) {
             this.hide();
             return;
@@ -159,7 +156,7 @@ export class SlashAutocomplete {
                 <span>${this.escapeHtml(sug.description)}</span>
             </li>
         `).join('');
-        
+
         // Add click handlers to suggestions
         const items = list.querySelectorAll('li');
         items.forEach((item, idx) => {
@@ -173,7 +170,7 @@ export class SlashAutocomplete {
     position() {
         const inputRect = this.input.getBoundingClientRect();
         const containerRect = this.container.getBoundingClientRect();
-        
+
         this.container.style.top = `${inputRect.top - containerRect.height + window.scrollY}px`;
         this.container.style.left = `${inputRect.left + window.scrollX}px`;
         this.container.style.minWidth = `${inputRect.width}px`;
@@ -242,7 +239,7 @@ export class SlashAutocomplete {
         const value = this.input.value;
         const words = value.split(/\s+/);
         const lastWord = words[words.length - 1];
-        
+
         // Replace the last word with completion
         words[words.length - 1] = text;
         this.input.value = words.join(' ');

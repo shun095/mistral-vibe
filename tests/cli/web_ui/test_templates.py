@@ -48,17 +48,9 @@ def test_index_template_includes_css() -> None:
     assert "/static/css/style.css" in response.text
 
 
-def test_index_template_includes_js() -> None:
+def test_index_template_includes_js(authenticated_client) -> None:
     """Test that index template includes JavaScript."""
-    from vibe.cli.web_ui.server import create_app
-
-    app = create_app(token="test-token")
-    client = TestClient(app)
-
-    # Login first
-    client.post("/api/login", json={"token": "test-token"})
-
-    response = client.get("/")
+    response = authenticated_client.get("/")
     assert "/static/js/app.js" in response.text
 
 

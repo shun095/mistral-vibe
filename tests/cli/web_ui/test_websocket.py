@@ -16,45 +16,52 @@ def app_with_token() -> tuple:
 
 
 @pytest.mark.timeout(5)
-def test_websocket_connects_with_valid_token(app_with_token: tuple) -> None:
-    """Test that WebSocket connects with valid token."""
+def test_websocket_connects_with_valid_cookie(app_with_token: tuple) -> None:
+    """Test that WebSocket connects with valid cookie."""
     app, token = app_with_token
     client = StarletteTestClient(app)
 
-    with client.websocket_connect(f"/ws?token={token}") as websocket:
+    # Set the auth cookie
+    with client.websocket_connect(
+        "/ws", headers={"Cookie": f"vibe_auth={token}"}
+    ) as websocket:
         # Connection should succeed
         assert websocket is not None
 
 
 @pytest.mark.timeout(5)
-def test_websocket_rejects_invalid_token(app_with_token: tuple) -> None:
-    """Test that WebSocket rejects invalid token."""
+def test_websocket_rejects_invalid_cookie(app_with_token: tuple) -> None:
+    """Test that WebSocket rejects invalid cookie."""
     app, _ = app_with_token
     client = StarletteTestClient(app)
 
-    with pytest.raises(Exception):
-        with client.websocket_connect("/ws?token=wrong-token"):
+    with pytest.raises(Exception):  # noqa: B017
+        with client.websocket_connect(
+            "/ws", headers={"Cookie": "vibe_auth=wrong-token"}
+        ):
             pass
 
 
 @pytest.mark.timeout(5)
-def test_websocket_requires_token(app_with_token: tuple) -> None:
-    """Test that WebSocket requires token."""
+def test_websocket_requires_cookie(app_with_token: tuple) -> None:
+    """Test that WebSocket requires cookie."""
     app, _ = app_with_token
     client = StarletteTestClient(app)
 
-    with pytest.raises(Exception):
+    with pytest.raises(Exception):  # noqa: B017
         with client.websocket_connect("/ws"):
             pass
 
 
 @pytest.mark.timeout(5)
-def test_websocket_receives_ping_message(app_with_token: tuple) -> None:
-    """Test that WebSocket sends initial ping message."""
+def test_websocket_receives_connected_message(app_with_token: tuple) -> None:
+    """Test that WebSocket sends connected message."""
     app, token = app_with_token
     client = StarletteTestClient(app)
 
-    with client.websocket_connect(f"/ws?token={token}") as websocket:
+    with client.websocket_connect(
+        "/ws", headers={"Cookie": f"vibe_auth={token}"}
+    ) as websocket:
         message = websocket.receive_json()
         assert message["type"] == "connected"
 
@@ -65,7 +72,9 @@ def test_websocket_can_send_message(app_with_token: tuple) -> None:
     app, token = app_with_token
     client = StarletteTestClient(app)
 
-    with client.websocket_connect(f"/ws?token={token}") as websocket:
+    with client.websocket_connect(
+        "/ws", headers={"Cookie": f"vibe_auth={token}"}
+    ) as websocket:
         websocket.send_json({"type": "user_message", "content": "Hello"})
         # Should not raise
         assert True

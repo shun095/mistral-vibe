@@ -79,7 +79,7 @@ describe('WebSocketClient', () => {
             // Manually trigger connection for testing
             client.connect();
 
-            expect(global.WebSocket).toHaveBeenCalledWith('ws://localhost/ws?token=test-token-123');
+            expect(global.WebSocket).toHaveBeenCalledWith('ws://localhost/ws');
         });
 
         test('uses wss protocol for https pages', () => {
@@ -89,7 +89,7 @@ describe('WebSocketClient', () => {
             client = new WebSocketClient({ token });
             client.connect();
 
-            expect(global.WebSocket).toHaveBeenCalledWith('wss://example.com/ws?token=test-token');
+            expect(global.WebSocket).toHaveBeenCalledWith('wss://example.com/ws');
         });
 
         test('calls onopen callback when connection opens', () => {

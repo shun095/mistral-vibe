@@ -7,20 +7,20 @@ import json
 import logging
 import os
 from pathlib import Path
+import re
 import time
 from typing import TYPE_CHECKING, Any, cast
+import uuid
 
 from fastapi import (
     Depends,
     FastAPI,
     HTTPException,
     Request,
-    Security,
     WebSocket,
     WebSocketDisconnect,
 )
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from vibe.core.tools.base import BaseTool
     from vibe.core.types import BaseEvent, LLMMessage
 
+from vibe.cli.web_ui.config import AUTH_COOKIE_NAME
 from vibe.core.paths import HISTORY_FILE
 from vibe.core.session.session_loader import SessionLoader
 
@@ -500,29 +501,40 @@ def create_app(  # noqa: PLR0915
         # Add event listener to agent loop
         agent_loop.add_event_listener(event_listener)
 
-    security = HTTPBearer(auto_error=False)
+    async def verify_request_auth(request: Request) -> None:
+        """Verify authentication via cookie for HTTP requests.
 
-    async def verify_token(
-        credentials: HTTPAuthorizationCredentials | None = Depends(security),  # noqa: B008
-    ) -> str:
-        """Verify the Bearer token."""
-        if credentials is None:
-            raise HTTPException(status_code=401, detail="Missing authentication token")
-        if credentials.credentials != auth_token:
-            raise HTTPException(status_code=401, detail="Invalid authentication token")
-        return credentials.credentials
+        Checks for valid vibe_auth cookie. Raises HTTPException if invalid.
+        This is the preferred auth method for all endpoints.
+        """
+        auth_cookie = request.cookies.get(AUTH_COOKIE_NAME)
+        if auth_cookie != auth_token:
+            raise HTTPException(
+                status_code=401, detail="Invalid or missing authentication cookie"
+            )
+
+    async def verify_websocket_auth(websocket: WebSocket) -> None:
+        """Verify authentication via cookie for WebSocket connections.
+
+        Checks for valid vibe_auth cookie. Closes connection if invalid.
+        """
+        auth_cookie = websocket.cookies.get(AUTH_COOKIE_NAME)
+        if auth_cookie != auth_token:
+            await websocket.close(
+                code=401, reason="Invalid or missing authentication cookie"
+            )
 
     @app.get("/login", response_class=HTMLResponse)
     def login_page(request: Request) -> HTMLResponse:
         """Serve the login page."""
         # Check if already authenticated - redirect to main page
-        auth_cookie = request.cookies.get("vibe_auth")
+        auth_cookie = request.cookies.get(AUTH_COOKIE_NAME)
         if auth_cookie == auth_token:
             raise HTTPException(status_code=307, headers={"Location": "/"})
         return templates.TemplateResponse(request, "login.html")
 
     @app.post("/api/login")
-    def login(token_data: dict) -> JSONResponse:
+    def login(request: Request, token_data: dict) -> JSONResponse:
         """Handle login request and set authentication cookie."""
         token = token_data.get("token", "")
 
@@ -531,12 +543,13 @@ def create_app(  # noqa: PLR0915
                 {"success": False, "error": "Invalid token"}, status_code=401
             )
 
-        # Set authentication cookie (httpOnly, secure in production)
+        # Set authentication cookie (httpOnly, secure, SameSite)
         response = JSONResponse({"success": True})
         response.set_cookie(
-            key="vibe_auth",
+            key=AUTH_COOKIE_NAME,
             value=token,
             httponly=True,
+            secure=request.url.scheme == "https",
             max_age=86400,  # 24 hours
             samesite="lax",
         )
@@ -546,44 +559,29 @@ def create_app(  # noqa: PLR0915
     def logout() -> JSONResponse:
         """Handle logout request and clear authentication cookie."""
         response = JSONResponse({"success": True})
-        response.delete_cookie(key="vibe_auth")
+        response.delete_cookie(key=AUTH_COOKIE_NAME)
         return response
 
-    @app.get("/", response_class=HTMLResponse)
-    def index(request: Request) -> HTMLResponse:
+    @app.get("/", response_class=HTMLResponse, response_model=None)
+    def index(request: Request) -> HTMLResponse | RedirectResponse:
         """Serve the main chat interface."""
-        # Check authentication via cookie
-        auth_cookie = request.cookies.get("vibe_auth")
-        if auth_cookie == auth_token:
-            return templates.TemplateResponse(request, "index.html")
-
-        # URL token auth is for testing/E2E only, disabled in production by default
-        # WARNING: Never enable in production - tokens in URLs can be logged, cached, or leaked
-        allow_url_token = (
-            os.environ.get("VIBE_ALLOW_URL_TOKEN", "false").lower() == "true"
-        )
-        if allow_url_token:
-            token_param = request.query_params.get("token")
-            if token_param == auth_token:
-                return templates.TemplateResponse(request, "index.html")
-
-        # Redirect to login page if no valid authentication
-        raise HTTPException(status_code=307, headers={"Location": "/login"})
+        # Check auth cookie and redirect to login if not authenticated
+        auth_cookie = request.cookies.get(AUTH_COOKIE_NAME)
+        if auth_cookie != auth_token:
+            return RedirectResponse(url="/login", status_code=307)
+        return templates.TemplateResponse(request, "index.html")
 
     @app.get("/health")
     def health() -> JSONResponse:
         return JSONResponse({"status": "healthy"})
 
     @app.get("/api/stats")
-    def get_stats(token: str = Security(verify_token)) -> JSONResponse:
+    def get_stats(_request: Request = Depends(verify_request_auth)) -> JSONResponse:  # noqa: B008
         return JSONResponse({"stats": {}})
 
     @app.get("/api/status")
-    def get_status(token: str = Security(verify_token)) -> JSONResponse:
+    def get_status(_request: Request = Depends(verify_request_auth)) -> JSONResponse:  # noqa: B008
         """Get the current agent status.
-
-        Args:
-            token: Authentication token.
 
         Returns:
             Agent status including whether it's running and context token usage.
@@ -621,11 +619,10 @@ def create_app(  # noqa: PLR0915
         return JSONResponse({"running": False, "context_tokens": 0, "max_tokens": 0})
 
     @app.post("/api/interrupt")
-    def interrupt_agent(token: str = Security(verify_token)) -> JSONResponse:
+    def interrupt_agent(
+        _request: Request = Depends(verify_request_auth),  # noqa: B008
+    ) -> JSONResponse:
         """Request an interrupt of the current agent operation.
-
-        Args:
-            token: Authentication token.
 
         Returns:
             Status of the interrupt request.
@@ -638,11 +635,8 @@ def create_app(  # noqa: PLR0915
         return JSONResponse({"success": True})
 
     @app.get("/api/commands")
-    def list_commands(token: str = Security(verify_token)) -> JSONResponse:
+    def list_commands(_request: Request = Depends(verify_request_auth)) -> JSONResponse:  # noqa: B008
         """List available slash commands.
-
-        Args:
-            token: Authentication token.
 
         Returns:
             List of commands with descriptions and aliases.
@@ -664,13 +658,13 @@ def create_app(  # noqa: PLR0915
 
     @app.post("/api/command/execute")
     async def execute_command(
-        command_data: dict, token: str = Security(verify_token)
+        command_data: dict,
+        _request: Request = Depends(verify_request_auth),  # noqa: B008
     ) -> JSONResponse:
         """Execute a slash command via the TUI app.
 
         Args:
             command_data: Command name and arguments.
-            token: Authentication token.
 
         Returns:
             Execution result.
@@ -691,11 +685,8 @@ def create_app(  # noqa: PLR0915
         return JSONResponse({"success": True})
 
     @app.get("/api/sessions")
-    def list_sessions(token: str = Security(verify_token)) -> JSONResponse:
+    def list_sessions(_request: Request = Depends(verify_request_auth)) -> JSONResponse:  # noqa: B008
         """List available sessions for resuming.
-
-        Args:
-            token: Authentication token.
 
         Returns:
             List of sessions with metadata.
@@ -740,17 +731,32 @@ def create_app(  # noqa: PLR0915
 
     @app.post("/api/sessions/{session_id}/resume")
     async def resume_session(
-        session_id: str, token: str = Security(verify_token)
+        session_id: str,
+        _request: Request = Depends(verify_request_auth),  # noqa: B008
     ) -> JSONResponse:
         """Resume a specific session by submitting to TUI for processing.
 
         Args:
-            session_id: The session ID to resume.
-            token: Authentication token.
+            session_id: The session ID to resume (must be valid UUID or hex format).
 
         Returns:
             Success status. TUI will broadcast MessageResetEvent when complete.
         """
+        # Validate session_id format (UUID or hex)
+        try:
+            # Try UUID format first
+            uuid.UUID(session_id)
+        except ValueError:
+            # Fall back to hex validation
+            if not re.match(r"^[0-9a-fA-F]{8,64}$", session_id):
+                return JSONResponse(
+                    {
+                        "success": False,
+                        "error": "Invalid session ID format. Must be UUID or hex string.",
+                    },
+                    status_code=400,
+                )
+
         tui_app = getattr(app.state, "tui_app", None)
         if tui_app is None:
             return JSONResponse({"success": False, "error": "No TUI app available"})
@@ -775,11 +781,8 @@ def create_app(  # noqa: PLR0915
             return JSONResponse({"success": False, "error": str(e)})
 
     @app.get("/api/messages")
-    def get_messages(token: str = Security(verify_token)) -> JSONResponse:
+    def get_messages(_request: Request = Depends(verify_request_auth)) -> JSONResponse:  # noqa: B008
         """Get current message history as events.
-
-        Args:
-            token: Authentication token.
 
         Returns:
             List of events representing the message history.
@@ -797,11 +800,10 @@ def create_app(  # noqa: PLR0915
             return JSONResponse({"events": []})
 
     @app.get("/api/prompt-history")
-    def get_prompt_history(token: str = Security(verify_token)) -> JSONResponse:
+    def get_prompt_history(
+        _request: Request = Depends(verify_request_auth),  # noqa: B008
+    ) -> JSONResponse:
         """Get prompt history from HISTORY_FILE.
-
-        Args:
-            token: Authentication token.
 
         Returns:
             List of prompt history entries (newest first, limited to MAX_HISTORY_ENTRIES).
@@ -820,14 +822,8 @@ def create_app(  # noqa: PLR0915
         Args:
             websocket: The WebSocket connection.
         """
-        # Get query parameters
-        query_params = dict(websocket.query_params)
-        token_param = query_params.get("token")
-
-        # Authenticate - token is mandatory
-        if token_param is None or token_param != auth_token:
-            await websocket.close(code=401, reason="Invalid or missing token")
-            return
+        # Authenticate via cookie
+        await verify_websocket_auth(websocket)
 
         await websocket.accept()
         app.state.websocket_clients.add(websocket)
@@ -954,7 +950,8 @@ def create_app(  # noqa: PLR0915
 
         @app.post("/api/test/mock-data")
         def register_mock_data(
-            mock_data: dict, token: str = Security(verify_token)
+            mock_data: dict,
+            _request: Request = Depends(verify_request_auth),  # noqa: B008
         ) -> JSONResponse:
             """Register mock data for E2E tests.
 
@@ -963,7 +960,6 @@ def create_app(  # noqa: PLR0915
                     - response_text: str - The response text to return
                     - tool_calls: list[dict] - Optional list of tool calls
                     - usage: dict - Optional token usage data
-                token: Authentication token.
 
             Returns:
                 Confirmation of registration.
@@ -993,11 +989,10 @@ def create_app(  # noqa: PLR0915
             return JSONResponse({"success": True, "message": "Mock data registered"})
 
         @app.post("/api/test/mock-data/reset")
-        def reset_mock_data(token: str = Security(verify_token)) -> JSONResponse:
+        def reset_mock_data(
+            _request: Request = Depends(verify_request_auth),  # noqa: B008
+        ) -> JSONResponse:
             """Reset the mock data store.
-
-            Args:
-                token: Authentication token.
 
             Returns:
                 Confirmation of reset.
@@ -1008,11 +1003,10 @@ def create_app(  # noqa: PLR0915
             return JSONResponse({"success": True, "message": "Mock data reset"})
 
         @app.get("/api/test/mock-data/usage")
-        def get_mock_data_usage(token: str = Security(verify_token)) -> JSONResponse:
+        def get_mock_data_usage(
+            _request: Request = Depends(verify_request_auth),  # noqa: B008
+        ) -> JSONResponse:
             """Get mock data store usage statistics.
-
-            Args:
-                token: Authentication token.
 
             Returns:
                 Usage statistics.

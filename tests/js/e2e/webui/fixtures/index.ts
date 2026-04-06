@@ -86,10 +86,12 @@ export const test = base.extend<WebUIFixtures & { page: Page }>({
     // Reset mock data BEFORE navigating to ensure clean state
     await mockBackend.reset();
 
-    // Navigate to the app with auth token
-    await page.goto(`${webServer.getUrl()}/?token=${authToken}`);
+    // Login via the login page to set the cookie
+    await page.goto(`${webServer.getUrl()}/login`);
+    await page.locator("#token").fill(authToken);
+    await page.locator("#login-btn").click();
 
-    // Wait for initial load - message input must be visible
+    // Wait for page to redirect and message input to be visible
     await page.locator(Selectors.messageInput).waitFor({ state: "visible", timeout: 15000 });
 
     // Wait for WebSocket to connect
@@ -115,7 +117,7 @@ export const test = base.extend<WebUIFixtures & { page: Page }>({
 
       // Check if page is still open before trying to reset
       if (!page.isClosed()) {
-        await resetTestState(page, webServer.getUrl(), authToken);
+        await resetTestState(page, webServer.getUrl());
         // resetTestState() already waits for page readiness, no need to wait again here
       }
     } catch (error) {

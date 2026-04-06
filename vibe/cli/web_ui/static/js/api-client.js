@@ -2,33 +2,15 @@
  * API Client Module
  *
  * Handles all REST API calls for the Web UI.
+ * Authentication is handled via HTTP-only cookie.
  * Separated from VibeClient for testability and single responsibility.
  */
 
+const JSON_HEADERS = { 'Content-Type': 'application/json' };
+
 export class APIClient {
-    constructor(token) {
-        this.token = token;
-    }
-
-    /**
-     * Get authorization headers
-     * @returns {Object} Headers object
-     */
-    _getHeaders() {
-        return {
-            'Authorization': `Bearer ${this.token}`
-        };
-    }
-
-    /**
-     * Get JSON content headers
-     * @returns {Object} Headers object
-     */
-    _getJsonHeaders() {
-        return {
-            'Authorization': `Bearer ${this.token}`,
-            'Content-Type': 'application/json'
-        };
+    constructor() {
+        // Authentication handled via HTTP-only cookie
     }
 
     /**
@@ -37,9 +19,7 @@ export class APIClient {
      */
     async getStatus() {
         try {
-            const response = await fetch('/api/status', {
-                headers: this._getHeaders()
-            });
+            const response = await fetch('/api/status');
 
             if (!response.ok) {
                 return null;
@@ -60,7 +40,7 @@ export class APIClient {
         try {
             const response = await fetch('/api/interrupt', {
                 method: 'POST',
-                headers: this._getJsonHeaders()
+                headers: JSON_HEADERS
             });
 
             return response.ok;
@@ -76,9 +56,7 @@ export class APIClient {
      */
     async getMessages() {
         try {
-            const response = await fetch('/api/messages', {
-                headers: this._getHeaders()
-            });
+            const response = await fetch('/api/messages');
 
             if (!response.ok) {
                 return null;
@@ -97,9 +75,7 @@ export class APIClient {
      */
     async getCommands() {
         try {
-            const response = await fetch('/api/commands', {
-                headers: this._getHeaders()
-            });
+            const response = await fetch('/api/commands');
 
             if (!response.ok) {
                 return null;
@@ -122,7 +98,7 @@ export class APIClient {
         try {
             const response = await fetch('/api/command/execute', {
                 method: 'POST',
-                headers: this._getJsonHeaders(),
+                headers: JSON_HEADERS,
                 body: JSON.stringify({
                     command,
                     args
@@ -146,9 +122,7 @@ export class APIClient {
      */
     async listSessions() {
         try {
-            const response = await fetch('/api/sessions', {
-                headers: this._getHeaders()
-            });
+            const response = await fetch('/api/sessions');
 
             if (!response.ok) {
                 return [];
@@ -171,7 +145,7 @@ export class APIClient {
         try {
             const response = await fetch(`/api/sessions/${sessionId}/resume`, {
                 method: 'POST',
-                headers: this._getJsonHeaders()
+                headers: JSON_HEADERS
             });
 
             if (!response.ok) {
@@ -191,9 +165,7 @@ export class APIClient {
      */
     async getPromptHistory() {
         try {
-            const response = await fetch('/api/prompt-history', {
-                headers: this._getHeaders()
-            });
+            const response = await fetch('/api/prompt-history');
 
             if (!response.ok) {
                 return { entries: [] };

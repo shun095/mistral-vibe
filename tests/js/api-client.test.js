@@ -13,7 +13,7 @@ describe('APIClient', () => {
     beforeEach(() => {
         originalFetch = global.fetch;
         global.fetch = jest.fn();
-        apiClient = new APIClient('test-token-123');
+        apiClient = new APIClient();
     });
 
     afterEach(() => {
@@ -21,7 +21,7 @@ describe('APIClient', () => {
     });
 
     describe('Status Polling', () => {
-        test('fetches /api/status with correct headers', async () => {
+        test('fetches /api/status', async () => {
             const mockResponse = {
                 ok: true,
                 json: jest.fn().mockResolvedValue({ running: true })
@@ -30,11 +30,7 @@ describe('APIClient', () => {
 
             const result = await apiClient.getStatus();
 
-            expect(global.fetch).toHaveBeenCalledWith('/api/status', {
-                headers: {
-                    'Authorization': 'Bearer test-token-123'
-                }
-            });
+            expect(global.fetch).toHaveBeenCalledWith('/api/status');
             expect(result).toEqual({ running: true });
         });
 
@@ -59,7 +55,7 @@ describe('APIClient', () => {
     });
 
     describe('Interrupt', () => {
-        test('sends POST to /api/interrupt with correct headers', async () => {
+        test('sends POST to /api/interrupt', async () => {
             const mockResponse = {
                 ok: true
             };
@@ -70,7 +66,6 @@ describe('APIClient', () => {
             expect(global.fetch).toHaveBeenCalledWith('/api/interrupt', {
                 method: 'POST',
                 headers: {
-                    'Authorization': 'Bearer test-token-123',
                     'Content-Type': 'application/json'
                 }
             });
@@ -98,7 +93,7 @@ describe('APIClient', () => {
     });
 
     describe('Messages', () => {
-        test('fetches /api/messages with correct headers', async () => {
+        test('fetches /api/messages', async () => {
             const mockEvents = [
                 { __type: 'UserMessageEvent', content: 'Hello' },
                 { __type: 'AssistantEvent', content: 'Hi there' }
@@ -111,11 +106,7 @@ describe('APIClient', () => {
 
             const result = await apiClient.getMessages();
 
-            expect(global.fetch).toHaveBeenCalledWith('/api/messages', {
-                headers: {
-                    'Authorization': 'Bearer test-token-123'
-                }
-            });
+            expect(global.fetch).toHaveBeenCalledWith('/api/messages');
             expect(result).toEqual({ events: mockEvents });
         });
 
@@ -132,7 +123,7 @@ describe('APIClient', () => {
     });
 
     describe('Commands', () => {
-        test('fetches /api/commands with correct headers', async () => {
+        test('fetches /api/commands', async () => {
             const mockCommands = {
                 commands: [
                     { name: '/help', aliases: [], description: 'Show help' },
@@ -147,11 +138,7 @@ describe('APIClient', () => {
 
             const result = await apiClient.getCommands();
 
-            expect(global.fetch).toHaveBeenCalledWith('/api/commands', {
-                headers: {
-                    'Authorization': 'Bearer test-token-123'
-                }
-            });
+            expect(global.fetch).toHaveBeenCalledWith('/api/commands');
             expect(result).toEqual(mockCommands);
         });
 
@@ -180,7 +167,6 @@ describe('APIClient', () => {
             expect(global.fetch).toHaveBeenCalledWith('/api/command/execute', {
                 method: 'POST',
                 headers: {
-                    'Authorization': 'Bearer test-token-123',
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
@@ -220,29 +206,8 @@ describe('APIClient', () => {
         });
     });
 
-    describe('Token Management', () => {
-        test('uses correct token in all requests', async () => {
-            const mockResponse = {
-                ok: true,
-                json: jest.fn().mockResolvedValue({ running: false })
-            };
-            global.fetch.mockResolvedValue(mockResponse);
-
-            await apiClient.getStatus();
-
-            expect(global.fetch).toHaveBeenCalledWith(
-                expect.any(String),
-                expect.objectContaining({
-                    headers: expect.objectContaining({
-                        'Authorization': 'Bearer test-token-123'
-                    })
-                })
-            );
-        });
-    });
-
     describe('Session Management', () => {
-        test('fetches /api/sessions with correct headers', async () => {
+        test('fetches /api/sessions', async () => {
             const mockResponse = {
                 ok: true,
                 json: jest.fn().mockResolvedValue({
@@ -260,11 +225,7 @@ describe('APIClient', () => {
 
             const result = await apiClient.listSessions();
 
-            expect(global.fetch).toHaveBeenCalledWith('/api/sessions', {
-                headers: {
-                    'Authorization': 'Bearer test-token-123'
-                }
-            });
+            expect(global.fetch).toHaveBeenCalledWith('/api/sessions');
             expect(result).toHaveLength(1);
             expect(result[0]).toHaveProperty('session_id', 'abc123def456');
         });
@@ -300,7 +261,7 @@ describe('APIClient', () => {
             expect(result).toEqual([]);
         });
 
-        test('sends POST to /api/sessions/{id}/resume with correct headers', async () => {
+        test('sends POST to /api/sessions/{id}/resume', async () => {
             const sessionId = 'test-session-123';
             const mockResponse = {
                 ok: true,
@@ -318,7 +279,6 @@ describe('APIClient', () => {
                 {
                     method: 'POST',
                     headers: {
-                        'Authorization': 'Bearer test-token-123',
                         'Content-Type': 'application/json'
                     }
                 }
