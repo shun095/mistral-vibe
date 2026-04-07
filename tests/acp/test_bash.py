@@ -291,7 +291,10 @@ class TestAcpBashTimeout:
         with pytest.raises(ToolError) as exc_info:
             await collect_result(tool.run(args))
 
-        assert str(exc_info.value) == "Command timed out after 1s: 'slow_command'"
+        error_msg = str(exc_info.value)
+        assert "Command timed out after 1s: 'slow_command'" in error_msg
+        assert "Partial stdout:" in error_msg
+        assert "partial output" in error_msg
         assert custom_handle._killed
 
     @pytest.mark.asyncio
@@ -300,6 +303,7 @@ class TestAcpBashTimeout:
     ) -> None:
         custom_handle = MockTerminalHandle(
             terminal_id="kill_failure_terminal",
+            output="test output",
             wait_delay=20,  # Longer than the 1 second timeout
         )
         mock_client._terminal_handle = custom_handle
@@ -321,7 +325,10 @@ class TestAcpBashTimeout:
         with pytest.raises(ToolError) as exc_info:
             await collect_result(tool.run(args))
 
-        assert str(exc_info.value) == "Command timed out after 1s: 'slow_command'"
+        error_msg = str(exc_info.value)
+        assert "Command timed out after 1s: 'slow_command'" in error_msg
+        assert "Partial stdout:" in error_msg
+        assert "test output" in error_msg
 
 
 class TestAcpBashEmbedding:
