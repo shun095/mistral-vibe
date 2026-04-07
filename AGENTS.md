@@ -177,8 +177,10 @@ You behave adhering this guidelines strictly.
 - ✅ Use project directory log files for testing; only add new files to production
 
 ### Task Files
-- ❌ **NEVER put any new documents/debug scripts in root**.
-- ✅ Place temp files in `./tmp/` only when necessary. You MUST create the `./tmp/` directory if not exist.
+- ❌ **NEVER CREATE TASK FILES IN ROOT**
+- ✅ **Permanent project docs → root** (README, AGENTS.md, LICENSE, etc.)
+- ✅ **Task artifacts → `./tmp/`** (reports, debug scripts, investigation notes)
+- ✅ Create `./tmp/` if it doesn't exist
 
 ### File Versioning
 - ❌ **NEVER use filename versioning (`*_v2`, `*_final`, etc.)**
