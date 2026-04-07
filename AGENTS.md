@@ -162,6 +162,12 @@ You behave adhering this guidelines strictly.
 - ✅ Ask user before any significant changes or when uncertain
 - Act as reporter/planner/tester, not developer, unless instructed
 
+**When asked to "analyze" or "review" code changes:**
+- This is NOT a read-only task
+- You MUST run the full test suite to verify changes work
+- Report test results as part of your analysis
+- Claiming "all tests pass" without running them is a critical failure
+
 ### Git Safety
 - ❌ **NEVER use `git reset --hard` or `git checkout <filename>` lightly**
 - ❌ **NEVER create commits unless explicitly requested**
@@ -219,6 +225,51 @@ You behave adhering this guidelines strictly.
 
 ## 🧪 Testing Requirements
 
+### ⚠️ MANDATORY: FULL TEST SUITE BEFORE ANY CLAIM OF COMPLETION
+
+**You are NOT allowed to claim a task is complete until ALL THREE test suites pass:**
+
+```bash
+# STEP 1: Python tests (ALL tests)
+uv run pytest tests/
+
+# STEP 2: JavaScript unit tests (ALL tests)
+npm test
+
+# STEP 3: WebUI E2E tests (ALL tests)
+npm run test:e2e
+```
+
+**❌ CRITICAL FAILURE - YOU ARE NOT DONE IF:**
+- You ran `pytest tests/specific/path/` instead of `pytest tests/`
+- You skipped any of the 3 test suites
+- You claim "tests pass" without running ALL 3 commands above
+- You say "E2E tests take too long" and skip them
+- You analyze code changes without running tests first
+
+**✅ YOU ARE DONE ONLY WHEN:**
+- `uv run pytest tests/` shows "X passed" (no failures)
+- `npm test` shows "X passed, X total" (no failures)
+- `npm run test:e2e` completes successfully (no failures)
+- You report the actual test counts from all 3 suites
+
+**WHY THIS IS NON-NEGOTIABLE:**
+- Partial tests create false confidence and ship broken code
+- E2E tests catch integration issues unit tests miss
+- The user explicitly asked for full test verification
+- Skipping tests is a critical failure mode that undermines trust
+
+**Rationale:** Changes in one module can break unrelated tests through:
+- Shared dependencies and utilities
+- Interface changes affecting callers
+- Global state modifications
+- Configuration changes
+- Import side effects
+
+Running partial tests creates false confidence and ships broken code.
+
+---
+
 ### Debugging in Tests
 - ✅ Use `logger.debug()` instead of `print()` for debugging in tests
 - ✅ Use `--log-cli-level=DEBUG` with pytest to show debug logs
@@ -242,22 +293,22 @@ You behave adhering this guidelines strictly.
 
 ---
 
-## ⚠️ CRITICAL: "RUN ALL TESTS" DEFINITION
+## ⚠️ CRITICAL: "RUN ALL TESTS" DEFINITION (REITERATED)
 
-**When asked to "run all tests" or verify changes work, you MUST run ALL 3 commands:**
+**This is the definition of "run all tests" - use these exact commands:**
 
 ```bash
-# 1. Python tests
+# 1. Python tests (ALL tests, not just modified files)
 uv run pytest tests/
 
-# 2. JavaScript unit tests
+# 2. JavaScript unit tests (ALL tests)
 npm test
 
-# 3. WebUI E2E tests
+# 3. WebUI E2E tests (ALL tests)
 npm run test:e2e
 ```
 
-**DO NOT SKIP ANY COMMAND.** All 3 test suites must pass before claiming completion.
+**All 3 test suites must pass before claiming completion.**
 
 ---
 

@@ -377,3 +377,67 @@ def test_messages_to_events_ask_user_question_json_format() -> None:
     assert event.result.answers[0].question == "What is your name?"  # type: ignore
     assert event.result.answers[0].answer == "Alice"  # type: ignore
     assert event.result.answers[0].is_other is False  # type: ignore
+
+
+def test_messages_to_events_detects_tool_errors() -> None:
+    """Test that messages_to_events detects tool errors from tool_error tags."""
+    from vibe.core.types import ToolResultEvent
+
+    # Include the assistant message with the tool call so the tool_name can be looked up
+    tool_call = ToolCall(
+        id="call_error_123",
+        index=0,
+        function=FunctionCall(name="bash", arguments='{"command": "ls"}'),
+    )
+    messages = [
+        LLMMessage(role=Role.assistant, content="Running bash", tool_calls=[tool_call]),
+        LLMMessage(
+            role=Role.tool,
+            tool_call_id="call_error_123",
+            content="<tool_error>bash: command not found: ls</tool_error>",
+        ),
+    ]
+    events = messages_to_events(messages, MockToolManager())  # type: ignore[call-arg]
+
+    # Should have: AssistantEvent, ToolCallEvent, ToolResultEvent
+    assert len(events) == 3
+
+    # Find the ToolResultEvent
+    tool_result_events = [e for e in events if isinstance(e, ToolResultEvent)]
+    assert len(tool_result_events) == 1
+
+    event = tool_result_events[0]
+    assert event.tool_call_id == "call_error_123"
+    assert event.tool_name == "bash"
+    assert event.error is not None
+    assert event.error == "bash: command not found: ls"
+    assert event.result is None
+
+
+def test_messages_to_events_detects_multiline_tool_errors() -> None:
+    """Test that messages_to_events detects multiline tool errors."""
+    from vibe.core.types import ToolResultEvent
+
+    tool_call = ToolCall(
+        id="call_error_multiline",
+        index=0,
+        function=FunctionCall(name="read_file", arguments='{"path": "/test.txt"}'),
+    )
+    messages = [
+        LLMMessage(role=Role.assistant, tool_calls=[tool_call]),
+        LLMMessage(
+            role=Role.tool,
+            tool_call_id="call_error_multiline",
+            content="<tool_error>Failed to read file:\nFile not found: /test.txt\nPermission denied</tool_error>",
+        ),
+    ]
+    events = messages_to_events(messages, MockToolManager())  # type: ignore[call-arg]
+
+    tool_result_events = [e for e in events if isinstance(e, ToolResultEvent)]
+    assert len(tool_result_events) == 1
+
+    event = tool_result_events[0]
+    assert event.error is not None
+    assert "Failed to read file:" in event.error
+    assert "File not found: /test.txt" in event.error
+    assert "Permission denied" in event.error
