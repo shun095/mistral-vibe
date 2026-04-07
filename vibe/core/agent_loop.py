@@ -1167,9 +1167,9 @@ class AgentLoop:
             ) from e
 
     async def _chat_streaming(
-        self, max_tokens: int | None = None
+        self, max_tokens: int | None = None, model_override: ModelConfig | None = None
     ) -> AsyncGenerator[LLMChunk]:
-        active_model = self.config.get_active_model()
+        active_model = model_override or self.config.get_active_model()
         provider = self.config.get_provider_for_model(active_model)
 
         available_tools = self.format_handler.get_available_tools(self.tool_manager)
@@ -1476,18 +1476,26 @@ class AgentLoop:
                 )
                 # Sleep to prevent the Llama.cpp server from becoming busy and crashing
                 await asyncio.sleep(1)
-                summary_result = await self._chat(
-                    model_override=self.config.get_compaction_model()
-                )
 
-            if summary_result.usage is None:
-                raise AgentLoopLLMResponseError(
-                    "Usage data missing in compaction summary response"
-                )
-            summary_content = summary_result.message.content or ""
-            # Convert Content to str for return type compatibility
-            if isinstance(summary_content, list):
-                summary_content = "".join(str(item) for item in summary_content)
+                # Use streaming for compaction
+                summary_content: str = ""
+                chunk_agg: LLMChunk | None = None
+                async for chunk in self._chat_streaming(
+                    model_override=self.config.get_compaction_model()
+                ):
+                    if chunk.message.content:
+                        content = (
+                            chunk.message.content
+                            if isinstance(chunk.message.content, str)
+                            else "".join(str(item) for item in chunk.message.content)
+                        )
+                        summary_content += content
+                    chunk_agg = chunk if chunk_agg is None else chunk_agg + chunk
+
+                if chunk_agg is None or chunk_agg.usage is None:
+                    raise AgentLoopLLMResponseError(
+                        "Usage data missing in compaction summary response"
+                    )
 
             system_message = self.messages[0]
             summary_message = LLMMessage(role=Role.user, content=summary_content)
