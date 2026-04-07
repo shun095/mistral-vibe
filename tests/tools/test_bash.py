@@ -57,6 +57,35 @@ async def test_handles_timeout(bash):
 
 
 @pytest.mark.asyncio
+async def test_timeout_includes_partial_output(bash):
+    """Test that partial stdout/stderr is captured when command times out."""
+    with pytest.raises(ToolError) as err:
+        await collect_result(
+            bash.run(
+                BashArgs(
+                    command="echo 'line 1' && echo 'line 2' && sleep 2 && echo 'line 3'",
+                    timeout=1,
+                )
+            )
+        )
+
+    error_msg = str(err.value)
+    assert "Command timed out after 1s" in error_msg
+    assert "Partial stdout:" in error_msg
+    assert "line 1" in error_msg
+    assert "line 2" in error_msg
+    # Verify the partial output section contains only line 1 and line 2
+    partial_stdout_start = error_msg.find("Partial stdout:\n")
+    assert partial_stdout_start != -1
+    partial_stdout = error_msg[partial_stdout_start + len("Partial stdout:\n") :]
+    assert "line 1" in partial_stdout
+    assert "line 2" in partial_stdout
+    assert (
+        "line 3" not in partial_stdout
+    )  # This should not appear (printed after timeout)
+
+
+@pytest.mark.asyncio
 async def test_truncates_output_to_max_bytes(bash):
     config = BashToolConfig(max_output_bytes=5)
     bash_tool = Bash(config=config, state=BaseToolState())

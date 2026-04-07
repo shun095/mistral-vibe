@@ -431,8 +431,15 @@ class Bash(
         )
 
     @final
-    def _build_timeout_error(self, command: str, timeout: int) -> ToolError:
-        return ToolError(f"Command timed out after {timeout}s: {command!r}")
+    def _build_timeout_error(
+        self, command: str, timeout: int, stdout: str, stderr: str
+    ) -> ToolError:
+        error_msg = f"Command timed out after {timeout}s: {command!r}"
+        if stdout:
+            error_msg += f"\nPartial stdout:\n{stdout}"
+        if stderr:
+            error_msg += f"\nPartial stderr:\n{stderr}"
+        return ToolError(error_msg)
 
     @final
     def _build_result(
@@ -450,6 +457,64 @@ class Bash(
         return BashResult(
             command=command, stdout=stdout, stderr=stderr, returncode=returncode
         )
+
+    async def _execute_with_timeout(
+        self,
+        proc: asyncio.subprocess.Process,
+        timeout: int,
+        max_bytes: int,
+        command: str,
+    ) -> tuple[str, str]:
+        """Execute process with timeout, capturing partial output on timeout.
+
+        Returns (stdout, stderr). Raises ToolError on timeout with partial output.
+        """
+        stdout_buffer = bytearray()
+        stderr_buffer = bytearray()
+        encoding = _get_subprocess_encoding()
+
+        def decode_output(buffer: bytearray) -> str:
+            return (
+                buffer.decode(encoding, errors="replace")[:max_bytes] if buffer else ""
+            )
+
+        async def read_stream(stream: asyncio.StreamReader, buffer: bytearray) -> None:
+            """Read from stream and append to buffer."""
+            while True:
+                data = await stream.read(4096)
+                if not data:
+                    break
+                buffer.extend(data)
+
+        assert proc.stdout is not None
+        assert proc.stderr is not None
+
+        stdout_task = asyncio.create_task(read_stream(proc.stdout, stdout_buffer))
+        stderr_task = asyncio.create_task(read_stream(proc.stderr, stderr_buffer))
+
+        await asyncio.wait({stdout_task, stderr_task}, timeout=timeout)
+
+        if not stdout_task.done() or not stderr_task.done():
+            for task in [stdout_task, stderr_task]:
+                if not task.done():
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
+
+            await _kill_process_tree(proc)
+            await proc.wait()
+
+            stdout = decode_output(stdout_buffer)
+            stderr = decode_output(stderr_buffer)
+
+            raise self._build_timeout_error(command, timeout, stdout, stderr)
+
+        stdout_task.result()
+        stderr_task.result()
+
+        return decode_output(stdout_buffer), decode_output(stderr_buffer)
 
     async def run(
         self, args: BashArgs, ctx: InvokeContext | None = None
@@ -478,24 +543,8 @@ class Bash(
                 **kwargs,
             )
 
-            try:
-                stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                    proc.communicate(), timeout=timeout
-                )
-            except TimeoutError:
-                await _kill_process_tree(proc)
-                raise self._build_timeout_error(args.command, timeout)
-
-            encoding = _get_subprocess_encoding()
-            stdout = (
-                stdout_bytes.decode(encoding, errors="replace")[:max_bytes]
-                if stdout_bytes
-                else ""
-            )
-            stderr = (
-                stderr_bytes.decode(encoding, errors="replace")[:max_bytes]
-                if stderr_bytes
-                else ""
+            stdout, stderr = await self._execute_with_timeout(
+                proc, timeout, max_bytes, args.command
             )
 
             returncode = proc.returncode or 0

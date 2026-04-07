@@ -107,7 +107,16 @@ class Bash(CoreBashTool, BaseAcpTool[AcpBashState]):
             except Exception as e:
                 logger.error(f"Failed to kill terminal: {e!r}")
 
-            raise self._build_timeout_error(command, timeout)
+            # Get partial output before raising timeout error
+            try:
+                output_response = await client.terminal_output(
+                    session_id=session_id, terminal_id=terminal_id
+                )
+                partial_stdout = output_response.output or ""
+            except Exception:
+                partial_stdout = ""
+
+            raise self._build_timeout_error(command, timeout, partial_stdout, "")
 
     @classmethod
     def tool_call_session_update(cls, event: ToolCallEvent) -> ToolCallStart | None:
