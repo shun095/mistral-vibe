@@ -240,6 +240,27 @@ You behave adhering this guidelines strictly.
 - Validates complex UI behavior (widget lifecycle, async operations, config loading)
 - Specifically designed for comprehensive UI testing
 
+---
+
+## ⚠️ CRITICAL: "RUN ALL TESTS" DEFINITION
+
+**When asked to "run all tests" or verify changes work, you MUST run ALL 3 commands:**
+
+```bash
+# 1. Python tests
+uv run pytest tests/
+
+# 2. JavaScript unit tests
+npm test
+
+# 3. WebUI E2E tests
+npm run test:e2e
+```
+
+**DO NOT SKIP ANY COMMAND.** All 3 test suites must pass before claiming completion.
+
+---
+
 ### 🧪 Testing Commands
 
 ```bash
