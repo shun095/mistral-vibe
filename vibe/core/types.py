@@ -1,9 +1,3 @@
-"""Core type definitions that everything else depends on.
-
-This module contains fundamental types that have no dependencies on other
-submodules in the types package.
-"""
-
 from __future__ import annotations
 
 from abc import ABC
@@ -17,6 +11,7 @@ from uuid import uuid4
 
 if TYPE_CHECKING:
     from vibe.core.tools.base import BaseTool
+    from vibe.core.tools.permissions import RequiredPermission
 else:
     BaseTool = Any
 
@@ -73,6 +68,12 @@ class AgentStats(BaseModel):
     ) -> None:
         self._listeners[attr_name] = listener
 
+    @staticmethod
+    def create_fresh(previous: AgentStats) -> AgentStats:
+        fresh = AgentStats()
+        fresh._listeners = previous._listeners.copy()
+        return fresh
+
     @computed_field
     @property
     def session_total_llm_tokens(self) -> int:
@@ -122,12 +123,6 @@ class AgentStats(BaseModel):
         self.last_turn_completion_tokens = 0
         self.last_turn_duration = 0.0
         self.tokens_per_second = 0.0
-
-    @staticmethod
-    def create_fresh(previous: AgentStats) -> AgentStats:
-        fresh = AgentStats()
-        fresh._listeners = previous._listeners.copy()
-        return fresh
 
 
 class SessionInfo(BaseModel):
@@ -354,8 +349,126 @@ class LLMUsage(BaseModel):
         )
 
 
+class LLMChunk(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    message: LLMMessage
+    usage: LLMUsage | None = None
+    prompt_progress: PromptProgress | None = None
+    correlation_id: str | None = None
+
+    def __add__(self, other: LLMChunk) -> LLMChunk:
+        if self.usage is None and other.usage is None:
+            new_usage = None
+        else:
+            new_usage = (self.usage or LLMUsage()) + (other.usage or LLMUsage())
+        # Keep the latest prompt_progress if available
+        latest_progress = other.prompt_progress or self.prompt_progress
+        return LLMChunk(
+            message=self.message + other.message,
+            usage=new_usage,
+            prompt_progress=latest_progress,
+            correlation_id=other.correlation_id or self.correlation_id,
+        )
+
+
 class BaseEvent(BaseModel, ABC):
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
+class UserMessageEvent(BaseEvent):
+    content: Content
+    message_id: str
+
+
+class AssistantEvent(BaseEvent):
+    content: str
+    stopped_by_middleware: bool = False
+    message_id: str | None = None
+
+    def __add__(self, other: AssistantEvent) -> AssistantEvent:
+        return AssistantEvent(
+            content=self.content + other.content,
+            stopped_by_middleware=self.stopped_by_middleware
+            or other.stopped_by_middleware,
+            message_id=self.message_id or other.message_id,
+        )
+
+
+class ReasoningEvent(BaseEvent):
+    content: str
+    message_id: str | None = None
+
+
+class ToolCallEvent(BaseEvent):
+    tool_call_id: str
+    tool_name: str
+    tool_class: type[BaseTool]
+    tool_call_index: int | None = None
+    args: BaseModel | None = None
+
+
+class ToolResultEvent(BaseEvent):
+    tool_name: str
+    tool_class: type[BaseTool] | None
+    result: BaseModel | None = None
+    error: str | None = None
+    skipped: bool = False
+    skip_reason: str | None = None
+    cancelled: bool = False
+    duration: float | None = None
+    tool_call_id: str
+
+
+class ToolStreamEvent(BaseEvent):
+    tool_name: str
+    message: str
+    tool_call_id: str
+
+
+class CompactStartEvent(BaseEvent):
+    current_context_tokens: int
+    threshold: int
+    # WORKAROUND: Using tool_call to communicate compact events to the client.
+    # This should be revisited when the ACP protocol defines how compact events
+    # should be represented.
+    # [RFD](https://agentclientprotocol.com/rfds/session-usage)
+    tool_call_id: str
+
+
+class CompactEndEvent(BaseEvent):
+    old_context_tokens: int
+    new_context_tokens: int
+    summary_length: int
+    summary_content: str | None = None
+    error: str | None = None
+    # WORKAROUND: Using tool_call to communicate compact events to the client.
+    # This should be revisited when the ACP protocol defines how compact events
+    # should be represented.
+    # [RFD](https://agentclientprotocol.com/rfds/session-usage)
+    tool_call_id: str
+
+
+class AgentProfileChangedEvent(BaseEvent):
+    """Emitted when the active agent profile changes during a turn."""
+
+    agent_name: str
+
+
+class OutputFormat(StrEnum):
+    TEXT = auto()
+    JSON = auto()
+    STREAMING = auto()
+
+
+type ApprovalCallback = Callable[
+    [str, BaseModel, str, list[RequiredPermission] | None],
+    Awaitable[tuple[ApprovalResponse, str | None]],
+]
+
+
+type UserInputCallback = Callable[[BaseModel], Awaitable[BaseModel]]
+
+type SwitchAgentCallback = Callable[[str], Awaitable[None]]
 
 
 class MessageList(Sequence[LLMMessage]):
@@ -440,11 +553,107 @@ class RateLimitError(Exception):
         )
 
 
-# Type aliases for callbacks
-type ApprovalCallback = Callable[
-    [str, BaseModel, str, list | None], Awaitable[tuple[ApprovalResponse, str | None]]
-]
+# New event classes for extended functionality
 
-type UserInputCallback = Callable[[BaseModel], Awaitable[BaseModel]]
 
-type SwitchAgentCallback = Callable[[str], Awaitable[None]]
+class ContinueableUserMessageEvent(BaseEvent):
+    """Event for user messages that require the conversation to continue."""
+
+    content: Content
+    message_id: str | None = None
+
+
+class BashCommandEvent(BaseEvent):
+    """Event for bash command execution results."""
+
+    command: str
+    exit_code: int
+    output: str
+    message_id: str | None = None
+
+
+class PromptProgressEvent(BaseEvent):
+    """Event for prompt processing progress from LLM backends that support it.
+
+    Fields represent:
+    - total: total tokens in the prompt
+    - cache: tokens that were cached (not re-processed)
+    - processed: tokens processed so far
+    - time_ms: elapsed time in milliseconds since prompt processing started
+
+    The overall progress is processed/total, while the actual timed progress
+    is (processed-cache)/(total-cache).
+    """
+
+    total: int
+    cache: int
+    processed: int
+    time_ms: int
+
+    @property
+    def progress_percentage(self) -> float:
+        """Calculate the overall progress percentage (processed/total)."""
+        if self.total == 0:
+            return 0.0
+        return (self.processed / self.total) * 100
+
+
+class LLMErrorEvent(BaseEvent):
+    """Event broadcast when agent loop fails to get result from LLM backend.
+
+    Triggered when LLM backend errors occur (BackendError, AgentLoopLLMResponseError, etc.).
+    """
+
+    error_message: str
+    error_type: str
+    provider: str | None = None
+    model: str | None = None
+
+
+class LLMRetryEvent(BaseEvent):
+    """Event broadcast when LLM backend request fails and is being retried.
+
+    Triggered by async_retry/async_generator_retry decorators when a retryable
+    error occurs and a retry attempt is about to be made.
+    """
+
+    attempt: int
+    max_attempts: int
+    error_message: str
+    delay_seconds: float
+    provider: str | None = None
+    model: str | None = None
+
+
+# New model classes
+
+
+class PromptProgress(BaseModel):
+    """Prompt processing progress data from LLM backends that support it (e.g., llama-server)."""
+
+    total: int
+    cache: int
+    processed: int
+    time_ms: int
+
+
+class ToolCallSignature(BaseModel):
+    """Signature for a tool call used in loop detection.
+
+    This immutable dataclass represents a tool call's identifying
+    characteristics for comparison purposes.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    tool_name: str
+    normalized_args: dict[str, Any]
+    call_id: str
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, ToolCallSignature):
+            return False
+        return (
+            self.tool_name == other.tool_name
+            and self.normalized_args == other.normalized_args
+        )

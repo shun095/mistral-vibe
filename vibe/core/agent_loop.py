@@ -33,7 +33,6 @@ from vibe.core.llm.format import (
 )
 from vibe.core.llm.types import BackendLike
 from vibe.core.loop_detection import ToolCallLoopHandler
-from vibe.core.message_handler import create_message_handler
 from vibe.core.middleware import (
     CHAT_AGENT_EXIT,
     CHAT_AGENT_REMINDER,
@@ -608,17 +607,34 @@ class AgentLoop:
     async def _conversation_loop(
         self, user_msg: Content | None = None, client_message_id: str | None = None
     ) -> AsyncGenerator[BaseEvent]:
-        # Use strategy pattern to handle message preparation
-        handler = create_message_handler(user_msg, client_message_id)
-
-        try:
-            content, message_id = handler.prepare_message(self.messages, user_msg)
-        except ValueError as e:
-            raise AgentLoopError(str(e)) from e
-
-        # Increment steps if this is a new message operation
-        if handler.should_increment_steps():
+        # Inline message preparation logic (replaces strategy pattern)
+        if user_msg is not None:
+            # New message
+            user_message = LLMMessage(
+                role=Role.user, content=user_msg, message_id=client_message_id
+            )
+            self.messages.append(user_message)
+            if user_message.message_id is None:
+                raise AgentLoopError("User message must have a message_id")
+            content, message_id = user_msg, user_message.message_id
             self.stats.steps += 1
+        else:
+            # Replay - find last user message
+            history_messages = [msg for msg in self.messages if msg.role != Role.system]
+            last_user_message: LLMMessage | None = None
+            for msg in reversed(history_messages):
+                if msg.role == Role.user:
+                    last_user_message = msg
+                    break
+
+            if last_user_message is None:
+                raise AgentLoopError("No user message found in history")
+
+            msg_content = last_user_message.content or ""
+            # Type guard: message_id should never be None for user messages
+            assert last_user_message.message_id is not None
+            content, message_id = msg_content, last_user_message.message_id
+            # Don't increment steps for replay
 
         # Set the current user message ID
         self._current_user_message_id = message_id
