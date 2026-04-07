@@ -33,6 +33,7 @@ if TYPE_CHECKING:
 from vibe.cli.web_ui.config import AUTH_COOKIE_NAME
 from vibe.core.paths import HISTORY_FILE
 from vibe.core.session.session_loader import SessionLoader
+from vibe.core.utils.tags import TOOL_ERROR_TAG
 
 
 def get_token_from_env_or_arg(token: str | None) -> str:
@@ -228,7 +229,7 @@ def _parse_tool_output(
     return result
 
 
-def messages_to_events(  # noqa: PLR0912, PLR0915
+def messages_to_events(  # noqa: PLR0912, PLR0914, PLR0915
     messages: list[LLMMessage], tool_manager: Any
 ) -> list[BaseEvent]:
     """Convert a list of LLMMessage objects to equivalent BaseEvent objects.
@@ -369,20 +370,33 @@ def messages_to_events(  # noqa: PLR0912, PLR0915
             # Get the tool name from the map
             tool_name = tool_call_to_name.get(msg.tool_call_id, "")
 
-            # Parse the result content
-            result_obj: dict | None = None
+            # Convert content to string
+            content_str = msg.content if isinstance(msg.content, str) else ""
 
-            # Convert content to string for json.loads
-            content_str = msg.content if isinstance(msg.content, str) else "{}"
-            try:
-                # Try JSON first (new format)
-                result_obj = json.loads(content_str)
-            except (json.JSONDecodeError, ValueError):
-                # Fall back to text format parsing with multi-line value support (legacy format)
-                # Pass tool_name and tool_manager for dynamic field detection
-                result_obj = _parse_tool_output(
-                    content_str, tool_name=tool_name, tool_manager=tool_manager
+            # Check if this is an error message by looking for tool_error tags
+            error_msg: str | None = None
+            if f"<{TOOL_ERROR_TAG}>" in content_str:
+                # Extract error message from tags
+                match = re.search(
+                    f"<{TOOL_ERROR_TAG}>(.*?)</{TOOL_ERROR_TAG}>",
+                    content_str,
+                    re.DOTALL,
                 )
+                if match:
+                    error_msg = match.group(1).strip()
+
+            # Parse the result content (only if not an error)
+            result_obj: dict | None = None
+            if error_msg is None:
+                try:
+                    # Try JSON first (new format)
+                    result_obj = json.loads(content_str)
+                except (json.JSONDecodeError, ValueError):
+                    # Fall back to text format parsing with multi-line value support (legacy format)
+                    # Pass tool_name and tool_manager for dynamic field detection
+                    result_obj = _parse_tool_output(
+                        content_str, tool_name=tool_name, tool_manager=tool_manager
+                    )
 
             # Create a result model if we have result data
             result_model: Any = None
@@ -395,7 +409,7 @@ def messages_to_events(  # noqa: PLR0912, PLR0915
                         tool_name=tool_name,
                         tool_class=None,
                         result=result_model,
-                        error=None,
+                        error=error_msg,
                         skipped=False,
                         tool_call_id=msg.tool_call_id,
                     )
