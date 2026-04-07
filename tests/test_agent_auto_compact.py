@@ -138,6 +138,11 @@ class _ModelTrackingBackend(FakeBackend):
         self.requested_models.append(model)
         return await super().complete(model=model, **kwargs)
 
+    async def complete_streaming(self, *, model, **kwargs):
+        self.requested_models.append(model)
+        async for chunk in super().complete_streaming(model=model, **kwargs):
+            yield chunk
+
 
 @pytest.mark.asyncio
 async def test_compact_uses_compaction_model() -> None:
@@ -180,3 +185,77 @@ async def test_compact_uses_active_model_when_no_compaction_model() -> None:
     active = cfg.get_active_model()
     assert backend.requested_models[0].name == active.name
     assert backend.requested_models[1].name == active.name
+
+
+class StreamingTrackingBackend(FakeBackend):
+    """Backend that tracks whether streaming or non-streaming was used."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.streaming_calls: int = 0
+        self.non_streaming_calls: int = 0
+
+    async def complete(self, *, model, **kwargs):
+        self.non_streaming_calls += 1
+        return await super().complete(model=model, **kwargs)
+
+    async def complete_streaming(self, *, model, **kwargs):
+        self.streaming_calls += 1
+        async for chunk in super().complete_streaming(model=model, **kwargs):
+            yield chunk
+
+
+@pytest.mark.asyncio
+async def test_compact_uses_streaming() -> None:
+    """Verify that compact() uses streaming instead of non-streaming complete()."""
+    expected_summary = "<summary>"
+    backend = StreamingTrackingBackend([
+        [mock_llm_chunk(content=expected_summary)],
+        [mock_llm_chunk(content="<final>")],
+    ])
+    cfg = build_test_vibe_config(models=make_test_models(auto_compact_threshold=1))
+    agent = build_test_agent_loop(config=cfg, backend=backend)
+    agent.stats.context_tokens = 2
+
+    events = [ev async for ev in agent.act("Hello")]
+
+    # Compact should use streaming (at least 1 streaming call for the summary)
+    assert backend.streaming_calls >= 1, "Compact should use streaming"
+
+    # Verify summary content is correctly aggregated from streaming chunks
+    compact_end = [e for e in events if isinstance(e, CompactEndEvent)][0]
+    assert compact_end.summary_content == expected_summary
+
+
+@pytest.mark.asyncio
+async def test_compact_aggregates_multiple_streaming_chunks() -> None:
+    """Verify that compact() correctly aggregates multiple streaming chunks into summary."""
+    chunk1 = "Summary: "
+    chunk2 = "User asked about "
+    chunk3 = "Python. "
+    chunk4 = "Assistant explained "
+    chunk5 = "the basics."
+    expected_summary = chunk1 + chunk2 + chunk3 + chunk4 + chunk5
+
+    backend = StreamingTrackingBackend([
+        [
+            mock_llm_chunk(content=chunk1),
+            mock_llm_chunk(content=chunk2),
+            mock_llm_chunk(content=chunk3),
+            mock_llm_chunk(content=chunk4),
+            mock_llm_chunk(content=chunk5),
+        ],
+        [mock_llm_chunk(content="<final>")],
+    ])
+    cfg = build_test_vibe_config(models=make_test_models(auto_compact_threshold=1))
+    agent = build_test_agent_loop(config=cfg, backend=backend)
+    agent.stats.context_tokens = 2
+
+    events = [ev async for ev in agent.act("Hello")]
+
+    # Compact should use streaming
+    assert backend.streaming_calls >= 1, "Compact should use streaming"
+
+    # Verify summary content is correctly aggregated from all chunks
+    compact_end = [e for e in events if isinstance(e, CompactEndEvent)][0]
+    assert compact_end.summary_content == expected_summary
