@@ -96,7 +96,7 @@ class LSPClient:
     async def initialize(
         self, init_params: LSPRequestParams | None = None
     ) -> LSPResponse:
-        # Build minimal client capabilities for diagnostics-only support
+        # Build client capabilities for diagnostics and goto support
         capabilities: LSPRequestParams = {
             "textDocument": {
                 "publishDiagnostics": {
@@ -104,10 +104,10 @@ class LSPClient:
                     "tagSupport": {"valueSet": [1, 2]},
                     "codeDescriptionSupport": True,
                     "dataSupport": True,
-                }
-                # Note: We intentionally do NOT include the "diagnostic" capability
-                # to ensure servers send push diagnostics via publishDiagnostics
-                # instead of requiring us to pull them via documentDiagnostic
+                },
+                "definition": {"linkSupport": True},
+                "typeDefinition": {"linkSupport": True},
+                "implementation": {"linkSupport": True},
             }
         }
 
@@ -252,6 +252,154 @@ class LSPClient:
         # Not expecting fresh diagnostics or already have diagnostics
         # Return whatever we have
         return self.diagnostics.get(uri, [])
+
+    def _normalize_location_result(self, result: Any) -> list[dict[str, Any]]:
+        """Normalize LSP location result to a list.
+
+        LSP servers can return a single location or a list of locations.
+        This method ensures we always return a list.
+
+        Args:
+            result: The raw result from an LSP request
+
+        Returns:
+            A list of location dictionaries
+        """
+        if isinstance(result, list):
+            return result
+        elif result:
+            return [result]
+        return []
+
+    async def goto_definition(
+        self, uri: str, line: int, character: int
+    ) -> list[dict[str, Any]]:
+        """Get definition location(s) for a symbol at the given position.
+
+        Args:
+            uri: File URI
+            line: Line number (0-indexed)
+            character: Character position (0-indexed)
+
+        Returns:
+            List of definition locations (each location has uri, range, and optionally targetUri, targetRange)
+        """
+        logger.debug(
+            f"Getting definition for {uri} at line {line}, character {character}"
+        )
+
+        result = await self.send_request(
+            "textDocument/definition",
+            {
+                "textDocument": {"uri": uri},
+                "position": {"line": line, "character": character},
+            },
+        )
+
+        return self._normalize_location_result(result)
+
+    async def goto_type_definition(
+        self, uri: str, line: int, character: int
+    ) -> list[dict[str, Any]]:
+        """Get type definition location(s) for a symbol at the given position.
+
+        Args:
+            uri: File URI
+            line: Line number (0-indexed)
+            character: Character position (0-indexed)
+
+        Returns:
+            List of type definition locations
+        """
+        logger.debug(
+            f"Getting type definition for {uri} at line {line}, character {character}"
+        )
+
+        try:
+            result = await self.send_request(
+                "textDocument/typeDefinition",
+                {
+                    "textDocument": {"uri": uri},
+                    "position": {"line": line, "character": character},
+                },
+            )
+
+            return self._normalize_location_result(result)
+        except Exception as e:
+            error_msg = str(e)
+            if "Unhandled method" in error_msg or "Unknown request" in error_msg:
+                logger.debug(f"LSP server does not support typeDefinition: {error_msg}")
+                return []
+            raise
+
+    async def goto_implementation(
+        self, uri: str, line: int, character: int
+    ) -> list[dict[str, Any]]:
+        """Get implementation location(s) for a symbol at the given position.
+
+        Args:
+            uri: File URI
+            line: Line number (0-indexed)
+            character: Character position (0-indexed)
+
+        Returns:
+            List of implementation locations
+        """
+        logger.debug(
+            f"Getting implementation for {uri} at line {line}, character {character}"
+        )
+
+        try:
+            result = await self.send_request(
+                "textDocument/implementation",
+                {
+                    "textDocument": {"uri": uri},
+                    "position": {"line": line, "character": character},
+                },
+            )
+
+            return self._normalize_location_result(result)
+        except Exception as e:
+            error_msg = str(e)
+            if "Unhandled method" in error_msg or "Unknown request" in error_msg:
+                logger.debug(f"LSP server does not support implementation: {error_msg}")
+                return []
+            raise
+
+    async def find_references(
+        self, uri: str, line: int, character: int
+    ) -> list[dict[str, Any]]:
+        """Find all references to a symbol at the given position.
+
+        Args:
+            uri: File URI
+            line: Line number (0-indexed)
+            character: Character position (0-indexed)
+
+        Returns:
+            List of reference locations
+        """
+        logger.debug(
+            f"Finding references for {uri} at line {line}, character {character}"
+        )
+
+        try:
+            result = await self.send_request(
+                "textDocument/references",
+                {
+                    "textDocument": {"uri": uri},
+                    "position": {"line": line, "character": character},
+                    "context": {"includeDeclaration": True},
+                },
+            )
+
+            return self._normalize_location_result(result)
+        except Exception as e:
+            error_msg = str(e)
+            if "Unhandled method" in error_msg or "Unknown request" in error_msg:
+                logger.debug(f"LSP server does not support references: {error_msg}")
+                return []
+            raise
 
     async def _handle_response(self, response: LSPMessage) -> None:
         # Handle response from server
