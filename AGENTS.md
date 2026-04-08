@@ -157,228 +157,119 @@ You behave adhering this guidelines strictly.
 
 ## 🛡️ Safety Rules
 
-### Follow User's Instructions Precisely
-- ❌ **NEVER change code/git unless explicitly instructed**
-- ✅ Ask user before any significant changes or when uncertain
-- Act as reporter/planner/tester, not developer, unless instructed
-
-**When asked to "analyze" or "review" code changes:**
-- This is NOT a read-only task
-- You MUST run the full test suite to verify changes work
-- Report test results as part of your analysis
-- Claiming "all tests pass" without running them is a critical failure
-
-### Git Safety
+- ❌ **NEVER change code/git unless explicitly instructed** - Ask before significant changes
 - ❌ **NEVER use `git reset --hard` or `git checkout <filename>` lightly**
 - ❌ **NEVER create commits unless explicitly requested**
-- ❌ **NEVER skip pre-commit hooks with `--no-verify`** - hooks enforce critical quality gates
-- ✅ Backup before destructive operations; prefer `git stash --all` for temporary saves
-- ✅ Only stage/commit files related to the requested feature
-- ✅ **All commits MUST pass pre-commit hooks** - run `uv run pre-commit run --files <staged_files>` before committing
-- ✅ **Specify 600s timeout when running `git commit`** - pre-commit hooks may need extended time for type checking and linting
+- ❌ **NEVER skip pre-commit hooks with `--no-verify`**
+- ❌ **NEVER modify/delete files in `~/.vibe`** or write logs to `~/.vibe/vibe.log`
+- ❌ **NEVER create task files in root** - Use `./tmp/` for artifacts
+- ❌ **NEVER use filename versioning** (`*_v2`, `*_final`)
+- ✅ Backup before destructive operations; prefer `git stash --all`
+- ✅ **All commits MUST pass pre-commit hooks** with 600s timeout
+- ✅ **Always stage changes first and wait for user approval before committing**
 
-### Production Directories
-- ❌ **NEVER modify/delete files in `~/.vibe`**
-- ❌ **NEVER write logs to `~/.vibe/vibe.log` during testing**
-- ✅ Use project directory log files for testing; only add new files to production
+**When asked to "analyze" or "review" code changes:**
+- This is NOT a read-only task - run full test suite and report results
+- Claiming "all tests pass" without running them is a critical failure
 
-### Task Files
-- ❌ **NEVER CREATE TASK FILES IN ROOT**
-- ✅ **Permanent project docs → root** (README, AGENTS.md, LICENSE, etc.)
-- ✅ **Task artifacts → `./tmp/`** (reports, debug scripts, investigation notes)
-- ✅ Create `./tmp/` if it doesn't exist
+## Git Operations
 
-### File Versioning
-- ❌ **NEVER use filename versioning (`*_v2`, `*_final`, etc.)**
-- ✅ Backup old files as `./tmp/*_v1.bak` before recreating
+**Commit Message Format:**
+```bash
+git commit -m "subject line (max 50 chars)
 
-## Common Requirements
-- Keep codebase and documents simple, clean and logically structured.
+- bullet point for change
+- bullet point for change"
+```
+Do not use heredoc or multi-line string syntax.
+
+**Pre-commit Hook Failures:**
+1. Fix the issue (formatting, lint, etc.)
+2. Re-run pre-commit to verify fix
+3. Only then proceed to commit
+4. Report hook results in final summary
 
 ## Change Impact Analysis
 
-**Before planning any changes, analyze potential side effects:**
-- Identify all call sites of modified functions/classes using `grep`
-- Check for imports of affected symbols across the codebase
+**Before planning changes:**
+- Identify all call sites using `grep` or `lsp`
+- Check for imports of affected symbols
 - Review dependent tests that may fail
-- Trace data flow: how changes propagate through the system
-- Verify no unintended breaking changes to public APIs
+- Trace data flow and verify no unintended breaking changes
 
 ## Coding Requirements
 
-**Always follow existing coding style**
-- Investigate deeply and comprehensively to understand existing coding style of this repository before writing tests.
-  - You MUST understand and be strict about:
-    - Where to place the new codes and tests.
-    - How you can create mocks and stubs for the new tests.
-  - You MUST understand what kind of domains are exists in this repository, and directory structure.
-  - Do NOT write in your own way. Writing in your own way undermines the consistency of the code base and causes significant financial losses.
-  - This principal includes:
-    - Use FakeBackend if necessary
-    - Use pilot.press() for UI test if necessary
-    - Do NOT assert internal behavior like private field
-    - Do NOT place textual_ui things in acp directory. The opposite is also prohibited.
-  - **IMPORTANT**: NEVER rely on the new code in `custom-fix-*` branch as your existing coding style. Only `main` branch code is a reliable reference for your existing coding style.
+**Follow existing coding style:**
+- Investigate deeply before writing tests - understand placement, mocks, domain structure
+- Do NOT write in your own way - it causes financial losses
+- Use FakeBackend if necessary; use pilot.press() for UI tests
+- Do NOT assert internal behavior or mix textual_ui with acp
+- **ONLY use `main` branch as coding style reference** - not `custom-fix-*` branches
 
-**Always write code that is highly cohesive and has low coupling**
-- Thoroughly read your existing code and make sure to reuse any logic that meets your purpose and can be reused. This is code that you will maintain for a long time. Write highly cohesive code now. Otherwise, you will run into issues with horizontal expansion in the future.
+**Write cohesive, low-coupling code:**
+- Reuse existing logic when possible
+- This code will be maintained long-term
 
 ## 🧪 Testing Requirements
 
-### ⚠️ MANDATORY: FULL TEST SUITE BEFORE ANY CLAIM OF COMPLETION
-
-**You are NOT allowed to claim a task is complete until ALL THREE test suites pass:**
+### MANDATORY: Run ALL Three Test Suites
 
 ```bash
-# STEP 1: Python tests (ALL tests)
-uv run pytest tests/
-
-# STEP 2: JavaScript unit tests (ALL tests)
-npm test
-
-# STEP 3: WebUI E2E tests (ALL tests)
-npm run test:e2e
+uv run pytest tests/    # Python tests
+npm test                # JavaScript unit tests
+npm run test:e2e        # WebUI E2E tests
 ```
 
-**❌ CRITICAL FAILURE - YOU ARE NOT DONE IF:**
-- You ran `pytest tests/specific/path/` instead of `pytest tests/`
-- You skipped any of the 3 test suites
-- You claim "tests pass" without running ALL 3 commands above
-- You say "E2E tests take too long" and skip them
-- You analyze code changes without running tests first
+**You are NOT done until all 3 pass.** Report actual counts:
+```
+Python tests:     X passed, Y skipped
+JavaScript tests: X passed
+E2E tests:        X passed, Y skipped
+```
 
-**✅ YOU ARE DONE ONLY WHEN:**
-- `uv run pytest tests/` shows "X passed" (no failures)
-- `npm test` shows "X passed, X total" (no failures)
-- `npm run test:e2e` completes successfully (no failures)
-- You report the actual test counts from all 3 suites
+**Critical failures:**
+- Running partial tests (`pytest tests/specific/path/`)
+- Skipping E2E tests
+- Claiming "tests pass" without running all 3
 
-**WHY THIS IS NON-NEGOTIABLE:**
-- Partial tests create false confidence and ship broken code
-- E2E tests catch integration issues unit tests miss
-- The user explicitly asked for full test verification
-- Skipping tests is a critical failure mode that undermines trust
+### Test Reporting
 
-**Rationale:** Changes in one module can break unrelated tests through:
-- Shared dependencies and utilities
-- Interface changes affecting callers
-- Global state modifications
-- Configuration changes
-- Import side effects
+**When claiming coverage:**
+- Name specific test function (e.g., `test_lsp_find_references`)
+- State test file path (e.g., `tests/tools/test_lsp_goto.py`)
+- Do not use generic checkmarks without citation
 
-Running partial tests creates false confidence and ships broken code.
+### Debugging
 
----
+- ✅ Use `logger.debug()` with `--log-cli-level=DEBUG`
+- ❌ NEVER use `print()` or `rprint()` in tests
 
-### Debugging in Tests
-- ✅ Use `logger.debug()` instead of `print()` for debugging in tests
-- ✅ Use `--log-cli-level=DEBUG` with pytest to show debug logs
-- ❌ **NEVER use `print()` or `rprint()` statements for debugging** - they clutter output and don't integrate with logging
+### Unit Test Guidelines
 
-### Mandatory Standards
+**Minimize mocking:**
+- Use actual implementations whenever feasible
+- Mock ONLY for: external services, environment-dependent files, side effects
 
-#### **1. Unit Tests (MANDATORY FOR ALL CODE)**
-- All Python code changes MUST pass all existing pytest tests
-- Run `uv run pytest tests/` before claiming completion
-- Fix any failing tests related to the task
+### TUI Tests
 
-#### **2. TUI Tests (MANDATORY FOR UI CHANGES)**
-- All TUI changes MUST be tested with `terminalcp` skill.
+All TUI changes MUST be tested with `terminalcp` skill.
 
-**Why terminalcp is Required:**
-- Tests actual user interaction in a real terminal environment
-- Catches edge cases, timing issues, and real-world scenarios
-- Validates complex UI behavior (widget lifecycle, async operations, config loading)
-- Specifically designed for comprehensive UI testing
-
----
-
-## ⚠️ CRITICAL: "RUN ALL TESTS" DEFINITION (REITERATED)
-
-**This is the definition of "run all tests" - use these exact commands:**
+### Testing Commands
 
 ```bash
-# 1. Python tests (ALL tests, not just modified files)
-uv run pytest tests/
-
-# 2. JavaScript unit tests (ALL tests)
-npm test
-
-# 3. WebUI E2E tests (ALL tests)
-npm run test:e2e
+uv sync                           # Python dependencies
+npm install                       # JavaScript dependencies
+npm run playwright:install        # Playwright browsers
+uv run pytest tests/              # Python tests
+npm test                          # JavaScript tests
+npm run test:e2e                  # E2E tests
+npm run test:e2e:ui               # Interactive E2E
+npm run test:e2e:headed           # Visible browser
 ```
 
-**All 3 test suites must pass before claiming completion.**
+## Tool Usage Guidelines
 
----
-
-### 🧪 Testing Commands
-
-```bash
-# Install dependencies
-uv sync              # Python dependencies
-npm install          # JavaScript dependencies (Jest)
-npm run playwright:install  # Playwright browsers
-
-# Run all tests
-uv run pytest tests/ # Python tests
-npm test             # JavaScript unit tests (Jest)
-npm run test:e2e     # WebUI E2E tests (Playwright)
-
-# Run with debug logging
-uv run pytest tests/ --log-cli-level=DEBUG
-
-# Run specific test file
-uv run pytest tests/cli/textual_ui/test_interrupt_question_popup.py
-npm test -- vibe-client.test.js
-
-# JavaScript coverage
-npm run test:coverage
-
-# E2E test variants
-npm run test:e2e:ui       # Run with interactive UI
-npm run test:e2e:debug    # Run with debugger
-npm run test:e2e:headed   # Run with visible browser
-npm run test:e2e:chromium # Run on Chromium only
-```
-
-**Custom test scripts are unacceptable** - they cannot reproduce real user interaction.
-
-### `npm run test:e2e` - WebUI E2E Tests
-
-**What it does:** Runs Playwright end-to-end tests against the Mistral Vibe WebUI.
-
-**Location:** `tests/js/e2e/webui/tests/`
-
-**Tested scenarios:**
-- `auth.spec.ts` - Authentication flows
-- `basic-chat.spec.ts` - Chat interface and message exchange
-- `bash-command.spec.ts` - Bash command execution
-- `tool-approval.spec.ts` - Tool approval workflows
-
-**Configuration:** `playwright.config.ts`
-- Runs on Chromium, Firefox, and WebKit (Safari)
-- 120s timeout per test, 30s for assertions
-- Auto-retries 2x in CI
-- Generates HTML report in `playwright-report/`
-- Captures traces, screenshots, and videos on failure
-
-### Writing Unit Tests
-
-**Minimize Mocking and Simulation**
-- Avoid unnecessary mocking or simulation in test code as much as possible
-- Use actual implementations rather than mocks whenever feasible
-- Mock or simulate ONLY for:
-  - External services (e.g., LLM backend servers, API endpoints)
-  - Production files that vary by environment (e.g., configuration files, history files, session files in `~/.vibe` directory)
-  - Components that have side effects or depend on external state
-
-**Rationale**
-- Actual implementations provide more realistic testing
-- Mocks can hide bugs and create false confidence
-- External services have environment-dependent behaviors that should be isolated
-- Production files contain environment-specific data that shouldn't be hardcoded in tests
-
-## Project Specific Tool Usage Guidelines
-
-Always use dedicated tools instead of `bash` when available. Use `bash` only for system information, git operations, and package management.
+Always use dedicated tools instead of `bash` when available. Use `bash` only for:
+- System information (`pwd`, `whoami`, `date`)
+- Git operations (`git status`, `git diff`)
+- Package management (`pip list`, `npm list`)
