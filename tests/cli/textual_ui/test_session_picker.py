@@ -142,3 +142,84 @@ class TestSessionPickerAppBindings:
 
     def test_has_escape_binding(self) -> None:
         assert "escape" in self._get_binding_keys()
+
+
+class TestVibeAppSessionPickerHandlers:
+    """Test VibeApp handlers for session picker events."""
+
+    @pytest.mark.asyncio
+    async def test_on_session_picker_app_session_selected_local_calls_resume_local(
+        self, vibe_app
+    ) -> None:
+        """Test that local session selection calls _resume_local_session."""
+        from unittest.mock import AsyncMock, patch
+
+        session_id = "test-local-session-id"
+        event = SessionPickerApp.SessionSelected(
+            option_id=f"local:{session_id}", source="local", session_id=session_id
+        )
+
+        mock_resume_local = AsyncMock()
+
+        with patch.object(vibe_app, "_resume_local_session", mock_resume_local):
+            async with vibe_app.run_test() as pilot:
+                await vibe_app.on_session_picker_app_session_selected(event)
+                await pilot.pause()
+
+        mock_resume_local.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_on_session_picker_app_session_selected_remote_calls_resume_remote(
+        self, vibe_app
+    ) -> None:
+        """Test that remote session selection calls _resume_remote_session."""
+        from unittest.mock import AsyncMock, patch
+
+        session_id = "test-remote-session-id"
+        event = SessionPickerApp.SessionSelected(
+            option_id=f"remote:{session_id}", source="remote", session_id=session_id
+        )
+
+        mock_resume_remote = AsyncMock()
+
+        with patch.object(vibe_app, "_resume_remote_session", mock_resume_remote):
+            async with vibe_app.run_test() as pilot:
+                await vibe_app.on_session_picker_app_session_selected(event)
+                await pilot.pause()
+
+        mock_resume_remote.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_on_session_picker_app_session_selected_invalid_source_shows_error(
+        self, vibe_app
+    ) -> None:
+        """Test that invalid session source shows error message."""
+        session_id = "test-session-id"
+        event = SessionPickerApp.SessionSelected(
+            option_id=f"invalid:{session_id}",
+            source="invalid",  # type: ignore
+            session_id=session_id,
+        )
+
+        async with vibe_app.run_test() as pilot:
+            await vibe_app.on_session_picker_app_session_selected(event)
+            await pilot.pause()
+
+            # Check that an error message was displayed
+            error_messages = vibe_app.query("ErrorMessage")
+            assert len(error_messages) > 0
+            # The last error message should have the correct error stored
+            last_error = error_messages[-1]
+            assert "Unknown session source" in last_error._error
+
+    def test_vibe_app_has_no_resume_session_by_id_method(self, vibe_app) -> None:
+        """Test that VibeApp does not have a _resume_session_by_id method.
+
+        This test ensures the bug fix is maintained - the method
+        _resume_session_by_id was removed because it didn't exist and
+        the correct pattern is to dispatch to _resume_local_session or
+        _resume_remote_session based on the source.
+        """
+        assert not hasattr(vibe_app, "_resume_session_by_id"), (
+            "VibeApp should not have _resume_session_by_id method"
+        )
