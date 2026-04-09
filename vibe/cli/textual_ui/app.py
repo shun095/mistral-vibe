@@ -183,8 +183,8 @@ from vibe.core.types import (
     ApprovalResponse,
     AssistantEvent,
     Backend,
-    BashCommandEvent,
     BaseEvent,
+    BashCommandEvent,
     Content,
     LLMMessage,
     RateLimitError,
@@ -1233,7 +1233,6 @@ class VibeApp(App):  # noqa: PLR0904
             # Regular user message
             await self._handle_user_message(message)
 
-
     async def _handle_remote_user_message(self, message: str) -> None:
         warning = self._remote_manager.validate_input()
         if warning:
@@ -1891,12 +1890,6 @@ Enhanced prompt:"""
             await self._mount_and_scroll(
                 ErrorMessage(str(e), collapsed=self._tools_collapsed)
             )
-
-    async def on_session_picker_app_session_selected(
-        self, event: SessionPickerApp.SessionSelected
-    ) -> None:
-        await self._switch_to_input_app()
-        await self._resume_session_by_id(event.session_id)
 
     async def on_session_picker_app_cancelled(
         self, event: SessionPickerApp.Cancelled
