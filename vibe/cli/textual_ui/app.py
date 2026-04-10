@@ -1148,6 +1148,19 @@ class VibeApp(App):  # noqa: PLR0904
             return
         self._web_message_queue.append({"message": message, "image": image_data})
 
+    def resume_session_from_web(self, session_id: str) -> None:
+        """Resume a session by ID from the web UI.
+
+        This is a dedicated method for direct session resumption, separate from
+        the /resume slash command which shows the session picker.
+
+        Args:
+            session_id: The session ID to resume.
+        """
+        if not self._tui_ready:
+            return
+        self.run_worker(self._resume_session_by_id(session_id), exclusive=False)
+
     def is_agent_running(self) -> bool:
         """Check if the agent is currently running/processing."""
         return self._agent_running
@@ -1962,6 +1975,43 @@ Enhanced prompt:"""
         if self.event_handler:
             self.event_handler.is_remote = True
         self._remote_manager.start_stream(self)
+
+    async def _resume_session_by_id(self, session_id: str) -> None:
+        """Resume a session by its ID directly, without showing the picker.
+
+        This method is called from the web UI when a user clicks on a session
+        in the session picker modal. It handles both local and remote sessions.
+
+        Args:
+            session_id: The session ID to resume.
+        """
+        session_config = self.config.session_logging
+        session_path = SessionLoader.find_session_by_id(session_id, session_config)
+
+        source = "local" if session_path else "remote"
+        session = ResumeSessionInfo(
+            session_id=session_id, source=source, cwd="", title=None, end_time=None
+        )
+
+        await self._resume_session_with_error_handling(session)
+
+    async def _resume_session_with_error_handling(
+        self, session: ResumeSessionInfo
+    ) -> None:
+        """Resume a session with unified error handling.
+
+        Args:
+            session: The session info to resume.
+        """
+        try:
+            if session.source == "local":
+                await self._resume_local_session(session)
+            else:
+                await self._resume_remote_session(session)
+        except Exception as e:
+            await self._mount_and_scroll(
+                ErrorMessage(str(e), collapsed=self._tools_collapsed)
+            )
 
     async def on_remote_event(
         self, event: BaseEvent, loading_active: bool, loading_widget: Any
