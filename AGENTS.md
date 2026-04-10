@@ -167,6 +167,12 @@ You behave adhering this guidelines strictly.
 - ✅ Backup before destructive operations; prefer `git stash --all`
 - ✅ **All commits MUST pass pre-commit hooks** with 600s timeout
 - ✅ **Always stage changes first and wait for user approval before committing**
+- ✅ **Proactive Verification** - After any code change, automatically run relevant tests before responding. Testing is part of the fix, not a separate task.
+- ✅ **Follow the Rules You're Reading** - The guidelines in AGENTS.md apply to you. Don't write rules you won't follow. Before any action, verify compliance with existing rules.
+- ✅ **Commit Approval Checkpoint** - Before running `git commit`:
+  1. Confirm user explicitly requested the commit
+  2. Verify changes are staged
+  3. Never commit documentation changes without review
 
 **When asked to "analyze" or "review" code changes:**
 - This is NOT a read-only task - run full test suite and report results
@@ -176,12 +182,9 @@ You behave adhering this guidelines strictly.
 
 **Commit Message Format:**
 ```bash
-git commit -m "subject line (max 50 chars)
-
-- bullet point for change
-- bullet point for change"
+git commit -m "subject line (max 50 chars)" -m "- bullet point for change" -m "- bullet point for change"
 ```
-Do not use heredoc or multi-line string syntax.
+Use multiple `-m` flags for multi-line messages. Do not use heredoc or embedded newlines in a single `-m` argument.
 
 **Pre-commit Hook Failures:**
 1. Fix the issue (formatting, lint, etc.)
@@ -211,6 +214,10 @@ Do not use heredoc or multi-line string syntax.
 - This code will be maintained long-term
 
 ## 🧪 Testing Requirements
+
+### Verify Before Reporting Completion
+
+After any code modification, always run relevant tests before claiming the fix is complete. Do not wait for explicit instruction to test. Testing is part of the fix, not a separate task.
 
 ### MANDATORY: Run ALL Three Test Suites
 
