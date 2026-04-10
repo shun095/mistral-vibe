@@ -212,14 +212,17 @@ class TestVibeAppSessionPickerHandlers:
             last_error = error_messages[-1]
             assert "Unknown session source" in last_error._error
 
-    def test_vibe_app_has_no_resume_session_by_id_method(self, vibe_app) -> None:
-        """Test that VibeApp does not have a _resume_session_by_id method.
+    def test_vibe_app_has_resume_session_by_id_method(self, vibe_app) -> None:
+        """Test that VibeApp has a _resume_session_by_id method for direct session resumption.
 
         This test ensures the bug fix is maintained - the method
-        _resume_session_by_id was removed because it didn't exist and
-        the correct pattern is to dispatch to _resume_local_session or
-        _resume_remote_session based on the source.
+        _resume_session_by_id is used for direct session resumption from the web UI,
+        which dispatches to _resume_local_session or _resume_remote_session based on
+        whether the session is local or remote.
         """
-        assert not hasattr(vibe_app, "_resume_session_by_id"), (
-            "VibeApp should not have _resume_session_by_id method"
+        assert hasattr(vibe_app, "_resume_session_by_id"), (
+            "VibeApp should have _resume_session_by_id method"
+        )
+        assert hasattr(vibe_app, "resume_session_from_web"), (
+            "VibeApp should have resume_session_from_web method"
         )

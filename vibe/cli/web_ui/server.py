@@ -776,20 +776,9 @@ def create_app(  # noqa: PLR0915
             return JSONResponse({"success": False, "error": "No TUI app available"})
 
         try:
-            session_config = tui_app.config.session_logging
-            session_path = SessionLoader.find_session_by_id(session_id, session_config)
-
-            if not session_path:
-                return JSONResponse({
-                    "success": False,
-                    "error": f"Session {session_id[:8]} not found",
-                })
-
-            # Submit to TUI for processing - it will handle the resume and broadcast events
-            tui_app.submit_message_from_web(f"/resume {session_id}")
+            # Call dedicated method for direct session resumption
+            tui_app.resume_session_from_web(session_id)
             return JSONResponse({"success": True, "session_id": session_id})
-        except ValueError as e:
-            return JSONResponse({"success": False, "error": str(e)})
         except Exception as e:
             logging.warning("Error resuming session: %s", e)
             return JSONResponse({"success": False, "error": str(e)})

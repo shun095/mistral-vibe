@@ -370,19 +370,9 @@ class TestListSessions:
 class TestResumeSession:
     """Tests for /api/sessions/{session_id}/resume endpoint."""
 
-    def test_resume_session_success(self, web_ui_client_with_sessions, monkeypatch):
+    def test_resume_session_success(self, web_ui_client_with_sessions):
         """Test successful session resume - delegates to TUI."""
-        from vibe.core.session import session_loader
-
         session_id = "abc123def456789"
-        mock_session_path = MagicMock()
-
-        def mock_find_session_by_id(sid, config):
-            return mock_session_path if sid == session_id else None
-
-        monkeypatch.setattr(
-            session_loader.SessionLoader, "find_session_by_id", mock_find_session_by_id
-        )
 
         response = web_ui_client_with_sessions.post(
             f"/api/sessions/{session_id}/resume"
@@ -392,29 +382,22 @@ class TestResumeSession:
         assert data["success"] is True
         assert data["session_id"] == session_id
 
-        # Verify TUI was instructed to resume the session
+        # Verify TUI was instructed to resume the session directly
         # Access the mock_tui from the fixture's app state
         tui_app = web_ui_client_with_sessions.app.state.tui_app
-        tui_app.submit_message_from_web.assert_called_once_with(f"/resume {session_id}")
+        tui_app.resume_session_from_web.assert_called_once_with(session_id)
 
-    def test_resume_session_not_found(self, web_ui_client_with_sessions, monkeypatch):
+    def test_resume_session_not_found(self, web_ui_client_with_sessions):
         """Test resuming a non-existent session."""
-        from vibe.core.session import session_loader
-
-        def mock_find_session_by_id(sid, config):
-            return None
-
-        monkeypatch.setattr(
-            session_loader.SessionLoader, "find_session_by_id", mock_find_session_by_id
-        )
-
+        # The endpoint always returns success and delegates to TUI,
+        # which handles the actual session lookup and error reporting
         response = web_ui_client_with_sessions.post(
             "/api/sessions/00000000-0000-0000-0000-000000000000/resume"
         )
         assert response.status_code == 200
         data = response.json()
-        assert data["success"] is False
-        assert "not found" in data["error"].lower()
+        # TUI will handle the error and broadcast it via websocket
+        assert data["success"] is True
 
     def test_resume_session_no_auth(self, web_ui_client_with_sessions_no_auth):
         """Test session resume without authentication."""
