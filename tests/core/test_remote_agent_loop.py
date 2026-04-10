@@ -513,7 +513,7 @@ def test_remote_bash_uses_known_tool_display_even_when_disabled_locally() -> Non
         {
             "name": "bash",
             "tool_call_id": "call-bash",
-            "kwargs": {"command": "cat hello.py | wc -c"},
+            "kwargs": {"command": "cat hello.py | wc -c", "timeout": 10},
         },
     )
     completed = _completed(
@@ -522,7 +522,7 @@ def test_remote_bash_uses_known_tool_display_even_when_disabled_locally() -> Non
         {
             "name": "bash",
             "tool_call_id": "call-bash",
-            "kwargs": {"command": "cat hello.py | wc -c"},
+            "kwargs": {"command": "cat hello.py | wc -c", "timeout": 10},
             "output": {
                 "command": "cat hello.py | wc -c",
                 "stdout": "22\n",

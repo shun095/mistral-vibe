@@ -266,15 +266,11 @@ class BashToolConfig(BaseToolConfig):
 
 class BashArgs(BaseModel):
     command: str
-    timeout: int | None = Field(
-        default=None, description="Override the default command timeout."
-    )
+    timeout: int = Field(description="Command timeout in seconds (max 600).")
 
     @field_validator("timeout", mode="before")
     @classmethod
-    def _clamp_timeout(cls, value: int | None) -> int | None:
-        if value is None:
-            return value
+    def _clamp_timeout(cls, value: int) -> int:
         return min(value, 600)
 
 
@@ -519,7 +515,7 @@ class Bash(
     async def run(
         self, args: BashArgs, ctx: InvokeContext | None = None
     ) -> AsyncGenerator[ToolStreamEvent | BashResult, None]:
-        timeout = args.timeout or self.config.default_timeout
+        timeout = args.timeout
         max_bytes = self.config.max_output_bytes
 
         from vibe.core.logger import logger
