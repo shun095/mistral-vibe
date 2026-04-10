@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 URL_DISPLAY_LENGTH = 60
 
 import anyio
+import httpx
 from pydantic import BaseModel, Field
 
 from vibe.core.tools.base import (
@@ -47,6 +48,10 @@ class ReadImageArgs(BaseModel):
 class ReadImageResult(BaseModel):
     source_type: str  # "http", "https", or "file"
     source_url: str
+    # Note: image_data is NOT included here to avoid duplication in the LLM context.
+    # The tool result (with just the URL) is added as an assistant message, then
+    # _construct_llm_message() fetches the image and adds it as a separate user message.
+    # Including image_data here would send the same data twice to the LLM.
 
 
 class ReadImageToolConfig(BaseToolConfig):
@@ -71,6 +76,9 @@ class ReadImage(
         "Read an image file or fetch an image from a URL. "
         "Returns the image in a format suitable for LLM processing."
     )
+
+    # Cache to avoid re-fetching the same image in _construct_events and _construct_llm_message
+    _fetch_cache: ClassVar[dict[str, tuple[bytes, str]]] = {}
 
     @final
     async def run(
@@ -117,6 +125,55 @@ class ReadImage(
 
         except OSError as exc:
             raise ToolError(f"Error reading image file {file_path}: {exc}") from exc
+
+    @staticmethod
+    def _fetch_http_image_sync(url: str) -> tuple[bytes, str]:
+        """Fetch image from HTTP/HTTPS URL synchronously.
+
+        Uses a class-level cache to avoid re-fetching the same image
+        when both _construct_events and _construct_llm_message are called.
+
+        Returns:
+            Tuple of (image_bytes, content_type)
+        """
+        # Check cache first
+        if url in ReadImage._fetch_cache:
+            return ReadImage._fetch_cache[url]
+
+        try:
+            response = httpx.get(url, timeout=30.0)
+            response.raise_for_status()
+
+            image_data = response.content
+
+            # Get content type from response headers or guess from URL
+            content_type = response.headers.get("content-type")
+            if not content_type:
+                content_type, _ = mimetypes.guess_type(urlparse(url).path)
+                if not content_type:
+                    content_type = "application/octet-stream"
+
+            # Cache the result
+            ReadImage._fetch_cache[url] = (image_data, content_type)
+            return image_data, content_type
+
+        except httpx.HTTPError as exc:
+            if isinstance(exc, httpx.TimeoutException):
+                raise ToolError(f"Request timed out while fetching {url}") from exc
+            raise ToolError(f"Failed to fetch image from {url}: {exc}") from exc
+
+    @classmethod
+    def clear_fetch_cache(cls, urls: list[str] | None = None) -> None:
+        """Clear fetch cache for specified URLs or all URLs.
+
+        Called after _construct_events and _construct_llm_message complete
+        to prevent memory leaks from cached image data.
+        """
+        if urls:
+            for url in urls:
+                ReadImage._fetch_cache.pop(url, None)
+        else:
+            ReadImage._fetch_cache.clear()
 
     def check_allowlist_denylist(self, args: ReadImageArgs) -> ToolPermission | None:  # noqa: PLR0911
         """Check if the image URL is allowed based on configuration."""
@@ -174,6 +231,11 @@ class ReadImage(
     ) -> list[LLMMessage]:
         """Construct LLM messages with image content for read_image tool.
 
+        This method fetches the actual image data and embeds it as base64 in the
+        user message. The tool result (ReadImageResult) only contains the URL
+        reference, which is added separately as an assistant message by the agent
+        loop. This pattern avoids duplicating the image data in the conversation.
+
         Returns a list of messages:
         1. Assistant message with "Understood" confirmation
         2. User message with the image content
@@ -200,7 +262,12 @@ class ReadImage(
             # Create data URL
             data_url = f"data:{content_type};base64,{encoded_data}"
         else:
-            data_url = result_model.source_url
+            # HTTP/HTTPS: fetch and encode as base64
+            image_data, content_type = cls._fetch_http_image_sync(
+                result_model.source_url
+            )
+            encoded_data = base64.b64encode(image_data).decode("utf-8")
+            data_url = f"data:{content_type};base64,{encoded_data}"
 
         # User message with the image
         image_message = LLMMessage(
@@ -218,6 +285,9 @@ class ReadImage(
             tool_call_id=tool_call.call_id,
         )
 
+        # Clear cache after use to prevent memory leaks
+        cls.clear_fetch_cache([result_model.source_url])
+
         return [understood_message, image_message]
 
     @classmethod
@@ -229,7 +299,6 @@ class ReadImage(
         Returns UI events. The image content is also added to LLM context via
         the tool's get_llm_message_constructor() method.
         """
-        # Convert file URLs to base64 for display
         if result_model.source_type == "file":
             # Read and encode the image file
             parsed_url = urlparse(result_model.source_url)
@@ -247,7 +316,12 @@ class ReadImage(
             # Create data URL
             display_url = f"data:{content_type};base64,{encoded_data}"
         else:
-            display_url = result_model.source_url
+            # HTTP/HTTPS: fetch and encode as base64
+            image_data, content_type = cls._fetch_http_image_sync(
+                result_model.source_url
+            )
+            encoded_data = base64.b64encode(image_data).decode("utf-8")
+            display_url = f"data:{content_type};base64,{encoded_data}"
 
         # Assistant message (as event)
         assistant_event = AssistantEvent(content="Understood.")

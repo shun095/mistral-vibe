@@ -258,21 +258,53 @@ async def test_message_construction(tmp_path, monkeypatch):
             self.tool_name = "read_image"
             self.args_dict = {"image_url": "https://example.com/image.jpg"}
 
-    # Test HTTP URL - result just contains the URL
+    # Test HTTP URL - mock the HTTP request
     result_http = ReadImageResult(
         source_url="https://example.com/image.jpg", source_type="http"
     )
 
-    llm_messages_http = ReadImage._construct_llm_message(MockToolCall(), result_http)  # type: ignore[arg-type]
-    assert isinstance(llm_messages_http, list)
-    assert len(llm_messages_http) == 2
-    assert llm_messages_http[0].role == Role.assistant
-    assert llm_messages_http[0].content == "Understood."
-    assert llm_messages_http[0].tool_call_id == "test_call_123"
+    # Mock httpx.get to return test data
+    mock_response = type(
+        "MockResponse",
+        (),
+        {
+            "content": b"http_test_image_data",
+            "headers": {"content-type": "image/jpeg"},
+            "raise_for_status": lambda self: None,
+        },
+    )()
 
-    # Verify user message contains the image URL
-    assert llm_messages_http[1].role == Role.user
-    assert llm_messages_http[1].tool_call_id == "test_call_123"
+    with monkeypatch.context() as mp:
+        mp.setattr("httpx.get", lambda *args, **kwargs: mock_response)
+
+        llm_messages_http = ReadImage._construct_llm_message(
+            cast(ResolvedToolCall, MockToolCall()), result_http
+        )
+        assert isinstance(llm_messages_http, list)
+        assert len(llm_messages_http) == 2
+        assert llm_messages_http[0].role == Role.assistant
+        assert llm_messages_http[0].content == "Understood."
+        assert llm_messages_http[0].tool_call_id == "test_call_123"
+
+        # Verify user message contains base64 encoded image
+        assert llm_messages_http[1].role == Role.user
+        assert llm_messages_http[1].tool_call_id == "test_call_123"
+
+        # Check that the content has text and image_url
+        assert isinstance(llm_messages_http[1].content, list)
+        assert len(llm_messages_http[1].content) == 2
+
+        # Second item is image_url with base64 data
+        image_content = llm_messages_http[1].content[1]
+        assert isinstance(image_content, dict)
+        assert image_content["type"] == "image_url"
+        data_url = image_content["image_url"]["url"]
+        assert data_url.startswith("data:image/jpeg;base64,")
+
+        # Decode and verify the data
+        data_part = data_url.split(";base64,")[1]
+        decoded_data = base64.b64decode(data_part)
+        assert decoded_data == b"http_test_image_data"
 
     # Test file URL - create a test image and verify base64 encoding
     test_image = tmp_path / "test.jpg"
@@ -336,3 +368,54 @@ async def test_get_parameters():
     assert "image_url" in params["properties"]
     assert params["properties"]["image_url"]["type"] == "string"
     assert "description" in params["properties"]["image_url"]
+
+
+@pytest.mark.asyncio
+async def test_cache_avoids_refetch():
+    """Test that the cache prevents re-fetching the same image."""
+    # Clear cache first
+    ReadImage._fetch_cache.clear()
+
+    # Mock httpx.get to track calls
+    call_count = 0
+    mock_response = type(
+        "MockResponse",
+        (),
+        {
+            "content": b"cached_image_data",
+            "headers": {"content-type": "image/png"},
+            "raise_for_status": lambda self: None,
+        },
+    )()
+
+    def mock_get(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        return mock_response
+
+    with patch("httpx.get", mock_get):
+        # First call should fetch
+        data1, type1 = ReadImage._fetch_http_image_sync("https://example.com/test.png")
+        assert call_count == 1
+        assert data1 == b"cached_image_data"
+        assert type1 == "image/png"
+
+        # Second call should use cache
+        data2, type2 = ReadImage._fetch_http_image_sync("https://example.com/test.png")
+        assert call_count == 1  # Still 1, no re-fetch
+        assert data2 == b"cached_image_data"
+        assert type2 == "image/png"
+
+        # Different URL should fetch again
+        data3, type3 = ReadImage._fetch_http_image_sync("https://example.com/other.png")
+        assert call_count == 2  # Now 2, fetched again
+        assert data3 == b"cached_image_data"
+
+        # Clear cache
+        ReadImage.clear_fetch_cache(["https://example.com/test.png"])
+        assert "https://example.com/test.png" not in ReadImage._fetch_cache
+        assert "https://example.com/other.png" in ReadImage._fetch_cache
+
+        # Clear all
+        ReadImage.clear_fetch_cache()
+        assert len(ReadImage._fetch_cache) == 0

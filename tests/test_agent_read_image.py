@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -41,7 +42,11 @@ def make_config(
         session_logging=SessionLoggingConfig(enabled=False),
         auto_compact_threshold=0,
         enabled_tools=["read_image"],
-        tools={"read_image": ReadImageToolConfig(permission=read_image_permission)},
+        tools={
+            "read_image": ReadImageToolConfig(
+                permission=read_image_permission
+            ).model_dump()
+        },
         system_prompt_id="tests",
         include_project_context=False,
         include_prompt_detail=False,
@@ -257,9 +262,27 @@ async def test_read_image_integration(tmp_path, monkeypatch, test_case):
         config=config, backend=backend, agent_name=BuiltinAgentName.DEFAULT
     )
 
-    # Act and collect events
-    prompt = f"Please analyze this image: {image_url}"
-    events = await act_and_collect_events(agent_loop, prompt)
+    # Mock HTTP requests for HTTP/HTTPS URLs
+    mock_response = type(
+        "MockResponse",
+        (),
+        {
+            "content": b"mock_image_data_for_integration_test",
+            "headers": {"content-type": "image/jpeg"},
+            "raise_for_status": lambda self: None,
+        },
+    )()
+
+    # Act and collect events with HTTP mocking if needed
+    if image_url.startswith("http"):
+        with patch("httpx.get", return_value=mock_response):
+            events = await act_and_collect_events(
+                agent_loop, f"Please analyze this image: {image_url}"
+            )
+    else:
+        events = await act_and_collect_events(
+            agent_loop, f"Please analyze this image: {image_url}"
+        )
 
     # Verify event types match expectations
     for i, expected_type in enumerate(test_case["expected_event_types"]):
@@ -306,10 +329,16 @@ def assert_http_url_messages(messages):
         in text_item["text"]
     )
 
-    # Verify image part
+    # Verify image part (should be base64 data URL now)
     image_item = messages[5].content[1]
     assert image_item["type"] == "image_url"
-    assert image_item["image_url"]["url"] == "https://example.com/image.jpg"
+    image_url = image_item["image_url"]["url"]
+    assert image_url.startswith("data:image/jpeg;base64,")
+
+    # Verify the base64 data
+    data_part = image_url.split(";base64,")[1]
+    decoded_data = base64.b64decode(data_part)
+    assert decoded_data == b"mock_image_data_for_integration_test"
 
 
 def assert_file_url_messages(messages, tmp_path):
@@ -411,9 +440,27 @@ async def test_backend_receives_messages_after_read_image(
         config=config, backend=backend, agent_name=BuiltinAgentName.DEFAULT
     )
 
-    # Act and collect events
-    prompt = f"Please analyze this image: {image_url}"
-    await act_and_collect_events(agent_loop, prompt)
+    # Mock HTTP requests for HTTP/HTTPS URLs
+    mock_response = type(
+        "MockResponse",
+        (),
+        {
+            "content": b"mock_image_data_for_integration_test",
+            "headers": {"content-type": "image/jpeg"},
+            "raise_for_status": lambda self: None,
+        },
+    )()
+
+    # Act and collect events with HTTP mocking if needed
+    if image_url.startswith("http"):
+        with patch("httpx.get", return_value=mock_response):
+            await act_and_collect_events(
+                agent_loop, f"Please analyze this image: {image_url}"
+            )
+    else:
+        await act_and_collect_events(
+            agent_loop, f"Please analyze this image: {image_url}"
+        )
 
     # Get messages that would be sent to backend (after tool execution)
     # The messages list includes: system message, user message, tool result, assistant response, user image message
