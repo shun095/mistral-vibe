@@ -165,7 +165,7 @@ You behave adhering this guidelines strictly.
 - ❌ **NEVER create task files in root** - Use `./tmp/` for artifacts
 - ❌ **NEVER use filename versioning** (`*_v2`, `*_final`)
 - ✅ Backup before destructive operations; prefer `git stash --all`
-- ✅ **All commits MUST pass pre-commit hooks** with 600s timeout
+- ✅ **All commits MUST pass pre-commit hooks** - use `timeout=600` for pre-commit commands
 - ✅ **Always stage changes first and wait for user approval before committing**
 - ✅ **Proactive Verification** - After any code change, automatically run relevant tests before responding. Testing is part of the fix, not a separate task.
 - ✅ **Follow the Rules You're Reading** - The guidelines in AGENTS.md apply to you. Don't write rules you won't follow. Before any action, verify compliance with existing rules.
@@ -173,6 +173,15 @@ You behave adhering this guidelines strictly.
   1. Confirm user explicitly requested the commit
   2. Verify changes are staged
   3. Never commit documentation changes without review
+
+## Timeout Strategy
+
+For commands exceeding 30s, always set explicit `timeout`:
+- Pre-commit: `timeout=600`
+- Full test suite: `timeout=300`
+- Individual tests: `timeout=120`
+
+**Never bypass safety checks** due to timeouts. Retry with higher timeout before escalating.
 
 **When asked to "analyze" or "review" code changes:**
 - This is NOT a read-only task - run full test suite and report results
@@ -222,9 +231,9 @@ After any code modification, always run relevant tests before claiming the fix i
 ### MANDATORY: Run ALL Three Test Suites
 
 ```bash
-uv run pytest tests/    # Python tests
+uv run pytest tests/    # Python tests (timeout=300)
 npm test                # JavaScript unit tests
-npm run test:e2e        # WebUI E2E tests
+npm run test:e2e        # WebUI E2E tests (timeout=300)
 ```
 
 **You are NOT done until all 3 pass.** Report actual counts:
