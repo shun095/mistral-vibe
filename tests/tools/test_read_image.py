@@ -173,6 +173,78 @@ async def test_file_read_error_handling(read_image_tool, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_non_image_file_rejected(read_image_tool, tmp_path):
+    """Test that non-image files are rejected."""
+    # Create a text file
+    text_file = tmp_path / "document.txt"
+    text_file.write_text("This is a text file")
+
+    with pytest.raises(ToolError) as err:
+        await collect_result(
+            read_image_tool.run(ReadImageArgs(image_url=f"file://{text_file}"))
+        )
+
+    assert "not a supported image type" in str(err.value)
+    assert "text/plain" in str(err.value)
+
+
+@pytest.mark.asyncio
+async def test_non_image_file_rejected_pdf(read_image_tool, tmp_path):
+    """Test that PDF files are rejected."""
+    pdf_file = tmp_path / "document.pdf"
+    pdf_file.write_bytes(b"%PDF-1.4 fake pdf content")
+
+    with pytest.raises(ToolError) as err:
+        await collect_result(
+            read_image_tool.run(ReadImageArgs(image_url=f"file://{pdf_file}"))
+        )
+
+    assert "not a supported image type" in str(err.value)
+    assert "application/pdf" in str(err.value)
+
+
+@pytest.mark.asyncio
+async def test_unknown_extension_rejected(read_image_tool, tmp_path):
+    """Test that files with non-image MIME types are rejected."""
+    # Use .xyz extension which has MIME type chemical/x-xyz (not an image)
+    unknown_file = tmp_path / "data.xyz"
+    unknown_file.write_bytes(b"unknown content")
+
+    with pytest.raises(ToolError) as err:
+        await collect_result(
+            read_image_tool.run(ReadImageArgs(image_url=f"file://{unknown_file}"))
+        )
+
+    assert "not a supported image type" in str(err.value)
+    assert "chemical/x-xyz" in str(err.value)
+
+
+@pytest.mark.asyncio
+async def test_valid_image_types_accepted(read_image_tool, tmp_path):
+    """Test that valid image file types are accepted."""
+    valid_types = [
+        ("image.jpg", "image/jpeg"),
+        ("image.png", "image/png"),
+        ("image.gif", "image/gif"),
+        ("image.webp", "image/webp"),
+        ("image.bmp", "image/bmp"),
+        ("image.tiff", "image/tiff"),
+        ("image.svg", "image/svg+xml"),
+    ]
+
+    for filename, _ in valid_types:
+        filepath = tmp_path / filename
+        filepath.write_bytes(b"fake image data")
+
+        result = await collect_result(
+            read_image_tool.run(ReadImageArgs(image_url=f"file://{filepath}"))
+        )
+
+        assert isinstance(result, ReadImageResult)
+        assert result.source_type == "file"
+
+
+@pytest.mark.asyncio
 async def test_relative_file_path_resolution(read_image_tool, tmp_path, monkeypatch):
     """Test that relative file paths are resolved correctly."""
     monkeypatch.chdir(tmp_path)
@@ -419,3 +491,82 @@ async def test_cache_avoids_refetch():
         # Clear all
         ReadImage.clear_fetch_cache()
         assert len(ReadImage._fetch_cache) == 0
+
+
+@pytest.mark.asyncio
+async def test_http_non_image_content_type_rejected():
+    """Test that HTTP URLs returning non-image content types are rejected."""
+    from unittest.mock import MagicMock
+
+    # Mock response that returns a non-image content type
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.content = b"not an image"
+    mock_response.headers = {"content-type": "text/plain"}
+
+    with patch("httpx.get", return_value=mock_response):
+        with pytest.raises(ToolError) as err:
+            ReadImage._fetch_http_image_sync("https://example.com/text.txt")
+
+    assert "does not return an image" in str(err.value)
+    assert "text/plain" in str(err.value)
+
+
+@pytest.mark.asyncio
+async def test_http_missing_content_type_rejected():
+    """Test that HTTP URLs without Content-Type header are rejected."""
+    from unittest.mock import MagicMock
+
+    # Mock response without content-type header
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.content = b"some data"
+    mock_response.headers = {}
+
+    with patch("httpx.get", return_value=mock_response):
+        with pytest.raises(ToolError) as err:
+            ReadImage._fetch_http_image_sync("https://example.com/unknown")
+
+    # When no Content-Type header, mimetypes.guess_type() returns application/octet-stream
+    assert "does not return an image" in str(err.value)
+    assert "application/octet-stream" in str(err.value)
+
+
+@pytest.mark.asyncio
+async def test_http_valid_image_content_type_accepted():
+    """Test that HTTP URLs with valid image content types are accepted."""
+    from unittest.mock import MagicMock
+
+    # Mock response with valid image content type
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.content = b"fake image data"
+    mock_response.headers = {"content-type": "image/png"}
+
+    with patch("httpx.get", return_value=mock_response):
+        data, content_type = ReadImage._fetch_http_image_sync(
+            "https://example.com/image.png"
+        )
+
+    assert data == b"fake image data"
+    assert content_type == "image/png"
+
+
+@pytest.mark.asyncio
+async def test_http_content_type_with_charset_accepted():
+    """Test that Content-Type with charset parameter is handled correctly."""
+    from unittest.mock import MagicMock
+
+    # Mock response with content-type including charset
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.content = b"<svg></svg>"
+    mock_response.headers = {"content-type": "image/svg+xml; charset=utf-8"}
+
+    with patch("httpx.get", return_value=mock_response):
+        data, content_type = ReadImage._fetch_http_image_sync(
+            "https://example.com/image.svg"
+        )
+
+    assert data == b"<svg></svg>"
+    assert content_type == "image/svg+xml; charset=utf-8"

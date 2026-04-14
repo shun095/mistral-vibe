@@ -13,6 +13,18 @@ import anyio
 import httpx
 from pydantic import BaseModel, Field
 
+# Valid image MIME types that can be sent to LLM
+VALID_IMAGE_TYPES = frozenset({
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+    "image/bmp",
+    "image/tiff",
+    "image/svg+xml",
+    "image/avif",
+})
+
 from vibe.core.tools.base import (
     BaseTool,
     BaseToolConfig,
@@ -95,13 +107,14 @@ class ReadImage(
                 source_type=parsed_url.scheme, source_url=str(args.image_url)
             )
         elif parsed_url.scheme == "file":
-            # For file:// URLs, read the file and encode as base64
+            # For file:// URLs, validate the file is an image
             file_path = Path(parsed_url.path)
             if not file_path.exists():
                 raise ToolError(f"Image file not found: {file_path}")
             if file_path.is_dir():
                 raise ToolError(f"Path is a directory, not a file: {file_path}")
             await self._check_file_size(file_path)
+            await self._validate_image_file(file_path)
 
             yield ReadImageResult(source_type="file", source_url=str(args.image_url))
 
@@ -125,6 +138,44 @@ class ReadImage(
 
         except OSError as exc:
             raise ToolError(f"Error reading image file {file_path}: {exc}") from exc
+
+    async def _validate_image_file(self, file_path: Path) -> None:
+        """Validate that the file is an image by checking its MIME type."""
+        content_type = self._get_file_content_type(file_path)
+        if content_type not in VALID_IMAGE_TYPES:
+            raise ToolError(
+                f"File is not a supported image type: {file_path} "
+                f"(detected: {content_type}). "
+                f"Supported types: {', '.join(sorted(VALID_IMAGE_TYPES))}"
+            )
+
+    @staticmethod
+    def _get_file_content_type(file_path: Path) -> str:
+        """Get MIME type for a file path. Raises ToolError if undetermined."""
+        content_type, _ = mimetypes.guess_type(str(file_path))
+        if not content_type:
+            raise ToolError(
+                f"Cannot determine file type for: {file_path}. "
+                f"Only image files are supported."
+            )
+        return content_type
+
+    @staticmethod
+    def _read_and_encode_image(file_path: Path) -> tuple[str, str]:
+        """Read image file, validate, and return (data_url, content_type)."""
+        with Path(file_path).open(mode="rb") as f:
+            image_data = f.read()
+
+        content_type = ReadImage._get_file_content_type(file_path)
+        if content_type not in VALID_IMAGE_TYPES:
+            raise ToolError(
+                f"File is not a supported image type: {file_path} "
+                f"(detected: {content_type}). "
+                f"Supported types: {', '.join(sorted(VALID_IMAGE_TYPES))}"
+            )
+
+        encoded_data = base64.b64encode(image_data).decode("utf-8")
+        return f"data:{content_type};base64,{encoded_data}", content_type
 
     @staticmethod
     def _fetch_http_image_sync(url: str) -> tuple[bytes, str]:
@@ -153,6 +204,9 @@ class ReadImage(
                 if not content_type:
                     content_type = "application/octet-stream"
 
+            # Validate content type is an image
+            ReadImage._validate_http_content_type_static(content_type, url)
+
             # Cache the result
             ReadImage._fetch_cache[url] = (image_data, content_type)
             return image_data, content_type
@@ -161,6 +215,23 @@ class ReadImage(
             if isinstance(exc, httpx.TimeoutException):
                 raise ToolError(f"Request timed out while fetching {url}") from exc
             raise ToolError(f"Failed to fetch image from {url}: {exc}") from exc
+
+    @staticmethod
+    def _validate_http_content_type_static(content_type: str | None, url: str) -> None:
+        """Static version for use in static methods. Validates HTTP response content type."""
+        if not content_type:
+            raise ToolError(
+                f"Server did not provide Content-Type header for: {url}. "
+                f"Only image files are supported."
+            )
+        # Strip charset parameter if present (e.g., "image/svg+xml; charset=utf-8")
+        content_type = content_type.split(";")[0].strip().lower()
+        if content_type not in VALID_IMAGE_TYPES:
+            raise ToolError(
+                f"URL does not return an image: {url} "
+                f"(Content-Type: {content_type}). "
+                f"Supported types: {', '.join(sorted(VALID_IMAGE_TYPES))}"
+            )
 
     @classmethod
     def clear_fetch_cache(cls, urls: list[str] | None = None) -> None:
@@ -249,18 +320,7 @@ class ReadImage(
             # Read and encode the image file
             parsed_url = urlparse(result_model.source_url)
             file_path = Path(parsed_url.path).expanduser()
-            with Path(file_path).open(mode="rb") as f:
-                image_data = f.read()
-
-            encoded_data = base64.b64encode(image_data).decode("utf-8")
-
-            # Determine content type
-            content_type, _ = mimetypes.guess_type(str(file_path))
-            if not content_type:
-                content_type = "application/octet-stream"
-
-            # Create data URL
-            data_url = f"data:{content_type};base64,{encoded_data}"
+            data_url, _ = cls._read_and_encode_image(file_path)
         else:
             # HTTP/HTTPS: fetch and encode as base64
             image_data, content_type = cls._fetch_http_image_sync(
@@ -303,18 +363,7 @@ class ReadImage(
             # Read and encode the image file
             parsed_url = urlparse(result_model.source_url)
             file_path = Path(parsed_url.path).expanduser()
-            with Path(file_path).open(mode="rb") as f:
-                image_data = f.read()
-
-            encoded_data = base64.b64encode(image_data).decode("utf-8")
-
-            # Determine content type
-            content_type, _ = mimetypes.guess_type(str(file_path))
-            if not content_type:
-                content_type = "application/octet-stream"
-
-            # Create data URL
-            display_url = f"data:{content_type};base64,{encoded_data}"
+            display_url, _ = cls._read_and_encode_image(file_path)
         else:
             # HTTP/HTTPS: fetch and encode as base64
             image_data, content_type = cls._fetch_http_image_sync(
