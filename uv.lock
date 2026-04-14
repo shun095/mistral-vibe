@@ -16,6 +16,14 @@ exclude-newer-span = "P7D"
 mistralai = false
 agent-client-protocol = false
 
+[options]
+exclude-newer = "2026-03-25T16:07:22.482308Z"
+exclude-newer-span = "P7D"
+
+[options.exclude-newer-package]
+mistralai = false
+agent-client-protocol = false
+
 [[package]]
 name = "agent-client-protocol"
 version = "0.9.0"

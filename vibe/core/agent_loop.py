@@ -405,12 +405,6 @@ class AgentLoop:
     async def act(
         self, msg: Content, client_message_id: str | None = None
     ) -> AsyncGenerator[BaseEvent]:
-        """Process a user message (text or multi-part content).
-
-        Args:
-            msg: User message as string or multi-part content list (e.g., for images).
-            client_message_id: Optional message ID from the client for tracking.
-        """
         self._clean_message_history()
         self.rewind_manager.create_checkpoint()
         try:
