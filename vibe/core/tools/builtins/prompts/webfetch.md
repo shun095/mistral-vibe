@@ -9,3 +9,4 @@ Use this tool when you need to retrieve and analyze web content.
 - Use `offset` (0-indexed) and `limit` to read specific line ranges.
 - Cannot combine `pattern` with custom `offset`/`limit` - use one or the other.
 - Result includes `lines_read`, `total_lines`, and `was_truncated` for pagination.
+- Content is capped at a byte limit. If `was_truncated` is true, the page had more content that was cut off.

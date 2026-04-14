@@ -86,7 +86,7 @@ class GitHubPublicData(BaseModel):
 
 
 class ChatAssistantPublicData(BaseModel):
-    chat_url: str
+    chat_url: str | None = None
 
 
 class GetChatAssistantIntegrationResponse(BaseModel):
@@ -209,7 +209,7 @@ class NuageClient:
             await asyncio.sleep(min(interval, remaining))
         raise ServiceTeleportError("GitHub connection timed out")
 
-    async def get_chat_assistant_url(self, execution_id: str) -> str:
+    async def get_chat_assistant_url(self, execution_id: str) -> str | None:
         if _TELEPORT_DISABLED:
             raise ServiceTeleportError(
                 "Teleport/Nuage workflow is disabled for security reasons. "

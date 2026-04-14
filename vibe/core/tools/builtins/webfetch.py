@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
+import functools
 import io
 import re
 from typing import ClassVar, final
@@ -33,10 +34,15 @@ _HONEST_USER_AGENT = "vibe-cli"
 _HTTP_FORBIDDEN = 403
 
 
-class _Converter(MarkdownConverter):
-    convert_script = convert_style = convert_noscript = convert_iframe = (
-        convert_object
-    ) = convert_embed = lambda *_, **__: ""
+@functools.cache
+def _make_converter_class() -> type:
+
+    class _Converter(MarkdownConverter):
+        convert_script = convert_style = convert_noscript = convert_iframe = (
+            convert_object
+        ) = convert_embed = lambda *_, **__: ""
+
+    return _Converter
 
 
 class WebFetchArgs(BaseModel):
@@ -77,7 +83,8 @@ class WebFetchConfig(BaseToolConfig):
     default_timeout: int = Field(default=30, description="Default timeout in seconds.")
     max_timeout: int = Field(default=120, description="Maximum allowed timeout.")
     max_content_bytes: int = Field(
-        default=512_000, description="Maximum content size to fetch."
+        default=120_000,
+        description="Maximum content size in bytes returned to the model.",
     )
     user_agent: str = Field(
         default=(
@@ -306,6 +313,8 @@ class WebFetch(
             )
 
         message = f"Fetched {event.result.lines_read:,}/{event.result.total_lines:,} lines ({event.result.content_type.split(';')[0]})"
+        if event.result.was_truncated:
+            message += " [truncated]"
 
         return ToolResultDisplay(success=True, message=message)
 
@@ -315,7 +324,8 @@ class WebFetch(
 
 
 def _html_to_markdown(html: str) -> str:
-    return _Converter(heading_style="ATX", bullets="-").convert(html)
+    converter_class = _make_converter_class()
+    return converter_class(heading_style="ATX", bullets="-").convert(html)
 
 
 def _pdf_to_markdown(pdf_bytes: bytes) -> str:

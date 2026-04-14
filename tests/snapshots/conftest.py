@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 
 import pytest
 
@@ -16,6 +17,12 @@ def pytest_configure(config):
     # Ensure a colour-capable terminal is assumed
     os.environ.setdefault("TERM", "xterm-256color")
     os.environ.setdefault("COLORTERM", "truecolor")
+
+
+@pytest.fixture(autouse=True)
+def _pin_timezone(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TZ", "UTC")
+    time.tzset()
 
 
 @pytest.fixture(autouse=True)

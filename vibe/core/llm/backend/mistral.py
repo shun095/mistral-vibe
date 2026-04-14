@@ -32,10 +32,7 @@ from mistralai.client.models import (
 from mistralai.client.utils.retries import BackoffStrategy, RetryConfig
 
 from vibe.core.llm.exceptions import BackendErrorBuilder
-from vibe.core.llm.message_utils import (
-    merge_consecutive_user_messages,
-    strip_reasoning as strip_reasoning_message,
-)
+from vibe.core.llm.message_utils import merge_consecutive_user_messages
 from vibe.core.logger import logger
 from vibe.core.types import (
     AvailableTool,
@@ -72,17 +69,19 @@ class MistralMapper:
                 return UserMessage(role="user", content=content)
             case Role.assistant:
                 if msg.reasoning_content:
-                    chunks: list[ContentChunk] = [
-                        ThinkChunk(
-                            type="thinking",
-                            thinking=[
-                                TextChunk(type="text", text=msg.reasoning_content)
-                            ],
+                    chunks: list[ContentChunk] = []
+                    if isinstance(msg.reasoning_content, str):
+                        chunks.append(
+                            ThinkChunk(
+                                type="thinking",
+                                thinking=[
+                                    TextChunk(type="text", text=msg.reasoning_content)
+                                ],
+                            )
                         )
-                    ]
-                    if msg.content:
+                    if isinstance(msg.content, str):
                         chunks.append(TextChunk(type="text", text=msg.content))
-                    content = chunks
+                    content = chunks if chunks else ""
                 else:
                     content = msg.content if isinstance(msg.content, str) else ""
 
@@ -175,9 +174,6 @@ class MistralMapper:
             )
             for tool_call in tool_calls
         ]
-
-    def strip_reasoning(self, msg: LLMMessage) -> LLMMessage:
-        return strip_reasoning_message(msg)
 
 
 ReasoningEffortValue = Literal["none", "high"]
@@ -300,10 +296,6 @@ class MistralBackend:
             reasoning_effort = _THINKING_TO_REASONING_EFFORT.get(model.thinking)
             if reasoning_effort is not None:
                 temperature = 1.0
-            else:
-                merged_messages = [
-                    strip_reasoning_message(msg) for msg in merged_messages
-                ]
 
             kwargs: dict[str, Any] = {
                 "model": model.name,
@@ -399,10 +391,6 @@ class MistralBackend:
             reasoning_effort = _THINKING_TO_REASONING_EFFORT.get(model.thinking)
             if reasoning_effort is not None:
                 temperature = 1.0
-            else:
-                merged_messages = [
-                    strip_reasoning_message(msg) for msg in merged_messages
-                ]
 
             kwargs: dict[str, Any] = {
                 "model": model.name,

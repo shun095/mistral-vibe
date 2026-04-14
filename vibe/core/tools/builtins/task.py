@@ -172,6 +172,7 @@ This is attempt {attempt + 1} of {max_attempts}. Provide a complete multi-paragr
             config=base_config,
             agent_name=args.agent,
             entrypoint_metadata=ctx.entrypoint_metadata,
+            is_subagent=True,
         )
 
         if ctx and ctx.approval_callback:
@@ -180,7 +181,7 @@ This is attempt {attempt + 1} of {max_attempts}. Provide a complete multi-paragr
         attempt = 0
 
         # Main loop: continue until response is complete or max retries reached
-        while attempt < self.config.max_retries:  # noqa: PLR1702
+        while attempt < self.config.max_retries:
             accumulated_response: list[str] = []
             completed = True
 

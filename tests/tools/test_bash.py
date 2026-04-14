@@ -12,7 +12,7 @@ from vibe.core.tools.permissions import PermissionContext
 def bash(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     config = BashToolConfig()
-    return Bash(config=config, state=BaseToolState())
+    return Bash(config_getter=lambda: config, state=BaseToolState())
 
 
 @pytest.mark.asyncio
@@ -41,7 +41,7 @@ async def test_fails_cat_command_with_missing_file(bash):
 async def test_uses_effective_workdir(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     config = BashToolConfig()
-    bash_tool = Bash(config=config, state=BaseToolState())
+    bash_tool = Bash(config_getter=lambda: config, state=BaseToolState())
 
     result = await collect_result(bash_tool.run(BashArgs(command="pwd", timeout=10)))
 
@@ -88,7 +88,7 @@ async def test_timeout_includes_partial_output(bash):
 @pytest.mark.asyncio
 async def test_truncates_output_to_max_bytes(bash):
     config = BashToolConfig(max_output_bytes=5)
-    bash_tool = Bash(config=config, state=BaseToolState())
+    bash_tool = Bash(config_getter=lambda: config, state=BaseToolState())
 
     result = await collect_result(
         bash_tool.run(BashArgs(command="printf 'abcdefghij'", timeout=10))
@@ -111,7 +111,7 @@ async def test_decodes_non_utf8_bytes(bash):
 
 
 def test_find_not_in_default_allowlist():
-    bash_tool = Bash(config=BashToolConfig(), state=BaseToolState())
+    bash_tool = Bash(config_getter=lambda: BashToolConfig(), state=BaseToolState())
     # find -exec runs arbitrary commands; must not be allowlisted by default
     permission = bash_tool.resolve_permission(
         BashArgs(command="find . -exec id \\;", timeout=10)
@@ -124,7 +124,7 @@ def test_find_not_in_default_allowlist():
 
 def test_resolve_permission():
     config = BashToolConfig(allowlist=["echo", "pwd"], denylist=["rm"])
-    bash_tool = Bash(config=config, state=BaseToolState())
+    bash_tool = Bash(config_getter=lambda: config, state=BaseToolState())
 
     allowlisted = bash_tool.resolve_permission(BashArgs(command="echo hi", timeout=10))
     denylisted = bash_tool.resolve_permission(
@@ -148,7 +148,7 @@ class TestResolvePermissionWindowsSyntax:
 
     def _make_bash(self, **kwargs) -> Bash:
         config = BashToolConfig(**kwargs)
-        return Bash(config=config, state=BaseToolState())
+        return Bash(config_getter=lambda: config, state=BaseToolState())
 
     def test_dir_with_windows_flags_allowlisted(self):
         bash_tool = self._make_bash(allowlist=["dir"])
@@ -270,7 +270,7 @@ class TestDenylistWordBoundary:
 
     def _make_bash(self, **kwargs) -> Bash:
         config = BashToolConfig(**kwargs)
-        return Bash(config=config, state=BaseToolState())
+        return Bash(config_getter=lambda: config, state=BaseToolState())
 
     def test_vi_blocks_vi_exact(self):
         bash_tool = self._make_bash(denylist=["vi"])

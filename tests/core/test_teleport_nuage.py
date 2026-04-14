@@ -247,6 +247,21 @@ class TestNuageClientGetChatAssistantUrl:
     @pytest.mark.skip(
         reason="Teleport disabled for security - prevents external workflow calls"
     )
+    async def test_get_chat_assistant_url_none(
+        self, nuage: NuageClient, mock_client: MagicMock
+    ) -> None:
+        mock_response = MagicMock()
+        mock_response.is_success = True
+        mock_response.json.return_value = {"result": {"chat_url": None}}
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        url = await nuage.get_chat_assistant_url("exec-123")
+        assert url is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.skip(
+        reason="Teleport disabled for security - prevents external workflow calls"
+    )
     async def test_get_chat_assistant_url_failure(
         self, nuage: NuageClient, mock_client: MagicMock
     ) -> None:
