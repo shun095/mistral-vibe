@@ -31,7 +31,7 @@ from tomlkit.exceptions import TOMLKitError
 
 from vibe.core.config.harness_files import get_harness_files_manager
 from vibe.core.logger import logger
-from vibe.core.lsp.config import LSPServerConfig
+from vibe.core.lsp.config import LSPConfig, LSPServerConfig
 from vibe.core.paths import GLOBAL_ENV_FILE, SESSION_LOG_DIR
 from vibe.core.prompts import SystemPrompt
 from vibe.core.types import Backend
@@ -519,6 +519,10 @@ class VibeConfig(BaseSettings):
 
     mcp_servers: list[MCPServer] = Field(
         default_factory=list, description="Preferred MCP server configuration entries."
+    )
+
+    lsp: LSPConfig = Field(
+        default_factory=LSPConfig, description="Global LSP configuration settings."
     )
 
     lsp_servers: list[LSPServerConfig] = Field(
@@ -1400,6 +1404,20 @@ class VibeConfig(BaseSettings):
     def load(cls, **overrides: Any) -> VibeConfig:
         cls._migrate()
         return cls(**(overrides or {}))
+
+    @classmethod
+    def get_diagnostics_state(cls) -> Any:
+        """Get the global LSP diagnostics state.
+
+        This provides access to the diagnostics state without creating
+        a hard dependency on LSPClientManager.
+
+        Returns:
+            The global LSPDiagnosticsState instance
+        """
+        from vibe.core.lsp import LSPClientManager
+
+        return LSPClientManager._diagnostics_state
 
     @classmethod
     def create_default(cls) -> dict[str, Any]:

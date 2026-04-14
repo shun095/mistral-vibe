@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import ClassVar
 
 from vibe.core.lsp.client import LSPClient
-from vibe.core.lsp.config import LSPServerConfig
+from vibe.core.lsp.config import LSPDiagnosticsState, LSPServerConfig
 from vibe.core.lsp.detector import LSPServerDetector
 from vibe.core.lsp.server import LSPServer, LSPServerRegistry
 from vibe.core.lsp.types import LSPServerHandle
@@ -24,13 +24,16 @@ class LSPClientManager:
     _handles: ClassVar[dict[str, LSPServerHandle]] = {}
     _config: ClassVar[dict[str, LSPServerConfig]] = {}
     _lock: ClassVar[asyncio.Lock] = asyncio.Lock()
-    _diagnostics_disabled: ClassVar[bool] = False
+    _diagnostics_state: ClassVar[LSPDiagnosticsState] = LSPDiagnosticsState()
 
     def __init__(self, config: list[LSPServerConfig] | None = None) -> None:
         # Initialize instance-level references to class-level fields
         self.clients: dict[str, LSPClient] = LSPClientManager._clients
         self.handles: dict[str, LSPServerHandle] = LSPClientManager._handles
         self.config: dict[str, LSPServerConfig] = LSPClientManager._config
+        self.diagnostics_state: LSPDiagnosticsState = (
+            LSPClientManager._diagnostics_state
+        )
 
         if config:
             for server_config in config:
@@ -41,8 +44,6 @@ class LSPClientManager:
         # Pass None if config is empty to fall back to registry servers
         detector_config = self.config if self.config else None
         self.detector = LSPServerDetector(detector_config)
-
-    pass
 
     async def start_server(self, server_name: str) -> LSPClient:
         if server_name in self.clients:
@@ -167,12 +168,30 @@ class LSPClientManager:
     @classmethod
     def disable_diagnostics(cls) -> None:
         """Disable LSP diagnostics globally (e.g., for tests)."""
-        cls._diagnostics_disabled = True
+        cls._diagnostics_state.disable_runtime()
 
     @classmethod
     def enable_diagnostics(cls) -> None:
         """Enable LSP diagnostics globally."""
-        cls._diagnostics_disabled = False
+        cls._diagnostics_state.enable_runtime()
+
+    @classmethod
+    def set_diagnostics_enabled_from_config(cls, enabled: bool) -> None:
+        """Set whether diagnostics are enabled based on config.
+
+        Args:
+            enabled: Whether diagnostics should be enabled per config
+        """
+        cls._diagnostics_state.set_config_enabled(enabled)
+
+    @classmethod
+    def are_diagnostics_enabled(cls) -> bool:
+        """Check if diagnostics are currently enabled.
+
+        Returns:
+            True if diagnostics are enabled, False otherwise
+        """
+        return cls._diagnostics_state.is_enabled
 
     async def get_diagnostics_from_all_servers(
         self, file_path: Path
@@ -189,8 +208,8 @@ class LSPClientManager:
         Returns:
             Combined list of diagnostics from all applicable servers
         """
-        if LSPClientManager._diagnostics_disabled:
-            logger.debug("LSP diagnostics are disabled globally")
+        if not LSPClientManager.are_diagnostics_enabled():
+            logger.debug("LSP diagnostics are disabled")
             return []
 
         if file_path is None:
