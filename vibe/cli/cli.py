@@ -251,6 +251,7 @@ def run_cli(args: argparse.Namespace) -> None:
                     client_name="vibe_cli",
                     client_version=__version__,
                 ),
+                defer_heavy_init=True,
             )
 
             if loaded_session:
@@ -259,6 +260,8 @@ def run_cli(args: argparse.Namespace) -> None:
             if args.web:
                 _run_interactive_mode_with_web(args, agent_loop, stdin_prompt)
                 return
+
+            agent_loop.start_deferred_init()
 
             run_textual_ui(
                 agent_loop=agent_loop,

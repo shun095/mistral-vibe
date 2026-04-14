@@ -11,15 +11,16 @@ from typing import Annotated, Any, Literal, cast
 from urllib.parse import urljoin
 
 from dotenv import dotenv_values
+from mistralai.client.models import SpeechOutputFormat
 
 # Magic values for type annotation processing
 DICT_ARGS_MIN_LENGTH = 2
-
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
     DEFAULT_TRACES_EXPORT_PATH,
 )
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.fields import FieldInfo
+from pydantic_core import to_jsonable_python
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -101,6 +102,29 @@ class TomlFileSettingsSource(PydanticBaseSettingsSource):
         return self.toml_data
 
 
+def _remove_none_values(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: cleaned_value
+            for key, item in value.items()
+            if (cleaned_value := _remove_none_values(item)) is not None
+        }
+    if isinstance(value, list):
+        return [
+            cleaned_item
+            for item in value
+            if (cleaned_item := _remove_none_values(item)) is not None
+        ]
+    return value
+
+
+def _to_toml_document(value: Any) -> dict[str, Any]:
+    jsonable = to_jsonable_python(value, fallback=str)
+    if not isinstance(jsonable, dict):
+        return {}
+    return _remove_none_values(jsonable)
+
+
 class ProjectContextConfig(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
@@ -126,15 +150,54 @@ class SessionLoggingConfig(BaseSettings):
         return str(Path(v).expanduser().resolve())
 
 
+DEFAULT_MISTRAL_API_ENV_KEY = "MISTRAL_API_KEY"
+DEFAULT_MISTRAL_BROWSER_AUTH_BASE_URL = "https://console.mistral.ai"
+DEFAULT_MISTRAL_BROWSER_AUTH_API_BASE_URL = "https://console.mistral.ai/api"
+
+
 class ProviderConfig(BaseModel):
     name: str
     api_base: str
     api_key_env_var: str = ""
+    browser_auth_base_url: str | None = None
+    browser_auth_api_base_url: str | None = None
     api_style: str = "openai"
     backend: Backend = Backend.GENERIC
     reasoning_field_name: str = "reasoning_content"
     project_id: str = ""
     region: str = ""
+
+    def _is_legacy_mistral_provider_without_backend(self) -> bool:
+        return (
+            self.name == "mistral"
+            and self.backend == Backend.GENERIC
+            and "backend" not in self.model_fields_set
+        )
+
+    def _uses_mistral_browser_sign_in_defaults(self) -> bool:
+        return self.name == "mistral" and (
+            self.backend == Backend.MISTRAL
+            or self._is_legacy_mistral_provider_without_backend()
+        )
+
+    @model_validator(mode="after")
+    def _apply_legacy_mistral_browser_auth_defaults(self) -> ProviderConfig:
+        if not self._uses_mistral_browser_sign_in_defaults():
+            return self
+
+        if self.browser_auth_base_url is None:
+            self.browser_auth_base_url = DEFAULT_MISTRAL_BROWSER_AUTH_BASE_URL
+        if self.browser_auth_api_base_url is None:
+            self.browser_auth_api_base_url = DEFAULT_MISTRAL_BROWSER_AUTH_API_BASE_URL
+        return self
+
+    @property
+    def supports_browser_sign_in(self) -> bool:
+        return (
+            (self.backend == Backend.MISTRAL or self.name == "mistral")
+            and bool(self.browser_auth_base_url)
+            and bool(self.browser_auth_api_base_url)
+        )
 
 
 class TranscribeClient(StrEnum):
@@ -294,7 +357,7 @@ class TTSModelConfig(BaseModel):
     provider: str
     alias: str
     voice: str = "gb_jane_neutral"
-    response_format: str = "wav"
+    response_format: SpeechOutputFormat = "wav"
 
     _default_alias_to_name = model_validator(mode="before")(_default_alias_to_name)
 
@@ -306,7 +369,6 @@ class OtelSpanExporterConfig(BaseModel):
     headers: dict[str, str] | None = None
 
 
-DEFAULT_MISTRAL_API_ENV_KEY = "MISTRAL_API_KEY"
 MISTRAL_OTEL_PATH = "/telemetry"
 _DEFAULT_MISTRAL_SERVER_URL = "https://api.mistral.ai"
 
@@ -315,6 +377,8 @@ DEFAULT_PROVIDERS = [
         name="mistral",
         api_base=f"{_DEFAULT_MISTRAL_SERVER_URL}/v1",
         api_key_env_var=DEFAULT_MISTRAL_API_ENV_KEY,
+        browser_auth_base_url=DEFAULT_MISTRAL_BROWSER_AUTH_BASE_URL,
+        browser_auth_api_base_url=DEFAULT_MISTRAL_BROWSER_AUTH_API_BASE_URL,
         backend=Backend.MISTRAL,
     ),
     ProviderConfig(
@@ -348,6 +412,8 @@ DEFAULT_MODELS = [
     ),
 ]
 
+DEFAULT_ACTIVE_MODEL = DEFAULT_MODELS[0].alias
+
 DEFAULT_TRANSCRIBE_PROVIDERS = [
     TranscribeProviderConfig(
         name="mistral",
@@ -380,7 +446,7 @@ DEFAULT_TTS_MODELS = [
 
 
 class VibeConfig(BaseSettings):
-    active_model: str = "devstral-2"
+    active_model: str = DEFAULT_ACTIVE_MODEL
     vim_keybindings: bool = False
     disable_welcome_banner_animation: bool = False
     autocopy_to_clipboard: bool = True
@@ -545,7 +611,8 @@ class VibeConfig(BaseSettings):
     def otel_span_exporter_config(self) -> OtelSpanExporterConfig | None:
         # When otel_endpoint is set explicitly, authentication is the user's responsibility
         # (via OTEL_EXPORTER_OTLP_* env vars), so headers are left empty.
-        # Otherwise endpoint and API key are derived from the first MISTRAL provider.
+        # Otherwise endpoint and API key are derived from the active provider if it's Mistral,
+        # or the first Mistral provider.
         traces_export_path = DEFAULT_TRACES_EXPORT_PATH.lstrip("/")
         if self.otel_endpoint:
             return OtelSpanExporterConfig(
@@ -554,9 +621,7 @@ class VibeConfig(BaseSettings):
                 )
             )
 
-        provider = next(
-            (p for p in self.providers if p.backend == Backend.MISTRAL), None
-        )
+        provider = self.get_mistral_provider()
 
         if provider is not None:
             server_url = get_server_url_from_api_base(provider.api_base)
@@ -594,7 +659,7 @@ class VibeConfig(BaseSettings):
                 ".md"
             )
             if custom_sp_path.is_file():
-                return read_safe(custom_sp_path)
+                return read_safe(custom_sp_path).text
 
         raise MissingPromptFileError(
             self.system_prompt_id, *(str(d) for d in prompt_dirs)
@@ -612,6 +677,15 @@ class VibeConfig(BaseSettings):
         if self.compaction_model is not None:
             return self.compaction_model
         return self.get_active_model()
+
+    def get_mistral_provider(self) -> ProviderConfig | None:
+        try:
+            active_provider = self.get_provider_for_model(self.get_active_model())
+            if active_provider.backend == Backend.MISTRAL:
+                return active_provider
+        except ValueError:
+            pass
+        return next((p for p in self.providers if p.backend == Backend.MISTRAL), None)
 
     def get_provider_for_model(self, model: ModelConfig) -> ProviderConfig:
         for provider in self.providers:
