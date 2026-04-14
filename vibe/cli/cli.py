@@ -257,11 +257,12 @@ def run_cli(args: argparse.Namespace) -> None:
             if loaded_session:
                 _resume_previous_session(agent_loop, *loaded_session)
 
+            # Start deferred initialization before running any UI mode
+            agent_loop.start_deferred_init()
+
             if args.web:
                 _run_interactive_mode_with_web(args, agent_loop, stdin_prompt)
                 return
-
-            agent_loop.start_deferred_init()
 
             run_textual_ui(
                 agent_loop=agent_loop,

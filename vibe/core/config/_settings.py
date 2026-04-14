@@ -896,10 +896,10 @@ class VibeConfig(BaseSettings):
                     target[key] = value
 
         deep_merge(current_config, updates)
-        # Re-validate through Pydantic model and dump to dict
-        validated = cls.model_validate(current_config)
-        dumped = validated.model_dump(mode="json", exclude_none=True)
-        cls.dump_config(dumped)
+        # Exclude default values from the merged config
+        # Don't use model_validate as it would restore defaults for removed keys
+        filtered = cls._exclude_defaults(current_config)
+        cls.dump_config(filtered)
 
     @classmethod
     def _get_nested_model_class(
@@ -1070,10 +1070,24 @@ class VibeConfig(BaseSettings):
                     doc.add(tomlkit.key(key), tomlkit.table())
                 table = doc[key]
                 if isinstance(table, dict):
+                    # First, remove keys that are not in the new value
+                    keys_to_remove = [k for k in table.keys() if k not in value]
+                    for k in keys_to_remove:
+                        del table[k]
+                    # Then update/add keys
                     for subkey, subvalue in value.items():
                         table[subkey] = subvalue
             else:
                 doc[key] = value
+
+        # Remove top-level keys that are not in config (they were filtered as defaults)
+        keys_to_remove = [
+            k
+            for k in doc.keys()
+            if k not in config and k not in {"providers", "models"}
+        ]
+        for k in keys_to_remove:
+            del doc[k]
 
         # Remove any fields that have default values
         cls._remove_defaults_from_doc(doc)

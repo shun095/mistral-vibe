@@ -103,7 +103,12 @@ def _reset_trusted_folders_manager(config_dir: Path) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _init_harness_files_manager():
+def _init_harness_files_manager(config_dir: Path):
+    """Initialize harness files manager after config_dir monkeypatch takes effect.
+
+    This fixture depends on config_dir to ensure the harness manager uses the
+    test's temporary config directory instead of the real ~/.vibe.
+    """
     reset_harness_files_manager()
     init_harness_files_manager("user", "project")
     yield
