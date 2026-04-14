@@ -1403,7 +1403,22 @@ class VibeConfig(BaseSettings):
     @classmethod
     def load(cls, **overrides: Any) -> VibeConfig:
         cls._migrate()
-        return cls(**(overrides or {}))
+        config = cls(**(overrides or {}))
+        cls._apply_lsp_config(config)
+        return config
+
+    @classmethod
+    def _apply_lsp_config(cls, config: Any) -> None:
+        """Apply LSP config to LSPClientManager.
+
+        Args:
+            config: The loaded VibeConfig instance
+        """
+        from vibe.core.lsp import LSPClientManager
+
+        LSPClientManager.set_diagnostics_enabled_from_config(
+            config.lsp.enable_diagnostics
+        )
 
     @classmethod
     def get_diagnostics_state(cls) -> Any:
