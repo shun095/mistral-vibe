@@ -1,6 +1,6 @@
 /**
  * Tests for ImageAttachmentHandler module
- * 
+ *
  * Tests clipboard paste, file selection, validation, and image attachment logic.
  */
 
@@ -21,23 +21,23 @@ describe('ImageAttachmentHandler', () => {
             style: { display: 'none' },
             classList: { add: jest.fn(), remove: jest.fn() }
         };
-        
+
         mockPreviewImg = {
             src: '',
             onload: null
         };
-        
+
         mockFileInput = {
             value: '',
             click: jest.fn(),
             files: []
         };
-        
+
         // Mock callbacks
         onImageAttachedSpy = jest.fn();
         onImageRemovedSpy = jest.fn();
         onErrorSpy = jest.fn();
-        
+
         // Create handler instance
         handler = new ImageAttachmentHandler({
             previewContainer: mockPreviewContainer,
@@ -47,7 +47,7 @@ describe('ImageAttachmentHandler', () => {
             onImageRemoved: onImageRemovedSpy,
             onError: onErrorSpy
         });
-        
+
         // Mock FileReader for base64 conversion
         global.FileReader = class {
             constructor() {
@@ -91,8 +91,8 @@ describe('ImageAttachmentHandler', () => {
 
         test('should return false when no image items', () => {
             const mockItem = { type: 'text/plain' };
-            const result = handler.handlePaste({ 
-                clipboardData: { items: [mockItem] } 
+            const result = handler.handlePaste({
+                clipboardData: { items: [mockItem] }
             });
             expect(result).toBe(false);
         });
@@ -103,17 +103,17 @@ describe('ImageAttachmentHandler', () => {
                 size: 1024,
                 mockBase64: 'testImageData'
             };
-            
+
             const mockItem = {
                 type: 'image/png',
                 getAsFile: () => mockFile
             };
-            
+
             const mockEvent = {
                 clipboardData: { items: [mockItem] },
                 preventDefault: jest.fn()
             };
-            
+
             // Run microtasks to complete FileReader
             handler.handlePaste(mockEvent);
             return new Promise((resolve) => {
@@ -137,11 +137,11 @@ describe('ImageAttachmentHandler', () => {
                 size: 1024,
                 mockBase64: 'fileImageData'
             };
-            
+
             mockFileInput.files = [mockFile];
-            
+
             handler.handleFileSelect({ target: mockFileInput });
-            
+
             return new Promise((resolve) => {
                 setTimeout(() => {
                     expect(handler.attachedImage).toEqual({
@@ -160,12 +160,12 @@ describe('ImageAttachmentHandler', () => {
                 size: 1024,
                 mockBase64: 'test'
             };
-            
+
             mockFileInput.files = [mockFile];
             mockFileInput.value = '/path/to/file.png';
-            
+
             handler.handleFileSelect({ target: mockFileInput });
-            
+
             return new Promise((resolve) => {
                 setTimeout(() => {
                     expect(mockFileInput.value).toBe('');
@@ -181,9 +181,9 @@ describe('ImageAttachmentHandler', () => {
                 type: 'image/gif',
                 size: 1024
             };
-            
+
             handler.processImage(mockFile);
-            
+
             expect(onErrorSpy).toHaveBeenCalledWith(
                 'Unsupported image format. Please use PNG, JPEG, or WEBP.'
             );
@@ -195,9 +195,9 @@ describe('ImageAttachmentHandler', () => {
                 type: 'image/png',
                 size: 2 * 1024 * 1024 + 1 // 2MB + 1 byte
             };
-            
+
             handler.processImage(mockFile);
-            
+
             expect(onErrorSpy).toHaveBeenCalledWith(
                 'Image too large. Maximum size is 2MB.'
             );
@@ -210,9 +210,9 @@ describe('ImageAttachmentHandler', () => {
                 size: 2 * 1024 * 1024, // Exactly 2MB
                 mockBase64: 'atLimitData'
             };
-            
+
             handler.processImage(mockFile);
-            
+
             setTimeout(() => {
                 expect(handler.attachedImage).not.toBeNull();
                 expect(handler.attachedImage.mime_type).toBe('image/webp');
@@ -227,9 +227,9 @@ describe('ImageAttachmentHandler', () => {
                 size: 1024,
                 mockBase64: 'validImageData'
             };
-            
+
             handler.processImage(mockFile);
-            
+
             setTimeout(() => {
                 expect(handler.attachedImage).toEqual({
                     data: 'validImageData',
@@ -250,15 +250,15 @@ describe('ImageAttachmentHandler', () => {
                 size: 1024,
                 mockBase64: 'testData'
             };
-            
+
             handler.processImage(mockFile);
-            
+
             setTimeout(() => {
                 expect(handler.attachedImage).not.toBeNull();
-                
+
                 // Now remove it
                 handler.removeImage();
-                
+
                 expect(handler.attachedImage).toBeNull();
                 expect(mockPreviewImg.src).toBe('');
                 expect(mockPreviewContainer.style.display).toBe('none');
@@ -285,9 +285,9 @@ describe('ImageAttachmentHandler', () => {
                 size: 1024,
                 mockBase64: 'imageData'
             };
-            
+
             handler.processImage(mockFile);
-            
+
             setTimeout(() => {
                 expect(handler.getImageData()).toEqual({
                     data: 'imageData',
@@ -305,14 +305,14 @@ describe('ImageAttachmentHandler', () => {
                 size: 1024,
                 mockBase64: 'testData'
             };
-            
+
             handler.processImage(mockFile);
-            
+
             setTimeout(() => {
                 expect(handler.attachedImage).not.toBeNull();
-                
+
                 handler.clear();
-                
+
                 expect(handler.attachedImage).toBeNull();
                 expect(onImageRemovedSpy).toHaveBeenCalled();
                 done();
@@ -323,9 +323,9 @@ describe('ImageAttachmentHandler', () => {
     describe('showPreview', () => {
         test('should set image src and show container', () => {
             const testDataUrl = 'data:image/png;base64,testData';
-            
+
             handler.showPreview(testDataUrl);
-            
+
             expect(mockPreviewImg.src).toBe(testDataUrl);
             expect(mockPreviewContainer.style.display).toBe('flex');
         });

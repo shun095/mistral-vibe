@@ -79,7 +79,7 @@ class MistralMapper:
                                 ],
                             )
                         )
-                    if isinstance(msg.content, str):
+                    if isinstance(msg.content, str) and msg.content:
                         chunks.append(TextChunk(type="text", text=msg.content))
                     content = chunks if chunks else ""
                 else:

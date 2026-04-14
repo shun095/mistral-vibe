@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
+from contextlib import aclosing
 import fnmatch
 from typing import ClassVar
 
@@ -181,7 +182,7 @@ This is attempt {attempt + 1} of {max_attempts}. Provide a complete multi-paragr
         attempt = 0
 
         # Main loop: continue until response is complete or max retries reached
-        while attempt < self.config.max_retries:
+        while attempt < self.config.max_retries:  # noqa: PLR1702
             accumulated_response: list[str] = []
             completed = True
 
@@ -192,23 +193,24 @@ This is attempt {attempt + 1} of {max_attempts}. Provide a complete multi-paragr
 
             try:
                 # Run the agent loop for this attempt
-                async for event in subagent_loop.act(task_instruction):
-                    if isinstance(event, AssistantEvent) and event.content:
-                        accumulated_response.append(event.content)
-                        if event.stopped_by_middleware:
-                            completed = False
-                    elif isinstance(event, ToolResultEvent):
-                        if event.skipped:
-                            completed = False
-                        elif event.result and event.tool_class:
-                            adapter = ToolUIDataAdapter(event.tool_class)
-                            display = adapter.get_result_display(event)
-                            message = f"{event.tool_name}: {display.message}"
-                            yield ToolStreamEvent(
-                                tool_name=self.get_name(),
-                                message=message,
-                                tool_call_id=ctx.tool_call_id,
-                            )
+                async with aclosing(subagent_loop.act(task_instruction)) as events:
+                    async for event in events:
+                        if isinstance(event, AssistantEvent) and event.content:
+                            accumulated_response.append(event.content)
+                            if event.stopped_by_middleware:
+                                completed = False
+                        elif isinstance(event, ToolResultEvent):
+                            if event.skipped:
+                                completed = False
+                            elif event.result and event.tool_class:
+                                adapter = ToolUIDataAdapter(event.tool_class)
+                                display = adapter.get_result_display(event)
+                                message = f"{event.tool_name}: {display.message}"
+                                yield ToolStreamEvent(
+                                    tool_name=self.get_name(),
+                                    message=message,
+                                    tool_call_id=ctx.tool_call_id,
+                                )
 
                 turns_used = sum(
                     msg.role == Role.assistant for msg in subagent_loop.messages

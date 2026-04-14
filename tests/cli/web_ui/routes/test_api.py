@@ -161,7 +161,9 @@ def test_messages_to_events_parses_text_format_tool_results() -> None:
         ),
     ]
     mock_tm = MockToolManager({
-        "write_file": WriteFile(config=WriteFileConfig(), state=BaseToolState())
+        "write_file": WriteFile(
+            config_getter=lambda: WriteFileConfig(), state=BaseToolState()
+        )
     })
     events = messages_to_events(messages, mock_tm)  # type: ignore[call-arg]
     assert len(events) == 2  # ToolCallEvent + ToolResultEvent
@@ -198,7 +200,9 @@ def test_messages_to_events_parses_json_format_tool_results() -> None:
         ),
     ]
     mock_tm = MockToolManager({
-        "write_file": WriteFile(config=WriteFileConfig(), state=BaseToolState())
+        "write_file": WriteFile(
+            config_getter=lambda: WriteFileConfig(), state=BaseToolState()
+        )
     })
     events = messages_to_events(messages, mock_tm)  # type: ignore[call-arg]
     assert len(events) == 2  # ToolCallEvent + ToolResultEvent
@@ -359,7 +363,7 @@ def test_messages_to_events_ask_user_question_json_format() -> None:
     ]
     mock_tm = MockToolManager({
         "ask_user_question": AskUserQuestion(
-            config=AskUserQuestionConfig(), state=BaseToolState()
+            config_getter=lambda: AskUserQuestionConfig(), state=BaseToolState()
         )
     })
     events = messages_to_events(messages, mock_tm)  # type: ignore[call-arg]

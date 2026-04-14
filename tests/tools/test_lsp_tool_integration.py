@@ -46,7 +46,7 @@ async def test_write_file_calls_lsp_diagnostics():
         # Create WriteFile tool
         config = WriteFileConfig()
         state = BaseToolState()
-        tool = WriteFile(config, state)
+        tool = WriteFile(config_getter=lambda: config, state=state)
 
         # Mock get_diagnostics_from_all_servers to return empty list
         mock_get_diagnostics = AsyncMock(return_value=[])
@@ -82,7 +82,7 @@ async def test_write_file_formats_lsp_diagnostics():
     """Test that WriteFile formats LSP diagnostics correctly."""
     config = WriteFileConfig()
     state = BaseToolState()
-    WriteFile(config, state)
+    WriteFile(config_getter=lambda: config, state=state)
 
     # Test diagnostics
     diagnostics = [
@@ -130,7 +130,7 @@ async def test_search_replace_calls_lsp_diagnostics(tmp_path: Path):
     # Create SearchReplace tool
     config = SearchReplaceConfig()
     state = BaseToolState()
-    tool = SearchReplace(config, state)
+    tool = SearchReplace(config_getter=lambda: config, state=state)
 
     # Mock get_diagnostics_from_all_servers to return empty list
     mock_get_diagnostics = AsyncMock(return_value=[])
@@ -163,7 +163,7 @@ async def test_search_replace_formats_lsp_diagnostics():
     """Test that SearchReplace formats LSP diagnostics correctly."""
     config = SearchReplaceConfig()
     state = BaseToolState()
-    SearchReplace(config, state)
+    SearchReplace(config_getter=lambda: config, state=state)
 
     # Test diagnostics
     diagnostics = [
@@ -202,7 +202,7 @@ async def test_lsp_diagnostics_dont_break_file_operations():
     # Create WriteFile tool
     config = WriteFileConfig()
     state = BaseToolState()
-    tool = WriteFile(config, state)
+    tool = WriteFile(config_getter=lambda: config, state=state)
 
     # Create test file in project directory
     with tempfile.TemporaryDirectory(dir=str(Path.cwd())) as temp_dir:
@@ -239,7 +239,7 @@ async def test_lsp_diagnostics_limited_to_20(tmp_path: Path):
     """Test that LSP diagnostics are limited to 20 to avoid overwhelming the user."""
     config = WriteFileConfig()
     state = BaseToolState()
-    WriteFile(config, state)
+    WriteFile(config_getter=lambda: config, state=state)
 
     # Create 30 diagnostics
     diagnostics = [

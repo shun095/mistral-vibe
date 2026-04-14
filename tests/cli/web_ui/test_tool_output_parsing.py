@@ -18,7 +18,9 @@ class TestParseToolOutput:
         )
 
         mock_tm = MockToolManager({
-            "edit_file": EditFile(config=EditFileConfig(), state=EditFileState())
+            "edit_file": EditFile(
+                config_getter=lambda: EditFileConfig(), state=EditFileState()
+            )
         })
 
         content = (
@@ -62,7 +64,9 @@ class TestParseToolOutput:
         from vibe.core.tools.builtins.write_file import WriteFile, WriteFileConfig
 
         mock_tm = MockToolManager({
-            "write_file": WriteFile(config=WriteFileConfig(), state=BaseToolState())
+            "write_file": WriteFile(
+                config_getter=lambda: WriteFileConfig(), state=BaseToolState()
+            )
         })
 
         content = (
@@ -105,7 +109,7 @@ class TestParseToolOutput:
         from vibe.core.tools.builtins.bash import Bash, BashToolConfig
 
         mock_tm = MockToolManager({
-            "bash": Bash(config=BashToolConfig(), state=BaseToolState())
+            "bash": Bash(config_getter=lambda: BashToolConfig(), state=BaseToolState())
         })
 
         content = (
@@ -164,8 +168,8 @@ class TestParseToolOutput:
         from vibe.core.tools.builtins.grep import Grep, GrepToolConfig
 
         mock_tm = MockToolManager({
-            "bash": Bash(config=BashToolConfig(), state=BaseToolState()),
-            "grep": Grep(config=GrepToolConfig(), state=BaseToolState()),
+            "bash": Bash(config_getter=lambda: BashToolConfig(), state=BaseToolState()),
+            "grep": Grep(config_getter=lambda: GrepToolConfig(), state=BaseToolState()),
         })
 
         # Test bash - stdout should capture lines containing "file:" as content
@@ -202,7 +206,7 @@ class TestParseToolOutput:
         from vibe.core.tools.builtins.bash import Bash, BashToolConfig
 
         mock_tm = MockToolManager({
-            "bash": Bash(config=BashToolConfig(), state=BaseToolState())
+            "bash": Bash(config_getter=lambda: BashToolConfig(), state=BaseToolState())
         })
 
         # Bash output with multi-line stdout

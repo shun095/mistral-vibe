@@ -23,7 +23,7 @@ from vibe.core.tools.builtins.read_image import (
 def read_image_tool(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     config = ReadImageToolConfig()
-    return ReadImage(config=config, state=ReadImageState())
+    return ReadImage(config_getter=lambda: config, state=ReadImageState())
 
 
 @pytest.mark.asyncio
@@ -131,7 +131,7 @@ async def test_custom_file_size_limit(tmp_path):
 
     # Create tool with 1MB limit
     config = ReadImageToolConfig(max_image_size_bytes=1_000_000)
-    read_image_tool = ReadImage(config=config, state=ReadImageState())
+    read_image_tool = ReadImage(config_getter=lambda: config, state=ReadImageState())
 
     with pytest.raises(ToolError) as err:
         await collect_result(
@@ -201,7 +201,7 @@ async def test_allowlist_denylist_for_http_urls():
     config = ReadImageToolConfig(
         allowlist=["https://trusted.com/*"], denylist=["https://malicious.com/*"]
     )
-    read_image_tool = ReadImage(config=config, state=ReadImageState())
+    read_image_tool = ReadImage(config_getter=lambda: config, state=ReadImageState())
 
     trusted = read_image_tool.check_allowlist_denylist(
         ReadImageArgs(image_url="https://trusted.com/image.jpg")
@@ -231,7 +231,7 @@ async def test_allowlist_denylist_for_file_urls(read_image_tool, tmp_path, monke
     denied_file.write_bytes(b"data")
 
     config = ReadImageToolConfig(allowlist=["*/allowed.jpg"], denylist=["*/denied.jpg"])
-    read_image_tool = ReadImage(config=config, state=ReadImageState())
+    read_image_tool = ReadImage(config_getter=lambda: config, state=ReadImageState())
 
     allowed = read_image_tool.check_allowlist_denylist(
         ReadImageArgs(image_url=f"file://{allowed_file}")

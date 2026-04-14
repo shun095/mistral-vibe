@@ -19,12 +19,12 @@ class QuestionHandler {
      */
     showQuestionPopup(event) {
         this.currentPopupId = event.popup_id;
-        
+
         // Store original popup_id (before any _q suffixes) for final response
         if (!this.originalPopupId) {
             this.originalPopupId = event.popup_id.split('_q')[0];
         }
-        
+
         // Only reset state if this is the first question (from server event)
         // For subsequent questions (from submitCurrentQuestionOrNext), preserve state
         if (!this.currentQuestions || this.currentQuestions.length === 0) {
@@ -36,7 +36,7 @@ class QuestionHandler {
             this.currentQuestionIndex = 0;
             this.currentQuestionAnswers = [];
         }
-        
+
         const currentQuestion = this.currentQuestions[this.currentQuestionIndex];
         return currentQuestion;
     }
@@ -50,26 +50,26 @@ class QuestionHandler {
         if (this.currentQuestionIndex < this.currentQuestions.length - 1) {
             // Move to next question
             this.currentQuestionIndex++;
-            
+
             // Build next event for VibeClient to handle
             const nextEvent = {
                 popup_id: this.currentPopupId + '_q' + (this.currentQuestionIndex + 1),
                 questions: this.currentQuestions,
                 content_preview: null
             };
-            
+
             return { hasMore: true, nextEvent };
         } else {
             // All questions answered, send final response
             const message = this.sendQuestionResponse(this.originalPopupId, this.currentQuestionAnswers, false);
-            
+
             // Clear state
             this.currentPopupId = null;
             this.originalPopupId = null;
             this.currentQuestions = null;
             this.currentQuestionIndex = 0;
             this.currentQuestionAnswers = [];
-            
+
             return { hasMore: false, message };
         }
     }

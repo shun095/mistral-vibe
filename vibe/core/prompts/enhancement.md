@@ -17,4 +17,3 @@ You are an expert prompt engineer. Your task is to enhance the user's prompt to 
 {original_prompt}
 
 ## Enhanced Prompt:
-

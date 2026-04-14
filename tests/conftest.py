@@ -30,6 +30,7 @@ from vibe.core.config.harness_files import (
     reset_harness_files_manager,
 )
 from vibe.core.llm.types import BackendLike
+from vibe.core.tools.mcp import MCPRegistry
 
 
 def get_base_config() -> dict[str, Any]:
@@ -208,9 +209,9 @@ def build_test_agent_loop(
     agent_name: str = BuiltinAgentName.DEFAULT,
     backend: BackendLike | None = None,
     enable_streaming: bool = False,
+    mcp_registry: MCPRegistry | None = None,
     **kwargs,
 ) -> AgentLoop:
-
     resolved_config = config or build_test_vibe_config()
 
     return AgentLoop(
@@ -218,6 +219,7 @@ def build_test_agent_loop(
         agent_name=agent_name,
         backend=backend or FakeBackend(),
         enable_streaming=enable_streaming,
+        mcp_registry=mcp_registry,
         **kwargs,
     )
 

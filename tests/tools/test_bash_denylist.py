@@ -12,7 +12,7 @@ from vibe.core.tools.builtins.bash import Bash, BashArgs, BashToolConfig
 def bash() -> Bash:
     """Create a Bash tool instance for testing."""
     config: BashToolConfig = BashToolConfig()
-    return Bash(config=config, state=BaseToolState())
+    return Bash(config_getter=lambda: config, state=BaseToolState())
 
 
 class TestGitDenylist:
@@ -278,7 +278,7 @@ class TestCustomConfigurations:
     def test_custom_denylist(self):
         """Test that custom denylist works correctly."""
         config = BashToolConfig(denylist=["dangerous_command", "another_dangerous"])
-        bash_tool = Bash(config=config, state=BaseToolState())
+        bash_tool = Bash(config_getter=lambda: config, state=BaseToolState())
 
         result = bash_tool.resolve_permission(
             BashArgs(command="dangerous_command", timeout=10)
@@ -293,7 +293,7 @@ class TestCustomConfigurations:
     def test_custom_allowlist(self):
         """Test that custom allowlist works correctly."""
         config = BashToolConfig(allowlist=["safe_command", "another_safe"])
-        bash_tool = Bash(config=config, state=BaseToolState())
+        bash_tool = Bash(config_getter=lambda: config, state=BaseToolState())
 
         result = bash_tool.resolve_permission(
             BashArgs(command="safe_command", timeout=10)
@@ -308,7 +308,7 @@ class TestCustomConfigurations:
     def test_custom_allowlist_and_denylist(self):
         """Test that custom allowlist and denylist work together."""
         config = BashToolConfig(allowlist=["echo", "cat"], denylist=["rm", "mv"])
-        bash_tool = Bash(config=config, state=BaseToolState())
+        bash_tool = Bash(config_getter=lambda: config, state=BaseToolState())
 
         # Allowlisted commands should be ALWAYS
         result = bash_tool.resolve_permission(BashArgs(command="echo test", timeout=10))

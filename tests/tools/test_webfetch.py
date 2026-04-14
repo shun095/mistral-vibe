@@ -33,7 +33,7 @@ async def test_bare_domain_gets_https(webfetch):
     )
     result = await collect_result(webfetch.run(WebFetchArgs(url="example.com")))
     assert result.url == "https://example.com"
-    assert result.content == "ok"
+    assert result.content == "1: ok"
     assert result.was_truncated is False
 
 

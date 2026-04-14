@@ -69,7 +69,7 @@ def test_history_manager_stores_slash_prefixed_entries(tmp_path: Path) -> None:
 
     reloaded = HistoryManager(history_file)
 
-    assert reloaded.get_previous(current_input="") == "/tool_call arg1 arg2"
+    assert reloaded.get_previous(current_input="") == "arg1 arg2"
     assert reloaded.get_previous(current_input="") == "first"
     assert reloaded.get_previous(current_input="") is None
 

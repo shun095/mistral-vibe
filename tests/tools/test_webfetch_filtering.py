@@ -12,7 +12,7 @@ from vibe.core.tools.builtins.webfetch import WebFetch, WebFetchArgs, WebFetchCo
 @pytest.fixture
 def webfetch():
     config = WebFetchConfig()
-    return WebFetch(config=config, state=BaseToolState())
+    return WebFetch(config_getter=lambda: config, state=BaseToolState())
 
 
 @pytest.mark.asyncio

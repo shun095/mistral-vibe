@@ -11,6 +11,7 @@ from vibe.cli.textual_ui.app import VibeApp
 from vibe.cli.textual_ui.widgets.chat_input import ChatTextArea
 from vibe.core.agents.models import BuiltinAgentName
 from vibe.core.config import VibeConfig
+from vibe.core.tools.mcp import MCPRegistry
 
 
 def default_config() -> VibeConfig:
@@ -34,6 +35,7 @@ class BaseSnapshotTestApp(VibeApp):
         self,
         config: VibeConfig | None = None,
         backend: FakeBackend | None = None,
+        mcp_registry: MCPRegistry | None = None,
         **kwargs,
     ):
         agent_loop = build_test_agent_loop(
@@ -41,6 +43,7 @@ class BaseSnapshotTestApp(VibeApp):
             agent_name=self._current_agent_name,
             enable_streaming=bool(kwargs.get("enable_streaming", False)),
             backend=backend or FakeBackend(),
+            mcp_registry=mcp_registry,
         )
 
         plan_offer_gateway = kwargs.pop(

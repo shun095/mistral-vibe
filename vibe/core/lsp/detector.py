@@ -76,7 +76,7 @@ class LSPServerDetector:
         # Try to match with configured servers first
         # If config is None, skip configured servers and use only registry
         # If config is empty dict {}, skip both configured and registry (LSP disabled)
-        if self.config is not None:  # noqa: PLR1702
+        if self.config is not None:
             for server_name, server_config in self.config.items():
                 if not server_config.file_patterns:
                     # Server handles all files

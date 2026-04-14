@@ -159,7 +159,7 @@ def _should_raise_rate_limit_error(e: Exception) -> bool:
     return isinstance(e, BackendError) and e.status == HTTPStatus.TOO_MANY_REQUESTS
 
 
-# ruff: noqa: PLR0904
+# ruff: noqa: PLR0904, PLR0913, PLR0917
 class AgentLoop:
     def __init__(
         self,
@@ -173,9 +173,10 @@ class AgentLoop:
         entrypoint_metadata: EntrypointMetadata | None = None,
         event_listeners: list[Callable[[BaseEvent], None]] | None = None,
         is_subagent: bool = False,
+        mcp_registry: MCPRegistry | None = None,
     ) -> None:
         self._base_config = config
-        self.mcp_registry = MCPRegistry()
+        self.mcp_registry = mcp_registry or MCPRegistry()
         self.agent_manager = AgentManager(
             lambda: self._base_config,
             initial_agent=agent_name,

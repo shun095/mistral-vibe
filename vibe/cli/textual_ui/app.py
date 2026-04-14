@@ -1168,13 +1168,14 @@ class VibeApp(App):  # noqa: PLR0904
 
         try:
             # Use act() with multi-part content - cast since Content is str | list[str] but we're using list[dict]
-            async for event in self.agent_loop.act(cast(Content, content)):
-                if self.event_handler:
-                    await self.event_handler.handle_event(
-                        event,
-                        loading_active=self._loading_widget is not None,
-                        loading_widget=self._loading_widget,
-                    )
+            async with aclosing(self.agent_loop.act(cast(Content, content))) as events:
+                async for event in events:
+                    if self.event_handler:
+                        await self.event_handler.handle_event(
+                            event,
+                            loading_active=self._loading_widget is not None,
+                            loading_widget=self._loading_widget,
+                        )
 
         except asyncio.CancelledError:
             if self._loading_widget and self._loading_widget.parent:
@@ -2269,7 +2270,7 @@ Enhanced prompt:"""
                 )
             )
 
-    async def _edit_last_message(self) -> None:
+    async def _edit_last_message(self, **kwargs: Any) -> None:
         """Edit the last user message and restart the conversation."""
         from vibe.cli.textual_ui.handlers.edit_handler import (
             EditHandler,

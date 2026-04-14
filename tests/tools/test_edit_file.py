@@ -16,14 +16,14 @@ from vibe.core.tools.builtins.edit_file import (
 def edit_file(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     config = EditFileConfig()
-    return EditFile(config=config, state=EditFileState())
+    return EditFile(config_getter=lambda: config, state=EditFileState())
 
 
 @pytest.mark.asyncio
 async def test_replaces_single_occurrence(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     config = EditFileConfig()
-    edit_file_tool = EditFile(config=config, state=EditFileState())
+    edit_file_tool = EditFile(config_getter=lambda: config, state=EditFileState())
 
     # Create a test file
     test_file = tmp_path / "test.py"
@@ -63,7 +63,7 @@ def another_function():
 async def test_replaces_all_occurrences(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     config = EditFileConfig()
-    edit_file_tool = EditFile(config=config, state=EditFileState())
+    edit_file_tool = EditFile(config_getter=lambda: config, state=EditFileState())
 
     # Create a test file with multiple occurrences
     test_file = tmp_path / "test.py"
@@ -100,7 +100,7 @@ old_value = 3
 async def test_fails_when_old_string_not_found(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     config = EditFileConfig()
-    edit_file_tool = EditFile(config=config, state=EditFileState())
+    edit_file_tool = EditFile(config_getter=lambda: config, state=EditFileState())
 
     # Create a test file
     test_file = tmp_path / "test.py"
@@ -125,7 +125,7 @@ async def test_fails_when_old_string_not_found(tmp_path, monkeypatch):
 async def test_requires_absolute_path(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     config = EditFileConfig()
-    edit_file_tool = EditFile(config=config, state=EditFileState())
+    edit_file_tool = EditFile(config_getter=lambda: config, state=EditFileState())
 
     with pytest.raises(ToolError) as err:
         await collect_result(
@@ -143,7 +143,7 @@ async def test_requires_absolute_path(tmp_path, monkeypatch):
 async def test_fails_for_nonexistent_file(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     config = EditFileConfig()
-    edit_file_tool = EditFile(config=config, state=EditFileState())
+    edit_file_tool = EditFile(config_getter=lambda: config, state=EditFileState())
 
     with pytest.raises(ToolError) as err:
         await collect_result(
@@ -163,7 +163,7 @@ async def test_fails_for_nonexistent_file(tmp_path, monkeypatch):
 async def test_fails_for_directory(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     config = EditFileConfig()
-    edit_file_tool = EditFile(config=config, state=EditFileState())
+    edit_file_tool = EditFile(config_getter=lambda: config, state=EditFileState())
 
     # Use tmp_path itself as a directory
     with pytest.raises(ToolError) as err:
@@ -182,7 +182,7 @@ async def test_fails_for_directory(tmp_path, monkeypatch):
 async def test_fails_with_empty_old_string(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     config = EditFileConfig()
-    edit_file_tool = EditFile(config=config, state=EditFileState())
+    edit_file_tool = EditFile(config_getter=lambda: config, state=EditFileState())
 
     with pytest.raises(ToolError) as err:
         await collect_result(
@@ -200,7 +200,9 @@ async def test_fails_with_empty_old_string(tmp_path, monkeypatch):
 async def test_fails_with_empty_new_string(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     EditFileConfig()
-    edit_file_tool = EditFile(config=EditFileConfig(), state=EditFileState())
+    edit_file_tool = EditFile(
+        config_getter=lambda: EditFileConfig(), state=EditFileState()
+    )
 
     # Create test file first
     test_file = tmp_path / "test.py"
@@ -219,7 +221,7 @@ async def test_fails_with_empty_new_string(tmp_path, monkeypatch):
 def test_check_allowlist_denylist(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     config = EditFileConfig(allowlist=["/tmp/*"], denylist=["/etc/*"])
-    edit_file_tool = EditFile(config=config, state=EditFileState())
+    edit_file_tool = EditFile(config_getter=lambda: config, state=EditFileState())
 
     # Allowlisted
     allowlisted = edit_file_tool.check_allowlist_denylist(
@@ -244,7 +246,7 @@ def test_check_allowlist_denylist(tmp_path, monkeypatch):
 async def test_multiline_replacement_with_context(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     config = EditFileConfig()
-    edit_file_tool = EditFile(config=config, state=EditFileState())
+    edit_file_tool = EditFile(config_getter=lambda: config, state=EditFileState())
 
     # Create a test file with multiline content
     test_file = tmp_path / "test.py"
@@ -286,7 +288,7 @@ def function_two():
 async def test_backup_file_creation(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     config = EditFileConfig(create_backup=True)
-    edit_file_tool = EditFile(config=config, state=EditFileState())
+    edit_file_tool = EditFile(config_getter=lambda: config, state=EditFileState())
 
     # Create a test file
     test_file = tmp_path / "test.py"
@@ -318,7 +320,7 @@ async def test_backup_file_creation(tmp_path, monkeypatch):
 async def test_context_display_in_errors(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     config = EditFileConfig()
-    edit_file_tool = EditFile(config=config, state=EditFileState())
+    edit_file_tool = EditFile(config_getter=lambda: config, state=EditFileState())
 
     # Create a test file with similar content
     test_file = tmp_path / "test.py"
@@ -363,7 +365,7 @@ def function_c():
 async def test_multiple_occurrence_warning(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     config = EditFileConfig()
-    edit_file_tool = EditFile(config=config, state=EditFileState())
+    edit_file_tool = EditFile(config_getter=lambda: config, state=EditFileState())
 
     # Create a test file with multiple identical occurrences
     test_file = tmp_path / "test.py"
@@ -406,7 +408,9 @@ async def test_create_backup_config_option(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     # Test with create_backup=False (default)
     config_no_backup = EditFileConfig(create_backup=False)
-    edit_file_tool_no_backup = EditFile(config=config_no_backup, state=EditFileState())
+    edit_file_tool_no_backup = EditFile(
+        config_getter=lambda: config_no_backup, state=EditFileState()
+    )
 
     test_file = tmp_path / "test_no_backup.py"
     original = "old content\n"
@@ -429,7 +433,7 @@ async def test_create_backup_config_option(tmp_path, monkeypatch):
     # Test with create_backup=True
     config_with_backup = EditFileConfig(create_backup=True)
     edit_file_tool_with_backup = EditFile(
-        config=config_with_backup, state=EditFileState()
+        config_getter=lambda: config_with_backup, state=EditFileState()
     )
 
     test_file2 = tmp_path / "test_with_backup.py"
@@ -457,7 +461,7 @@ async def test_create_backup_config_option(tmp_path, monkeypatch):
 async def test_fuzzy_match_with_enabled_config(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     config = EditFileConfig(fuzzy_threshold=0.9)
-    edit_file_tool = EditFile(config=config, state=EditFileState())
+    edit_file_tool = EditFile(config_getter=lambda: config, state=EditFileState())
 
     # Create a test file with slight whitespace differences
     test_file = tmp_path / "test.py"
@@ -492,7 +496,7 @@ async def test_fuzzy_match_with_enabled_config(tmp_path, monkeypatch):
 async def test_fuzzy_match_provides_similar_matches_in_error(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     config = EditFileConfig(fuzzy_threshold=0.8)
-    edit_file_tool = EditFile(config=config, state=EditFileState())
+    edit_file_tool = EditFile(config_getter=lambda: config, state=EditFileState())
 
     # Create a test file
     test_file = tmp_path / "test.py"

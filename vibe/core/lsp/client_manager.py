@@ -209,7 +209,7 @@ class LSPClientManager:
 
         all_diagnostics: DiagnosticsList = []
 
-        for server_name in server_names:  # noqa: PLR1702
+        for server_name in server_names:
             try:
                 # Start server (this will restart if it has exited)
                 client = await self.start_server(server_name)

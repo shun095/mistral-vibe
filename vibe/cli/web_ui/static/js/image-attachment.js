@@ -1,6 +1,6 @@
 /**
  * Image Attachment Module
- * 
+ *
  * Handles clipboard paste, file selection, and validation for image attachments.
  * Supports PNG, JPEG, and WEBP formats with 2MB size limit.
  */
@@ -30,7 +30,7 @@ export class ImageAttachmentHandler {
         this.onImageAttached = onImageAttached;
         this.onImageRemoved = onImageRemoved;
         this.onError = onError;
-        
+
         this.attachedImage = null;
         this.allowedTypes = ['image/png', 'image/jpeg', 'image/webp'];
         this.maxSize = 2 * 1024 * 1024; // 2MB
@@ -38,7 +38,7 @@ export class ImageAttachmentHandler {
 
     /**
      * Handle paste event for image attachment from clipboard
-     * @param {ClipboardEvent} event 
+     * @param {ClipboardEvent} event
      * @returns {boolean} - True if image was handled
      */
     handlePaste(event) {
@@ -58,7 +58,7 @@ export class ImageAttachmentHandler {
 
     /**
      * Handle file selection from file input
-     * @param {Event} event 
+     * @param {Event} event
      */
     handleFileSelect(event) {
         const file = event.target.files?.[0];
@@ -71,7 +71,7 @@ export class ImageAttachmentHandler {
 
     /**
      * Process image: validate and convert to base64
-     * @param {File} file 
+     * @param {File} file
      */
     processImage(file) {
         // Validate format

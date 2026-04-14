@@ -1,6 +1,6 @@
 /**
  * Tests for scroll-utils module.
- * 
+ *
  * These tests verify the JavaScript scroll utilities for the chat message container.
  */
 
