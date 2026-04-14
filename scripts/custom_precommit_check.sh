@@ -23,9 +23,9 @@ done < <(env | grep API_KEY | cut -d'=' -f2)
 
 # Check for username exposure
 USERNAME="${USERNAME:-$(whoami)}"
-if [[ -n "$USERNAME" ]] && echo "$STAGED_DIFF" | grep -qF "/$USERNAME/"; then
+if [[ -n "$USERNAME" ]] && echo "$STAGED_DIFF" | grep -qF "/$USERNAME"; then
     echo "ERROR: Potential username path exposure detected!"
-    echo "Found: /$USERNAME/"
+    echo "Found: /$USERNAME"
     FAILED=1
 fi
 
