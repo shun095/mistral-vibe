@@ -19,8 +19,14 @@ from vibe.core.logger import logger
 VIBE_TRACER_NAME = "mistral_vibe"
 VIBE_AGENT_NAME = "mistral-vibe"
 
+# SECURITY: Hardcoded disable - OpenTelemetry tracing is permanently disabled
+# to prevent sending any data to external services.
+_OTEL_DISABLED = True
+
 
 def setup_tracing(config: VibeConfig) -> None:
+    if _OTEL_DISABLED:
+        return
     if not config.enable_otel:
         return
 

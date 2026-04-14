@@ -63,6 +63,9 @@ class TestListRemoteResumeSessions:
         assert result == []
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(
+        reason="Nuage remote sessions disabled for security - prevents external workflow calls"
+    )
     async def test_filters_only_active_statuses(self) -> None:
         from datetime import datetime
 
