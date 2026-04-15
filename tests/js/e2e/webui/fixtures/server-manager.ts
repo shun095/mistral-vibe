@@ -9,6 +9,22 @@ import * as os from "os";
 import * as path from "path";
 import * as fs from "fs";
 
+// E2E test configuration constants
+const PROJECT_ROOT = path.resolve(__dirname, "../../../../..");
+
+// Minimal config.toml for E2E tests - matches actual defaults from vibe/core/config/_settings.py
+// Intentionally omits save_dir to allow VIBE_HOME env var to control session log location
+const E2E_CONFIG_TOML = `[session_logging]
+enabled = true
+session_prefix = "session"
+
+[tools.read_file]
+max_read_bytes = 64000
+
+[tools.write_file]
+max_write_bytes = 64000
+`;
+
 export interface ServerConfig {
   port: number;
   token: string;
@@ -106,6 +122,7 @@ export class ServerManager {
       VIBE_ALLOW_URL_TOKEN: "true", // Enable URL token auth for E2E tests
       VIBE_E2E_TEST: "true",
       VIBE_E2E_TEST_DIR: this.e2eTestDir,
+      VIBE_HOME: this.e2eTestDir, // Override VIBE_HOME to use E2E test directory
       PYTHONUNBUFFERED: "1",
     };
 
@@ -289,6 +306,19 @@ export class ServerManager {
     ];
 
     fs.writeFileSync(historyFile, samplePrompts.join("\n"), "utf-8");
+
+    // Pre-trust the project directory to avoid trust dialog in E2E tests
+    const trustedFoldersFile = path.join(testDir, "trusted_folders.toml");
+    fs.writeFileSync(
+      trustedFoldersFile,
+      `trusted = ["${PROJECT_ROOT}"]\nuntrusted = []\n`,
+      "utf-8"
+    );
+
+    // Create minimal config.toml without explicit save_dir to allow VIBE_HOME to take effect
+    // If save_dir is explicitly set, it overrides SESSION_LOG_DIR path resolution
+    const configFile = path.join(testDir, "config.toml");
+    fs.writeFileSync(configFile, E2E_CONFIG_TOML, "utf-8");
 
     console.log(`Created E2E test directory: ${testDir}`);
     return testDir;

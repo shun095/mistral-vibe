@@ -178,6 +178,8 @@ You behave adhering this guidelines strictly.
 - ❌ **NEVER modify/delete files in `~/.vibe`** or write logs to `~/.vibe/vibe.log`
 - ❌ **NEVER create task files in root** - Use `./tmp/` for artifacts
 - ❌ **NEVER use filename versioning** (`*_v2`, `*_final`)
+- ❌ **NEVER kill processes on ports 9091-9093** - these are production ports in use
+- ❌ **NEVER use `pkill -f "vibe"`** - this kills production processes. Use specific PID or port-based killing instead.
 - ✅ Backup before destructive operations; prefer `git stash --all`
 - ✅ **All commits MUST pass pre-commit hooks** - use `timeout=600` for pre-commit commands
 - ✅ **Always stage changes first and wait for user approval before committing**
@@ -299,10 +301,24 @@ npm install                       # JavaScript dependencies
 npm run playwright:install        # Playwright browsers
 uv run pytest tests/              # Python tests
 npm test                          # JavaScript tests
-npm run test:e2e                  # E2E tests
+nohup npm run test:e2e > /tmp/e2e-test-output.log 2>&1 &  # E2E tests (background with logging)
 npm run test:e2e:ui               # Interactive E2E
 npm run test:e2e:headed           # Visible browser
 ```
+
+**E2E Test Notes:**
+- Always use `nohup npm run test:e2e > /tmp/e2e-test-output.log 2>&1 &` to run E2E tests in background
+- Monitor progress: `tail -f /tmp/e2e-test-output.log`
+- Check results: `grep -E "(passed|failed|skipped)" /tmp/e2e-test-output.log`
+- **NEVER kill processes on ports 9091-9093** - these are production ports in use
+- E2E tests use ports 9100-9109 by default (safe to kill after tests complete)
+- **To kill E2E test processes safely:**
+  ```bash
+  # Kill only E2E test servers (ports 9100-9109)
+  lsof -ti :9100-9109 | xargs -r kill -9 2>/dev/null || true
+  # OR kill by PID file
+  cat /tmp/vibe-e2e-server-*.pid | xargs -r kill -9 2>/dev/null || true
+  ```
 
 ## Tool Usage Guidelines
 

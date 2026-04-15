@@ -67,11 +67,14 @@ def spawned_vibe_process() -> SpawnedVibeFactory:
         workdir: Path, extra_args: Sequence[str] | None = None
     ) -> SpawnedVibeContext:
         captured = io.StringIO()
+        # Copy os.environ at spawn time to pick up monkeypatch.setenv() changes
+        # from fixtures like setup_e2e_env (which sets VIBE_HOME to temp dir)
+        env = cast(os._Environ[str], os.environ.copy())
         child = pexpect.spawn(
             "uv",
             ["run", "vibe", "--workdir", str(workdir), *(extra_args or [])],
             cwd=str(TESTS_ROOT.parent),
-            env=os.environ,
+            env=env,
             encoding="utf-8",
             timeout=30,
             dimensions=(36, 120),
