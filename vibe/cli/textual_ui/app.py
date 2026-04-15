@@ -2461,7 +2461,7 @@ Enhanced prompt:"""
         await self._narrator_manager.close()
         self.exit(result=self._get_session_resume_info())
 
-    def _restart_app(self) -> None:
+    def _restart_app(self, **kwargs: Any) -> None:
         """Restart the application using os.execv.
 
         This replaces the current process with a new instance,
@@ -3098,7 +3098,7 @@ Enhanced prompt:"""
 
         self.call_after_refresh(schedule_switch)
 
-    async def action_toggle_debug_console(self) -> None:
+    async def action_toggle_debug_console(self, **kwargs: Any) -> None:
         if self._debug_console is not None:
             await self._debug_console.remove()
             self._debug_console = None
