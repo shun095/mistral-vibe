@@ -1075,8 +1075,8 @@ class VibeClient {
         if (!content && !imageData) return;
 
         if (content && !imageData) {
-            // Check for !command (bash execution) first
-            if (content.startsWith('!')) {
+            // Check for !!command or !command (bash execution) first
+            if (content.startsWith('!!') || content.startsWith('!')) {
                 this.elements.input.value = '';
                 this.autoResizeTextarea();
                 this.updateSendButtonState();

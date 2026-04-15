@@ -641,14 +641,21 @@ class VibeApp(App):  # noqa: PLR0904
         if self._agent_running:
             await self._interrupt_agent_loop()
 
-        if value.startswith("!"):
-            await self._handle_bash_command(value[1:])
-            return
-
-        if value.startswith("&"):
+        handled = False
+        if value.startswith("!!"):
+            # !!command: execute but don't inject as context
+            await self._handle_bash_command(value[2:], inject_context=False)
+            handled = True
+        elif value.startswith("!"):
+            await self._handle_bash_command(value[1:], inject_context=True)
+            handled = True
+        elif value.startswith("&"):
             if self.config.nuage_enabled:
                 await self._handle_teleport_command(value[1:])
-                return
+            handled = True
+
+        if handled:
+            return
 
         if await self._handle_command(value):
             return
@@ -978,7 +985,9 @@ class VibeApp(App):  # noqa: PLR0904
         await self._handle_user_message(skill_content)
         return True
 
-    async def _handle_bash_command(self, command: str) -> None:
+    async def _handle_bash_command(
+        self, command: str, inject_context: bool = True
+    ) -> None:
         if not command:
             await self._mount_and_scroll(
                 ErrorMessage(
@@ -1016,16 +1025,17 @@ class VibeApp(App):  # noqa: PLR0904
             )
             self.agent_loop._notify_event_listeners(bash_event)
 
-            # Inject user context for agent awareness
-            await self.agent_loop.inject_user_context(
-                self._format_manual_command_context(
-                    command=command,
-                    cwd=str(Path.cwd()),
-                    exit_code=exit_code,
-                    stdout=stdout,
-                    stderr=stderr,
+            # Inject user context for agent awareness (unless disabled with !!)
+            if inject_context:
+                await self.agent_loop.inject_user_context(
+                    self._format_manual_command_context(
+                        command=command,
+                        cwd=str(Path.cwd()),
+                        exit_code=exit_code,
+                        stdout=stdout,
+                        stderr=stderr,
+                    )
                 )
-            )
 
         except subprocess.TimeoutExpired as error:
             error_msg = "Command timed out after 30 seconds"
@@ -1052,27 +1062,29 @@ class VibeApp(App):  # noqa: PLR0904
             )
             self.agent_loop._notify_event_listeners(assistant_event)
 
-            await self.agent_loop.inject_user_context(
-                self._format_manual_command_context(
-                    command=command,
-                    cwd=str(Path.cwd()),
-                    stdout=stdout,
-                    stderr=stderr,
-                    status="timed out after 30 seconds",
+            if inject_context:
+                await self.agent_loop.inject_user_context(
+                    self._format_manual_command_context(
+                        command=command,
+                        cwd=str(Path.cwd()),
+                        stdout=stdout,
+                        stderr=stderr,
+                        status="timed out after 30 seconds",
+                    )
                 )
-            )
         except Exception as e:
             error_msg = f"Command failed: {e}"
             await self._mount_and_scroll(
                 ErrorMessage(error_msg, collapsed=self._tools_collapsed)
             )
-            await self.agent_loop.inject_user_context(
-                self._format_manual_command_context(
-                    command=command,
-                    cwd=str(Path.cwd()),
-                    status=f"failed before completion: {e}",
+            if inject_context:
+                await self.agent_loop.inject_user_context(
+                    self._format_manual_command_context(
+                        command=command,
+                        cwd=str(Path.cwd()),
+                        status=f"failed before completion: {e}",
+                    )
                 )
-            )
 
     def _get_bash_max_output_bytes(self) -> int:
         from vibe.core.tools.builtins.bash import BashToolConfig
@@ -1343,8 +1355,12 @@ class VibeApp(App):  # noqa: PLR0904
                 continue
 
             # Check for !command (bash execution) first
+            if message.startswith("!!"):
+                # !!command: execute but don't inject as context
+                await self._handle_bash_command(message[2:], inject_context=False)
+                continue
             if message.startswith("!"):
-                await self._handle_bash_command(message[1:])
+                await self._handle_bash_command(message[1:], inject_context=True)
                 continue
 
             # Check for teleport command
