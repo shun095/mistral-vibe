@@ -229,10 +229,109 @@ enable_diagnostics = {str(enable_diagnostics).lower()}
         # Verify lsp config defaults to enabled
         assert config.lsp.enable_diagnostics is True
 
-        # Verify LSPClientManager respects the config
-        LSPClientManager.set_diagnostics_enabled_from_config(
-            config.lsp.enable_diagnostics
+        # Verify LSPClientManager automatically respects the config (applied in load())
+        assert LSPClientManager.are_diagnostics_enabled() is True
+
+
+class TestVibeConfigLoadAppliesLSPConfig:
+    """Tests that VibeConfig.load() automatically applies LSP config."""
+
+    def _reset_lsp_state(self) -> None:
+        """Reset LSP diagnostics state to defaults."""
+        from vibe.core.lsp import LSPClientManager
+
+        LSPClientManager._diagnostics_state = (
+            LSPClientManager._diagnostics_state.__class__()
         )
+
+    def test_load_applies_lsp_diagnostics_false(self, tmp_path: Path) -> None:
+        """Test that VibeConfig.load() applies lsp.enable_diagnostics=false."""
+        from vibe.core.config import VibeConfig
+        from vibe.core.config.harness_files import (
+            get_harness_files_manager,
+            init_harness_files_manager,
+            reset_harness_files_manager,
+        )
+        from vibe.core.lsp import LSPClientManager
+
+        # Reset state
+        reset_harness_files_manager()
+        self._reset_lsp_state()
+
+        # Create config file with diagnostics disabled
+        config_file = tmp_path / "config.toml"
+        config_file.write_text(
+            """
+[lsp]
+enable_diagnostics = false
+"""
+        )
+
+        # Set environment to use temp dir
+        import os
+
+        os.environ["VIBE_HOME"] = str(tmp_path)
+
+        # Initialize harness files manager
+        init_harness_files_manager("user")
+
+        # Verify config file is found
+        mgr = get_harness_files_manager()
+        assert mgr.config_file == config_file
+
+        # Load config - this should automatically apply LSP settings
+        config = VibeConfig.load()
+
+        # Verify config value
+        assert config.lsp.enable_diagnostics is False
+
+        # Verify LSPClientManager automatically has diagnostics disabled
+        # (no manual call to set_diagnostics_enabled_from_config)
+        assert LSPClientManager.are_diagnostics_enabled() is False
+
+    def test_load_applies_lsp_diagnostics_true(self, tmp_path: Path) -> None:
+        """Test that VibeConfig.load() applies lsp.enable_diagnostics=true."""
+        from vibe.core.config import VibeConfig
+        from vibe.core.config.harness_files import (
+            get_harness_files_manager,
+            init_harness_files_manager,
+            reset_harness_files_manager,
+        )
+        from vibe.core.lsp import LSPClientManager
+
+        # Reset state
+        reset_harness_files_manager()
+        self._reset_lsp_state()
+
+        # Create config file with diagnostics enabled
+        config_file = tmp_path / "config.toml"
+        config_file.write_text(
+            """
+[lsp]
+enable_diagnostics = true
+"""
+        )
+
+        # Set environment to use temp dir
+        import os
+
+        os.environ["VIBE_HOME"] = str(tmp_path)
+
+        # Initialize harness files manager
+        init_harness_files_manager("user")
+
+        # Verify config file is found
+        mgr = get_harness_files_manager()
+        assert mgr.config_file == config_file
+
+        # Load config - this should automatically apply LSP settings
+        config = VibeConfig.load()
+
+        # Verify config value
+        assert config.lsp.enable_diagnostics is True
+
+        # Verify LSPClientManager automatically has diagnostics enabled
+        # (no manual call to set_diagnostics_enabled_from_config)
         assert LSPClientManager.are_diagnostics_enabled() is True
 
 
