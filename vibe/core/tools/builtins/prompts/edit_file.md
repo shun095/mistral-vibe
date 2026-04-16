@@ -1,13 +1,20 @@
-Use `edit_file` to replace text within a file. By default, replaces a single occurrence. Set `replace_all` to true when you intend to modify every instance of `old_string`. This tool requires providing significant context around the change to ensure precise targeting. Always use the `read_file` tool to examine the file's current content before attempting a text replacement.
+Use `edit_file` to replace text within a file. By default, replaces a single occurrence. Set `replace_all` to true when you intend to modify every instance of `old_string`.
 
-**IMPORTANT:**
+## Arguments
+
+- `file_path`: The path to the file to modify (must be absolute, starting with `/`)
+- `old_string`: The exact text to find and replace
+- `new_string`: The text to replace it with
+- `replace_all`: Set to `true` to replace all occurrences (default: `false`)
+
+## IMPORTANT
 
 - The `old_string` must match **exactly** what's in the file, including whitespace, indentation, and newlines
-- `file_path` must be an absolute path (starting with `/`)
 - For single replacements, include at least 3 lines of context BEFORE and AFTER the target text
 - Do not escape `old_string` or `new_string` - they must be exact literal text
+- Always use `read_file` to examine the file content before attempting to edit
 
-**Examples:**
+## Examples
 
 **Single replacement with context:**
 ```python
@@ -28,7 +35,7 @@ edit_file(
 )
 ```
 
-**Best Practices:**
+## Best Practices
 
 1. Always use `read_file` to examine the file content before attempting to edit
 2. Include sufficient context in `old_string` to uniquely identify the target location

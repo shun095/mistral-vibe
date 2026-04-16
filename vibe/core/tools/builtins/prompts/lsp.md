@@ -1,12 +1,12 @@
 Use `lsp` to interact with Language Server Protocol (LSP) servers to get diagnostics and feedback on code.
 
-**Supported Servers:**
+## Supported Servers
 
 - **pyright**: Python type checking (`.py` files)
 - **typescript**: TypeScript/JavaScript analysis (`.ts`, `.js`, `.tsx`, `.jsx` files)
 - **deno**: Deno LSP server for TypeScript/JavaScript
 
-**Commands:**
+## Commands
 
 - **diagnostics**: Get diagnostics (errors, warnings, hints) for a file
 - **definition**: Find the definition of a symbol at the given location
@@ -14,7 +14,16 @@ Use `lsp` to interact with Language Server Protocol (LSP) servers to get diagnos
 - **implementation**: Find implementations of a symbol at the given location
 - **references**: Find all references to a symbol at the given location
 
-**Examples:**
+## Arguments
+
+- `file_path`: Path to the file to check for diagnostics or navigate to symbol
+- `command`: LSP command to execute (default: `"diagnostics"`)
+- `server_name`: Name of the LSP server (auto-detected if not specified)
+- `line`: Line number for goto commands (0-indexed, required for definition/type_definition/implementation)
+- `character`: Character position for goto commands (0-indexed)
+- `symbol_name`: Symbol name to find on the specified line
+
+## Examples
 
 **Get diagnostics for a file:**
 ```python
@@ -52,7 +61,7 @@ lsp(
 )
 ```
 
-**Best Practices:**
+## Best Practices
 
 1. Use `diagnostics` command (default) to check for errors and warnings in a file
 2. For goto commands, provide both `line` and `character` for precise symbol location
