@@ -20,10 +20,12 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
+
+from vibe.core.utils.mime import get_mime_type
 
 if TYPE_CHECKING:
     from vibe.core.agent_loop import AgentLoop
@@ -697,6 +699,72 @@ def create_app(  # noqa: PLR0915
 
         tui_app.submit_message_from_web(command_text)
         return JSONResponse({"success": True})
+
+    @app.get("/api/download")
+    async def download_file(
+        file_path: str,
+        _request: Request = Depends(verify_request_auth),  # noqa: B008
+    ) -> FileResponse:
+        """Download a registered file.
+
+        Args:
+            file_path: Absolute path to the file to download.
+
+        Returns:
+            File content with appropriate headers for download.
+        """
+        # Validate file path to prevent directory traversal
+        try:
+            path = Path(file_path).expanduser()
+            resolved_path = path.resolve()
+
+            # Security check: ensure file exists and is a file
+            if not resolved_path.exists():
+                raise HTTPException(status_code=404, detail="File not found")
+            if not resolved_path.is_file():
+                raise HTTPException(status_code=400, detail="Not a file")
+
+            # Path traversal protection: only allow files in session dir or /tmp
+            tui_app = getattr(app.state, "tui_app", None)
+            allowed_dirs = [Path("/tmp").resolve()]
+            if (
+                tui_app
+                and hasattr(tui_app, "agent_loop")
+                and tui_app.agent_loop.session_logger
+            ):
+                allowed_dirs.append(
+                    tui_app.agent_loop.session_logger.session_dir.resolve()
+                )
+
+            is_allowed = False
+            for allowed_dir in allowed_dirs:
+                try:
+                    if resolved_path.is_relative_to(allowed_dir):
+                        is_allowed = True
+                        break
+                except AttributeError:
+                    # Python 3.9 fallback
+                    if str(resolved_path).startswith(str(allowed_dir)):
+                        is_allowed = True
+                        break
+            if not is_allowed:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Access denied: file path outside allowed directories",
+                )
+
+            # Get MIME type using shared utility
+            mime_type = get_mime_type(resolved_path.name)
+
+            return FileResponse(
+                path=str(resolved_path),
+                media_type=mime_type,
+                filename=resolved_path.name,
+            )
+        except Exception as e:
+            if isinstance(e, HTTPException):
+                raise
+            raise HTTPException(status_code=500, detail=str(e))
 
     @app.get("/api/sessions")
     def list_sessions(_request: Request = Depends(verify_request_auth)) -> JSONResponse:  # noqa: B008

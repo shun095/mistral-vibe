@@ -288,6 +288,9 @@ class VibeClient {
             case 'WebNotificationEvent':
                 this.handleWebNotification(event);
                 break;
+            case 'DownloadableContentEvent':
+                this._renderDownloadableContent(event);
+                break;
             case 'LLMErrorEvent':
                 this.handleLLMError(event);
                 break;
@@ -326,6 +329,9 @@ class VibeClient {
                 break;
             case 'BashCommandEvent':
                 this._renderBashCommandResult(event);
+                break;
+            case 'DownloadableContentEvent':
+                this._renderDownloadableContent(event);
                 break;
             case 'ApprovalPopupEvent':
                 // Skip popup events during replay - ToolResultEvent already contains the result
@@ -550,6 +556,76 @@ class VibeClient {
         messageDiv.appendChild(outputDiv);
 
         this._scrollAfterUpdate(previousScrollHeight);
+    }
+
+    _renderDownloadableContent(event) {
+        const { filename, file_path: filePath, mime_type: mimeType, description } = event;
+
+        // Capture scroll height BEFORE appending
+        const previousScrollHeight = this.elements.messages.scrollHeight;
+
+        // Create message div
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message downloadable-content';
+        this.elements.messages.appendChild(messageDiv);
+
+        // Card container
+        const card = document.createElement('div');
+        card.className = 'download-card';
+
+        // Header
+        const header = document.createElement('div');
+        header.className = 'download-card-header';
+
+        // Icon based on MIME type
+        const icon = this._getIconForMimeType(mimeType);
+
+        header.innerHTML = `
+            <div class="download-card-title">
+                <span class="material-symbols-rounded">${icon}</span>
+                <span>${this.escapeHtml(filename)}</span>
+            </div>
+            <div class="download-card-type">${this.escapeHtml(mimeType)}</div>
+        `;
+
+        // Description (if provided)
+        let descriptionDiv = null;
+        if (description) {
+            descriptionDiv = document.createElement('div');
+            descriptionDiv.className = 'download-card-description';
+            descriptionDiv.textContent = this.escapeHtml(description);
+        }
+
+        // Download button
+        const button = document.createElement('button');
+        button.className = 'download-card-button';
+        button.innerHTML = `
+            <span class="material-symbols-rounded">download</span>
+            <span>Download</span>
+        `;
+        button.onclick = () => this._triggerDownload(filePath);
+
+        card.appendChild(header);
+        if (descriptionDiv) card.appendChild(descriptionDiv);
+        card.appendChild(button);
+        messageDiv.appendChild(card);
+
+        this._scrollAfterUpdate(previousScrollHeight);
+    }
+
+    _triggerDownload(filePath) {
+        // Trigger download via API
+        const url = `/api/download?file_path=${encodeURIComponent(filePath)}`;
+        window.open(url, '_blank');
+    }
+
+    _getIconForMimeType(mimeType) {
+        if (mimeType.startsWith('image/')) return 'image';
+        if (mimeType.startsWith('text/')) return 'description';
+        if (mimeType.includes('pdf')) return 'picture_as_pdf';
+        if (mimeType.includes('zip') || mimeType.includes('compressed')) return 'archive';
+        if (mimeType.includes('code') || mimeType.endsWith('+xml')) return 'code';
+        return 'description';
     }
 
     _onToolCallStart(data) {
