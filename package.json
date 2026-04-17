@@ -12,6 +12,7 @@
     "test:e2e:debug": "playwright test --debug --project=chromium",
     "test:e2e:headed": "playwright test --headed --project=chromium",
     "test:e2e:all": "playwright test",
+    "test:e2e:coverage": "COVERAGE=1 npm run test:e2e && node scripts/e2e-coverage.js",
     "playwright:install": "playwright install --with-deps",
     "playwright:show-report": "playwright show-report"
   },
@@ -23,6 +24,8 @@
     "babel-jest": "^29.7.0",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0",
-    "typescript": "^6.0.2"
+    "nyc": "^18.0.0",
+    "typescript": "^6.0.2",
+    "v8-to-istanbul": "^9.3.0"
   }
 }

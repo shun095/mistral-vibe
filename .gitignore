@@ -69,6 +69,8 @@ htmlcov/
 .nox/
 .coverage
 .coverage.*
+.coverage-e2e/
+.nyc_output/
 .*cache
 nosetests.xml
 coverage.xml

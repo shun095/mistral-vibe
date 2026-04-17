@@ -2,12 +2,32 @@
  * Custom Playwright fixtures for WebUI E2E tests.
  */
 
-import { test as base, Page, APIRequestContext } from "@playwright/test";
+import { test as base, Page, APIRequestContext, test as playwrightTest } from "@playwright/test";
 import { ServerManager } from "./server-manager";
 import { MockBackendClient } from "./mock-backend";
 import { resetTestState, Selectors, waitForConnected } from "../helpers/test-utils";
 import * as fs from "fs";
 import * as os from "os";
+import * as path from "path";
+
+// Coverage data collection (enabled when COVERAGE=1)
+const COLLECT_COVERAGE = process.env.COVERAGE === "1";
+const COVERAGE_DIR = ".coverage-e2e";
+
+function saveCoverage(page: Page): void {
+  if (!COLLECT_COVERAGE) return;
+  const testInfo = playwrightTest.info();
+  fs.mkdirSync(COVERAGE_DIR, { recursive: true });
+  const workerIndex = testInfo.workerIndex ?? 0;
+  const testIndex = testInfo.retry ?? 0;
+  const fileName = `worker-${workerIndex}-test-${testIndex}.json`;
+  const filePath = path.join(COVERAGE_DIR, fileName);
+  page.coverage.stopJSCoverage().then((coverage) => {
+    fs.writeFileSync(filePath, JSON.stringify(coverage), "utf-8");
+  }).catch(() => {
+    // Coverage may have been stopped already
+  });
+}
 
 // Pre-allocated ports from global setup
 const portsFile = os.tmpdir() + "/vibe-e2e-ports.json";
@@ -83,6 +103,11 @@ export const test = base.extend<WebUIFixtures & { page: Page }>({
   // Page fixture with automatic state reset between tests
   // Depends on mockBackend to ensure mock data is reset before and after each test
   page: async ({ page, webServer, authToken, mockBackend }, use) => {
+    // Start JS coverage before each test (if enabled)
+    if (COLLECT_COVERAGE) {
+      await page.coverage.startJSCoverage({ resetOnNavigation: false });
+    }
+
     // Reset mock data BEFORE navigating to ensure clean state
     await mockBackend.reset();
 
@@ -108,6 +133,11 @@ export const test = base.extend<WebUIFixtures & { page: Page }>({
     );
 
     await use(page);
+
+    // Stop coverage after test (if enabled)
+    if (COLLECT_COVERAGE) {
+      saveCoverage(page);
+    }
 
     // After test, reset mock data and page state
     // This ensures the next test starts with clean state

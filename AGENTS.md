@@ -311,6 +311,7 @@ npm run playwright:install        # Playwright browsers
 uv run pytest tests/              # Python tests
 npm test                          # JavaScript tests
 nohup npm run test:e2e > /tmp/e2e-test-output.log 2>&1 &  # E2E tests (background with logging)
+npm run test:e2e:coverage         # E2E tests with JS coverage + HTML report
 npm run test:e2e:ui               # Interactive E2E
 npm run test:e2e:headed           # Visible browser
 ```
