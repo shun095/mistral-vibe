@@ -35,7 +35,7 @@ export class ServerManager {
   private config: ServerConfig;
   private started: boolean = false;
   private actualPort: number | null = null;
-  private e2eTestDir: string | null = null;
+  e2eTestDir: string | null = null;
   private serverPidFile: string | null = null;
 
   constructor(config: ServerConfig) {

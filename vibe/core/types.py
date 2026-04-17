@@ -637,21 +637,6 @@ class LLMRetryEvent(BaseEvent):
     model: str | None = None
 
 
-class DownloadableContentEvent(BaseEvent):
-    """Event for registering downloadable content in WebUI.
-
-    Triggered when a tool registers a file for download,
-    causing a download button to appear in the chat interface.
-    """
-
-    filename: str = Field(description="Filename for download")
-    file_path: str = Field(description="Absolute path to the file on disk")
-    mime_type: str = Field(description="MIME type of the file")
-    description: str | None = Field(
-        default=None, description="Optional description for display"
-    )
-
-
 # New model classes
 
 

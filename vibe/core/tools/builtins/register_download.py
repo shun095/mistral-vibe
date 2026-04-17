@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, cast
+from typing import TYPE_CHECKING, ClassVar
 
 from pydantic import BaseModel, Field
 
@@ -10,22 +10,14 @@ from vibe.core.tools.base import (
     BaseTool,
     BaseToolConfig,
     BaseToolState,
-    EventConstructor,
     InvokeContext,
-    SpecialToolBehavior,
     ToolError,
     ToolPermission,
 )
 from vibe.core.tools.ui import ToolCallDisplay, ToolResultDisplay, ToolUIData
-from vibe.core.types import (
-    AssistantEvent,
-    ContinueableUserMessageEvent,
-    DownloadableContentEvent,
-)
 from vibe.core.utils.mime import get_mime_type
 
 if TYPE_CHECKING:
-    from vibe.core.llm.format import ResolvedToolCall
     from vibe.core.types import ToolCallEvent, ToolResultEvent
 
 
@@ -60,7 +52,6 @@ class RegisterDownload(
         BaseToolState,
     ],
     ToolUIData[RegisterDownloadArgs, RegisterDownloadResult],
-    SpecialToolBehavior,
 ):
     description: ClassVar[str] = (
         "Register a file as downloadable content in the WebUI. "
@@ -68,32 +59,6 @@ class RegisterDownload(
         "This creates a download button in the chat interface. "
         "The filename is auto-generated from the file path, and MIME type is auto-detected."
     )
-
-    @classmethod
-    def get_event_constructor(cls) -> EventConstructor:
-        """Return event constructor for register_download tool."""
-        return cls._construct_events
-
-    @classmethod
-    def _construct_events(
-        cls, tool_call: ResolvedToolCall, result_model: RegisterDownloadResult
-    ) -> list[AssistantEvent | ContinueableUserMessageEvent]:
-        """Construct custom events for register_download tool.
-
-        Returns a download card event that the WebUI can render with a download button.
-        """
-        # Create the downloadable content event
-        download_event = DownloadableContentEvent(
-            filename=result_model.filename,
-            file_path=result_model.file_path,
-            mime_type=result_model.mime_type,
-            description=result_model.description,
-        )
-
-        # Cast to satisfy EventConstructor type signature
-        return cast(
-            list[AssistantEvent | ContinueableUserMessageEvent], [download_event]
-        )
 
     async def run(
         self, args: RegisterDownloadArgs, ctx: InvokeContext | None = None
@@ -143,7 +108,7 @@ class RegisterDownload(
                 success=True,
                 message=f"Download ready: {result.filename} ({result.mime_type})",
             )
-        return ToolResultDisplay(success=True, message="Download registered")
+        return ToolResultDisplay(success=False, message="Unexpected result type")
 
     @classmethod
     def get_status_text(cls) -> str:

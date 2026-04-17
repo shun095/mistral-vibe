@@ -1,20 +1,15 @@
 /* Download Card Styles - Using CSS variables to match page theme */
 
-.message.downloadable-content {
-    align-self: flex-start;
-    width: 100%;
-    margin: 8px 0;
-}
-
-.message.downloadable-content .download-card {
+.download-card {
     background-color: var(--bg-secondary);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     max-width: 85%;
     overflow: hidden;
+    margin: 8px 0;
 }
 
-.message.downloadable-content .download-card-header {
+.download-card-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -23,7 +18,7 @@
     border-bottom: 1px solid var(--border-color);
 }
 
-.message.downloadable-content .download-card-title {
+.download-card-title {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -32,12 +27,12 @@
     font-size: 0.95rem;
 }
 
-.message.downloadable-content .download-card-title .material-symbols-rounded {
+.download-card-title .material-symbols-rounded {
     font-size: 24px;
     color: var(--primary-color);
 }
 
-.message.downloadable-content .download-card-type {
+.download-card-type {
     font-size: 0.75rem;
     color: var(--text-secondary);
     background: var(--bg-code);
@@ -46,7 +41,7 @@
     font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
 }
 
-.message.downloadable-content .download-card-description {
+.download-card-description {
     padding: 12px 14px;
     color: var(--text-secondary);
     font-size: 0.9rem;
@@ -54,7 +49,7 @@
     border-bottom: 1px solid var(--border-color);
 }
 
-.message.downloadable-content .download-card-button {
+.download-card-button {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -70,14 +65,14 @@
     transition: background-color 0.2s ease;
 }
 
-.message.downloadable-content .download-card-button:hover {
+.download-card-button:hover {
     background: var(--primary-color-dark);
 }
 
-.message.downloadable-content .download-card-button:active {
+.download-card-button:active {
     transform: scale(0.98);
 }
 
-.message.downloadable-content .download-card-button .material-symbols-rounded {
+.download-card-button .material-symbols-rounded {
     font-size: 20px;
 }

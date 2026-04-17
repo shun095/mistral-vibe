@@ -10,7 +10,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from vibe.core.types import BaseEvent, DownloadableContentEvent
+from vibe.core.types import BaseEvent
 
 
 class WebNotificationEvent(BaseEvent):
@@ -28,4 +28,4 @@ class WebNotificationEvent(BaseEvent):
     )
 
 
-__all__ = ["DownloadableContentEvent", "WebNotificationEvent"]
+__all__ = ["WebNotificationEvent"]

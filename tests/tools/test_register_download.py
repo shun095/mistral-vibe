@@ -239,29 +239,3 @@ class TestRegisterDownload:
 
         result = results[0]
         assert result.filename == "link.txt"
-
-    def test_event_serialization(self, tmp_path):
-        """Test that DownloadableContentEvent can be serialized."""
-        from vibe.cli.web_ui.events import DownloadableContentEvent
-
-        event = DownloadableContentEvent(
-            filename="test.txt",
-            file_path=str(tmp_path / "test.txt"),
-            mime_type="text/plain",
-            description="Test description",
-        )
-
-        # Test model_dump
-        data = event.model_dump(mode="json", exclude_none=True)
-        assert data["filename"] == "test.txt"
-        assert data["mime_type"] == "text/plain"
-        assert data["description"] == "Test description"
-
-        # Test with None description
-        event_no_desc = DownloadableContentEvent(
-            filename="test.txt",
-            file_path=str(tmp_path / "test.txt"),
-            mime_type="text/plain",
-        )
-        data_no_desc = event_no_desc.model_dump(mode="json", exclude_none=True)
-        assert "description" not in data_no_desc
