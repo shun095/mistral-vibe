@@ -182,6 +182,7 @@ _THINKING_TO_REASONING_EFFORT: dict[str, ReasoningEffortValue] = {
     "low": "none",
     "medium": "high",
     "high": "high",
+    "max": "high",
 }
 
 
@@ -329,9 +330,10 @@ class MistralBackend:
                 json.dumps(response.model_dump(), default=str, ensure_ascii=False),
             )
 
+            message = response.choices[0].message
             parsed = (
-                self._mapper.parse_content(response.choices[0].message.content)
-                if response.choices[0].message.content
+                self._mapper.parse_content(message.content)
+                if message and message.content
                 else ParsedContent(content="", reasoning_content=None)
             )
             return LLMChunk(
@@ -339,10 +341,8 @@ class MistralBackend:
                     role=Role.assistant,
                     content=parsed.content,
                     reasoning_content=parsed.reasoning_content,
-                    tool_calls=self._mapper.parse_tool_calls(
-                        response.choices[0].message.tool_calls
-                    )
-                    if response.choices[0].message.tool_calls
+                    tool_calls=self._mapper.parse_tool_calls(message.tool_calls)
+                    if message and message.tool_calls
                     else None,
                 ),
                 usage=LLMUsage(

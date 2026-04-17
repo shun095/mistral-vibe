@@ -165,6 +165,15 @@ guidelines:
       - Or ask Cursor: select the undefined symbol, then Cmd+K and request "Add the missing import for <symbol>".
       - Or copy the import from an existing file in the repo (e.g. acp.schema, acp.helpers, vibe.core.*).
 
+  - title: "No Docstrings in Tests"
+    description: >
+      Do not add docstrings to test functions, test methods, or test classes.
+      Test names should be descriptive enough to convey intent (e.g.,
+      `test_create_user_returns_403_when_unauthorized`). Docstrings in tests add
+      noise, duplicate the function name, and can suppress pytest's default output
+      (pytest displays the docstring instead of the node id when one is present).
+      Use inline comments sparingly for non-obvious setup or assertions instead.
+
 # AGENTS.md
 
 You behave adhering this guidelines strictly.
