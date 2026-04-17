@@ -280,14 +280,16 @@ Markdown {
 }
 
 .reasoning-collapsed-text,
-.reasoning-triangle {
+.reasoning-triangle,
+.tool-call-triangle {
     width: auto;
     height: auto;
     color: ansi_bright_black;
     text-style: italic;
 }
 
-.reasoning-triangle {
+.reasoning-triangle,
+.tool-call-triangle {
     margin-left: 1;
 }
 
@@ -464,7 +466,7 @@ StatusMessage {
 }
 
 .status-indicator-text {
-    width: 1fr;
+    width: auto;
     height: auto;
     color: ansi_default;
 }

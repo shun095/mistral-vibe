@@ -4,7 +4,12 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Static
 
-from vibe.cli.textual_ui.widgets.messages import ExpandingBorder, NonSelectableStatic
+from vibe.cli.textual_ui.widgets.messages import (
+    _COLLAPSED_TRIANGLE,
+    _EXPANDED_TRIANGLE,
+    ExpandingBorder,
+    NonSelectableStatic,
+)
 from vibe.cli.textual_ui.widgets.no_markup_static import NoMarkupStatic
 from vibe.cli.textual_ui.widgets.status_message import StatusMessage
 from vibe.cli.textual_ui.widgets.tool_widgets import get_result_widget
@@ -23,6 +28,8 @@ class ToolCallMessage(StatusMessage):
         self._tool_name = tool_name or (event.tool_name if event else None) or "unknown"
         self._is_history = event is None
         self._stream_widget: NoMarkupStatic | None = None
+        self._result_widget: ToolResultMessage | None = None
+        self._triangle_widget: NonSelectableStatic | None = None
 
         super().__init__()
         self.add_class("tool-call")
@@ -32,13 +39,17 @@ class ToolCallMessage(StatusMessage):
 
     def compose(self) -> ComposeResult:
         with Vertical(classes="tool-call-container"):
-            with Horizontal():
+            with Horizontal(classes="tool-call-header"):
                 self._indicator_widget = NonSelectableStatic(
                     self._spinner.current_frame(), classes="status-indicator-icon"
                 )
                 yield self._indicator_widget
                 self._text_widget = NoMarkupStatic("", classes="status-indicator-text")
                 yield self._text_widget
+                self._triangle_widget = NonSelectableStatic(
+                    _COLLAPSED_TRIANGLE, classes="tool-call-triangle"
+                )
+                yield self._triangle_widget
             self._stream_widget = NoMarkupStatic("", classes="tool-stream-message")
             self._stream_widget.display = False
             yield self._stream_widget
@@ -83,6 +94,23 @@ class ToolCallMessage(StatusMessage):
         if self._text_widget:
             self._text_widget.update(text)
 
+    def set_result_widget(self, result_widget: ToolResultMessage) -> None:
+        self._result_widget = result_widget
+        self._update_triangle()
+
+    def _update_triangle(self) -> None:
+        if not self._triangle_widget:
+            return
+        collapsed = self._result_widget.collapsed if self._result_widget else True
+        self._triangle_widget.update(
+            _COLLAPSED_TRIANGLE if collapsed else _EXPANDED_TRIANGLE
+        )
+
+    async def on_click(self) -> None:
+        if self._result_widget is not None:
+            await self._result_widget.toggle_collapsed()
+            self._update_triangle()
+
 
 class ToolResultMessage(Static):
     def __init__(
@@ -119,6 +147,7 @@ class ToolResultMessage(Static):
 
     async def on_mount(self) -> None:
         if self._call_widget:
+            self._call_widget.set_result_widget(self)
             success = self._determine_success()
             self._call_widget.stop_spinning(success=success)
             result_text = self._get_result_text()
@@ -210,6 +239,9 @@ class ToolResultMessage(Static):
             return
         self.collapsed = collapsed
         await self._render_result()
+
+    async def on_click(self) -> None:
+        await self.toggle_collapsed()
 
     async def toggle_collapsed(self) -> None:
         self.collapsed = not self.collapsed

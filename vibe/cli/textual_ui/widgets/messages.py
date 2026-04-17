@@ -13,6 +13,9 @@ from textual.widgets import Static
 from textual.widgets._markdown import MarkdownStream
 
 from vibe.cli.textual_ui.ansi_markdown import AnsiMarkdown as Markdown
+
+_COLLAPSED_TRIANGLE = "\u25b6"
+_EXPANDED_TRIANGLE = "\u25bc"
 from vibe.cli.textual_ui.widgets.no_markup_static import NoMarkupStatic
 from vibe.cli.textual_ui.widgets.spinner import SpinnerMixin, SpinnerType
 
@@ -229,7 +232,8 @@ class ReasoningMessage(SpinnerMixin, StreamingMessageBase):
                 )
                 yield self._status_text_widget
                 self._triangle_widget = NonSelectableStatic(
-                    "▶" if self.collapsed else "▼", classes="reasoning-triangle"
+                    _COLLAPSED_TRIANGLE if self.collapsed else _EXPANDED_TRIANGLE,
+                    classes="reasoning-triangle",
                 )
                 yield self._triangle_widget
             markdown = Markdown("", classes="reasoning-message-content")
@@ -258,7 +262,9 @@ class ReasoningMessage(SpinnerMixin, StreamingMessageBase):
 
         self.collapsed = collapsed
         if self._triangle_widget:
-            self._triangle_widget.update("▶" if collapsed else "▼")
+            self._triangle_widget.update(
+                _COLLAPSED_TRIANGLE if collapsed else _EXPANDED_TRIANGLE
+            )
         if self._markdown:
             self._markdown.display = not collapsed
             if not collapsed and self._content:
