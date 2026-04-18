@@ -149,4 +149,18 @@ test.describe("Bash Command (!command) Feature", () => {
     await expect(output).toBeVisible();
     await expect(output).toContainText("roundtrip_test_unique_final");
   });
+
+  test("should execute double-bang bash command (!!)", async ({ page }) => {
+    // Double-bang (!!command) is an alias for single-bang (!command)
+    await sendMessage(page, "!!echo 'double_bang_test_xyz'");
+
+    // Verify user message appears
+    const userMessage = page.locator(Selectors.userMessage).filter({ hasText: "double_bang_test_xyz" });
+    await expect(userMessage).toBeVisible({ timeout: 10000 });
+
+    // Verify bash command card appears
+    const bashCard = page.locator(Selectors.bashCommand).filter({ hasText: "double_bang_test_xyz" });
+    await expect(bashCard).toBeVisible({ timeout: 10000 });
+    await expect(bashCard).toContainText("Exit code: 0");
+  });
 });

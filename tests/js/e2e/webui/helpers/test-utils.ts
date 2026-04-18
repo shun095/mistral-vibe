@@ -29,6 +29,7 @@ export const Selectors = {
 
   // Image attachment
   attachImageBtn: "#attach-image-btn",
+  imagePreviewContainer: "#image-preview-container",
 
   // Session picker
   sessionPickerModal: "#session-picker-modal",
@@ -44,8 +45,17 @@ export const Selectors = {
   promptHistorySearch: "#prompt-history-search",
   promptHistoryItem: ".prompt-history-item",
 
+  // Toggle all cards
+  toggleCardsBtn: "#toggle-cards-btn",
+
   // Interrupt/Stop button
   interruptBtn: "#interrupt-btn",
+
+  // Logout button
+  logoutBtn: "#logout-btn",
+
+  // Theme toggle
+  themeToggle: "#theme-toggle",
 };
 
 /**
@@ -79,6 +89,19 @@ export async function waitForHidden(
 export async function sendMessage(page: Page, message: string): Promise<void> {
   await page.fill(Selectors.messageInput, message);
   await page.click(Selectors.sendButton);
+}
+
+/**
+ * Set the agent processing state via vibeClient.
+ * Used by E2E tests that need to simulate processing state changes.
+ */
+export async function setProcessingState(page: Page, processing: boolean): Promise<void> {
+  await page.evaluate((state: boolean) => {
+    const vibeClient = (window as any).vibeClient;
+    if (vibeClient && vibeClient.updateProcessingState) {
+      vibeClient.updateProcessingState(state);
+    }
+  }, processing);
 }
 
 /**

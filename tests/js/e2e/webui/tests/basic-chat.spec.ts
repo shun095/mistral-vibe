@@ -2,10 +2,51 @@ import { test, expect } from "../fixtures";
 import {
   Selectors,
   sendMessage,
+  setProcessingState,
   waitForResponse,
 } from "../helpers/test-utils";
 
 test.describe("Basic Chat Flow", () => {
+  test("should hide interrupt button when agent is idle", async ({ page }) => {
+    // Interrupt button should not be visible when idle
+    const interruptBtn = page.locator(Selectors.interruptBtn);
+    await expect(interruptBtn).not.toBeVisible();
+  });
+
+  test("should show interrupt button when agent is processing", async ({
+    page,
+  }) => {
+    await setProcessingState(page, true);
+
+    // Interrupt button should be visible during processing
+    const interruptBtn = page.locator(Selectors.interruptBtn);
+    await expect(interruptBtn).toBeVisible({ timeout: 5000 });
+
+    // Send button should be hidden during processing
+    const sendBtn = page.locator(Selectors.sendButton);
+    await expect(sendBtn).not.toBeVisible({ timeout: 5000 });
+
+    await setProcessingState(page, false);
+  });
+
+  test("should request interrupt when interrupt button is clicked", async ({
+    page,
+  }) => {
+    await setProcessingState(page, true);
+
+    // Click the interrupt button
+    const interruptBtn = page.locator(Selectors.interruptBtn);
+    await expect(interruptBtn).toBeVisible({ timeout: 5000 });
+    await interruptBtn.click();
+
+    // Verify interrupt was requested (system message appears)
+    const systemMsg = page.locator(Selectors.systemMessage).last();
+    await expect(systemMsg).toHaveText(/Interrupt requested/i, {
+      timeout: 5000,
+    });
+
+    await setProcessingState(page, false);
+  });
   test("should display the chat interface", async ({ page }) => {
     await expect(page.locator(Selectors.messageContainer)).toBeVisible();
     await expect(page.locator(Selectors.messageInput)).toBeVisible();

@@ -2,6 +2,22 @@ import { test, expect } from "../fixtures";
 import { Selectors } from "../helpers/test-utils";
 
 test.describe("Authentication", () => {
+  test("should logout and redirect to login page", async ({ page, webServer }) => {
+    // Page is already loaded with auth by fixture
+    // Verify we are on the main page
+    await expect(page).toHaveURL(webServer.getUrl());
+
+    // Click the logout button
+    await page.click(Selectors.logoutBtn);
+
+    // Should redirect to login page
+    await expect(page).toHaveURL(/.*\/login$/, { timeout: 10000 });
+
+    // Login box should be visible
+    const loginBox = page.locator(".login-box");
+    await expect(loginBox).toBeVisible();
+  });
+
   test("should redirect to login page without auth", async ({ webServer, context }) => {
     // For this test, we need to navigate without auth
     // Create a new page in the same context to avoid affecting the main authenticated session
