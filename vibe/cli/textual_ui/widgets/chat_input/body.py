@@ -94,7 +94,9 @@ class ChatInputBody(VoiceManagerListener, Widget):
             self._voice_manager.remove_listener(self)
 
     def _parse_mode_and_text(self, text: str) -> tuple[InputMode, str]:
-        if text.startswith("!"):
+        if text.startswith("!!"):
+            return "!!", text[2:]
+        elif text.startswith("!"):
             return "!", text[1:]
         elif text.startswith("/"):
             return "/", text[1:]

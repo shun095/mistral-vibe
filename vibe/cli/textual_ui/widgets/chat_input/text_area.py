@@ -19,7 +19,7 @@ from vibe.cli.voice_manager.voice_manager_port import (
     VoiceManagerPort,
 )
 
-InputMode = Literal["!", "/", ">", "&"]
+InputMode = Literal["!!", "!", "/", ">", "&"]
 
 
 class ChatTextArea(TextArea):
@@ -211,7 +211,7 @@ class ChatTextArea(TextArea):
 
         return False
 
-    async def _on_key(self, event: events.Key) -> None:  # noqa: PLR0911
+    async def _on_key(self, event: events.Key) -> None:  # noqa: PLR0911,PLR0912,PLR0915
         if await self._handle_voice_key(event):
             return
 
@@ -267,8 +267,14 @@ class ChatTextArea(TextArea):
             event.stop()
             return
 
+        if event.character == "!" and self._input_mode == "!":
+            self._set_mode("!!")
+            event.prevent_default()
+            event.stop()
+            return
+
         if event.key == "backspace" and self._should_reset_mode_on_backspace():
-            self._set_mode(self.DEFAULT_MODE)
+            self._set_mode(self._get_previous_mode())
             event.prevent_default()
             event.stop()
             return
@@ -365,6 +371,11 @@ class ChatTextArea(TextArea):
             and self.get_cursor_offset() == 0
         )
 
+    def _get_previous_mode(self) -> InputMode:
+        if self._input_mode == "!!":
+            return "!"
+        return self.DEFAULT_MODE
+
     def get_full_text(self) -> str:
         if self._input_mode != self.DEFAULT_MODE:
             return self._input_mode + self.text
@@ -374,7 +385,7 @@ class ChatTextArea(TextArea):
         return self.get_cursor_offset() + self._get_mode_prefix_length()
 
     def _get_mode_prefix_length(self) -> int:
-        return {">": 0, "/": 1, "!": 1, "&": 1}[self._input_mode]
+        return {">": 0, "/": 1, "!": 1, "!!": 2, "&": 1}[self._input_mode]
 
     @property
     def mode_characters(self) -> set[InputMode]:
