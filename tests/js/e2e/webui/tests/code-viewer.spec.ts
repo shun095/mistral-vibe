@@ -52,11 +52,7 @@ test.describe("Code Viewer (Monaco)", () => {
     await expect(codeModal).toBeVisible({ timeout: 10000 });
 
     // Wait for Monaco editor to initialize (it loads asynchronously)
-    await page.waitForTimeout(2000);
-
-    // Monaco editor should be visible in the modal
-    const monacoContainer = codeModal.locator(".monaco-container");
-    await expect(monacoContainer).toBeVisible();
+    await codeModal.locator(".monaco-container").waitFor({ state: "visible", timeout: 10000 });
   });
 
   test("should toggle word wrap in code viewer", async ({ page }) => {
@@ -67,7 +63,7 @@ test.describe("Code Viewer (Monaco)", () => {
     await expect(codeModal).toBeVisible({ timeout: 10000 });
 
     // Wait for Monaco editor to initialize
-    await page.waitForTimeout(2000);
+    await codeModal.locator(".monaco-container").waitFor({ state: "visible", timeout: 10000 });
 
     // Word wrap button should initially show wrap_text icon
     const wrapBtn = codeModal.locator(".code-modal-btn");

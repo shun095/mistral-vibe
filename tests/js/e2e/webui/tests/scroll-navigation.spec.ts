@@ -32,12 +32,9 @@ test.describe("Scroll Navigation (FAB Buttons)", () => {
       }
     });
 
-    // Wait a moment for scroll position to settle
-    await page.waitForTimeout(500);
-
-    // Scroll FAB container should be visible
+    // Wait for scroll position to settle and FAB to appear
     const fabContainer = page.locator(".fab-container");
-    await expect(fabContainer).toBeVisible();
+    await expect(fabContainer).toBeVisible({ timeout: 10000 });
 
     // Scroll-to-top button should be visible
     const scrollTopBtn = page.locator("#scroll-top-btn");
@@ -68,7 +65,6 @@ test.describe("Scroll Navigation (FAB Buttons)", () => {
         messages.scrollTop = messages.scrollHeight;
       }
     });
-    await page.waitForTimeout(300);
 
     // Verify we're at bottom
     const atBottom = await page.evaluate(() => {
@@ -83,8 +79,11 @@ test.describe("Scroll Navigation (FAB Buttons)", () => {
     await expect(scrollTopBtn).toBeVisible();
     await scrollTopBtn.click();
 
-    // Wait for scroll animation to complete
-    await page.waitForTimeout(300);
+    // Wait for scroll animation to complete (scroll position reaches top)
+    await page.waitForFunction(() => {
+      const messages = document.getElementById("messages");
+      return messages && messages.scrollTop < 5;
+    });
 
     // Scroll position should be at or near top
     const finalScroll = await page.evaluate(() => {
@@ -200,8 +199,11 @@ test.describe("Smart Scroll Behavior", () => {
       }
     });
 
-    // Wait for scroll to settle
-    await page.waitForTimeout(500);
+    // Wait for scroll to reach top
+    await page.waitForFunction(() => {
+      const messages = document.getElementById("messages");
+      return messages && messages.scrollTop <= 1;
+    });
 
     // Record scroll position
     const beforeScroll = await page.evaluate(() => {
@@ -253,7 +255,6 @@ test.describe("Smart Scroll Behavior", () => {
         messages.scrollTop = messages.scrollHeight;
       }
     });
-    await page.waitForTimeout(500);
 
     // Register a new response
     await mockBackend.registerResponse({ response_text: "New message" });

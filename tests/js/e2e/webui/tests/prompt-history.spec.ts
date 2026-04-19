@@ -3,6 +3,7 @@ import {
   Selectors,
   waitForVisible,
   waitForHidden,
+  waitForResponse,
 } from "../helpers/test-utils";
 
 test.describe("Prompt History Feature", () => {
@@ -119,8 +120,11 @@ test.describe("Prompt History Feature", () => {
     // Type in search box
     await page.fill(Selectors.promptHistorySearch, "test");
 
-    // Wait a bit for filtering to happen
-    await page.waitForTimeout(500);
+    // Wait for filter to apply (search debounce)
+    await page.waitForFunction(() => {
+      const search = document.querySelector("#prompt-history-search") as HTMLInputElement;
+      return search && search.value === "test";
+    }, { timeout: 5000 });
 
     // Get filtered number of items
     const filteredItems = await page.locator(Selectors.promptHistoryItem).count();
@@ -165,8 +169,8 @@ test.describe("Prompt History Feature", () => {
     await page.fill(Selectors.messageInput, "test prompt for history");
     await page.click(Selectors.sendButton);
 
-    // Wait for message to be sent
-    await page.waitForTimeout(1000);
+    // Wait for message to be sent and response received
+    await waitForResponse(page, 15000);
 
     // Click prompt history button
     await page.click(Selectors.promptHistoryBtn);

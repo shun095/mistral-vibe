@@ -80,8 +80,8 @@ test.describe("Image Attachment", () => {
     await page.fill(Selectors.messageInput, "Look at this");
     await page.click(Selectors.sendButton);
 
-    // Wait for message to be sent
-    await page.waitForTimeout(500);
+    // Wait for message to be sent and image preview cleared
+    await page.locator(Selectors.imagePreviewContainer).waitFor({ state: "hidden", timeout: 5000 });
 
     // Verify image preview is cleared
     await expect(previewContainer).not.toBeVisible({ timeout: 5000 });

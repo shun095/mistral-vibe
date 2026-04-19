@@ -4,6 +4,7 @@ import {
   sendMessage,
   waitForVisible,
   waitForHidden,
+  waitForResponse,
 } from "../helpers/test-utils";
 
 test.describe("Resume Command (/resume)", () => {
@@ -140,8 +141,8 @@ test.describe("Resume Command (/resume)", () => {
     // Send a message to create a session
     await sendMessage(page, "Test message for session creation");
 
-    // Wait for response or processing to complete
-    await page.waitForTimeout(2000);
+    // Wait for the assistant response to appear (processing complete)
+    await waitForResponse(page, 15000);
 
     // Now send /resume command
     await sendMessage(page, "/resume");
@@ -149,8 +150,9 @@ test.describe("Resume Command (/resume)", () => {
     // Wait for modal to appear
     await waitForVisible(page, Selectors.sessionPickerModal);
 
-    // Wait for content to load
-    await page.waitForTimeout(1000);
+    // Wait for session content to load (not just modal)
+    const sessionContent = page.locator(Selectors.sessionPickerContent);
+    await sessionContent.waitFor({ state: "visible", timeout: 10000 });
 
     // Check if session items are present or if empty state is shown
     const content = page.locator(Selectors.sessionPickerContent);

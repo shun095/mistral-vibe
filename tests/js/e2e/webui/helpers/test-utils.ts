@@ -327,8 +327,10 @@ export async function resetTestState(
       console.log("Reset: interrupting processing...");
       try {
         await interruptBtn.click({ timeout: 3000 });
-        // Wait for processing to stop and popup to close
-        await page.waitForTimeout(1000);
+        // Wait for processing to stop (processing indicator disappears)
+        await waitForHidden(page, Selectors.processingIndicator, 3000).catch(() =>
+          console.debug("Reset: processing indicator did not disappear")
+        );
       } catch {
         console.warn("Reset: failed to click interrupt button");
       }
@@ -343,13 +345,19 @@ export async function resetTestState(
       const noButton = approvalPopup.locator('.popup-btn.no:has-text("No")').first();
       try {
         await noButton.click({ timeout: 2000 });
-        await page.waitForTimeout(500);
+        // Wait for approval popup to disappear
+        await waitForHidden(page, Selectors.approvalPopup, 3000).catch(() =>
+          console.debug("Reset: approval popup did not disappear after clicking No")
+        );
       } catch {
         // Try close button
         const closeButton = approvalPopup.locator('.popup-close, .modal-close').first();
         try {
           await closeButton.click({ timeout: 2000 });
-          await page.waitForTimeout(500);
+          // Wait for approval popup to disappear
+          await waitForHidden(page, Selectors.approvalPopup, 3000).catch(() =>
+            console.debug("Reset: approval popup did not disappear after clicking close")
+          );
         } catch {
           console.warn("Reset: could not close approval popup");
         }

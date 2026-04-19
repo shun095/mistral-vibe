@@ -94,8 +94,8 @@ test.describe("Authentication", () => {
     // Navigate to login page - should redirect to main page immediately
     await loginPage.goto(`${webServer.getUrl()}/login`, { waitUntil: "domcontentloaded" });
 
-    // Wait a bit to see if there's a reload loop
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    // Wait for redirect to complete (or timeout if stuck in reload loop)
+    await loginPage.waitForURL(webServer.getUrl(), { timeout: 5000 });
 
     // Should have redirected to main page, not stayed on login
     await expect(loginPage).toHaveURL(webServer.getUrl());
