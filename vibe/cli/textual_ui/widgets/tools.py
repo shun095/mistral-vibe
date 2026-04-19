@@ -27,9 +27,9 @@ class ToolCallMessage(StatusMessage):
         self._event = event
         self._tool_name = tool_name or (event.tool_name if event else None) or "unknown"
         self._is_history = event is None
+        self._display_text: str | None = None
         self._stream_widget: NoMarkupStatic | None = None
         self._result_widget: ToolResultMessage | None = None
-        self._triangle_widget: NonSelectableStatic | None = None
 
         super().__init__()
         self.add_class("tool-call")
@@ -46,10 +46,6 @@ class ToolCallMessage(StatusMessage):
                 yield self._indicator_widget
                 self._text_widget = NoMarkupStatic("", classes="status-indicator-text")
                 yield self._text_widget
-                self._triangle_widget = NonSelectableStatic(
-                    _COLLAPSED_TRIANGLE, classes="tool-call-triangle"
-                )
-                yield self._triangle_widget
             self._stream_widget = NoMarkupStatic("", classes="tool-stream-message")
             self._stream_widget.display = False
             yield self._stream_widget
@@ -67,18 +63,30 @@ class ToolCallMessage(StatusMessage):
     def tool_call_id(self) -> str | None:
         return self._event.tool_call_id if self._event else None
 
+    def _ensure_triangle(self, text: str) -> str:
+        if text and text[-1] in {_COLLAPSED_TRIANGLE, _EXPANDED_TRIANGLE}:
+            return text
+        if self._is_spinning:
+            return text
+        collapsed = self._result_widget.collapsed if self._result_widget else True
+        triangle = _COLLAPSED_TRIANGLE if collapsed else _EXPANDED_TRIANGLE
+        return f"{text} {triangle}"
+
     def get_content(self) -> str:
         if self._event:
-            adapter = ToolUIDataAdapter(self._event.tool_class)
-            display = adapter.get_call_display(self._event)
-            return display.summary
-        return self._tool_name
+            if self._is_spinning:
+                adapter = ToolUIDataAdapter(self._event.tool_class)
+                display = adapter.get_call_display(self._event)
+                return display.summary
+            if self._display_text:
+                return self._display_text
+        return self._ensure_triangle(self._tool_name)
 
     def update_event(self, event: ToolCallEvent) -> None:
         self._event = event
         self._tool_name = event.tool_name
         if self._text_widget:
-            self._text_widget.update(self.get_content())
+            self._text_widget.update(self._ensure_triangle(self.get_content()))
 
     def set_stream_message(self, message: str) -> None:
         """Update the stream message displayed below the tool call indicator."""
@@ -88,23 +96,29 @@ class ToolCallMessage(StatusMessage):
 
     def stop_spinning(self, success: bool = True) -> None:
         """Stop the spinner while keeping stream row stable to avoid layout jumps."""
-        super().stop_spinning(success)
+        self._is_spinning = False
+        self.success = success
+        if self._spinner_timer:
+            self._spinner_timer.stop()
+            self._spinner_timer = None
+        if self._display_text and self._text_widget:
+            self._text_widget.update(self._ensure_triangle(self._display_text))
+        else:
+            self.update_display()
 
     def set_result_text(self, text: str) -> None:
         if self._text_widget:
-            self._text_widget.update(text)
+            if self._event:
+                self._display_text = text
+            self._text_widget.update(self._ensure_triangle(text))
 
     def set_result_widget(self, result_widget: ToolResultMessage) -> None:
         self._result_widget = result_widget
         self._update_triangle()
 
     def _update_triangle(self) -> None:
-        if not self._triangle_widget:
-            return
-        collapsed = self._result_widget.collapsed if self._result_widget else True
-        self._triangle_widget.update(
-            _COLLAPSED_TRIANGLE if collapsed else _EXPANDED_TRIANGLE
-        )
+        if self._text_widget:
+            self._text_widget.update(self._ensure_triangle(self.get_content()))
 
     async def on_click(self) -> None:
         if self._result_widget is not None:
