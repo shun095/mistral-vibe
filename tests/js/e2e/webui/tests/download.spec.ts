@@ -3,27 +3,20 @@
  */
 
 import { test, expect } from "../fixtures";
-import { Selectors } from "../helpers/test-utils";
+import { Selectors, formatAndAppendToolResult } from "../helpers/test-utils";
 
 test.describe("Download Feature UI", () => {
   test("should render download card with filename, MIME type, and button", async ({
     page,
   }) => {
     // Simulate ToolResultEvent for register_download
-    await page.evaluate(() => {
-      const result = {
-        filename: "test_file.txt",
-        file_path: "/tmp/test_file.txt",
-        mime_type: "text/plain",
-        description: "Test file for download",
-      };
-
-      const vibeClient = (window as any).vibeClient;
-      if (vibeClient && vibeClient.formatToolResult) {
-        const card = vibeClient.formatToolResult("register_download", result);
-        document.body.appendChild(card);
-      }
-    });
+    const result = {
+      filename: "test_file.txt",
+      file_path: "/tmp/test_file.txt",
+      mime_type: "text/plain",
+      description: "Test file for download",
+    };
+    await formatAndAppendToolResult(page, "register_download", result);
 
     // Wait for download card to appear
     const downloadCard = page.locator(".download-card");
@@ -42,20 +35,13 @@ test.describe("Download Feature UI", () => {
   test("should handle download card without description", async ({
     page,
   }) => {
-    await page.evaluate(() => {
-      const result = {
-        filename: "no_desc.txt",
-        file_path: "/tmp/no_desc.txt",
-        mime_type: "text/plain",
-        description: null,
-      };
-
-      const vibeClient = (window as any).vibeClient;
-      if (vibeClient && vibeClient.formatToolResult) {
-        const card = vibeClient.formatToolResult("register_download", result);
-        document.body.appendChild(card);
-      }
-    });
+    const result = {
+      filename: "no_desc.txt",
+      file_path: "/tmp/no_desc.txt",
+      mime_type: "text/plain",
+      description: null,
+    };
+    await formatAndAppendToolResult(page, "register_download", result);
 
     const downloadCard = page.locator(".download-card").filter({
       hasText: "no_desc.txt",
@@ -76,22 +62,11 @@ test.describe("Download Feature UI", () => {
 
     for (const [filename, mimeType, expectedIcon] of cases) {
       test(`should show ${expectedIcon} icon for ${filename}`, async ({ page }) => {
-        await page.evaluate(
-          ({ filename, mimeType }) => {
-            const result = {
-              filename,
-              file_path: `/tmp/${filename}`,
-              mime_type: mimeType,
-            };
-
-            const vibeClient = (window as any).vibeClient;
-            if (vibeClient && vibeClient.formatToolResult) {
-              const card = vibeClient.formatToolResult("register_download", result);
-              document.body.appendChild(card);
-            }
-          },
-          { filename, mimeType }
-        );
+        await formatAndAppendToolResult(page, "register_download", {
+          filename,
+          file_path: `/tmp/${filename}`,
+          mime_type: mimeType,
+        });
 
         const card = page.locator(".download-card").filter({ hasText: filename });
         await expect(card).toBeVisible({ timeout: 10000 });

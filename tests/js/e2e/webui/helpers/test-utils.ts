@@ -105,6 +105,157 @@ export async function setProcessingState(page: Page, processing: boolean): Promi
 }
 
 /**
+ * Update context progress via vibeClient.
+ * Used by E2E tests that need to simulate token usage progress.
+ */
+export async function updateContextProgress(
+  page: Page,
+  used: number,
+  max: number
+): Promise<void> {
+  await page.evaluate(
+    ({ used, max }: { used: number; max: number }) => {
+      const vibeClient = (window as any).vibeClient;
+      if (vibeClient && vibeClient.updateContextProgress) {
+        vibeClient.updateContextProgress(used, max);
+      }
+    },
+    { used, max }
+  );
+}
+
+/**
+ * Generic helper to call any vibeClient method from tests.
+ * Replaces the repeated pattern of:
+ *   page.evaluate(() => {
+ *     const vibeClient = (window as any).vibeClient;
+ *     if (vibeClient && vibeClient.method) vibeClient.method(...args);
+ *   });
+ */
+export async function callVibeClient<T extends keyof Window & {
+  vibeClient: Record<string, (...args: any[]) => any>;
+}>(
+  page: Page,
+  method: string,
+  ...args: any[]
+): Promise<void> {
+  await page.evaluate(
+    ({ method, args }: { method: string; args: any[] }) => {
+      const vibeClient = (window as any).vibeClient;
+      if (vibeClient && vibeClient[method]) {
+        (vibeClient[method] as (...a: any[]) => any)(...args);
+      }
+    },
+    { method, args }
+  );
+}
+
+/**
+ * Show a question popup via vibeClient.
+ * Used by E2E tests that need to simulate question popup events.
+ */
+export async function showQuestionPopup(
+  page: Page,
+  event: Record<string, unknown>
+): Promise<void> {
+  await callVibeClient(page, "showQuestionPopup", event);
+}
+
+/**
+ * Trigger a WebNotificationEvent via vibeClient.
+ * Used by E2E tests that need to simulate notification events.
+ */
+export async function triggerWebNotification(
+  page: Page,
+  detail: Record<string, unknown>
+): Promise<void> {
+  await callVibeClient(page, "handleEvent", detail);
+}
+
+/**
+ * Simulate an image attachment via vibeClient.
+ * Sets up the image data and triggers the preview.
+ * Also updates the DOM preview container for test visibility.
+ */
+export async function simulateImageAttachment(
+  page: Page,
+  dataUrl: string,
+  mimeType?: string
+): Promise<void> {
+  await page.evaluate(
+    ({ dataUrl, mimeType }: { dataUrl: string; mimeType?: string }) => {
+      const vibeClient = (window as any).vibeClient;
+      if (vibeClient && vibeClient.imageAttachment) {
+        const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, "");
+        vibeClient.imageAttachment["attachedImage"] = {
+          data: base64,
+          mime_type: mimeType ?? "image/png",
+        };
+        vibeClient.imageAttachment.showPreview(dataUrl);
+        vibeClient.imageAttachment.onImageAttached?.();
+        // Also update the DOM for test visibility
+        const previewContainer = document.getElementById("image-preview-container");
+        const previewImg = document.getElementById("image-preview-img");
+        if (previewContainer && previewImg) {
+          previewContainer.style.display = "block";
+          previewImg.src = dataUrl;
+        }
+      }
+    },
+    { dataUrl, mimeType }
+  );
+}
+
+/**
+ * Trigger an LLM error via vibeClient.
+ * Used by E2E tests that need to simulate LLM error cards.
+ */
+export async function triggerLLMError(
+  page: Page,
+  error: Record<string, unknown>
+): Promise<void> {
+  await callVibeClient(page, "handleLLMError", error);
+}
+
+/**
+ * Format a tool result and append it to the document body.
+ * Used by E2E tests that need to test tool result card rendering.
+ */
+export async function formatAndAppendToolResult(
+  page: Page,
+  toolName: string,
+  result: Record<string, unknown>
+): Promise<void> {
+  await page.evaluate(
+    ({ toolName, result }: { toolName: string; result: Record<string, unknown> }) => {
+      const vibeClient = (window as any).vibeClient;
+      if (vibeClient && vibeClient.formatToolResult) {
+        const formatted = vibeClient.formatToolResult(toolName, result);
+        document.body.appendChild(formatted);
+      }
+    },
+    { toolName, result }
+  );
+}
+
+/**
+ * Create and append a reasoning card via vibeClient.
+ * Used by E2E tests that need to test reasoning card rendering.
+ */
+export async function createReasoningCard(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const vibeClient = (window as any).vibeClient;
+    if (vibeClient && vibeClient.createReasoningMessage) {
+      const reasoningDiv = vibeClient.createReasoningMessage();
+      const messages = document.getElementById("messages");
+      if (messages) {
+        messages.appendChild(reasoningDiv);
+      }
+    }
+  });
+}
+
+/**
  * Wait for assistant response.
  * Returns the most recent assistant message.
  */
