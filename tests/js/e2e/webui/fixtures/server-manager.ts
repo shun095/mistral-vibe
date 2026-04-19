@@ -105,7 +105,6 @@ export class ServerManager {
     // Only find available port if the specified port is in use
     let port = this.config.port;
     if (!(await this.isPortAvailable(port))) {
-      console.log(`Port ${port} is in use, finding available port...`);
       port = await this.findAvailablePort(port);
     }
     this.actualPort = port;
@@ -126,9 +125,6 @@ export class ServerManager {
       PYTHONUNBUFFERED: "1",
     };
 
-    console.log(`Starting Vibe CLI with WebUI on port ${port}...`);
-    console.log(`Using E2E test directory: ${this.e2eTestDir}`);
-
     return new Promise((resolve, reject) => {
       // Start uv run vibe --web
       this.process = child_process.spawn("uv", [
@@ -146,7 +142,9 @@ export class ServerManager {
       if (this.process.pid) {
         this.serverPidFile = `/tmp/vibe-e2e-server-${this.actualPort}.pid`;
         fs.writeFileSync(this.serverPidFile, String(this.process.pid), "utf-8");
-        console.log(`Server PID ${this.process.pid} saved to ${this.serverPidFile}`);
+        console.log(
+          `[E2E] port=${this.actualPort} pid=${this.process.pid} dir=${this.e2eTestDir}`
+        );
       }
 
       // Capture stdout/stderr for debugging
@@ -162,7 +160,6 @@ export class ServerManager {
       // Wait for server to be ready
       this.waitForServer().then(() => {
         this.started = true;
-        console.log(`Vibe CLI with WebUI started successfully on port ${this.actualPort}`);
         resolve();
       }).catch((error) => {
         if (this.process) {
@@ -180,8 +177,6 @@ export class ServerManager {
       return;
     }
 
-    console.log("Stopping Vibe CLI...");
-
     return new Promise((resolve) => {
       this.process?.kill("SIGTERM");
 
@@ -194,7 +189,6 @@ export class ServerManager {
       this.process?.on("exit", () => {
         this.started = false;
         this.process = null;
-        console.log("Vibe CLI stopped");
         this.cleanupE2eTestDir();
       });
     });
@@ -203,10 +197,6 @@ export class ServerManager {
   private waitForServer(): Promise<void> {
     const maxAttempts = 120; // Increased from 60 to 120 (120 seconds total)
     const interval = 1000;
-
-    console.log(
-      `Waiting for server on port ${this.actualPort} (max ${maxAttempts}s)...`
-    );
 
     return new Promise((resolve, reject) => {
       let attempts = 0;
@@ -217,17 +207,11 @@ export class ServerManager {
           `http://127.0.0.1:${this.actualPort}/health`,
           (res) => {
             if (res.statusCode === 200) {
-              console.log(`Server ready after ${attempts} attempts`);
               resolve();
             } else {
               if (attempts >= maxAttempts) {
                 reject(new Error(`Server returned status ${res.statusCode}`));
               } else {
-                if (attempts % 10 === 0) {
-                  console.log(
-                    `Health check attempt ${attempts}/${maxAttempts}...`
-                  );
-                }
                 setTimeout(check, interval);
               }
             }
@@ -245,11 +229,6 @@ export class ServerManager {
               )
             );
           } else {
-            if (attempts % 10 === 0) {
-              console.log(
-                `Health check attempt ${attempts}/${maxAttempts} (connection refused)...`
-              );
-            }
             setTimeout(check, interval);
           }
         });
@@ -320,7 +299,6 @@ export class ServerManager {
     const configFile = path.join(testDir, "config.toml");
     fs.writeFileSync(configFile, E2E_CONFIG_TOML, "utf-8");
 
-    console.log(`Created E2E test directory: ${testDir}`);
     return testDir;
   }
 
@@ -331,7 +309,6 @@ export class ServerManager {
     if (this.e2eTestDir && fs.existsSync(this.e2eTestDir)) {
       try {
         fs.rmSync(this.e2eTestDir, { recursive: true, force: true });
-        console.log(`Cleaned up E2E test directory: ${this.e2eTestDir}`);
       } catch (err) {
         console.warn(`Failed to clean up E2E test directory: ${err}`);
       }
@@ -341,7 +318,6 @@ export class ServerManager {
     if (this.serverPidFile && fs.existsSync(this.serverPidFile)) {
       try {
         fs.unlinkSync(this.serverPidFile);
-        console.log(`Cleaned up PID file: ${this.serverPidFile}`);
       } catch (err) {
         console.warn(`Failed to clean up PID file: ${err}`);
       }

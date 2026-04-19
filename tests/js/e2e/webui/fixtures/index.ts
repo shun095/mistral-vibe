@@ -68,11 +68,9 @@ export const test = base.extend<WebUIFixtures & { page: Page }>({
     if (availablePorts.length > 0 && workerIndex < availablePorts.length) {
       // Use pre-allocated port
       port = availablePorts[workerIndex];
-      console.log(`Test ${testInfo.title} using pre-allocated port ${port}`);
     } else {
       // Fallback: use worker index offset
       port = 9093 + workerIndex;
-      console.log(`Test ${testInfo.title} using fallback port ${port}`);
     }
 
     // Create a fresh server for each test
@@ -81,7 +79,6 @@ export const test = base.extend<WebUIFixtures & { page: Page }>({
       token: "test-token-123",
     });
     await server.start();
-    console.log(`Test ${testInfo.title} started server on port ${server.getPort()}`);
 
     await use(server);
 

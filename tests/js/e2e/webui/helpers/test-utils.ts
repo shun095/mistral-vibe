@@ -324,14 +324,13 @@ export async function resetTestState(
     const isInterruptVisible = await interruptBtn.isVisible().catch(() => false);
 
     if (isInterruptVisible) {
-      console.log("Reset: interrupt button visible, clicking it to stop processing...");
+      console.log("Reset: interrupting processing...");
       try {
         await interruptBtn.click({ timeout: 3000 });
-        console.log("Reset: clicked interrupt button");
         // Wait for processing to stop and popup to close
         await page.waitForTimeout(1000);
       } catch {
-        console.log("Reset: failed to click interrupt button");
+        console.warn("Reset: failed to click interrupt button");
       }
     }
 
@@ -340,22 +339,19 @@ export async function resetTestState(
     const isApprovalVisible = await approvalPopup.isVisible().catch(() => false);
 
     if (isApprovalVisible) {
-      console.log("Reset: approval popup still visible after interrupt, closing it...");
       // Try No button first (most reliable way to dismiss)
       const noButton = approvalPopup.locator('.popup-btn.no:has-text("No")').first();
       try {
         await noButton.click({ timeout: 2000 });
-        console.log("Reset: clicked No button on approval popup");
         await page.waitForTimeout(500);
       } catch {
         // Try close button
         const closeButton = approvalPopup.locator('.popup-close, .modal-close').first();
         try {
           await closeButton.click({ timeout: 2000 });
-          console.log("Reset: clicked close button on approval popup");
           await page.waitForTimeout(500);
         } catch {
-          console.log("Reset: could not close popup, will reload anyway");
+          console.warn("Reset: could not close approval popup");
         }
       }
     }
@@ -363,7 +359,6 @@ export async function resetTestState(
     // Just reload the page - don't use /clear as it consumes mock responses
 
     // Reload page - cookie-based auth will persist
-    console.log("Reset: reloading page...");
     await page.goto(webServerUrl, {
       timeout: 10000,
       waitUntil: "domcontentloaded"
@@ -401,8 +396,6 @@ export async function resetTestState(
       Selectors.messageInput,
       { timeout: 8000 }
     );
-
-    console.log("Reset: page ready after reload");
   } catch (error) {
     // Log but don't fail - the next test's page fixture setup will handle readiness
     console.warn("Reset: page readiness check failed:", String(error));
