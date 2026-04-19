@@ -256,6 +256,8 @@ class ToolResultMessage(Static):
 
     async def on_click(self) -> None:
         await self.toggle_collapsed()
+        if self._call_widget:
+            self._call_widget._update_triangle()
 
     async def toggle_collapsed(self) -> None:
         self.collapsed = not self.collapsed
