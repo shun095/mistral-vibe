@@ -864,3 +864,147 @@ async def test_parallel_conversation_history_has_all_tool_messages() -> None:
         "call_h3",
     }
     assert agent_loop.stats.tool_calls_succeeded == 4
+
+
+@pytest.mark.asyncio
+async def test_safe_subagent_bash_ask_becomes_never() -> None:
+    """SAFE subagents (like explore) should auto-reject ASK commands."""
+    from vibe.core.agents.models import EXPLORE, BuiltinAgentName
+
+    # Verify explore is SAFE + SUBAGENT
+    assert EXPLORE.safety.value == "safe"
+    assert EXPLORE.agent_type.value == "subagent"
+
+    tc = ToolCall(
+        id="call_1",
+        index=0,
+        function=FunctionCall(
+            name="bash", arguments=json.dumps({"command": "docker ps", "timeout": 10})
+        ),
+    )
+    agent_loop = build_test_agent_loop(
+        config=build_test_vibe_config(
+            enabled_tools=["bash"],
+            system_prompt_id="tests",
+            include_project_context=False,
+            include_prompt_detail=False,
+        ),
+        agent_name=BuiltinAgentName.EXPLORE,
+        backend=FakeBackend([
+            [mock_llm_chunk(content="Let me run a command.", tool_calls=[tc])],
+            [mock_llm_chunk(content="Done.")],
+        ]),
+        is_subagent=True,
+    )
+
+    events = await act_and_collect_events(agent_loop, "Run docker ps")
+
+    tool_results = [e for e in events if isinstance(e, ToolResultEvent)]
+    assert len(tool_results) == 1
+    assert tool_results[0].skipped is True
+    assert tool_results[0].skip_reason is not None
+    assert "allowlisted" in tool_results[0].skip_reason.lower()
+    assert "docker ps" not in tool_results[0].skip_reason.lower()
+    assert agent_loop.stats.tool_calls_rejected == 1
+
+
+@pytest.mark.asyncio
+async def test_safe_subagent_bash_allowlist_succeeds() -> None:
+    """SAFE subagents can run allowlisted bash commands."""
+    tc = ToolCall(
+        id="call_1",
+        index=0,
+        function=FunctionCall(
+            name="bash", arguments=json.dumps({"command": "git status", "timeout": 10})
+        ),
+    )
+    agent_loop = build_test_agent_loop(
+        config=build_test_vibe_config(
+            enabled_tools=["bash"],
+            system_prompt_id="tests",
+            include_project_context=False,
+            include_prompt_detail=False,
+        ),
+        agent_name=BuiltinAgentName.EXPLORE,
+        backend=FakeBackend([
+            [mock_llm_chunk(content="Let me check.", tool_calls=[tc])],
+            [mock_llm_chunk(content="Status checked.")],
+        ]),
+        is_subagent=True,
+    )
+
+    events = await act_and_collect_events(agent_loop, "Run git status")
+
+    tool_results = [e for e in events if isinstance(e, ToolResultEvent)]
+    assert len(tool_results) == 1
+    assert tool_results[0].skipped is False
+    # Command may fail (e.g. not a git repo) but should not be skipped
+    assert agent_loop.stats.tool_calls_rejected == 0
+
+
+@pytest.mark.asyncio
+async def test_neutral_subagent_falls_through_to_ask() -> None:
+    """NEUTRAL subagents should NOT be blocked; they fall through to _ask_approval."""
+    from vibe.core.agents.models import AgentProfile, AgentSafety, AgentType
+
+    # Create a NEUTRAL subagent profile and register it
+    neutral_subagent = AgentProfile(
+        name="test_neutral_subagent",
+        display_name="Test Neutral Subagent",
+        description="Test agent",
+        safety=AgentSafety.NEUTRAL,
+        agent_type=AgentType.SUBAGENT,
+    )
+    agent_loop = build_test_agent_loop(
+        config=build_test_vibe_config(
+            enabled_tools=["bash"],
+            system_prompt_id="tests",
+            include_project_context=False,
+            include_prompt_detail=False,
+        ),
+        agent_name="test_neutral_subagent",
+        backend=FakeBackend([
+            [mock_llm_chunk(content="Let me check.", tool_calls=[])],
+            [mock_llm_chunk(content="Done.")],
+        ]),
+        is_subagent=True,
+    )
+    agent_loop.agent_manager.register_agent(neutral_subagent)
+
+    # The agent should NOT be blocked by _should_block_safe_subagent
+    # because it is NEUTRAL, not SAFE. It should fall through to _ask_approval.
+    decision = agent_loop._should_block_safe_subagent(
+        agent_loop.tool_manager.get("bash")
+    )
+    assert decision is None
+
+
+@pytest.mark.asyncio
+async def test_safe_non_subagent_falls_through_to_ask() -> None:
+    """SAFE agents that are NOT subagents should NOT be blocked."""
+    from vibe.core.agents.models import PLAN, BuiltinAgentName
+
+    # Verify PLAN is SAFE + AGENT (not SUBAGENT)
+    assert PLAN.safety.value == "safe"
+    assert PLAN.agent_type.value == "agent"
+
+    agent_loop = build_test_agent_loop(
+        config=build_test_vibe_config(
+            enabled_tools=["bash"],
+            system_prompt_id="tests",
+            include_project_context=False,
+            include_prompt_detail=False,
+        ),
+        agent_name=BuiltinAgentName.PLAN,
+        backend=FakeBackend([
+            [mock_llm_chunk(content="Let me check.", tool_calls=[])],
+            [mock_llm_chunk(content="Done.")],
+        ]),
+        is_subagent=False,
+    )
+
+    # PLAN is SAFE but NOT a SUBAGENT, so _should_block_safe_subagent should return None
+    decision = agent_loop._should_block_safe_subagent(
+        agent_loop.tool_manager.get("bash")
+    )
+    assert decision is None

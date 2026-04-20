@@ -145,7 +145,10 @@ EXPLORE = AgentProfile(
     description="Read-only subagent for codebase exploration",
     safety=AgentSafety.SAFE,
     agent_type=AgentType.SUBAGENT,
-    overrides={"enabled_tools": ["grep", "read_file"], "system_prompt_id": "explore"},
+    overrides={
+        "enabled_tools": ["grep", "read_file", "bash"],
+        "system_prompt_id": "explore",
+    },
 )
 
 LEAN = AgentProfile(

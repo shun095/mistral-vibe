@@ -23,7 +23,12 @@ from pydantic import BaseModel
 
 from vibe.cli.terminal_setup import detect_terminal
 from vibe.core.agents.manager import AgentManager
-from vibe.core.agents.models import AgentProfile, BuiltinAgentName
+from vibe.core.agents.models import (
+    AgentProfile,
+    AgentSafety,
+    AgentType,
+    BuiltinAgentName,
+)
 from vibe.core.config import ModelConfig, ProviderConfig, VibeConfig
 from vibe.core.event_bus import EventBus
 from vibe.core.llm.backend.factory import BACKEND_FACTORY
@@ -164,7 +169,7 @@ def _should_raise_rate_limit_error(e: Exception) -> bool:
     return isinstance(e, BackendError) and e.status == HTTPStatus.TOO_MANY_REQUESTS
 
 
-# ruff: noqa: PLR0904, PLR0913, PLR0917
+# ruff: noqa: PLR0904, PLR0913
 class AgentLoop:
     def __init__(
         self,
@@ -1393,9 +1398,36 @@ class AgentLoop:
                             verdict=ToolExecutionResponse.EXECUTE,
                             approval_type=ToolPermission.ALWAYS,
                         )
+                    if decision := self._should_block_safe_subagent(tool):
+                        return decision
                     return await self._ask_approval(
                         tool_name, args, tool_call_id, uncovered
                     )
+
+    def _should_block_safe_subagent(self, tool: BaseTool) -> ToolDecision | None:
+        """Return SKIP decision for SAFE subagents attempting ASK tools."""
+        if (
+            self.agent_profile.agent_type != AgentType.SUBAGENT
+            or self.agent_profile.safety != AgentSafety.SAFE
+        ):
+            return None
+        allowlist = tool.config.allowlist
+        if allowlist:
+            cmds = ", ".join(allowlist)
+            feedback = (
+                f"Subagent does not have permission to execute this tool. "
+                f"Only allowlisted commands are permitted: {cmds}."
+            )
+        else:
+            feedback = (
+                "Subagent does not have permission to execute this tool. "
+                "Only allowlisted commands are permitted."
+            )
+        return ToolDecision(
+            verdict=ToolExecutionResponse.SKIP,
+            approval_type=ToolPermission.NEVER,
+            feedback=feedback,
+        )
 
     async def _ask_approval(
         self,
