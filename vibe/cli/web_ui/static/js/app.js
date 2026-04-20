@@ -18,6 +18,7 @@ class VibeClient {
         this.historyLoaded = false;
         this.isProcessing = false;
         this.statusPollInterval = null;
+        this._prevStatusOk = null;
 
         // Popup state
         this.currentPopupId = null;
@@ -175,10 +176,19 @@ class VibeClient {
 
     async pollStatus() {
         const data = await this.apiClient.getStatus();
+        const statusOk = data !== null;
+
         if (data) {
             this.updateProcessingState(data.running);
             this.updateContextProgress(data.context_tokens, data.max_tokens);
         }
+
+        // Reconnect WebSocket when server recovers
+        if (statusOk && !this._prevStatusOk && !this.wsClient.isConnected()) {
+            console.log('[VibeClient] Server recovered, reconnecting WebSocket');
+            this.wsClient.connect();
+        }
+        this._prevStatusOk = statusOk;
     }
 
     updateProcessingState(isRunning) {
