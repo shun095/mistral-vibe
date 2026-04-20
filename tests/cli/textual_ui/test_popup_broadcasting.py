@@ -196,10 +196,10 @@ class TestWebResponseHandlers:
                 agent_loop=mock_agent_loop, config=MagicMock(), notify_callback=None
             )
 
-            # Create a real PendingPopupState
-            from vibe.cli.textual_ui.app import PendingPopupState
+            # Create a real PopupMetadata
+            from vibe.cli.textual_ui.app import PopupMetadata
 
-            pending_approval = PendingPopupState()
+            pending_approval = PopupMetadata()
             pending_approval.future = loop.create_future()
             pending_approval.popup_id = "approval_123"
             pending_approval.tool_name = "bash"
@@ -245,10 +245,10 @@ class TestWebResponseHandlers:
                 agent_loop=mock_agent_loop, config=MagicMock(), notify_callback=None
             )
 
-            # Create a real PendingPopupState
-            from vibe.cli.textual_ui.app import PendingPopupState
+            # Create a real PopupMetadata
+            from vibe.cli.textual_ui.app import PopupMetadata
 
-            pending_approval = PendingPopupState()
+            pending_approval = PopupMetadata()
             pending_approval.future = loop.create_future()
             pending_approval.popup_id = "approval_123"
 
@@ -291,10 +291,10 @@ class TestWebResponseHandlers:
                 agent_loop=mock_agent_loop, config=MagicMock(), notify_callback=None
             )
 
-            # Create a real PendingPopupState
-            from vibe.cli.textual_ui.app import PendingPopupState
+            # Create a real PopupMetadata
+            from vibe.cli.textual_ui.app import PopupMetadata
 
-            pending_question = PendingPopupState()
+            pending_question = PopupMetadata()
             pending_question.future = loop.create_future()
             pending_question.popup_id = "question_456"
 
@@ -347,11 +347,11 @@ class TestWebResponseHandlers:
                 agent_loop=mock_agent_loop, config=MagicMock(), notify_callback=None
             )
 
-            # Create a real PendingPopupState
-            from vibe.cli.textual_ui.app import PendingPopupState
+            # Create a real PopupMetadata
+            from vibe.cli.textual_ui.app import PopupMetadata
             from vibe.core.tools.permissions import PermissionScope
 
-            pending_approval = PendingPopupState()
+            pending_approval = PopupMetadata()
             pending_approval.future = loop.create_future()
             pending_approval.popup_id = "approval_123"
             pending_approval.tool_name = "bash"
@@ -404,10 +404,10 @@ class TestWebResponseHandlers:
                 agent_loop=mock_agent_loop, config=MagicMock(), notify_callback=None
             )
 
-            # Create a real PendingPopupState
-            from vibe.cli.textual_ui.app import PendingPopupState
+            # Create a real PopupMetadata
+            from vibe.cli.textual_ui.app import PopupMetadata
 
-            pending_approval = PendingPopupState()
+            pending_approval = PopupMetadata()
             pending_approval.future = loop.create_future()
             pending_approval.popup_id = "approval_123"
 

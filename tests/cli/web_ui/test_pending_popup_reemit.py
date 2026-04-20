@@ -12,13 +12,13 @@ from unittest.mock import MagicMock
 import pytest
 from starlette.testclient import TestClient as StarletteTestClient
 
-from vibe.cli.textual_ui.app import PendingPopupState
+from vibe.cli.textual_ui.app import PopupMetadata
 
 
 def _create_active_pending_state(
     popup_id: str, tool_name: str | None = None, args: dict | None = None
-) -> PendingPopupState:
-    """Create a PendingPopupState with an active future.
+) -> PopupMetadata:
+    """Create a PopupMetadata with an active future.
 
     Args:
         popup_id: The popup ID to set.
@@ -26,12 +26,12 @@ def _create_active_pending_state(
         args: Optional arguments dict.
 
     Returns:
-        A PendingPopupState with an active (non-done) future.
+        A PopupMetadata with an active (non-done) future.
     """
     loop = asyncio.new_event_loop()
     future = loop.create_future()
 
-    state = PendingPopupState()
+    state = PopupMetadata()
     state.future = future
     state.popup_id = popup_id
     state.tool_name = tool_name
@@ -48,7 +48,7 @@ def mock_tui_app_with_pending_approval() -> tuple:
         Tuple of (mock_tui_app, expected_popup_id)
     """
     mock_tui_app = MagicMock()
-    # Create real PendingPopupState with active future
+    # Create real PopupMetadata with active future
     approval_state = _create_active_pending_state(
         popup_id="approval_test_123",
         tool_name="bash",
@@ -70,7 +70,7 @@ def mock_tui_app_with_pending_question() -> tuple:
         Tuple of (mock_tui_app, expected_popup_id)
     """
     mock_tui_app = MagicMock()
-    # Create real PendingPopupState with active future
+    # Create real PopupMetadata with active future
     question_state = _create_active_pending_state(
         popup_id="question_test_456",
         args={

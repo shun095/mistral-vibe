@@ -337,7 +337,7 @@ class WebBroadcastManager:
         response: ApprovalResponse,
         feedback: str | None,
         approval_type: Literal["once", "session", "auto-approve"] = "once",
-        pending_approval: object | None = None,  # PendingPopupState
+        pending_approval: object | None = None,  # PopupMetadata
         switch_to_input_callback: Callable[[], object] | None = None,
         call_later_callback: Callable[[Callable[[], object]], object] | None = None,
     ) -> None:
@@ -348,7 +348,7 @@ class WebBroadcastManager:
             response: Approval response (YES or NO).
             feedback: Optional feedback from user.
             approval_type: Type of approval ('once', 'session', 'auto-approve').
-            pending_approval: The PendingPopupState object.
+            pending_approval: The PopupMetadata object.
             switch_to_input_callback: Callback to switch back to input app.
             call_later_callback: Callback to schedule future execution.
         """
@@ -357,7 +357,7 @@ class WebBroadcastManager:
         if pending_approval is None:
             return
 
-        # Access PendingPopupState attributes
+        # Access PopupMetadata attributes
         future = getattr(pending_approval, "future", None)
         popup_id_state = getattr(pending_approval, "popup_id", None)
         tool_name = getattr(pending_approval, "tool_name", None)
@@ -391,7 +391,7 @@ class WebBroadcastManager:
         popup_id: str,
         answers: list[Answer],
         cancelled: bool,
-        pending_question: object | None = None,  # PendingPopupState
+        pending_question: object | None = None,  # PopupMetadata
         switch_to_input_callback: Callable[[], object] | None = None,
         call_later_callback: Callable[[Callable[[], object]], object] | None = None,
     ) -> None:
@@ -401,14 +401,14 @@ class WebBroadcastManager:
             popup_id: Unique ID of the popup.
             answers: List of answers from user.
             cancelled: Whether the popup was cancelled.
-            pending_question: The PendingPopupState object.
+            pending_question: The PopupMetadata object.
             switch_to_input_callback: Callback to switch back to input app.
             call_later_callback: Callback to schedule future execution.
         """
         if pending_question is None:
             return
 
-        # Access PendingPopupState attributes
+        # Access PopupMetadata attributes
         future = getattr(pending_question, "future", None)
         popup_id_state = getattr(pending_question, "popup_id", None)
 
