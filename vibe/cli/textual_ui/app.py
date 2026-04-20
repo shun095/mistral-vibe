@@ -5,6 +5,7 @@ from contextlib import aclosing
 from dataclasses import dataclass
 from enum import StrEnum, auto
 import gc
+import json
 import os
 from pathlib import Path
 import signal
@@ -94,6 +95,7 @@ from vibe.cli.textual_ui.widgets.config_app import ConfigApp
 from vibe.cli.textual_ui.widgets.context_progress import ContextProgress, TokenState
 from vibe.cli.textual_ui.widgets.debug_console import DebugConsole
 from vibe.cli.textual_ui.widgets.feedback_bar import FeedbackBar
+from vibe.cli.textual_ui.widgets.history_picker import HistoryPickerApp
 from vibe.cli.textual_ui.widgets.load_more import HistoryLoadMoreRequested
 from vibe.cli.textual_ui.widgets.loading import LoadingWidget, paused_timer
 from vibe.cli.textual_ui.widgets.mcp_app import MCPApp
@@ -205,6 +207,7 @@ from vibe.core.utils import (
     get_user_cancellation_message,
     is_dangerous_directory,
 )
+from vibe.core.utils.io import read_safe
 
 
 class BottomApp(StrEnum):
@@ -217,6 +220,7 @@ class BottomApp(StrEnum):
 
     Approval = auto()
     Config = auto()
+    HistoryPicker = auto()
     Input = auto()
     MCP = auto()
     ModelPicker = auto()
@@ -1940,6 +1944,53 @@ Enhanced prompt:"""
         help_text = self.commands.get_help_text()
         await self._mount_and_scroll(UserCommandMessage(help_text))
 
+    async def _show_history_picker(self, **kwargs: Any) -> None:
+        history_file = HISTORY_FILE.path
+        if not history_file.exists():
+            await self._mount_and_scroll(UserCommandMessage("No history found."))
+            return
+
+        try:
+            text = read_safe(history_file).text
+        except OSError:
+            await self._mount_and_scroll(UserCommandMessage("Failed to read history."))
+            return
+
+        entries: list[str] = []
+        for raw_line in text.splitlines():
+            if not raw_line:
+                continue
+            try:
+                entry = json.loads(raw_line)
+            except json.JSONDecodeError:
+                entry = raw_line
+            entries.append(entry if isinstance(entry, str) else str(entry))
+
+        # Show the last 5000 entries, newest first
+        entries = entries[-5000:][::-1]
+
+        if not entries:
+            await self._mount_and_scroll(
+                UserCommandMessage("No history entries found.")
+            )
+            return
+
+        await self._mount_and_scroll(UserCommandMessage("History picker opened..."))
+        await self._switch_from_input(HistoryPickerApp(entries=entries))
+
+    async def on_history_picker_app_history_selected(
+        self, event: HistoryPickerApp.HistorySelected
+    ) -> None:
+        await self._switch_to_input_app()
+        if self._chat_input_container:
+            self._chat_input_container.value = event.text
+            self._chat_input_container.focus_input()
+
+    async def on_history_picker_app_cancelled(
+        self, event: HistoryPickerApp.Cancelled
+    ) -> None:
+        await self._switch_to_input_app()
+
     async def _show_mcp(self, cmd_args: str = "", **kwargs: Any) -> None:
         mcp_servers = self.config.mcp_servers
         connector_registry = (
@@ -2697,6 +2748,8 @@ Enhanced prompt:"""
                     self.query_one(ApprovalApp).focus()
                 case BottomApp.Question:
                     self.query_one(QuestionApp).focus()
+                case BottomApp.HistoryPicker:
+                    self.query_one(HistoryPickerApp).focus()
                 case BottomApp.SessionPicker:
                     self.query_one(SessionPickerApp).focus()
                 case BottomApp.MCP:
@@ -2748,6 +2801,14 @@ Enhanced prompt:"""
         try:
             model_picker = self.query_one(ModelPickerApp)
             model_picker.post_message(ModelPickerApp.Cancelled())
+        except Exception:
+            pass
+        self._last_escape_time = None
+
+    def _handle_history_picker_app_escape(self) -> None:
+        try:
+            history_picker = self.query_one(HistoryPickerApp)
+            history_picker.post_message(HistoryPickerApp.Cancelled())
         except Exception:
             pass
         self._last_escape_time = None
@@ -3010,6 +3071,10 @@ Enhanced prompt:"""
 
         if self._current_bottom_app == BottomApp.ModelPicker:
             self._handle_model_picker_app_escape()
+            return
+
+        if self._current_bottom_app == BottomApp.HistoryPicker:
+            self._handle_history_picker_app_escape()
             return
 
         if self._current_bottom_app == BottomApp.SessionPicker:

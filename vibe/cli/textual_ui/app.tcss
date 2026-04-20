@@ -1236,3 +1236,50 @@ FeedbackBar {
     height: auto;
     color: ansi_default;
 }
+
+/* History Picker */
+
+#historypicker-app {
+    width: 100%;
+    height: auto;
+    background: transparent;
+    border: solid ansi_bright_black;
+    padding: 0 1;
+    margin: 0;
+}
+
+#historypicker-content {
+    width: 100%;
+    height: auto;
+}
+
+#historypicker-search {
+    width: 100%;
+    height: auto;
+    border: solid ansi_bright_black;
+    margin-bottom: 0;
+}
+
+#historypicker-options {
+    width: 100%;
+    max-height: 50vh;
+    text-wrap: nowrap;
+    text-overflow: ellipsis;
+    border: none;
+    & > .option-list--option-highlighted {
+        color: $block-cursor-foreground;
+        background: $block-cursor-background;
+        text-style: $block-cursor-text-style;
+    }
+}
+
+#historypicker-options:focus {
+    border: none;
+}
+
+.historypicker-help {
+    width: 100%;
+    height: auto;
+    color: ansi_bright_black;
+    margin-top: 1;
+}

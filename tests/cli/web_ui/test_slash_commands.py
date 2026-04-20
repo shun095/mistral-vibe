@@ -170,6 +170,17 @@ class TestExecuteCommand:
             "/resume"
         )
 
+    def test_history_command(self, web_ui_client, web_ui_app):
+        """Test /history command."""
+        response = web_ui_client.post(
+            "/api/command/execute", json={"command": "history", "args": ""}
+        )
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+        web_ui_app.state.tui_app.submit_message_from_web.assert_called_once_with(
+            "/history"
+        )
+
     def test_edit_command_with_content(self, web_ui_client, web_ui_app):
         """Test /edit command with content."""
         response = web_ui_client.post(

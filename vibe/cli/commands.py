@@ -44,6 +44,11 @@ class CommandRegistry:
                 description="Clear conversation history",
                 handler="_clear_history",
             ),
+            "history": Command(
+                aliases=frozenset(["/history"]),
+                description="Search and select from chat history",
+                handler="_show_history_picker",
+            ),
             "log": Command(
                 aliases=frozenset(["/log"]),
                 description="Show path to current interaction log file",
