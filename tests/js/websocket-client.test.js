@@ -7,55 +7,59 @@
 
 const { WebSocketClient } = require('../../vibe/cli/web_ui/static/js/websocket-client.js');
 
-// Mock setTimeout to prevent actual delays
-jest.mock('timers', () => ({
-    setTimeout: jest.fn((fn, delay) => {
-        setTimeout(fn, delay);
-    }),
-    clearTimeout: jest.fn(clearTimeout)
-}));
+// Use fake timers to control setTimeout/clearTimeout
+jest.useFakeTimers();
 
 describe('WebSocketClient', () => {
     let client;
-    let mockWebSocket;
     let messages = [];
+
+    // Helper to get the current WebSocket mock from the client
+    function getMockWs() {
+        return client.ws;
+    }
 
     beforeEach(() => {
         jest.clearAllMocks();
+        jest.clearAllTimers();
 
         messages = [];
-        mockWebSocket = {
-            readyState: 0, // CONNECTING
-            url: '',
-            onopen: null,
-            onmessage: null,
-            onclose: null,
-            onerror: null,
-            send: jest.fn(),
-            close: jest.fn(),
-            open: () => {
-                mockWebSocket.readyState = 1; // OPEN
-                if (mockWebSocket.onopen) mockWebSocket.onopen();
-            },
-            receive: (data) => {
-                if (mockWebSocket.onmessage) {
-                    mockWebSocket.onmessage({ data });
-                }
-            },
-            triggerClose: () => {
-                mockWebSocket.readyState = 3; // CLOSED
-                if (mockWebSocket.onclose) mockWebSocket.onclose();
-            },
-            triggerError: () => {
-                if (mockWebSocket.onerror) mockWebSocket.onerror(new Error('test error'));
-            }
-        };
 
         // Mock window.location
         global.window = { location: { protocol: 'http:', host: 'localhost' } };
 
-        // Mock WebSocket constructor with proper constants
-        global.WebSocket = jest.fn(() => mockWebSocket);
+        // Mock WebSocket constructor - returns a fresh mock each time
+        function createMockWs() {
+            const ws = {
+                readyState: 0, // CONNECTING
+                url: '',
+                onopen: null,
+                onmessage: null,
+                onclose: null,
+                onerror: null,
+                send: jest.fn(),
+                close: jest.fn(),
+            };
+            ws.open = function () {
+                this.readyState = 1; // OPEN
+                if (this.onopen) this.onopen();
+            };
+            ws.receive = function (data) {
+                if (this.onmessage) {
+                    this.onmessage({ data });
+                }
+            };
+            ws.triggerClose = function () {
+                this.readyState = 3; // CLOSED
+                if (this.onclose) this.onclose();
+            };
+            ws.triggerError = function () {
+                if (this.onerror) this.onerror(new Error('test error'));
+            };
+            return ws;
+        }
+
+        global.WebSocket = jest.fn(createMockWs);
         global.WebSocket.OPEN = 1;
         global.WebSocket.CONNECTING = 0;
         global.WebSocket.CLOSED = 3;
@@ -63,12 +67,14 @@ describe('WebSocketClient', () => {
     });
 
     afterEach(() => {
+        jest.runAllTimers();
         if (client) {
             client.destroy();
             client = null;
         }
         delete global.WebSocket;
         delete global.window;
+        jest.clearAllTimers();
     });
 
     describe('Connection', () => {
@@ -98,7 +104,7 @@ describe('WebSocketClient', () => {
 
             client = new WebSocketClient({ token, onOpen });
             client.connect();
-            mockWebSocket.open();
+            getMockWs().open();
 
             expect(onOpen).toHaveBeenCalled();
         });
@@ -109,8 +115,8 @@ describe('WebSocketClient', () => {
 
             client = new WebSocketClient({ token, onMessage });
             client.connect();
-            mockWebSocket.open();
-            mockWebSocket.receive(JSON.stringify({ type: 'test', data: 'hello' }));
+            getMockWs().open();
+            getMockWs().receive(JSON.stringify({ type: 'test', data: 'hello' }));
 
             expect(onMessage).toHaveBeenCalledWith({ type: 'test', data: 'hello' });
         });
@@ -121,8 +127,8 @@ describe('WebSocketClient', () => {
 
             client = new WebSocketClient({ token, onClose });
             client.connect();
-            mockWebSocket.open();
-            mockWebSocket.triggerClose();
+            getMockWs().open();
+            getMockWs().triggerClose();
 
             expect(onClose).toHaveBeenCalled();
         });
@@ -133,18 +139,50 @@ describe('WebSocketClient', () => {
 
             client = new WebSocketClient({ token, onError });
             client.connect();
-            mockWebSocket.triggerError();
+            getMockWs().triggerError();
 
             expect(onError).toHaveBeenCalled();
         });
     });
 
          describe('Reconnection', () => {
-        // TODO: Add reconnection tests - requires more complex mocking
-        test('sets reconnectAttempts to 0 initially', () => {
+        test('attempts reconnection on close with increasing delay', () => {
             const token = 'test-token';
-            const testClient = new WebSocketClient({ token });
-            expect(testClient.reconnectAttempts).toBe(0);
+            const onReconnect = jest.fn();
+            client = new WebSocketClient({ token, onReconnect });
+            client.connect();
+            getMockWs().open();
+
+            // Trigger close to start reconnection
+            getMockWs().triggerClose();
+
+            // onReconnect callback should be called
+            expect(onReconnect).toHaveBeenCalled();
+            const [attempt, delay] = onReconnect.mock.calls[0];
+            expect(attempt).toBe(1);
+            expect(delay).toBe(1000); // 1000ms * 1
+
+            // Advance timers to trigger reconnection
+            jest.advanceTimersByTime(1000);
+
+            // Should have called WebSocket constructor again
+            expect(global.WebSocket).toHaveBeenCalledTimes(2);
+        });
+
+        test('stops reconnection after max attempts', () => {
+            const token = 'test-token';
+            const onMaxReconnect = jest.fn();
+            const maxAttempts = 3;
+            client = new WebSocketClient({ token, onMaxReconnectAttempts: onMaxReconnect, maxReconnectAttempts: maxAttempts });
+            client.connect();
+            getMockWs().open();
+
+            // Manually set reconnectAttempts to max to trigger the boundary condition.
+            // (In real code, onopen resets the counter, so we test the boundary directly.)
+            client.reconnectAttempts = maxAttempts;
+            getMockWs().triggerClose();
+
+            expect(onMaxReconnect).toHaveBeenCalled();
         });
     });
 
@@ -153,11 +191,11 @@ describe('WebSocketClient', () => {
             const token = 'test-token';
             client = new WebSocketClient({ token });
             client.connect();
-            mockWebSocket.open();
+            getMockWs().open();
 
             client.send({ type: 'test', data: 'hello' });
 
-            expect(mockWebSocket.send).toHaveBeenCalledWith('{"type":"test","data":"hello"}');
+            expect(getMockWs().send).toHaveBeenCalledWith('{"type":"test","data":"hello"}');
         });
 
         test('throws error when sending without connection', () => {
@@ -176,7 +214,7 @@ describe('WebSocketClient', () => {
             expect(client.isConnected()).toBe(false);
 
             client.connect();
-            mockWebSocket.open();
+            getMockWs().open();
 
             expect(client.isConnected()).toBe(true);
         });
@@ -185,20 +223,28 @@ describe('WebSocketClient', () => {
             const token = 'test-token';
             client = new WebSocketClient({ token });
             client.connect();
-            mockWebSocket.open();
+            const ws = getMockWs();
+            ws.open();
 
             client.disconnect();
 
-            expect(mockWebSocket.close).toHaveBeenCalled();
+            expect(ws.close).toHaveBeenCalled();
             expect(client.isConnected()).toBe(false);
         });
 
         test('destroys client and clears reconnect timer', () => {
             const token = 'test-token';
             client = new WebSocketClient({ token });
+            client.connect();
+            getMockWs().open();
 
+            // Trigger a close to schedule reconnection
+            getMockWs().triggerClose();
+
+            // Destroy should clear the reconnect timer
             client.destroy();
 
+            expect(client.reconnectTimer).toBeNull();
             expect(client.isConnected()).toBe(false);
         });
     });

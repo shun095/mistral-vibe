@@ -110,39 +110,28 @@ describe('tool-formatters', () => {
 
     describe('createCardHeader', () => {
         test('creates card with header and content', () => {
-            const card = {
-                className: '',
-                classList: { toggle: jest.fn() },
-                querySelector: jest.fn(() => null),
-                appendChild: jest.fn(),
-                _attrs: new Map(),
-                hasAttribute: function (name) { return this._attrs.has(name); },
-                setAttribute: function (name, value) { this._attrs.set(name, value); },
-            };
+            const card = document.createElement('div');
             createCardHeader(card, 'Test Title', '<span>icon</span>', 'Summary');
 
-            expect(card.className).toBe('');
+            expect(card.querySelector('.card-header')).not.toBeNull();
+            expect(card.querySelector('.card-header').textContent).toContain('Test Title');
+            expect(card.querySelector('.card-content')).not.toBeNull();
+            expect(card.querySelector('.card-content pre').textContent).toBe('Summary');
         });
 
         test('creates card without summary', () => {
-            const card = {
-                className: '',
-                classList: { toggle: jest.fn() },
-                querySelector: jest.fn(() => null),
-                appendChild: jest.fn(),
-                _attrs: new Map(),
-                hasAttribute: function (name) { return this._attrs.has(name); },
-                setAttribute: function (name, value) { this._attrs.set(name, value); },
-            };
+            const card = document.createElement('div');
             createCardHeader(card, 'Test Title', '<span>icon</span>', null);
 
-            expect(card.className).toBe('');
+            expect(card.querySelector('.card-header')).not.toBeNull();
+            expect(card.querySelector('.card-content')).not.toBeNull();
+            expect(card.querySelector('.card-content pre')).toBeNull();
         });
     });
 
     describe('createCodeBlock', () => {
         test('creates code block with correct structure', () => {
-            const container = { appendChild: jest.fn() };
+            const container = document.createElement('div');
             const block = createCodeBlock('test.py', 'print("hello")', container, 'python');
 
             expect(block.tagName).toBe('PRE');
@@ -151,7 +140,7 @@ describe('tool-formatters', () => {
         });
 
         test('defaults to plaintext language', () => {
-            const container = { appendChild: jest.fn() };
+            const container = document.createElement('div');
             const block = createCodeBlock('test', 'content', container);
 
             expect(block.querySelector('code').className).toBe('language-plaintext');
@@ -170,61 +159,85 @@ describe('tool-formatters', () => {
         test('delegates to bash formatter', () => {
             const result = formatToolResult('bash', { returncode: 0, command: 'ls', stdout: 'file.txt' }, helpers);
             expect(result.className).toBe('tool-result-card');
+            expect(result.querySelector('.card-header')).not.toBeNull();
+            expect(result.querySelector('.card-content > pre').textContent).toContain('Return code: 0');
         });
 
         test('delegates to websearch formatter', () => {
             const result = formatToolResult('websearch', { answer: 'Test answer', sources: [] }, helpers);
             expect(result.className).toBe('tool-result-card');
+            expect(result.querySelector('.card-header')).not.toBeNull();
+            expect(result.querySelector('.card-content > pre').textContent).toContain('0 sources found');
         });
 
         test('delegates to webfetch formatter', () => {
             const result = formatToolResult('webfetch', { url: 'http://example.com', content: 'body', lines_read: 10, total_lines: 10 }, helpers);
             expect(result.className).toBe('tool-result-card');
+            expect(result.querySelector('.card-header')).not.toBeNull();
+            expect(result.querySelector('.card-content > pre').textContent).toContain('Fetched 10/10 lines');
         });
 
         test('delegates to grep formatter', () => {
             const result = formatToolResult('grep', { pattern: 'test', matches: 'match1', match_count: 1 }, helpers);
             expect(result.className).toBe('tool-result-card');
+            expect(result.querySelector('.card-header')).not.toBeNull();
+            expect(result.querySelector('.card-content > pre').textContent).toContain('1 matches found');
         });
 
         test('delegates to read_file formatter', () => {
             const result = formatToolResult('read_file', { path: '/test.py', content: 'code', lines_read: 5 }, helpers);
             expect(result.className).toBe('tool-result-card');
+            expect(result.querySelector('.card-header')).not.toBeNull();
+            expect(result.querySelector('.card-content > pre').textContent).toContain('Read 5 lines');
         });
 
         test('delegates to edit_file formatter', () => {
             const result = formatToolResult('edit_file', { file: 'test.py', blocks_applied: 1, lines_changed: 5 }, helpers);
             expect(result.className).toBe('tool-result-card');
+            expect(result.querySelector('.card-header')).not.toBeNull();
+            expect(result.querySelector('.card-content > pre').textContent).toContain('1 block(s) applied');
         });
 
         test('delegates to write_file formatter', () => {
             const result = formatToolResult('write_file', { path: '/test.py', content: 'code', bytes_written: 100, file_existed: false }, helpers);
             expect(result.className).toBe('tool-result-card');
+            expect(result.querySelector('.card-header')).not.toBeNull();
+            expect(result.querySelector('.card-content > pre').textContent).toContain('100 bytes written');
         });
 
         test('delegates to lsp formatter', () => {
             const result = formatToolResult('lsp', { diagnostics: [], formatted_output: 'no issues' }, helpers);
             expect(result.className).toBe('tool-result-card');
+            expect(result.querySelector('.card-header')).not.toBeNull();
+            expect(result.querySelector('.card-content > pre').textContent).toContain('No issues found');
         });
 
         test('delegates to todo formatter', () => {
             const result = formatToolResult('todo', { total_count: 3, todos: [{ content: 'Task 1', status: 'pending', priority: 'high' }] }, helpers);
             expect(result.className).toBe('tool-result-card');
+            expect(result.querySelector('.card-header')).not.toBeNull();
+            expect(result.querySelector('.card-content > pre').textContent).toContain('3 total');
         });
 
         test('delegates to ask_user_question formatter', () => {
             const result = formatToolResult('ask_user_question', { answers: [], cancelled: false }, helpers);
             expect(result.className).toBe('tool-result-card');
+            expect(result.querySelector('.card-header')).not.toBeNull();
+            expect(result.querySelector('.card-content > pre').textContent).toContain('0 answer(s)');
         });
 
         test('delegates to register_download formatter', () => {
             const result = formatToolResult('register_download', { filename: 'file.txt', file_path: '/tmp/file.txt', mime_type: 'text/plain' }, helpers);
             expect(result.className).toBe('download-card');
+            expect(result.querySelector('.download-card-header')).not.toBeNull();
+            expect(result.querySelector('.download-card-title').textContent).toContain('file.txt');
         });
 
         test('delegates to generic formatter for unknown tool', () => {
             const result = formatToolResult('unknown_tool', { data: 'value' }, helpers);
             expect(result.className).toBe('tool-result-card');
+            expect(result.querySelector('.card-header')).not.toBeNull();
+            expect(result.querySelector('.card-content > pre').textContent).toContain('"data"');
         });
 
         test('handles lsp with errors and warnings', () => {
@@ -234,6 +247,8 @@ describe('tool-formatters', () => {
             ];
             const result = formatToolResult('lsp', { diagnostics }, helpers);
             expect(result.className).toBe('tool-result-card');
+            expect(result.querySelector('.card-header')).not.toBeNull();
+            expect(result.querySelector('.card-content > pre').textContent).toContain('1 error(s), 1 warning(s)');
         });
 
         test('handles ask_user_question with answers', () => {
@@ -242,11 +257,15 @@ describe('tool-formatters', () => {
                 cancelled: false,
             }, helpers);
             expect(result.className).toBe('tool-result-card');
+            expect(result.querySelector('.card-header')).not.toBeNull();
+            expect(result.querySelector('.card-content > pre').textContent).toContain('1 answer(s)');
         });
 
         test('handles ask_user_question with cancelled', () => {
             const result = formatToolResult('ask_user_question', { answers: [], cancelled: true }, helpers);
             expect(result.className).toBe('tool-result-card');
+            expect(result.querySelector('.card-header')).not.toBeNull();
+            expect(result.querySelector('.card-content > pre').textContent).toContain('cancelled');
         });
 
         test('handles edit_file with warnings', () => {
@@ -257,6 +276,8 @@ describe('tool-formatters', () => {
                 warnings: ['Warning 1', 'Warning 2'],
             }, helpers);
             expect(result.className).toBe('tool-result-card');
+            expect(result.querySelector('.card-header')).not.toBeNull();
+            expect(result.querySelector('.card-content > pre').textContent).toContain('1 block(s) applied');
         });
 
         test('handles edit_file with string warnings', () => {
@@ -267,6 +288,8 @@ describe('tool-formatters', () => {
                 warnings: JSON.stringify(['Warning 1']),
             }, helpers);
             expect(result.className).toBe('tool-result-card');
+            expect(result.querySelector('.card-header')).not.toBeNull();
+            expect(result.querySelector('.card-content > pre').textContent).toContain('1 block(s) applied');
         });
 
         test('handles read_file with lsp diagnostics', () => {
@@ -277,6 +300,8 @@ describe('tool-formatters', () => {
                 lsp_diagnostics: '1 error, 0 warnings',
             }, helpers);
             expect(result.className).toBe('tool-result-card');
+            expect(result.querySelector('.card-header')).not.toBeNull();
+            expect(result.querySelector('.card-content > pre').textContent).toContain('Read 5 lines');
         });
 
         test('handles webfetch with truncated content', () => {
@@ -289,6 +314,8 @@ describe('tool-formatters', () => {
                 was_truncated: true,
             }, helpers);
             expect(result.className).toBe('tool-result-card');
+            expect(result.querySelector('.card-header')).not.toBeNull();
+            expect(result.querySelector('.card-content > pre').textContent).toContain('150/150 lines (truncated)');
         });
     });
 
@@ -425,7 +452,10 @@ describe('tool-formatters', () => {
                 returncode: 0,
             };
 
-            expect(() => formatToolResult(card, result)).not.toThrow();
+            const formatted = formatToolResult('bash', result, { escapeHtml: (t) => t });
+            expect(formatted.className).toBe('tool-result-card');
+            expect(formatted.querySelector('.bash-returncode.success')).not.toBeNull();
+            expect(formatted.querySelector('.bash-returncode.success').textContent).toBe('Return code: 0');
         });
 
         test('formats web search result with sources', () => {
@@ -439,7 +469,10 @@ describe('tool-formatters', () => {
                 ],
             };
 
-            expect(() => formatToolResult(card, result)).not.toThrow();
+            const formatted = formatToolResult('websearch', result, { escapeHtml: (t) => t });
+            expect(formatted.className).toBe('tool-result-card');
+            expect(formatted.querySelectorAll('.search-source-item')).toHaveLength(1);
+            expect(formatted.querySelector('.search-source-item .source-title').textContent).toBe('Source 1');
         });
 
         test('formats edit file result with content', () => {
@@ -453,7 +486,12 @@ describe('tool-formatters', () => {
                 content: '+ line\n- line',
             };
 
-            expect(() => formatToolResult(card, result)).not.toThrow();
+            const formatted = formatToolResult('edit_file', result, { escapeHtml: (t) => t });
+            expect(formatted.className).toBe('tool-result-card');
+            const codeBlock = formatted.querySelector('.tool-formatter-code-block');
+            expect(codeBlock).not.toBeNull();
+            expect(codeBlock.querySelector('code').textContent).toBe('+ line\n- line');
+            expect(codeBlock.querySelector('code').className).toBe('language-diff');
         });
 
         test('formats ask_user_question result with answers', () => {
@@ -464,7 +502,8 @@ describe('tool-formatters', () => {
                 answers: [{ question: 'Q1', answer: 'A1' }],
             };
 
-            expect(() => formatToolResult(card, result)).not.toThrow();
+            const formatted = formatToolResult('ask_user_question', result, { escapeHtml: (t) => t });
+            expect(formatted.className).toBe('tool-result-card');
         });
 
         test('formats register_download result with description', () => {
@@ -477,7 +516,11 @@ describe('tool-formatters', () => {
                 description: 'File description',
             };
 
-            expect(() => formatToolResult(card, result)).not.toThrow();
+            const formatted = formatToolResult('register_download', result, { escapeHtml: (t) => t });
+            expect(formatted.className).toBe('download-card');
+            const button = formatted.querySelector('.download-card-button');
+            expect(button).not.toBeNull();
+            expect(button.textContent).toContain('Download');
         });
     });
 });

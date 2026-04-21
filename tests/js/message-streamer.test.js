@@ -214,22 +214,16 @@ describe('MessageStreamer', () => {
     });
 
     describe('Streaming State Management', () => {
-        test('tracks active reasoning stream', () => {
+        test('fires callbacks for reasoning stream lifecycle', () => {
             streamer.handleEvent({
                 __type: 'ReasoningEvent',
                 message_id: 'reasoning-1',
                 content: 'Thinking...'
             });
 
-            expect(streamer.getActiveReasoningId()).toBe('reasoning-1');
-        });
-
-        test('clears reasoning stream when ended', () => {
-            streamer.handleEvent({
-                __type: 'ReasoningEvent',
-                message_id: 'reasoning-1',
-                content: 'Thinking...'
-            });
+            expect(callbacks.onReasoningStart).toHaveBeenCalled();
+            expect(callbacks.onReasoningUpdate).toHaveBeenCalled();
+            expect(callbacks.onReasoningEnd).not.toHaveBeenCalled();
 
             streamer.handleEvent({
                 __type: 'ReasoningEvent',
@@ -237,25 +231,19 @@ describe('MessageStreamer', () => {
                 content: ''
             });
 
-            expect(streamer.getActiveReasoningId()).toBeNull();
+            expect(callbacks.onReasoningEnd).toHaveBeenCalledWith('reasoning-1');
         });
 
-        test('tracks active assistant stream', () => {
+        test('fires callbacks for assistant stream lifecycle', () => {
             streamer.handleEvent({
                 __type: 'AssistantEvent',
                 message_id: 'assistant-1',
                 content: 'Hello'
             });
 
-            expect(streamer.getActiveAssistantId()).toBe('assistant-1');
-        });
-
-        test('clears assistant stream when ended', () => {
-            streamer.handleEvent({
-                __type: 'AssistantEvent',
-                message_id: 'assistant-1',
-                content: 'Hello'
-            });
+            expect(callbacks.onAssistantStart).toHaveBeenCalled();
+            expect(callbacks.onAssistantUpdate).toHaveBeenCalled();
+            expect(callbacks.onAssistantEnd).not.toHaveBeenCalled();
 
             streamer.handleEvent({
                 __type: 'AssistantEvent',
@@ -263,10 +251,10 @@ describe('MessageStreamer', () => {
                 content: ''
             });
 
-            expect(streamer.getActiveAssistantId()).toBeNull();
+            expect(callbacks.onAssistantEnd).toHaveBeenCalledWith('assistant-1');
         });
 
-        test('isStreaming returns true when any stream is active', () => {
+        test('isStreaming reflects active streams via callbacks', () => {
             streamer.handleEvent({
                 __type: 'ReasoningEvent',
                 message_id: 'reasoning-1',
@@ -300,8 +288,7 @@ describe('MessageStreamer', () => {
             streamer.stopStreaming();
 
             expect(callbacks.onStopStreaming).toHaveBeenCalled();
-            expect(streamer.getActiveReasoningId()).toBeNull();
-            expect(streamer.getActiveAssistantId()).toBeNull();
+            expect(streamer.isStreaming()).toBe(false);
         });
     });
 

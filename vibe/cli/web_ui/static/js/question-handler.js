@@ -42,6 +42,14 @@ class QuestionHandler {
     }
 
     /**
+     * Submit an answer for the current question.
+     * @param {Object} answer - The answer object { question, answer, is_other }
+     */
+    submitAnswer(answer) {
+        this.currentQuestionAnswers.push(answer);
+    }
+
+    /**
      * Submit current answer and move to next question or send final response.
      * @returns {Object} Result with hasMore flag
      */

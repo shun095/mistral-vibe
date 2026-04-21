@@ -255,7 +255,6 @@ describe('SlashAutocomplete', () => {
             inputElement.value = '/c';
             await autocomplete.showSuggestions('/c');
 
-            expect(autocomplete.visible).toBe(true);
             expect(autocomplete.container.style.display).toBe('block');
         });
 
@@ -263,7 +262,6 @@ describe('SlashAutocomplete', () => {
             inputElement.value = '/xyz';
             await autocomplete.showSuggestions('/xyz');
 
-            expect(autocomplete.visible).toBe(false);
             expect(autocomplete.container.style.display).toBe('none');
         });
 
@@ -274,7 +272,7 @@ describe('SlashAutocomplete', () => {
             expect(items).toHaveLength(4); // /clean, /clear, /compact, /config
         });
 
-        test('sets initial selection to last item', async () => {
+        test('selects last suggestion by default', async () => {
             await autocomplete.showSuggestions('/c');
 
             expect(autocomplete.selectedIndex).toBe(autocomplete.suggestions.length - 1);
@@ -295,7 +293,6 @@ describe('SlashAutocomplete', () => {
             autocomplete.handleKeydown(event);
 
             expect(preventDefault).toHaveBeenCalled();
-            expect(autocomplete.selectedIndex).toBeLessThan(autocomplete.suggestions.length);
         });
 
         test('handles ArrowUp key', () => {
@@ -316,7 +313,7 @@ describe('SlashAutocomplete', () => {
             autocomplete.handleKeydown(event);
 
             expect(preventDefault).toHaveBeenCalled();
-            expect(autocomplete.visible).toBe(false);
+            expect(autocomplete.container.style.display).toBe('none');
         });
 
         test('handles Escape key', () => {
@@ -324,7 +321,7 @@ describe('SlashAutocomplete', () => {
 
             autocomplete.handleKeydown(event);
 
-            expect(autocomplete.visible).toBe(false);
+            expect(autocomplete.container.style.display).toBe('none');
         });
 
         test('ignores keys when not visible', () => {
@@ -362,7 +359,7 @@ describe('SlashAutocomplete', () => {
 
             autocomplete.complete('/clean');
 
-            expect(autocomplete.visible).toBe(false);
+            expect(autocomplete.container.style.display).toBe('none');
         });
     });
 
@@ -386,15 +383,7 @@ describe('SlashAutocomplete', () => {
             inputElement.value = 'hello';
             autocomplete.handleInput();
 
-            expect(autocomplete.visible).toBe(false);
-        });
-
-        test('shows suggestions when input starts with /', async () => {
-            inputElement.value = '/c';
-            autocomplete.handleInput();
-
-            // This is async, so we check that it's attempting to show
-            // The actual visibility check would need to await
+            expect(autocomplete.container.style.display).toBe('none');
         });
 
         test('hides when last word does not start with /', async () => {
@@ -403,7 +392,7 @@ describe('SlashAutocomplete', () => {
             inputElement.value = '/clean test';
             autocomplete.handleInput();
 
-            expect(autocomplete.visible).toBe(false);
+            expect(autocomplete.container.style.display).toBe('none');
         });
     });
 

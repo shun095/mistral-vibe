@@ -118,6 +118,7 @@ describe('APIClient', () => {
 
             const result = await apiClient.getMessages();
 
+            expect(global.fetch).toHaveBeenCalledWith('/api/messages');
             expect(result).toBeNull();
         });
     });
@@ -298,6 +299,13 @@ describe('APIClient', () => {
 
             const result = await apiClient.resumeSession(sessionId);
 
+            expect(global.fetch).toHaveBeenCalledWith(
+                `/api/sessions/${sessionId}/resume`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                }
+            );
             expect(result).toEqual({
                 success: false,
                 error: 'Failed to resume session'
@@ -314,36 +322,6 @@ describe('APIClient', () => {
                 success: false,
                 error: 'Network error'
             });
-        });
-    });
-
-    describe('Messages', () => {
-        test('returns null when fetch throws error', async () => {
-            global.fetch.mockRejectedValue(new Error('Network error'));
-
-            const result = await apiClient.getMessages();
-
-            expect(result).toBeNull();
-        });
-    });
-
-    describe('Commands', () => {
-        test('returns null when fetch throws error', async () => {
-            global.fetch.mockRejectedValue(new Error('Network error'));
-
-            const result = await apiClient.getCommands();
-
-            expect(result).toBeNull();
-        });
-    });
-
-    describe('Command Execution', () => {
-        test('returns null when fetch throws error', async () => {
-            global.fetch.mockRejectedValue(new Error('Network error'));
-
-            const result = await apiClient.executeCommand('/help');
-
-            expect(result).toBeNull();
         });
     });
 

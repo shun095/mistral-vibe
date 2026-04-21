@@ -8,30 +8,25 @@ import { ImageAttachmentHandler } from '../../vibe/cli/web_ui/static/js/image-at
 
 describe('ImageAttachmentHandler', () => {
     let handler;
-    let mockPreviewContainer;
-    let mockPreviewImg;
-    let mockFileInput;
+    let previewContainer;
+    let previewImg;
+    let fileInput;
     let onImageAttachedSpy;
     let onImageRemovedSpy;
     let onErrorSpy;
 
     beforeEach(() => {
-        // Mock DOM elements
-        mockPreviewContainer = {
-            style: { display: 'none' },
-            classList: { add: jest.fn(), remove: jest.fn() }
-        };
+        // Use real jsdom DOM elements
+        previewContainer = document.createElement('div');
+        previewImg = document.createElement('img');
+        fileInput = document.createElement('input');
+        fileInput.type = 'file';
 
-        mockPreviewImg = {
-            src: '',
-            onload: null
-        };
-
-        mockFileInput = {
-            value: '',
-            click: jest.fn(),
-            files: []
-        };
+        // Mock fileInput.files with a FileList-like object (jsdom requires FileList type)
+        Object.defineProperty(fileInput, 'files', {
+            writable: true,
+            value: { length: 0, item: () => null, namedItem: () => null, entries: () => [] }
+        });
 
         // Mock callbacks
         onImageAttachedSpy = jest.fn();
@@ -40,15 +35,15 @@ describe('ImageAttachmentHandler', () => {
 
         // Create handler instance
         handler = new ImageAttachmentHandler({
-            previewContainer: mockPreviewContainer,
-            previewImg: mockPreviewImg,
-            fileInput: mockFileInput,
+            previewContainer: previewContainer,
+            previewImg: previewImg,
+            fileInput: fileInput,
             onImageAttached: onImageAttachedSpy,
             onImageRemoved: onImageRemovedSpy,
             onError: onErrorSpy
         });
 
-        // Mock FileReader for base64 conversion
+        // Mock FileReader for base64 conversion (jsdom doesn't support it)
         global.FileReader = class {
             constructor() {
                 this.onload = null;
@@ -138,9 +133,12 @@ describe('ImageAttachmentHandler', () => {
                 mockBase64: 'fileImageData'
             };
 
-            mockFileInput.files = [mockFile];
+            Object.defineProperty(fileInput, 'files', {
+                writable: true,
+                value: [mockFile]
+            });
 
-            handler.handleFileSelect({ target: mockFileInput });
+            handler.handleFileSelect({ target: fileInput });
 
             return new Promise((resolve) => {
                 setTimeout(() => {
@@ -148,7 +146,7 @@ describe('ImageAttachmentHandler', () => {
                         data: 'fileImageData',
                         mime_type: 'image/jpeg'
                     });
-                    expect(mockFileInput.value).toBe(''); // Reset after selection
+                    expect(fileInput.value).toBe(''); // Reset after selection
                     resolve();
                 }, 10);
             });
@@ -161,14 +159,22 @@ describe('ImageAttachmentHandler', () => {
                 mockBase64: 'test'
             };
 
-            mockFileInput.files = [mockFile];
-            mockFileInput.value = '/path/to/file.png';
+            Object.defineProperty(fileInput, 'files', {
+                writable: true,
+                value: [mockFile]
+            });
+            // Mock value property to track if it's set to empty string
+            let currentValue = '';
+            Object.defineProperty(fileInput, 'value', {
+                get: () => currentValue,
+                set: (val) => { currentValue = val; }
+            });
 
-            handler.handleFileSelect({ target: mockFileInput });
+            handler.handleFileSelect({ target: fileInput });
 
             return new Promise((resolve) => {
                 setTimeout(() => {
-                    expect(mockFileInput.value).toBe('');
+                    expect(currentValue).toBe('');
                     resolve();
                 }, 10);
             });
@@ -235,7 +241,7 @@ describe('ImageAttachmentHandler', () => {
                     data: 'validImageData',
                     mime_type: 'image/png'
                 });
-                expect(mockPreviewContainer.style.display).toBe('flex');
+                expect(previewContainer.style.display).toBe('flex');
                 expect(onImageAttachedSpy).toHaveBeenCalled();
                 done();
             }, 10);
@@ -260,8 +266,9 @@ describe('ImageAttachmentHandler', () => {
                 handler.removeImage();
 
                 expect(handler.attachedImage).toBeNull();
-                expect(mockPreviewImg.src).toBe('');
-                expect(mockPreviewContainer.style.display).toBe('none');
+                // jsdom converts empty src to current URL, so check it doesn't contain the data URL
+                expect(previewImg.src).not.toContain('data:image');
+                expect(previewContainer.style.display).toBe('none');
                 expect(onImageRemovedSpy).toHaveBeenCalled();
                 done();
             }, 10);
@@ -326,8 +333,8 @@ describe('ImageAttachmentHandler', () => {
 
             handler.showPreview(testDataUrl);
 
-            expect(mockPreviewImg.src).toBe(testDataUrl);
-            expect(mockPreviewContainer.style.display).toBe('flex');
+            expect(previewImg.src).toBe(testDataUrl);
+            expect(previewContainer.style.display).toBe('flex');
         });
     });
 });

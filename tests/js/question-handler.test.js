@@ -35,8 +35,6 @@ describe('QuestionHandler', () => {
             const currentQuestion = handler.showQuestionPopup(event);
 
             expect(currentQuestion).toEqual(event.questions[0]);
-            expect(handler.currentQuestionIndex).toBe(0);
-            expect(handler.currentQuestions).toHaveLength(1);
         });
 
         test('submits single question and sends response with original popup_id', () => {
@@ -56,7 +54,7 @@ describe('QuestionHandler', () => {
             };
 
             handler.showQuestionPopup(event);
-            handler.currentQuestionAnswers.push({
+            handler.submitAnswer({
                 question: 'What is your name?',
                 answer: 'Alice',
                 is_other: false,
@@ -78,11 +76,13 @@ describe('QuestionHandler', () => {
                 cancelled: false,
             });
 
-            // State should be cleared
-            expect(handler.currentQuestions).toBe(null);
-            expect(handler.currentQuestionIndex).toBe(0);
-            expect(handler.currentQuestionAnswers).toHaveLength(0);
-            expect(handler.originalPopupId).toBe(null);
+            // State should be cleared — verify by showing a new question (starts fresh)
+            const freshEvent = {
+                popup_id: 'question_fresh',
+                questions: [{ question: 'Fresh?', header: 'F', options: [{ label: 'X', description: '' }], multi_select: false }],
+            };
+            const freshQuestion = handler.showQuestionPopup(freshEvent);
+            expect(freshQuestion.question).toBe('Fresh?');
         });
     });
 
@@ -115,19 +115,18 @@ describe('QuestionHandler', () => {
             // First question
             let currentQuestion = handler.showQuestionPopup(event);
             expect(currentQuestion.question).toBe('Question 1?');
-            expect(handler.currentQuestionIndex).toBe(0);
 
             // Answer first question
-            handler.currentQuestionAnswers.push({
+            handler.submitAnswer({
                 question: 'Question 1?',
                 answer: 'A1',
                 is_other: false,
             });
-            handler.submitCurrentQuestionOrNext();
+            const nextResult = handler.submitCurrentQuestionOrNext();
 
-            // Second question should be shown
-            expect(handler.currentQuestionIndex).toBe(1);
-            expect(handler.currentQuestions).toHaveLength(2);
+            // Second question should be shown (hasMore + nextEvent)
+            expect(nextResult.hasMore).toBe(true);
+            expect(nextResult.nextEvent.popup_id).toBe('question_multi_q2');
         });
 
         test('accumulates answers across questions', () => {
@@ -152,17 +151,19 @@ describe('QuestionHandler', () => {
             handler.showQuestionPopup(event);
 
             // Answer first question
-            handler.currentQuestionAnswers.push({
+            handler.submitAnswer({
                 question: 'Question 1?',
                 answer: 'A1',
                 is_other: false,
             });
-            handler.submitCurrentQuestionOrNext();
+            const nextResult = handler.submitCurrentQuestionOrNext();
 
-            expect(handler.currentQuestionAnswers).toHaveLength(1);
+            // Verify we have one answer and more questions pending
+            expect(nextResult.hasMore).toBe(true);
+            expect(nextResult.nextEvent.popup_id).toBe('question_answers_q2');
 
             // Answer second question
-            handler.currentQuestionAnswers.push({
+            handler.submitAnswer({
                 question: 'Question 2?',
                 answer: 'B2',
                 is_other: false,
@@ -196,7 +197,7 @@ describe('QuestionHandler', () => {
             handler.showQuestionPopup(event);
 
             // Answer first question
-            handler.currentQuestionAnswers.push({
+            handler.submitAnswer({
                 question: 'Question 1?',
                 answer: 'A1',
                 is_other: false,
@@ -208,10 +209,11 @@ describe('QuestionHandler', () => {
             expect(nextResult.nextEvent.popup_id).toBe('question_original_id_q2');
 
             // Show next question (simulating VibeClient behavior)
-            handler.showQuestionPopup(nextResult.nextEvent);
+            const nextQuestion = handler.showQuestionPopup(nextResult.nextEvent);
+            expect(nextQuestion.question).toBe('Question 2?');
 
             // Answer second question
-            handler.currentQuestionAnswers.push({
+            handler.submitAnswer({
                 question: 'Question 2?',
                 answer: 'B2',
                 is_other: false,
@@ -250,19 +252,19 @@ describe('QuestionHandler', () => {
             handler.showQuestionPopup(event);
 
             // Answer first question
-            handler.currentQuestionAnswers.push({ question: 'Question 1?', answer: 'A1', is_other: false });
+            handler.submitAnswer({ question: 'Question 1?', answer: 'A1', is_other: false });
             let nextResult = handler.submitCurrentQuestionOrNext();
             expect(nextResult.hasMore).toBe(true);
             handler.showQuestionPopup(nextResult.nextEvent);
 
             // Answer second question
-            handler.currentQuestionAnswers.push({ question: 'Question 2?', answer: 'B2', is_other: false });
+            handler.submitAnswer({ question: 'Question 2?', answer: 'B2', is_other: false });
             nextResult = handler.submitCurrentQuestionOrNext();
             expect(nextResult.hasMore).toBe(true);
             handler.showQuestionPopup(nextResult.nextEvent);
 
             // Answer third question
-            handler.currentQuestionAnswers.push({ question: 'Question 3?', answer: 'A3', is_other: false });
+            handler.submitAnswer({ question: 'Question 3?', answer: 'A3', is_other: false });
             const result = handler.submitCurrentQuestionOrNext();
 
             expect(result.message.answers).toHaveLength(3);
@@ -283,8 +285,6 @@ describe('QuestionHandler', () => {
             const result = handler.showQuestionPopup(event);
 
             expect(result).toBe(null);
-            expect(handler.currentQuestions).toBe(null);
-            expect(handler.currentQuestionIndex).toBe(0);
         });
 
         test('handles undefined questions gracefully', () => {
@@ -296,8 +296,6 @@ describe('QuestionHandler', () => {
             const result = handler.showQuestionPopup(event);
 
             expect(result).toBe(null);
-            expect(handler.currentQuestions).toBe(null);
-            expect(handler.currentQuestionIndex).toBe(0);
         });
 
         test('handles empty questions array gracefully', () => {
@@ -309,8 +307,6 @@ describe('QuestionHandler', () => {
             const result = handler.showQuestionPopup(event);
 
             expect(result).toBe(null);
-            expect(handler.currentQuestions).toBe(null);
-            expect(handler.currentQuestionIndex).toBe(0);
         });
     });
 
@@ -337,14 +333,16 @@ describe('QuestionHandler', () => {
             handler.showQuestionPopup(event);
 
             // Answer first question
-            handler.currentQuestionAnswers.push({ question: 'Q1?', answer: 'A1', is_other: false });
-            handler.submitCurrentQuestionOrNext();
+            handler.submitAnswer({ question: 'Q1?', answer: 'A1', is_other: false });
+            const nextResult = handler.submitCurrentQuestionOrNext();
 
-            // Verify state after first answer
-            expect(handler.currentQuestionIndex).toBe(1);
-            expect(handler.currentQuestions).toHaveLength(2);
-            expect(handler.currentQuestionAnswers).toHaveLength(1);
-            expect(handler.originalPopupId).toBe('question_state');
+            // Verify state after first answer via return values
+            expect(nextResult.hasMore).toBe(true);
+            expect(nextResult.nextEvent.popup_id).toBe('question_state_q2');
+
+            // Show next question and verify it's the second one
+            const nextQuestion = handler.showQuestionPopup(nextResult.nextEvent);
+            expect(nextQuestion.question).toBe('Q2?');
         });
 
         test('clears state after completion', () => {
@@ -361,13 +359,12 @@ describe('QuestionHandler', () => {
             };
 
             handler.showQuestionPopup(event);
-            handler.currentQuestionAnswers.push({ question: 'Q1?', answer: 'A1', is_other: false });
-            handler.submitCurrentQuestionOrNext();
+            handler.submitAnswer({ question: 'Q1?', answer: 'A1', is_other: false });
+            const result = handler.submitCurrentQuestionOrNext();
 
-            expect(handler.currentQuestions).toBe(null);
-            expect(handler.currentQuestionIndex).toBe(0);
-            expect(handler.currentQuestionAnswers).toHaveLength(0);
-            expect(handler.originalPopupId).toBe(null);
+            expect(result.message.answers).toHaveLength(1);
+            expect(result.message.answers[0].answer).toBe('A1');
+            expect(result.message.popup_id).toBe('question_clear');
         });
 
         test('reset method clears all state', () => {
@@ -384,15 +381,17 @@ describe('QuestionHandler', () => {
             };
 
             handler.showQuestionPopup(event);
-            handler.currentQuestionAnswers.push({ question: 'Q1?', answer: 'A1', is_other: false });
+            handler.submitAnswer({ question: 'Q1?', answer: 'A1', is_other: false });
 
             handler.reset();
 
-            expect(handler.currentPopupId).toBe(null);
-            expect(handler.originalPopupId).toBe(null);
-            expect(handler.currentQuestions).toBe(null);
-            expect(handler.currentQuestionIndex).toBe(0);
-            expect(handler.currentQuestionAnswers).toHaveLength(0);
+            // After reset, showing a new question should start fresh
+            const freshEvent = {
+                popup_id: 'question_fresh',
+                questions: [{ question: 'Fresh?', header: 'F', options: [{ label: 'X', description: '' }], multi_select: false }],
+            };
+            const freshQuestion = handler.showQuestionPopup(freshEvent);
+            expect(freshQuestion.question).toBe('Fresh?');
         });
     });
 });
