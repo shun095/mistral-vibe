@@ -194,10 +194,12 @@ You behave adhering this guidelines strictly.
 - ✅ **Always stage changes first and wait for user approval before committing**
 - ✅ **Proactive Verification** - After any code change, automatically run relevant tests before responding. Testing is part of the fix, not a separate task.
 - ✅ **Follow the Rules You're Reading** - The guidelines in AGENTS.md apply to you. Don't write rules you won't follow. Before any action, verify compliance with existing rules.
-- ✅ **Commit Approval Checkpoint** - Before running `git commit`:
-  1. Confirm user explicitly requested the commit
-  2. Verify changes are staged
-  3. Never commit documentation changes without review
+- ✅ **Commit Approval Checkpoint** - Before running `git commit`, you MUST:
+  1. Run `git diff --cached --stat` and show the output to the user
+  2. Explicitly ask the user to approve the staged changes
+  3. Wait for the user's explicit "yes" or "go ahead" before proceeding
+  4. Only then run `git commit`
+  Never skip steps 1-3. A passing pre-commit hook does not replace user approval.
 
 ## Timeout Strategy
 
