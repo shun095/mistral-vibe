@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from vibe.core.config import VibeConfig
+from vibe.core.config._settings import SessionLoggingConfig
 from vibe.core.config.harness_files import (
     HarnessFilesManager,
     init_harness_files_manager,
@@ -152,9 +153,11 @@ class TestExcludeDefaults:
 
     def test_excludes_empty_string_in_nested_section(self) -> None:
         """Test that empty string defaults in nested sections are excluded."""
+        # The resolved default for save_dir is the path from the validator
+        resolved_default = SessionLoggingConfig().save_dir
         config_dict = {
             "session_logging": {
-                "save_dir": "",  # default is empty string
+                "save_dir": resolved_default,  # matches resolved default
                 "enabled": False,  # non-default value (default is True)
             }
         }
@@ -165,6 +168,77 @@ class TestExcludeDefaults:
         assert "save_dir" not in result["session_logging"]
         assert "enabled" in result["session_logging"]
         assert result["session_logging"]["enabled"] is False
+
+    def test_excludes_validator_resolved_default(self) -> None:
+        """Test that values matching validator-resolved defaults are excluded.
+
+        The save_dir field has a validator that transforms '' into a resolved path.
+        When the config contains that resolved path, it should be excluded as default.
+        """
+        resolved_default = SessionLoggingConfig().save_dir
+        config_dict = {"session_logging": {"save_dir": resolved_default}}
+
+        result = VibeConfig._exclude_defaults(config_dict)
+
+        # session_logging section should be empty after exclusion
+        assert "session_logging" not in result
+
+    def test_get_resolved_default_returns_none_for_required_fields(self) -> None:
+        """Test that _get_resolved_default returns None when model has required fields."""
+        from pydantic import BaseModel, Field
+
+        class ModelWithRequired(BaseModel):
+            required_field: str = Field()
+            optional_field: str = "default"
+
+        resolved = VibeConfig._get_resolved_default(ModelWithRequired, "optional_field")
+        assert resolved is None
+
+    def test_get_resolved_default_returns_none_on_factory_exception(self) -> None:
+        """Test that _get_resolved_default returns None when default_factory raises."""
+        import unittest.mock as mock
+
+        from pydantic import BaseModel
+        from pydantic_core import PydanticUndefined
+
+        class ModelWithFailingFactory(BaseModel):
+            good_field: str = "ok"
+            bad_field: dict = {}
+
+        # Create a mock finfo that has is_required=False and a default value
+        good_finfo = mock.MagicMock()
+        good_finfo.is_required.return_value = False
+        good_finfo.default = "ok"
+        good_finfo.default_factory = None
+
+        # Create a mock finfo with a failing default_factory
+        failing_finfo = mock.MagicMock()
+        failing_finfo.is_required.return_value = False
+        failing_finfo.default = PydanticUndefined
+        failing_finfo.default_factory = mock.MagicMock(side_effect=RuntimeError("fail"))
+
+        with mock.patch.object(
+            ModelWithFailingFactory,
+            "model_fields",
+            {"good_field": good_finfo, "bad_field": failing_finfo},
+        ):
+            resolved = VibeConfig._get_resolved_default(
+                ModelWithFailingFactory, "good_field"
+            )
+            assert resolved is None
+
+    def test_get_resolved_default_returns_none_on_instantiation_failure(self) -> None:
+        """Test that _get_resolved_default returns None when model instantiation fails."""
+        from pydantic import BaseModel
+
+        class ModelFailingInit(BaseModel):
+            field: str = "default"
+
+            def __init__(self, **data):
+                raise ValueError("instantiation failed")
+
+        resolved = VibeConfig._get_resolved_default(ModelFailingInit, "field")
+        assert resolved is None
 
 
 class TestConfigCommentPreservation:

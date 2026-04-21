@@ -963,7 +963,13 @@ class VibeConfig(BaseSettings):
         return result
 
     @classmethod
-    def _value_is_default(cls, value: Any, field_info: FieldInfo) -> bool:
+    def _value_is_default(
+        cls,
+        value: Any,
+        field_info: FieldInfo,
+        model_class: type[BaseModel] | None = None,
+        field_name: str | None = None,
+    ) -> bool:
         """Check if a value is equal to the field's default."""
         if field_info.is_required():
             return False
@@ -990,7 +996,42 @@ class VibeConfig(BaseSettings):
             except Exception:
                 return False
 
+        # For simple defaults, resolve through model to account for validators
+        if model_class is not None and field_name is not None:
+            resolved = cls._get_resolved_default(model_class, field_name)
+            if resolved is not None:
+                return value == resolved
+
         return value == field_info.default
+
+    @classmethod
+    def _get_resolved_default(
+        cls, model_class: type[BaseModel], field_name: str
+    ) -> Any | None:
+        """Get the resolved default value for a field by creating a minimal model instance.
+
+        This accounts for field validators that transform default values (e.g.,
+        a validator that replaces '' with a resolved path).
+        """
+        from pydantic_core import PydanticUndefined
+
+        try:
+            field_defaults: dict[str, Any] = {}
+            for fname, finfo in model_class.model_fields.items():
+                if finfo.is_required():
+                    return None
+                if finfo.default is not PydanticUndefined:
+                    field_defaults[fname] = finfo.default
+                elif finfo.default_factory is not None:
+                    try:
+                        field_defaults[fname] = finfo.default_factory()  # type: ignore[call-arg]
+                    except Exception:
+                        return None
+
+            instance = model_class(**field_defaults)
+            return getattr(instance, field_name)
+        except Exception:
+            return None
 
     @classmethod
     def _exclude_nested_defaults(
@@ -1007,7 +1048,9 @@ class VibeConfig(BaseSettings):
             if model_class is not None:
                 field_info = model_class.model_fields.get(key)
 
-            if field_info is not None and cls._value_is_default(val, field_info):
+            if field_info is not None and cls._value_is_default(
+                val, field_info, model_class, key
+            ):
                 continue
 
             if isinstance(val, dict):
