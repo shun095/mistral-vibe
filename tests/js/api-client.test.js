@@ -316,4 +316,68 @@ describe('APIClient', () => {
             });
         });
     });
+
+    describe('Messages', () => {
+        test('returns null when fetch throws error', async () => {
+            global.fetch.mockRejectedValue(new Error('Network error'));
+
+            const result = await apiClient.getMessages();
+
+            expect(result).toBeNull();
+        });
+    });
+
+    describe('Commands', () => {
+        test('returns null when fetch throws error', async () => {
+            global.fetch.mockRejectedValue(new Error('Network error'));
+
+            const result = await apiClient.getCommands();
+
+            expect(result).toBeNull();
+        });
+    });
+
+    describe('Command Execution', () => {
+        test('returns null when fetch throws error', async () => {
+            global.fetch.mockRejectedValue(new Error('Network error'));
+
+            const result = await apiClient.executeCommand('/help');
+
+            expect(result).toBeNull();
+        });
+    });
+
+    describe('Prompt History', () => {
+        test('fetches /api/prompt-history', async () => {
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ entries: [{ id: 1, content: 'test' }] })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.getPromptHistory();
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/prompt-history');
+            expect(result).toEqual({ entries: [{ id: 1, content: 'test' }] });
+        });
+
+        test('returns empty entries when endpoint fails', async () => {
+            const mockResponse = {
+                ok: false
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.getPromptHistory();
+
+            expect(result).toEqual({ entries: [] });
+        });
+
+        test('returns empty entries when fetch throws error', async () => {
+            global.fetch.mockRejectedValue(new Error('Network error'));
+
+            const result = await apiClient.getPromptHistory();
+
+            expect(result).toEqual({ entries: [] });
+        });
+    });
 });

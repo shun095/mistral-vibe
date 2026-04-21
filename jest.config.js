@@ -13,4 +13,5 @@ module.exports = {
   testEnvironmentOptions: {
     customExportConditions: ['node', 'node-addons'],
   },
+  setupFiles: ['<rootDir>/tests/js/setup-notifications.js'],
 };

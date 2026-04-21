@@ -118,4 +118,30 @@ export class MockBackendClient {
       ],
     });
   }
+
+  /**
+   * Broadcast a mock event to all connected WebSocket clients.
+   */
+  async registerEvent(eventData: Record<string, unknown>): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/api/test/mock-events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `vibe_auth=${this.authToken}`,
+      },
+      body: JSON.stringify(eventData),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(
+        `Failed to register mock event: ${response.status} ${errorText}`
+      );
+    }
+
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(`Mock event registration failed: ${data.message}`);
+    }
+  }
 }

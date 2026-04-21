@@ -11,6 +11,7 @@ import { WebSocketClient } from './websocket-client.js';
 import { APIClient } from './api-client.js';
 import { MessageStreamer } from './message-streamer.js';
 import { showBrowserNotification } from './notification.js';
+import * as toolFormatters from './tool-formatters.js';
 
 class VibeClient {
     constructor() {
@@ -34,6 +35,9 @@ class VibeClient {
         this.currentToolCallId = null;
         this.toolCallMap = new Map(); // Map<toolCallId, toolCallElement>
         this._preferCollapsed = true; // Track collapse preference
+
+        // Event listener registry for cleanup
+        this._listeners = [];
 
         // DOM elements
         this.elements = {
@@ -105,7 +109,8 @@ class VibeClient {
 
         this.slashRegistry.loadCommands();
         this.updatePlaceholder();
-        window.addEventListener('resize', () => this.updatePlaceholder());
+        this._placeholderResizeHandler = () => this.updatePlaceholder();
+        window.addEventListener('resize', this._placeholderResizeHandler);
         this.loadTheme();
         this.wsClient.connect();
         this.startStatusPolling();
@@ -122,26 +127,26 @@ class VibeClient {
     }
 
     bindEvents() {
-        this.elements.sendBtn.addEventListener('click', () => this.sendMessage());
-        this.elements.interruptBtn.addEventListener('click', () => this.requestInterrupt());
+        this._on(this.elements.sendBtn, 'click', () => this.sendMessage());
+        this._on(this.elements.interruptBtn, 'click', () => this.requestInterrupt());
 
-        this.elements.input.addEventListener('keydown', (e) => {
+        this._on(this.elements.input, 'keydown', (e) => {
             if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                 e.preventDefault();
                 this.sendMessage();
             }
         });
 
-        this.elements.input.addEventListener('input', () => {
+        this._on(this.elements.input, 'input', () => {
             this.updateSendButtonState();
             this.autoResizeTextarea();
         });
 
-        this.elements.input.addEventListener('scroll', () => this.autoResizeTextarea());
+        this._on(this.elements.input, 'scroll', () => this.autoResizeTextarea());
         this.bindScrollNavigationEvents();
-        this.elements.themeToggle.addEventListener('click', () => this.toggleTheme());
-        this.elements.toggleCardsBtn.addEventListener('click', () => this.toggleAllCards());
-        this.elements.logoutBtn?.addEventListener('click', () => this.logout());
+        this._on(this.elements.themeToggle, 'click', () => this.toggleTheme());
+        this._on(this.elements.toggleCardsBtn, 'click', () => this.toggleAllCards());
+        this._on(this.elements.logoutBtn, 'click', () => this.logout());
 
         this.imageAttachment = new ImageAttachmentHandler({
             previewContainer: this.elements.imagePreviewContainer,
@@ -152,10 +157,10 @@ class VibeClient {
             onError: (msg) => this.addMessage('system', msg)
         });
 
-        this.elements.input.addEventListener('paste', (e) => this.imageAttachment.handlePaste(e));
-        this.elements.imagePreviewRemove.addEventListener('click', () => this.imageAttachment.removeImage());
-        this.elements.attachImageBtn.addEventListener('click', () => this.elements.imageFileInput.click());
-        this.elements.imageFileInput.addEventListener('change', (e) => this.imageAttachment.handleFileSelect(e));
+        this._on(this.elements.input, 'paste', (e) => this.imageAttachment.handlePaste(e));
+        this._on(this.elements.imagePreviewRemove, 'click', () => this.imageAttachment.removeImage());
+        this._on(this.elements.attachImageBtn, 'click', () => this.elements.imageFileInput.click());
+        this._on(this.elements.imageFileInput, 'change', (e) => this.imageAttachment.handleFileSelect(e));
 
         this.bindSessionPickerEvents();
         this.bindPromptHistoryEvents();
@@ -1070,13 +1075,14 @@ class VibeClient {
         const scrollNextUserBtn = document.getElementById('scroll-next-user-btn');
         const scrollBottomBtn = document.getElementById('scroll-bottom-btn');
 
-        if (scrollTopBtn) scrollTopBtn.addEventListener('click', () => this.scrollToTop());
-        if (scrollPrevUserBtn) scrollPrevUserBtn.addEventListener('click', () => this.scrollToPreviousUserMessage());
-        if (scrollNextUserBtn) scrollNextUserBtn.addEventListener('click', () => this.scrollToNextUserMessage());
-        if (scrollBottomBtn) scrollBottomBtn.addEventListener('click', () => this.forceScrollToBottom());
+        this._on(scrollTopBtn, 'click', () => this.scrollToTop());
+        this._on(scrollPrevUserBtn, 'click', () => this.scrollToPreviousUserMessage());
+        this._on(scrollNextUserBtn, 'click', () => this.scrollToNextUserMessage());
+        this._on(scrollBottomBtn, 'click', () => this.forceScrollToBottom());
 
         this.updateFabPosition();
-        window.addEventListener('resize', () => this.updateFabPosition());
+        this._resizeHandler = () => this.updateFabPosition();
+        window.addEventListener('resize', this._resizeHandler);
 
         const inputArea = document.querySelector('.input-area');
         if (inputArea && typeof ResizeObserver !== 'undefined') {
@@ -1220,23 +1226,8 @@ class VibeClient {
     }
 
     formatToolResult(toolName, result) {
-        const card = document.createElement('div');
-        card.className = 'tool-result-card';
-
-        switch (toolName) {
-            case 'bash': return this.formatBashResult(card, result);
-            case 'websearch': return this.formatWebSearchResult(card, result);
-            case 'webfetch': return this.formatWebFetchResult(card, result);
-            case 'grep': return this.formatGrepResult(card, result);
-            case 'read_file': return this.formatReadFileResult(card, result);
-            case 'edit_file': return this.formatEditFileResult(card, result);
-            case 'write_file': return this.formatWriteFileResult(card, result);
-            case 'lsp': return this.formatLspResult(card, result);
-            case 'todo': return this.formatTodoResult(card, result);
-            case 'ask_user_question': return this.formatAskUserQuestionResult(card, result);
-            case 'register_download': return this.formatRegisterDownloadResult(card, result);
-            default: return this.formatGenericResult(card, result);
-        }
+        const helpers = toolFormatters.getFormatterHelpers(this);
+        return toolFormatters.formatToolResult(toolName, result, helpers);
     }
 
     createCardHeader(card, title, icon, summary) {
@@ -1343,7 +1334,7 @@ class VibeClient {
 
             if (lines.length > 100) {
                 const moreDiv = document.createElement('div');
-                moreDiv.style.cssText = 'padding: 8px 12px; color: #a0a0a0; font-style: italic';
+                moreDiv.className = 'tool-formatter-more-lines';
                 moreDiv.textContent = `... and ${lines.length - 100} more lines`;
                 content.appendChild(moreDiv);
             }
@@ -1385,7 +1376,7 @@ class VibeClient {
 
         if (result.lsp_diagnostics) {
             const diagnosticsDiv = document.createElement('div');
-            diagnosticsDiv.style.cssText = 'margin-top: 12px; padding: 8px 12px; background-color: var(--bg-tertiary); border-radius: 4px;';
+            diagnosticsDiv.className = 'tool-formatter-diagnostics';
             diagnosticsDiv.innerHTML = `<div style="font-weight: 600; color: var(--yellow); margin-bottom: 4px;">LSP Diagnostics</div><pre style="margin: 0; font-size: 0.85rem;">${this.escapeHtml(result.lsp_diagnostics)}</pre>`;
             content.appendChild(diagnosticsDiv);
         }
@@ -1411,7 +1402,7 @@ class VibeClient {
 
             if (Array.isArray(warningsArray) && warningsArray.length > 0) {
                 const warningsDiv = document.createElement('div');
-                warningsDiv.style.cssText = 'padding: 8px 12px; background-color: #3a2a1a; border-radius: 4px; margin-bottom: 8px';
+                warningsDiv.className = 'tool-formatter-warnings';
                 warningsDiv.innerHTML = `<div style="font-weight: 600; color: #f0ad4e; margin-bottom: 4px;">Warnings</div><ul style="margin: 0; padding-left: 20px; font-size: 0.85rem;">${warningsArray.map(w => `<li>${this.escapeHtml(w)}</li>`).join('')}</ul>`;
                 content.appendChild(warningsDiv);
             }
@@ -1582,7 +1573,7 @@ class VibeClient {
     createCodeBlock(path, content, container, offset = 0) {
         const language = this.detectLanguageFromPath(path);
         const codeBlock = document.createElement('pre');
-        codeBlock.style.cssText = 'margin-top: 8px; border-radius: 4px; overflow: hidden; max-height: 400px; overflow-y: auto; cursor: pointer;';
+        codeBlock.className = 'tool-formatter-code-block';
         codeBlock.title = 'Double-click to view full screen';
 
         const code = document.createElement('code');
@@ -1621,7 +1612,7 @@ class VibeClient {
         const contentDiv = card.querySelector('.card-content');
 
         const pathDiv = document.createElement('div');
-        pathDiv.style.cssText = 'padding: 8px 12px 0; font-family: monospace; font-size: 0.9rem; color: var(--text-secondary);';
+        pathDiv.className = 'tool-formatter-path';
         pathDiv.textContent = `Path: ${path}`;
         contentDiv.appendChild(pathDiv);
 
@@ -2179,17 +2170,17 @@ class VibeClient {
     }
 
     bindSessionPickerEvents() {
-        this.elements.sessionPickerClose.addEventListener('click', () => this.hideSessionPicker(true));
+        this._on(this.elements.sessionPickerClose, 'click', () => this.hideSessionPicker(true));
 
-        this.elements.sessionPickerModal.querySelector('.modal-overlay').addEventListener('click', () => {
-            this.hideSessionPicker(true);
-        });
+        const overlay = this.elements.sessionPickerModal.querySelector('.modal-overlay');
+        this._on(overlay, 'click', () => this.hideSessionPicker(true));
 
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && this.elements.sessionPickerModal.style.display === 'flex') {
+        this._escapeHandler = (e) => {
+            if (e.key === 'Escape' && this.elements.sessionPickerModal?.style.display === 'flex') {
                 this.hideSessionPicker(true);
             }
-        });
+        };
+        document.addEventListener('keydown', this._escapeHandler);
     }
 
     // =========================================================================
@@ -2267,22 +2258,75 @@ class VibeClient {
     }
 
     bindPromptHistoryEvents() {
-        this.elements.promptHistoryBtn.addEventListener('click', () => this.showPromptHistory());
-        this.elements.promptHistoryClose.addEventListener('click', () => this.hidePromptHistory());
+        this._on(this.elements.promptHistoryBtn, 'click', () => this.showPromptHistory());
+        this._on(this.elements.promptHistoryClose, 'click', () => this.hidePromptHistory());
 
-        this.elements.promptHistoryModal.querySelector('.modal-overlay').addEventListener('click', () => {
-            this.hidePromptHistory();
-        });
+        const overlay = this.elements.promptHistoryModal.querySelector('.modal-overlay');
+        this._on(overlay, 'click', () => this.hidePromptHistory());
 
-        this.elements.promptHistorySearch.addEventListener('input', (e) => {
+        this._on(this.elements.promptHistorySearch, 'input', (e) => {
             this._filterPromptHistory(e.target.value);
         });
 
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && this.elements.promptHistoryModal.style.display === 'flex') {
+        const phEscapeHandler = (e) => {
+            if (e.key === 'Escape' && this.elements.promptHistoryModal?.style.display === 'flex') {
                 this.hidePromptHistory();
             }
-        });
+        };
+        this._on(document, 'keydown', phEscapeHandler);
+    }
+
+    /**
+     * Register an event listener for cleanup
+     * @param {HTMLElement|null} el - Element to attach listener to
+     * @param {string} event - Event name
+     * @param {Function} handler - Event handler
+     */
+    _on(el, event, handler) {
+        if (el) {
+            el.addEventListener(event, handler);
+            this._listeners.push({ el, event, handler });
+        }
+    }
+
+    /**
+     * Destroy client and cleanup all resources
+     */
+    destroy() {
+        // Clear status polling interval
+        if (this.statusPollInterval) {
+            clearInterval(this.statusPollInterval);
+            this.statusPollInterval = null;
+        }
+
+        // Remove all registered event listeners
+        for (const { el, event, handler } of this._listeners) {
+            el?.removeEventListener?.(event, handler);
+        }
+        this._listeners = [];
+
+         // Clean up document-level listeners
+        document.removeEventListener('keydown', this._escapeHandler);
+        window.removeEventListener('resize', this._placeholderResizeHandler);
+        window.removeEventListener('resize', this._resizeHandler);
+
+        // Destroy WebSocket client
+        this.wsClient?.destroy();
+
+        // Clear DOM references
+        this.elements = {};
+        this.currentPopupId = null;
+        this.currentPopupElement = null;
+        this.currentReasoningMessage = null;
+        this.currentAssistantMessage = null;
+        this.currentToolCall = null;
+        this.currentToolCallId = null;
+        this.toolCallMap.clear();
+
+        // Hide code modal if open
+        if (this.codeModal) {
+            this.hideCodeFullscreen();
+        }
     }
 }
 

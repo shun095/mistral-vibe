@@ -4,12 +4,15 @@
  */
 
 import { test, expect } from "../fixtures";
-import { Selectors, showQuestionPopup } from "../helpers/test-utils";
+import { Selectors } from "../helpers/test-utils";
 
 test.describe("Question Popup", () => {
-  test("should show question popup with header and options", async ({ page }) => {
-    // Simulate a QuestionPopupEvent via VibeClient
-    await showQuestionPopup(page, {
+  test("should show question popup with header and options", async ({
+    page,
+    mockBackend,
+  }) => {
+    // Broadcast a QuestionPopupEvent via WebSocket
+    await mockBackend.registerEvent({
       popup_id: "test-question-1",
       __type: "QuestionPopupEvent",
       questions: [
@@ -45,8 +48,26 @@ test.describe("Question Popup", () => {
     await expect(questionPopup.getByText("Spanish")).toBeVisible();
   });
 
-  test("should allow selecting a single option", async ({ page }) => {
-    await showQuestionPopup(page, { popup_id: "test-question-2", __type: "QuestionPopupEvent", questions: [ { question: "Choose one", header: "Selection", options: [ { label: "Option A", description: "First" }, { label: "Option B", description: "Second" }, ], multi_select: false, hide_other: true, }, ], });
+  test("should allow selecting a single option", async ({
+    page,
+    mockBackend,
+  }) => {
+    await mockBackend.registerEvent({
+      popup_id: "test-question-2",
+      __type: "QuestionPopupEvent",
+      questions: [
+        {
+          question: "Choose one",
+          header: "Selection",
+          options: [
+            { label: "Option A", description: "First" },
+            { label: "Option B", description: "Second" },
+          ],
+          multi_select: false,
+          hide_other: true,
+        },
+      ],
+    });
 
     const questionPopup = page.locator(".question-popup");
     await expect(questionPopup).toBeVisible({ timeout: 5000 });
@@ -58,8 +79,27 @@ test.describe("Question Popup", () => {
     await expect(questionPopup).not.toBeVisible({ timeout: 5000 });
   });
 
-  test("should allow multi-select options", async ({ page }) => {
-    await showQuestionPopup(page, { popup_id: "test-question-3", __type: "QuestionPopupEvent", questions: [ { question: "Select all that apply", header: "Multi", options: [ { label: "A", description: "" }, { label: "B", description: "" }, { label: "C", description: "" }, ], multi_select: true, hide_other: false, }, ], });
+  test("should allow multi-select options", async ({
+    page,
+    mockBackend,
+  }) => {
+    await mockBackend.registerEvent({
+      popup_id: "test-question-3",
+      __type: "QuestionPopupEvent",
+      questions: [
+        {
+          question: "Select all that apply",
+          header: "Multi",
+          options: [
+            { label: "A", description: "" },
+            { label: "B", description: "" },
+            { label: "C", description: "" },
+          ],
+          multi_select: true,
+          hide_other: false,
+        },
+      ],
+    });
 
     const questionPopup = page.locator(".question-popup");
     await expect(questionPopup).toBeVisible({ timeout: 5000 });
@@ -78,8 +118,23 @@ test.describe("Question Popup", () => {
 
   test("should show custom answer input for 'Other' option", async ({
     page,
+    mockBackend,
   }) => {
-    await showQuestionPopup(page, { popup_id: "test-question-4", __type: "QuestionPopupEvent", questions: [ { question: "Your choice", header: "Custom", options: [{ label: "Default", description: "" }], multi_select: false, hide_other: false, }, ], });
+    await mockBackend.registerEvent({
+      popup_id: "test-question-4",
+      __type: "QuestionPopupEvent",
+      questions: [
+        {
+          question: "Your choice",
+          header: "Custom",
+          options: [
+            { label: "Default", description: "" },
+          ],
+          multi_select: false,
+          hide_other: false,
+        },
+      ],
+    });
 
     const questionPopup = page.locator(".question-popup");
     await expect(questionPopup).toBeVisible({ timeout: 5000 });
@@ -92,7 +147,10 @@ test.describe("Question Popup", () => {
     await expect(otherInput).toBeVisible();
   });
 
-  test("should submit answer and close popup", async ({ page }) => {
+  test("should submit answer and close popup", async ({
+    page,
+    mockBackend,
+  }) => {
     // Set up interceptor to capture question responses on window
     await page.evaluate(() => {
       const vibeClient = (window as any).vibeClient;
@@ -107,7 +165,22 @@ test.describe("Question Popup", () => {
       }
     });
 
-    await showQuestionPopup(page, { popup_id: "test-question-5", __type: "QuestionPopupEvent", questions: [ { question: "Confirm?", header: "Yes/No", options: [ { label: "Yes", description: "" }, { label: "No", description: "" }, ], multi_select: false, hide_other: true, }, ], });
+    await mockBackend.registerEvent({
+      popup_id: "test-question-5",
+      __type: "QuestionPopupEvent",
+      questions: [
+        {
+          question: "Confirm?",
+          header: "Yes/No",
+          options: [
+            { label: "Yes", description: "" },
+            { label: "No", description: "" },
+          ],
+          multi_select: false,
+          hide_other: true,
+        },
+      ],
+    });
 
     const questionPopup = page.locator(".question-popup");
     await expect(questionPopup).toBeVisible({ timeout: 5000 });
@@ -126,8 +199,26 @@ test.describe("Question Popup", () => {
     expect(response.type).toBe("question_response");
   });
 
-  test("should cancel question and close popup", async ({ page }) => {
-    await showQuestionPopup(page, { popup_id: "test-question-6", __type: "QuestionPopupEvent", questions: [ { question: "Cancel test?", header: "Test", options: [ { label: "A", description: "" }, { label: "B", description: "" }, ], multi_select: false, hide_other: true, }, ], });
+  test("should cancel question and close popup", async ({
+    page,
+    mockBackend,
+  }) => {
+    await mockBackend.registerEvent({
+      popup_id: "test-question-6",
+      __type: "QuestionPopupEvent",
+      questions: [
+        {
+          question: "Cancel test?",
+          header: "Test",
+          options: [
+            { label: "A", description: "" },
+            { label: "B", description: "" },
+          ],
+          multi_select: false,
+          hide_other: true,
+        },
+      ],
+    });
 
     const questionPopup = page.locator(".question-popup");
     await expect(questionPopup).toBeVisible({ timeout: 5000 });
@@ -142,8 +233,23 @@ test.describe("Question Popup", () => {
 
   test("should disable input while question popup is open", async ({
     page,
+    mockBackend,
   }) => {
-    await showQuestionPopup(page, { popup_id: "test-question-7", __type: "QuestionPopupEvent", questions: [ { question: "Test?", header: "Test", options: [{ label: "A", description: "" }], multi_select: false, hide_other: true, }, ], });
+    await mockBackend.registerEvent({
+      popup_id: "test-question-7",
+      __type: "QuestionPopupEvent",
+      questions: [
+        {
+          question: "Test?",
+          header: "Test",
+          options: [
+            { label: "A", description: "" },
+          ],
+          multi_select: false,
+          hide_other: true,
+        },
+      ],
+    });
 
     const questionPopup = page.locator(".question-popup");
     await expect(questionPopup).toBeVisible({ timeout: 5000 });

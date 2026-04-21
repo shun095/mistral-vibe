@@ -117,10 +117,4 @@ class QuestionHandler {
     }
 }
 
-// ES6 module export for browser
 export { QuestionHandler };
-
-// CommonJS export for testing (Jest)
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { QuestionHandler };
-}

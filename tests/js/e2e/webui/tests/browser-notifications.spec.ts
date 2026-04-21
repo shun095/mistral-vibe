@@ -4,7 +4,7 @@
  */
 
 import { test, expect } from "../fixtures";
-import { Selectors, sendMessage, waitForResponse, triggerWebNotification } from "../helpers/test-utils";
+import { Selectors, sendMessage, waitForResponse } from "../helpers/test-utils";
 
 test.describe("Browser Notifications", () => {
   test("should trigger browser notification on WebNotificationEvent", async ({
@@ -53,8 +53,12 @@ test.describe("Browser Notifications", () => {
     const assistantMsg = page.locator(Selectors.assistantMessage);
     await expect(assistantMsg).toBeVisible({ timeout: 15000 });
 
-    // Trigger a WebNotificationEvent manually to test the handler
-    await triggerWebNotification(page, { __type: "WebNotificationEvent", title: "Test Notification", message: "This is a test notification", });
+    // Broadcast a WebNotificationEvent via WebSocket
+    await mockBackend.registerEvent({
+      __type: "WebNotificationEvent",
+      title: "Test Notification",
+      message: "This is a test notification",
+    });
 
     // Verify the notification was triggered
     const notificationCalls = await page.evaluate(() => {
@@ -65,7 +69,10 @@ test.describe("Browser Notifications", () => {
     expect(notificationCalls[0].title).toBe("Test Notification");
   });
 
-  test("should show notification with message body", async ({ page }) => {
+  test("should show notification with message body", async ({
+    page,
+    mockBackend,
+  }) => {
     // Set up notification mock
     await page.evaluate(() => {
       (window as any).__notificationCalls = [];
@@ -85,8 +92,12 @@ test.describe("Browser Notifications", () => {
       (window as any).Notification.permission = "granted";
     });
 
-    // Trigger notification via VibeClient
-    await triggerWebNotification(page, { __type: "WebNotificationEvent", title: "Agent Complete", message: "The task has finished successfully.", });
+    // Broadcast notification via WebSocket
+    await mockBackend.registerEvent({
+      __type: "WebNotificationEvent",
+      title: "Agent Complete",
+      message: "The task has finished successfully.",
+    });
 
     const calls = await page.evaluate(() => (window as any).__notificationCalls);
     expect(calls.length).toBe(1);
@@ -96,14 +107,19 @@ test.describe("Browser Notifications", () => {
 
   test("should not show notification when Notification API is not supported", async ({
     page,
+    mockBackend,
   }) => {
     // Remove Notification API support
     await page.evaluate(() => {
       delete (window as any).Notification;
     });
 
-    // Trigger notification - should not throw
-    await triggerWebNotification(page, { __type: "WebNotificationEvent", title: "Test", message: "Should be ignored", });
+    // Broadcast notification - should not throw
+    await mockBackend.registerEvent({
+      __type: "WebNotificationEvent",
+      title: "Test",
+      message: "Should be ignored",
+    });
 
     // Should not throw - the handler should gracefully handle missing Notification API
     // Just verify the page is still functional
@@ -111,7 +127,10 @@ test.describe("Browser Notifications", () => {
     await expect(input).toBeVisible();
   });
 
-  test("should handle notification with empty message", async ({ page }) => {
+  test("should handle notification with empty message", async ({
+    page,
+    mockBackend,
+  }) => {
     // Set up notification mock
     await page.evaluate(() => {
       (window as any).__notificationCalls = [];
@@ -131,8 +150,12 @@ test.describe("Browser Notifications", () => {
       (window as any).Notification.permission = "granted";
     });
 
-    // Trigger notification with empty message
-    await triggerWebNotification(page, { __type: "WebNotificationEvent", title: "Simple Alert", message: "", });
+    // Broadcast notification with empty message
+    await mockBackend.registerEvent({
+      __type: "WebNotificationEvent",
+      title: "Simple Alert",
+      message: "",
+    });
 
     const calls = await page.evaluate(() => (window as any).__notificationCalls);
     expect(calls.length).toBe(1);

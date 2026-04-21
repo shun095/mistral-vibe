@@ -154,24 +154,6 @@ export async function callVibeClient<T extends keyof Window & {
  * Show a question popup via vibeClient.
  * Used by E2E tests that need to simulate question popup events.
  */
-export async function showQuestionPopup(
-  page: Page,
-  event: Record<string, unknown>
-): Promise<void> {
-  await callVibeClient(page, "showQuestionPopup", event);
-}
-
-/**
- * Trigger a WebNotificationEvent via vibeClient.
- * Used by E2E tests that need to simulate notification events.
- */
-export async function triggerWebNotification(
-  page: Page,
-  detail: Record<string, unknown>
-): Promise<void> {
-  await callVibeClient(page, "handleEvent", detail);
-}
-
 /**
  * Simulate an image attachment via vibeClient.
  * Sets up the image data and triggers the preview.

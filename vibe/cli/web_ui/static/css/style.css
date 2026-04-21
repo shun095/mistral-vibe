@@ -1702,3 +1702,40 @@ body {
     text-align: center;
     color: var(--text-muted);
 }
+
+/* Tool formatter static styles */
+.tool-formatter-more-lines {
+    padding: 8px 12px;
+    color: #a0a0a0;
+    font-style: italic;
+}
+
+.tool-formatter-diagnostics {
+    margin-top: 12px;
+    padding: 8px 12px;
+    background-color: var(--bg-tertiary);
+    border-radius: 4px;
+}
+
+.tool-formatter-warnings {
+    padding: 8px 12px;
+    background-color: #3a2a1a;
+    border-radius: 4px;
+    margin-bottom: 8px;
+}
+
+.tool-formatter-code-block {
+    margin-top: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+    max-height: 400px;
+    overflow-y: auto;
+    cursor: pointer;
+}
+
+.tool-formatter-path {
+    padding: 8px 12px 0;
+    font-family: monospace;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}

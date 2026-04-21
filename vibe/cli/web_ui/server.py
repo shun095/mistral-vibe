@@ -1088,4 +1088,38 @@ def create_app(  # noqa: PLR0915
             usage = store.get_usage()
             return JSONResponse({"usage": usage})
 
+        @app.post("/api/test/mock-events")
+        async def broadcast_mock_event(
+            event_data: dict,
+            _request: Request = Depends(verify_request_auth),  # noqa: B008
+        ) -> JSONResponse:
+            """Broadcast a mock event to all connected WebSocket clients.
+
+            Args:
+                event_data: Event payload with at least a '__type' field.
+
+            Returns:
+                Confirmation of broadcast.
+            """
+            clients = getattr(app.state, "websocket_clients", set())
+            if not clients:
+                return JSONResponse({
+                    "success": True,
+                    "message": "No connected clients",
+                })
+
+            message = json.dumps({"type": "event", "event": event_data})
+
+            disconnected: list = []
+            for ws in clients:
+                try:
+                    await ws.send_text(message)
+                except Exception:
+                    disconnected.append(ws)
+
+            for ws in disconnected:
+                clients.discard(ws)
+
+            return JSONResponse({"success": True, "message": "Event broadcast"})
+
     return app
