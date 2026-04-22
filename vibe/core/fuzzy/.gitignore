@@ -1,0 +1,12 @@
+# Generated C files from Cython
+*.c
+
+# Compiled extension modules
+*.so
+
+# Build directory
+build/
+
+# Python cache
+__pycache__/
+*.pyc

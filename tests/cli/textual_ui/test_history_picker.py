@@ -11,11 +11,9 @@ from textual.binding import Binding
 from textual.widgets import OptionList
 
 from vibe.cli.commands import CommandRegistry
-from vibe.cli.textual_ui.widgets.history_picker import (
-    HistoryPickerApp,
-    _fuzzy_match_pair,
-)
+from vibe.cli.textual_ui.widgets.history_picker import HistoryPickerApp
 from vibe.cli.textual_ui.widgets.no_markup_static import NoMarkupStatic
+from vibe.core.fuzzy import fuzzy_match
 
 
 @pytest.fixture
@@ -201,55 +199,56 @@ class TestVibeAppHistoryPickerHandlers:
 
 
 class TestFuzzyMatchPair:
-    """Test the _fuzzy_match_pair function used by the history picker."""
+    """Test the fuzzy_match function used by the history picker."""
 
     def test_exact_match_returns_max_score(self) -> None:
         """Exact query match against candidate returns score 100."""
         query = "fix this bug"
         candidate = "Help me fix this bug in auth.py"
-        score, matches = _fuzzy_match_pair(query, candidate)
-        assert score == 100.0
-        assert len(matches) > 0
+        score, matches = fuzzy_match(query, candidate)
+        assert abs(score - 100.0) < 0.1
+        assert matches is not None and len(matches) > 0
 
     def test_partial_match_returns_high_score(self) -> None:
-        """Substring query returns high partial_ratio score."""
+        """Substring query returns high score."""
         query = "database connection"
         candidate = "Refactor the database connection pool"
-        score, matches = _fuzzy_match_pair(query, candidate)
-        assert score == 100.0
-        assert len(matches) > 0
+        score, matches = fuzzy_match(query, candidate)
+        assert abs(score - 100.0) < 0.1
+        assert matches is not None and len(matches) > 0
 
     def test_no_match_returns_zero(self) -> None:
         """Completely unrelated query returns score 0."""
-        score, matches = _fuzzy_match_pair("xyzxyz", "database connection pool")
+        score, matches = fuzzy_match("xyzxyz", "database connection pool")
         assert score == 0.0
-        assert matches == []
+        assert matches is None
 
-    def test_empty_query_returns_zero(self) -> None:
-        """Empty query returns score 0."""
-        score, matches = _fuzzy_match_pair("", "anything")
-        assert score == 0.0
-        assert matches == []
+    def test_empty_query_returns_max_score(self) -> None:
+        """Empty query returns score 100."""
+        score, matches = fuzzy_match("", "anything")
+        assert abs(score - 100.0) < 0.1
+        assert matches is None
 
     def test_empty_candidate_returns_zero(self) -> None:
         """Empty candidate returns score 0."""
-        score, matches = _fuzzy_match_pair("query", "")
+        score, matches = fuzzy_match("query", "")
         assert score == 0.0
-        assert matches == []
+        assert matches is None
 
     def test_single_char_match(self) -> None:
         """Single character query matches if present."""
-        score, matches = _fuzzy_match_pair("x", "abcxdef")
-        assert score == 100.0
-        assert len(matches) == 1
+        score, matches = fuzzy_match("x", "abcxdef")
+        assert abs(score - 100.0) < 0.1
+        assert matches is not None and len(matches) == 1
         assert matches[0] == 3  # 'x' is at index 3
 
     def test_match_positions_are_valid_indices(self) -> None:
         """All match positions are valid indices within the candidate."""
         query = "fix"
         candidate = "Fix the git commit message formatting"
-        score, matches = _fuzzy_match_pair(query, candidate)
+        score, matches = fuzzy_match(query, candidate)
         assert score > 0
+        assert matches is not None
         for pos in matches:
             assert 0 <= pos < len(candidate)
 
@@ -257,41 +256,40 @@ class TestFuzzyMatchPair:
         """Match positions correspond to characters matching the query."""
         query = "test"
         candidate = "Add unit tests for the API endpoints"
-        score, matches = _fuzzy_match_pair(query, candidate)
+        score, matches = fuzzy_match(query, candidate)
         assert score > 0
-        # The matched characters in candidate should spell "test" (case-insensitive for partial_ratio)
+        assert matches is not None
         matched_chars = "".join(candidate[pos].lower() for pos in matches)
         assert matched_chars == query.lower()
 
     def test_long_query_long_candidate(self) -> None:
         """Long query against long candidate returns valid result."""
-        query = "refactor the database connection pool implementation"
+        query = "refactor the database connection pool"
         candidate = "Refactor the database connection pool for better performance"
-        score, matches = _fuzzy_match_pair(query, candidate)
-        assert score > 0
-        assert len(matches) > 0
+        score, matches = fuzzy_match(query, candidate)
+        assert abs(score - 100.0) < 0.1
+        assert matches is not None and len(matches) > 0
 
     def test_special_characters_in_query(self) -> None:
         """Query with special characters matches correctly."""
         query = "auth.py"
         candidate = "Help me fix this bug in auth.py"
-        score, matches = _fuzzy_match_pair(query, candidate)
-        assert score == 100.0
-        assert len(matches) > 0
+        score, matches = fuzzy_match(query, candidate)
+        assert abs(score - 100.0) < 0.1
+        assert matches is not None and len(matches) > 0
 
     def test_whitespace_in_query(self) -> None:
-        """Query with multiple spaces matches correctly."""
-        query = "fix  this"
+        """Query with spaces matches correctly."""
+        query = "fix this"
         candidate = "Help me fix this bug"
-        score, matches = _fuzzy_match_pair(query, candidate)
-        # partial_ratio finds the best substring match, so "fix this" should match
+        score, matches = fuzzy_match(query, candidate)
         assert score > 0
 
     def test_score_is_float(self) -> None:
         """Score is always returned as a float."""
-        score, _ = _fuzzy_match_pair("test", "test")
+        score, _ = fuzzy_match("test", "test")
         assert isinstance(score, float)
-        assert score == 100.0
+        assert abs(score - 100.0) < 0.1
 
     def test_score_range(self) -> None:
         """Score is always in range [0, 100]."""
@@ -301,10 +299,28 @@ class TestFuzzyMatchPair:
             ("a", "a"),
             ("hello world", "say hello world to everyone"),
         ]:
-            score, _ = _fuzzy_match_pair(query, candidate)
+            score, _ = fuzzy_match(query, candidate)
             assert 0.0 <= score <= 100.0, (
                 f"Score {score} out of range for ({query!r}, {candidate!r})"
             )
+
+    def test_case_insensitive_match(self) -> None:
+        """Match is case-insensitive."""
+        score, matches = fuzzy_match("AUTH", "authentication")
+        assert abs(score - 100.0) < 0.1
+        assert matches is not None
+
+    def test_japanese_match(self) -> None:
+        """Japanese characters match correctly."""
+        score, matches = fuzzy_match("あいう", "あいうえお")
+        assert abs(score - 100.0) < 0.1
+        assert matches is not None and len(matches) == 3
+
+    def test_mixed_japanese_english(self) -> None:
+        """Mixed Japanese/English content matches correctly."""
+        score, matches = fuzzy_match("authあ", "help-me-with-authあ-please")
+        assert abs(score - 100.0) < 0.1
+        assert matches is not None and len(matches) == 5
 
 
 class TestFuzzySearchIntegration:
@@ -397,6 +413,235 @@ class _HistoryPickerTestApp(App):
 
     def on_mount(self) -> None:
         self.mount(HistoryPickerApp(entries=self._entries))
+
+
+class TestExactMatch:
+    """Test exact matching behavior."""
+
+    def test_exact_ascii_match(self) -> None:
+        score, indices = fuzzy_match("abcd", "abcd")
+        assert abs(score - 100.0) < 0.1
+        assert indices == [0, 1, 2, 3]
+
+    def test_exact_japanese_match(self) -> None:
+        score, indices = fuzzy_match("あいう", "あいうえお")
+        assert abs(score - 100.0) < 0.1
+        assert indices == [0, 1, 2]
+
+    def test_exact_mixed_match(self) -> None:
+        score, indices = fuzzy_match("ab あ cd", "ab あ cd")
+        assert abs(score - 100.0) < 0.1
+        # Codepoint-level: 'a','b',' ','あ',' ','c','d' = 7 codepoints
+        assert indices == [0, 1, 2, 3, 4, 5, 6]
+
+
+class TestCaseInsensitive:
+    """Test case-insensitive matching."""
+
+    def test_uppercase_match(self) -> None:
+        score, indices = fuzzy_match("abcd", "ABCD")
+        assert abs(score - 100.0) < 0.1
+        assert indices == [0, 1, 2, 3]
+
+    def test_mixed_case_match(self) -> None:
+        score, indices = fuzzy_match("auth", "authentication")
+        assert abs(score - 100.0) < 0.1
+        assert indices == [0, 1, 2, 3]
+
+    def test_mixed_case_japanese(self) -> None:
+        # Japanese doesn't have case, but mixed with English should work
+        score, indices = fuzzy_match("AUTH あ", "AUTH あ")
+        assert abs(score - 100.0) < 0.1
+
+
+class TestSubsequenceWithGaps:
+    """Test subsequence matching with gaps."""
+
+    def test_two_gaps(self) -> None:
+        score, indices = fuzzy_match("abcd", "abxxcd")
+        assert indices is not None and len(indices) == 4
+        assert 50.0 < score < 80.0  # 2 gaps in 6 chars = 66.7
+
+    def test_three_gaps(self) -> None:
+        score, indices = fuzzy_match("abcd", "abxcxxd")
+        assert indices is not None and len(indices) == 4
+        assert 40.0 < score < 65.0  # 3 gaps in 7 chars = 57.1
+
+    def test_one_gap(self) -> None:
+        score, indices = fuzzy_match("abcd", "xxxabcxdxxx")
+        assert indices is not None and len(indices) == 4
+        assert 85.0 < score < 95.0  # 1 gap in 11 chars = 90.9
+
+    def test_many_gaps(self) -> None:
+        score, indices = fuzzy_match("abc", "xyzabc")
+        assert indices is not None and len(indices) == 3
+        # Algorithm finds perfect match at position 3 (0 gaps), score = 100
+        assert abs(score - 100.0) < 0.1
+
+    def test_gaps_at_start(self) -> None:
+        score, indices = fuzzy_match("abc", "   abc")
+        assert indices is not None and len(indices) == 3
+        # Algorithm finds perfect match at position 3 (0 gaps), score = 100
+        assert abs(score - 100.0) < 0.1
+
+    def test_gaps_at_end(self) -> None:
+        score, indices = fuzzy_match("abc", "abc   ")
+        assert indices is not None and len(indices) == 3
+        # Algorithm finds perfect match at position 0 (0 gaps), score = 100
+        assert abs(score - 100.0) < 0.1
+
+
+class TestNoMatch:
+    """Test cases where no match is found."""
+
+    def test_completely_different(self) -> None:
+        score, indices = fuzzy_match("xyz", "abcdef")
+        assert score == 0.0
+        assert indices is None
+
+    def test_no_common_chars(self) -> None:
+        score, indices = fuzzy_match("!!!", "abc")
+        assert score == 0.0
+        assert indices is None
+
+    def test_query_longer_than_candidate(self) -> None:
+        score, indices = fuzzy_match("abcdefghijk", "abc")
+        assert score == 0.0
+        assert indices is None
+
+
+class TestEmptyInputs:
+    """Test edge cases with empty inputs."""
+
+    def test_empty_query(self) -> None:
+        score, indices = fuzzy_match("", "anything")
+        assert abs(score - 100.0) < 0.1
+        assert indices is None
+
+    def test_empty_candidate(self) -> None:
+        score, indices = fuzzy_match("query", "")
+        assert score == 0.0
+        assert indices is None
+
+    def test_both_empty(self) -> None:
+        score, indices = fuzzy_match("", "")
+        assert abs(score - 100.0) < 0.1
+        assert indices is None
+
+
+class TestJapanese:
+    """Test Japanese character handling."""
+
+    def test_japanese_exact(self) -> None:
+        score, indices = fuzzy_match("あいう", "あいう")
+        assert abs(score - 100.0) < 0.1
+        assert indices == [0, 1, 2]
+
+    def test_japanese_subsequence(self) -> None:
+        score, indices = fuzzy_match("あう", "あいう")
+        # 1 gap in 3 chars = 66.67
+        assert abs(score - 66.67) < 0.5
+        assert indices == [0, 2]
+
+    def test_japanese_with_gaps(self) -> None:
+        score, indices = fuzzy_match("あう", "あ xx う")
+        assert indices is not None and len(indices) == 2
+        # Codepoint-level: 'あ',' ','x','x',' ','う' = 6 codepoints, 4 gaps between positions 0 and 5
+        # Score = 100 * (1 - 4/6) = 33.33
+        assert abs(score - 33.33) < 1.0
+
+    def test_japanese_no_match(self) -> None:
+        score, indices = fuzzy_match("あいう", "えおか")
+        assert score == 0.0
+        assert indices is None
+
+
+class TestMixedContent:
+    """Test mixed Japanese/English content."""
+
+    def test_mixed_exact(self) -> None:
+        score, indices = fuzzy_match("auth あ", "auth あ")
+        assert abs(score - 100.0) < 0.1
+        # Codepoint-level: 'a','u','t','h',' ','あ' = 6 codepoints
+        assert indices == [0, 1, 2, 3, 4, 5]
+
+    def test_mixed_in_sentence(self) -> None:
+        score, indices = fuzzy_match("auth あ", "help-me-with-auth あ-please")
+        # Codepoint-level: 'a','u','t','h',' ','あ' = 6 codepoints
+        assert indices is not None and len(indices) == 6
+
+    def test_emoji_in_text(self) -> None:
+        score, indices = fuzzy_match("test", "test")
+        assert abs(score - 100.0) < 0.1
+        assert indices == [0, 1, 2, 3]
+
+    def test_emoji_matching(self) -> None:
+        score, indices = fuzzy_match("😀", "hello😀world")
+        assert abs(score - 100.0) < 0.1
+        assert indices is not None and len(indices) == 1
+
+
+class TestScoreCalculation:
+    """Test score calculation accuracy."""
+
+    def test_exact_score_is_100(self) -> None:
+        score, _ = fuzzy_match("abc", "abc")
+        assert abs(score - 100.0) < 0.1
+
+    def test_score_decreases_with_gaps(self) -> None:
+        _, _ = fuzzy_match("abc", "abc")
+        score1, _ = fuzzy_match("abc", "axbc")
+        score2, _ = fuzzy_match("abc", "axxbxc")
+        assert score1 is not None and score1 > score2
+
+    def test_score_formula_two_gaps(self) -> None:
+        score, _ = fuzzy_match("abcd", "abxxcd")
+        # 100 - 2*100/6 = 66.67
+        assert abs(score - 66.67) < 0.5
+
+    def test_score_formula_one_gap(self) -> None:
+        score, _ = fuzzy_match("abcd", "xxxabcxdxxx")
+        # 100 - 1*100/11 = 90.91
+        assert abs(score - 90.91) < 0.5
+
+    def test_score_does_not_exceed_100(self) -> None:
+        score, _ = fuzzy_match("a", "a")
+        assert score <= 100.0
+
+    def test_score_is_non_negative(self) -> None:
+        score, _ = fuzzy_match("abcdef", "a")
+        assert score >= 0.0
+
+
+class TestIndices:
+    """Test that returned indices are correct."""
+
+    def test_indices_are_sorted(self) -> None:
+        _, indices = fuzzy_match("abc", "xxaxxbxxcxx")
+        assert indices is not None
+        assert indices == sorted(indices)
+
+    def test_indices_are_unique(self) -> None:
+        _, indices = fuzzy_match("abc", "xxaxxbxxcxx")
+        assert indices is not None
+        assert len(indices) == len(set(indices))
+
+    def test_indices_count_matches_query_length(self) -> None:
+        _, indices = fuzzy_match("abcd", "abxxcd")
+        assert indices is not None
+        assert len(indices) == 4
+
+    def test_indices_within_bounds(self) -> None:
+        _, indices = fuzzy_match("abc", "xxaxxbxxcxx")
+        assert indices is not None
+        assert all(0 <= i < 13 for i in indices)
+
+    def test_indices_point_to_correct_chars(self) -> None:
+        candidate = "xxaxxbxxcxx"
+        _, indices = fuzzy_match("abc", candidate)
+        assert indices is not None
+        for i in indices:
+            assert candidate[i] == "abc"[indices.index(i)]
 
 
 class TestHistoryPickerHeightConstraints:

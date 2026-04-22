@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any, ClassVar
 
-from rapidfuzz import fuzz
-from rapidfuzz.distance import LCSseq
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
@@ -15,21 +12,7 @@ from textual.widgets import Input, OptionList
 from textual.widgets.option_list import Option
 
 from vibe.cli.textual_ui.widgets.no_markup_static import NoMarkupStatic
-
-
-def _fuzzy_match_pair(query: str, candidate: str) -> tuple[float, list[int]]:
-    """Single fuzzy match — runs in worker process."""
-    score = fuzz.partial_ratio(query, candidate)
-    if score == 0:
-        return (0.0, [])
-    opcodes = LCSseq.opcodes(query, candidate)
-    matches = [
-        dest_start
-        for op in opcodes
-        if op.tag == "equal"
-        for dest_start in range(op.dest_start, op.dest_end)
-    ]
-    return (float(score), matches)
+from vibe.core.fuzzy import fuzzy_match_batch
 
 
 class _SearchInput(Input):
@@ -40,12 +23,9 @@ class _SearchInput(Input):
             self.post_message(HistoryPickerApp.Cancelled())
             event.stop()
         elif event.key == "enter":
-            try:
-                option_list = self.app.query_one(OptionList)
-                if option_list.options:
-                    option_list.action_select()
-            except Exception:
-                pass
+            option_list = self.app.query_one(OptionList, expect_found=False)  # type: ignore[call-arg]
+            if option_list is not None and option_list.options:
+                option_list.action_select()
             event.stop()
 
 
@@ -100,34 +80,30 @@ class HistoryPickerApp(Container):
         self.query_one(Input).focus()
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        self._update_options(event.value)
+        # Defer options update to avoid modifying OptionList during event handling
+        self.call_later(self._update_options, event.value)
 
     def _update_options(self, query: str) -> None:
         option_list = self.query_one(OptionList)
         options: list[Option] = []
 
         if query:
-            # Parallel fuzzy matching with ThreadPoolExecutor
             previews = [e.replace("\n", " ") for e in self._entries]
-            pairs = [(query, preview) for preview in previews]
-            with ThreadPoolExecutor(max_workers=4) as executor:
-                results = list(
-                    executor.map(_fuzzy_match_pair, *zip(*pairs, strict=False))
-                )
-            scored = [
-                (score, idx, preview, matches)
-                for idx, (preview, (score, matches)) in enumerate(
-                    zip(previews, results, strict=False)
-                )
-                if score > 0
-            ]
+            results = fuzzy_match_batch(query, previews)
+            scored: list[tuple[float, int, str, list[int]]] = []
+            for idx, (score, matches) in enumerate(results):
+                if matches is not None and score > 0:
+                    scored.append((score, idx, previews[idx], matches))
             scored.sort(key=lambda x: x[0], reverse=True)
 
-            for _score, idx, preview, matches in scored[:50]:
-                display = Text(preview, no_wrap=True)
-                for pos in matches:
-                    display.stylize("bold yellow", pos, pos + 1)
-                options.append(Option(display, id=str(idx)))
+            if scored:
+                for _score, idx, preview, matches in scored[:50]:
+                    display = Text(preview, no_wrap=True)
+                    for pos in matches:
+                        display.stylize("bold yellow", pos, pos + 1)
+                    options.append(Option(display, id=str(idx)))
+            else:
+                options.append(Option(Text("No matches", style="dim"), id="_no_match"))
         else:
             for idx, entry in enumerate(self._entries):
                 preview = entry.replace("\n", " ")
@@ -138,7 +114,7 @@ class HistoryPickerApp(Container):
         option_list.add_options(options)
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        if event.option.id is not None:
+        if event.option.id is not None and event.option.id != "_no_match":
             idx = int(event.option.id)
             self.post_message(self.HistorySelected(self._entries[idx]))
 
