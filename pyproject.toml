@@ -56,7 +56,6 @@ dependencies = [
     "pyperclip>=1.11.0",
     "python-dotenv>=1.0.0",
     "pyyaml>=6.0.0",
-    "rapidfuzz>=3.0.0",
     "requests>=2.20.0",
     "rich>=14.0.0",
     "sounddevice>=0.5.1",
@@ -79,7 +78,7 @@ Issues = "https://github.com/mistralai/mistral-vibe/issues"
 Documentation = "https://github.com/mistralai/mistral-vibe#readme"
 
 [build-system]
-requires = ["hatchling", "hatch-vcs", "editables"]
+requires = ["hatchling", "hatch-vcs", "editables", "Cython>=3.0.0", "setuptools", "hatch-build-scripts"]
 build-backend = "hatchling.build"
 
 [tool.hatch.metadata]
@@ -88,6 +87,9 @@ allow-direct-references = true
 [tool.hatch.build.targets.wheel]
 include = ["vibe/"]
 
+[[tool.hatch.build.hooks.build-scripts.scripts]]
+commands = ["python scripts/build_cython.py"]
+artifacts = ["vibe/core/fuzzy/*.so", "vibe/core/fuzzy/*.c"]
 
 [project.scripts]
 vibe = "vibe.cli.entrypoint:main"

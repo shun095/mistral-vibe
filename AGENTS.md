@@ -332,6 +332,20 @@ npm run test:e2e:headed           # Visible browser
   cat /tmp/vibe-e2e-server-*.pid | xargs -r kill -9 2>/dev/null || true
   ```
 
+### Build Commands
+
+```bash
+# Build Cython extensions (required for performance-critical modules)
+uv run python scripts/build_cython.py    # Manual build
+uv sync --no-editable                   # Build with dependencies (triggers build hook)
+
+# For wheel builds (build hooks run automatically)
+uv build --wheel
+```
+
+**Note:** Editable installs (`uv sync` without `--no-editable`) do not run build hooks. Use `--no-editable` or manually run the build script to compile Cython extensions.
+
+
 ## Tool Usage Guidelines
 
 Always use dedicated tools instead of `bash` when available. Use `bash` only for:
