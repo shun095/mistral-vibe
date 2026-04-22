@@ -6,6 +6,7 @@ from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Container, Vertical
+from textual.css.query import NoMatches
 from textual.events import Key
 from textual.message import Message
 from textual.widgets import Input, OptionList
@@ -23,9 +24,12 @@ class _SearchInput(Input):
             self.post_message(HistoryPickerApp.Cancelled())
             event.stop()
         elif event.key == "enter":
-            option_list = self.app.query_one(OptionList, expect_found=False)  # type: ignore[call-arg]
-            if option_list is not None and option_list.options:
-                option_list.action_select()
+            try:
+                option_list = self.app.query_one(OptionList)
+                if option_list.options:
+                    option_list.action_select()
+            except NoMatches:
+                pass
             event.stop()
 
 
@@ -69,6 +73,8 @@ class HistoryPickerApp(Container):
     def on_mount(self) -> None:
         self.query_one(Input).focus()
         self._update_options("")
+        if self.query_one(OptionList).options:
+            self.query_one(OptionList).highlighted = 0
 
     def action_navigate_up(self) -> None:
         self.query_one(OptionList).action_cursor_up()
@@ -112,6 +118,8 @@ class HistoryPickerApp(Container):
 
         option_list.clear_options()
         option_list.add_options(options)
+        if options and options[0].id != "_no_match":
+            option_list.highlighted = 0
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         if event.option.id is not None and event.option.id != "_no_match":
