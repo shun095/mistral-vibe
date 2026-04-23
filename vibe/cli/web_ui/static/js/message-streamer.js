@@ -13,6 +13,8 @@ export class MessageStreamer {
         this.activeReasoningId = null;
         this.activeAssistantId = null;
         this.activeToolCallId = null;
+        // Track start times for tool calls (id -> timestamp in ms)
+        this._toolCallStartTimes = new Map();
     }
 
     /**
@@ -122,10 +124,12 @@ export class MessageStreamer {
      * @private
      */
     _handleToolResultEvent(event) {
-        const { tool_call_id: toolCallId, tool_name, result, error, skipped, skip_reason } = event;
+        const { tool_call_id: toolCallId, tool_name, result, error, skipped, skip_reason, duration } = event;
+        const startTime = this._toolCallStartTimes.get(toolCallId) || null;
+        this._toolCallStartTimes.delete(toolCallId);
 
         if (this.callbacks.onToolResult) {
-            this.callbacks.onToolResult({ toolCallId, tool_name, result, error, skipped, skip_reason });
+            this.callbacks.onToolResult({ toolCallId, tool_name, result, error, skipped, skip_reason, duration, startTime });
         }
     }
 
@@ -214,7 +218,9 @@ export class MessageStreamer {
      */
     _startToolCall(id, name, args) {
         this.activeToolCallId = id;
-        const payload = { id, name, arguments: args };
+        const now = Date.now();
+        this._toolCallStartTimes.set(id, now);
+        const payload = { id, name, arguments: args, startTime: now };
         if (this.callbacks.onToolCallStart) {
             this.callbacks.onToolCallStart(payload);
         }
@@ -270,6 +276,7 @@ export class MessageStreamer {
         this.activeReasoningId = null;
         this.activeAssistantId = null;
         this.activeToolCallId = null;
+        this._toolCallStartTimes.clear();
     }
 }
 

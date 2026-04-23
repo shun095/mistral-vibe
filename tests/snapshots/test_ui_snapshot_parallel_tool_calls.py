@@ -64,6 +64,8 @@ class ParallelToolCallsApp(App):
             widget._spinner.reset()
             if widget._indicator_widget:
                 widget._indicator_widget.update(widget._spinner.current_frame())
+            if widget._text_widget:
+                widget._text_widget.update(widget.get_content())
 
     async def resolve_all_results(self) -> None:
         if self._handler is None:

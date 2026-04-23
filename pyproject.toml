@@ -141,14 +141,14 @@ type = "forbidden"
 source_modules = ["vibe.core.*"]
 forbidden_modules = ["vibe.acp.*"]
 
-# core は cli を依存してはいけない（origin/main に存在する terminal_setup 依存のみ許可）
+# core は cli を依存してはいけない（terminal_detect 依存のみ許可）
 [[tool.importlinter.contracts]]
 name = "Core has no dependencies on CLI"
 type = "forbidden"
 source_modules = ["vibe.core.*"]
 forbidden_modules = ["vibe.cli.*"]
 ignore_imports = [
-    "vibe.core.agent_loop -> vibe.cli.terminal_setup",
+    "vibe.core.agent_loop -> vibe.cli.terminal_detect",
 ]
 
 # cli/acp は互いに依存してはいけない

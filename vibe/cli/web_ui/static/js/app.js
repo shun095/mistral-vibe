@@ -11,6 +11,7 @@ import { WebSocketClient } from './websocket-client.js';
 import { APIClient } from './api-client.js';
 import { MessageStreamer } from './message-streamer.js';
 import { showBrowserNotification } from './notification.js';
+import { formatDuration } from './format-utils.js';
 import * as toolFormatters from './tool-formatters.js';
 
 class VibeClient {
@@ -34,6 +35,7 @@ class VibeClient {
         this.currentToolCall = null;
         this.currentToolCallId = null;
         this.toolCallMap = new Map(); // Map<toolCallId, toolCallElement>
+        this._toolCallTimers = new Map(); // Map<toolCallId, {intervalId, startTime}>
         this._preferCollapsed = true; // Track collapse preference
 
         // Event listener registry for cleanup
@@ -660,7 +662,37 @@ class VibeClient {
         this.currentToolCall = toolCallDiv;
         this.currentToolCallId = data.id;
         this.toolCallMap.set(data.id, toolCallDiv);
+        const startTime = data.startTime || Date.now();
+        if (!data.startTime) {
+            console.warn('[VibeClient] ToolCallEvent missing startTime, falling back to current time');
+        }
+        this._startElapsedTimer(data.id, toolCallDiv, startTime);
         this.scrollToBottom();
+    }
+
+    _startElapsedTimer(toolCallId, toolCallDiv, startTime) {
+        const updateElapsed = () => {
+            const statusSpan = toolCallDiv.querySelector('.tool-status');
+            if (!statusSpan) {
+                clearInterval(intervalId);
+                this._toolCallTimers.delete(toolCallId);
+                return;
+            }
+            const elapsed = (Date.now() - startTime) / 1000;
+            const icon = statusSpan.querySelector('.material-symbols-outlined, .material-symbols-rounded');
+            const iconHtml = icon ? icon.outerHTML : '<span class="material-symbols-outlined">hourglass_empty</span>';
+            statusSpan.innerHTML = `${iconHtml} Running... ${formatDuration(elapsed)}`;
+        };
+        const intervalId = setInterval(updateElapsed, 500);
+        this._toolCallTimers.set(toolCallId, { intervalId, startTime });
+    }
+
+    _stopElapsedTimer(toolCallId) {
+        const timer = this._toolCallTimers.get(toolCallId);
+        if (timer) {
+            clearInterval(timer.intervalId);
+            this._toolCallTimers.delete(toolCallId);
+        }
     }
 
     _updateExistingToolCall(data) {
@@ -709,6 +741,18 @@ class VibeClient {
             return;
         }
 
+        // Stop the elapsed timer
+        this._stopElapsedTimer(data.toolCallId);
+
+        // Compute duration: prefer server-side duration, fallback to client-side calculation
+        let durationSec = null;
+        if (data.duration != null) {
+            durationSec = data.duration;
+        } else if (data.startTime) {
+            durationSec = (Date.now() - data.startTime) / 1000;
+        }
+        const durationStr = durationSec != null ? ` (${formatDuration(durationSec)})` : '';
+
         // Capture scroll height BEFORE modifying content
         const previousScrollHeight = this.elements.messages.scrollHeight;
 
@@ -716,13 +760,13 @@ class VibeClient {
         const contentDiv = toolCallElement.querySelector('.content');
 
         if (data.error) {
-            if (statusSpan) statusSpan.innerHTML = '<span class="material-symbols-rounded">error</span> Failed';
+            if (statusSpan) statusSpan.innerHTML = `<span class="material-symbols-rounded">error</span> Failed${durationStr}`;
             contentDiv.appendChild(this._createErrorDiv(data.error));
         } else if (data.result) {
-            if (statusSpan) statusSpan.innerHTML = '<span class="material-symbols-rounded">check_circle</span> Completed';
+            if (statusSpan) statusSpan.innerHTML = `<span class="material-symbols-rounded">check_circle</span> Completed${durationStr}`;
             contentDiv.appendChild(this.formatToolResult(data.tool_name, data.result));
         } else if (data.skipped) {
-            if (statusSpan) statusSpan.innerHTML = '<span class="material-symbols-rounded">skip_next</span> Skipped';
+            if (statusSpan) statusSpan.innerHTML = `<span class="material-symbols-rounded">skip_next</span> Skipped${durationStr}`;
             contentDiv.appendChild(this._createSkipDiv(data.skip_reason));
         }
 
@@ -2340,6 +2384,12 @@ class VibeClient {
             this.statusPollInterval = null;
         }
 
+        // Clean up elapsed timers to prevent leaks
+        for (const [, timer] of this._toolCallTimers) {
+            clearInterval(timer.intervalId);
+        }
+        this._toolCallTimers.clear();
+
         // Remove all registered event listeners
         for (const { el, event, handler } of this._listeners) {
             el?.removeEventListener?.(event, handler);
@@ -2376,3 +2426,4 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 export { VibeClient };
+export { formatDuration } from './format-utils.js';

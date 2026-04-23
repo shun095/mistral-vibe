@@ -161,11 +161,11 @@ describe('MessageStreamer', () => {
 
             streamer.handleEvent(event);
 
-            expect(callbacks.onToolCallStart).toHaveBeenCalledWith({
-                id: 'tool-1',
-                name: 'search',
-                arguments: { query: 'test' }
-            });
+            const callArgs = callbacks.onToolCallStart.mock.calls[0][0];
+            expect(callArgs.id).toBe('tool-1');
+            expect(callArgs.name).toBe('search');
+            expect(callArgs.arguments).toEqual({ query: 'test' });
+            expect(callArgs.startTime).toBeGreaterThan(0);
         });
 
         test('handles tool call updates', () => {
@@ -202,14 +202,39 @@ describe('MessageStreamer', () => {
 
             streamer.handleEvent(event);
 
-            expect(callbacks.onToolResult).toHaveBeenCalledWith({
-                toolCallId: 'tool-1',
-                tool_name: 'search',
-                result: { results: ['result1', 'result2'] },
-                error: undefined,
-                skipped: undefined,
-                skip_reason: undefined
+            const resultArgs = callbacks.onToolResult.mock.calls[0][0];
+            expect(resultArgs.toolCallId).toBe('tool-1');
+            expect(resultArgs.tool_name).toBe('search');
+            expect(resultArgs.result).toEqual({ results: ['result1', 'result2'] });
+            expect(resultArgs.error).toBeUndefined();
+            expect(resultArgs.skipped).toBeUndefined();
+            expect(resultArgs.skip_reason).toBeUndefined();
+            expect(resultArgs.duration).toBeUndefined();
+            expect(resultArgs.startTime).toBeNull();
+        });
+
+        test('passes startTime from prior ToolCallEvent to ToolResultEvent', () => {
+            streamer.handleEvent({
+                __type: 'ToolCallEvent',
+                tool_call_id: 'tool-2',
+                tool_name: 'bash',
+                args: { command: 'ls' }
             });
+
+            const callArgs = callbacks.onToolCallStart.mock.calls[0][0];
+            expect(callArgs.startTime).toBeGreaterThan(0);
+
+            streamer.handleEvent({
+                __type: 'ToolResultEvent',
+                tool_call_id: 'tool-2',
+                tool_name: 'bash',
+                result: { stdout: 'file1\nfile2' },
+                duration: 1.5
+            });
+
+            const resultArgs = callbacks.onToolResult.mock.calls[0][0];
+            expect(resultArgs.startTime).toBe(callArgs.startTime);
+            expect(resultArgs.duration).toBe(1.5);
         });
     });
 

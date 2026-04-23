@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import cast
 from unittest.mock import patch
 
 import pytest
@@ -170,7 +171,9 @@ def test_snapshot_mcp_refresh_shortcut(snap_compare: SnapCompare) -> None:
     async def run_before(pilot: Pilot) -> None:
         await _run_mcp_command(pilot, "/mcp")
         await pilot.press("r")
-        await pilot.pause(0.2)
+        app = cast(BaseSnapshotTestApp, pilot.app)
+        await app.wait_for_mcp_refresh()
+        await pilot.pause(0.1)
 
     with patch(_MCP_PATCH, FakeMCPRegistry):
         assert snap_compare(

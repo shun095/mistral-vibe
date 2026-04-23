@@ -7,6 +7,7 @@ import pytest
 from vibe.core.utils import get_server_url_from_api_base
 import vibe.core.utils.io as io_utils
 from vibe.core.utils.io import decode_safe, read_safe, read_safe_async
+from vibe.core.utils.time import format_duration, monotonic_now
 
 
 @pytest.mark.parametrize(
@@ -114,3 +115,41 @@ class TestReadSafeAsync:
         assert (await read_safe_async(f, raise_on_error=False)).text == "maf�\n"
         with pytest.raises(UnicodeDecodeError):
             await read_safe_async(f, raise_on_error=True)
+
+
+class TestFormatDuration:
+    @pytest.mark.parametrize(
+        ("seconds", "expected"),
+        [
+            (0.0, "0.0s"),
+            (0.1, "0.1s"),
+            (0.5, "0.5s"),
+            (1.0, "1.0s"),
+            (2.3, "2.3s"),
+            (15.7, "15.7s"),
+            (59.9, "59.9s"),
+            (60.0, "1m 0.0s"),
+            (60.5, "1m 0.5s"),
+            (83.4, "1m 23.4s"),
+            (120.0, "2m 0.0s"),
+            (300.0, "5m 0.0s"),
+            (365.7, "6m 5.7s"),
+            (600.0, "10m 0.0s"),
+        ],
+    )
+    def test_format_duration(self, seconds: float, expected: str) -> None:
+        assert format_duration(seconds) == expected
+
+    def test_format_duration_rounding(self) -> None:
+        assert format_duration(1.234) == "1.2s"
+        assert format_duration(1.256) == "1.3s"
+
+
+def test_monotonic_now_returns_positive_float() -> None:
+    assert monotonic_now() > 0.0
+
+
+def test_monotonic_now_is_increasing() -> None:
+    a = monotonic_now()
+    b = monotonic_now()
+    assert b >= a

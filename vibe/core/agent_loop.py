@@ -7,8 +7,8 @@ import copy
 from enum import StrEnum, auto
 from functools import wraps
 from http import HTTPStatus
-import json
 import inspect
+import json
 import os
 from pathlib import Path
 import threading
@@ -170,7 +170,8 @@ def _should_raise_rate_limit_error(e: Exception) -> bool:
     return isinstance(e, BackendError) and e.status == HTTPStatus.TOO_MANY_REQUESTS
 
 
-# ruff: noqa: PLR0904, PLR0913
+# ruff: noqa: PLR0913
+
 
 def requires_init(fn: Callable[..., Any]) -> Callable[..., Any]:
     """Decorator that awaits deferred initialization before executing the method."""
@@ -197,6 +198,7 @@ def requires_init(fn: Callable[..., Any]) -> Callable[..., Any]:
         return await fn(self, *args, **kwargs)
 
     return wrapper
+
 
 class AgentLoop:
     def __init__(
@@ -971,6 +973,7 @@ class AgentLoop:
             return
 
         decision: ToolDecision | None = None
+        start_time = time.perf_counter()
         try:
             decision = await self._should_execute_tool(
                 tool_instance, tool_call.validated_args, tool_call.call_id
@@ -1063,8 +1066,14 @@ class AgentLoop:
                 get_user_cancellation_message(CancellationReason.TOOL_INTERRUPTED)
             )
             self.stats.tool_calls_failed += 1
+            duration = time.perf_counter() - start_time
             yield self._tool_failure_event(
-                tool_call, cancel, decision, cancelled=True, span=span
+                tool_call,
+                cancel,
+                decision,
+                cancelled=True,
+                span=span,
+                duration=duration,
             )
             raise
 
@@ -1075,7 +1084,10 @@ class AgentLoop:
                 self.stats.tool_calls_rejected += 1
             else:
                 self.stats.tool_calls_failed += 1
-            yield self._tool_failure_event(tool_call, error_msg, decision, span=span)
+            duration = time.perf_counter() - start_time
+            yield self._tool_failure_event(
+                tool_call, error_msg, decision, span=span, duration=duration
+            )
 
     async def _handle_tool_calls(
         self, resolved: ResolvedMessage
@@ -1257,6 +1269,7 @@ class AgentLoop:
         decision: ToolDecision | None = None,
         cancelled: bool = False,
         span: trace.Span | None = None,
+        duration: float | None = None,
     ) -> ToolResultEvent:
         """Create a ToolResultEvent for a failed tool and record the failure."""
         self._handle_tool_response(tool_call, error_msg, "failure", decision, span=span)
@@ -1265,6 +1278,7 @@ class AgentLoop:
             tool_class=tool_call.tool_class,
             error=error_msg,
             cancelled=cancelled,
+            duration=duration,
             tool_call_id=tool_call.call_id,
         )
 
