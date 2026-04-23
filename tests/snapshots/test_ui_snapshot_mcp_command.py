@@ -30,6 +30,12 @@ _FAKE_CONNECTORS = {
     ],
 }
 
+_FAKE_CONNECTORS_MIXED_CONNECTION = {
+    "zeta": [],
+    "alpha": [RemoteTool(name="lookup", description="Lookup Alpha records")],
+    "beta": [],
+}
+
 
 class SnapshotTestAppNoMcpServers(BaseSnapshotTestApp):
     def __init__(self, mcp_registry: FakeMCPRegistry | None = None) -> None:
@@ -159,6 +165,21 @@ def test_snapshot_mcp_escape_closes(snap_compare: SnapCompare) -> None:
     assert snap_compare(app, terminal_size=(120, 36), run_before=run_before)
 
 
+@pytest.mark.xdist_group(name="snapshots")
+def test_snapshot_mcp_refresh_shortcut(snap_compare: SnapCompare) -> None:
+    async def run_before(pilot: Pilot) -> None:
+        await _run_mcp_command(pilot, "/mcp")
+        await pilot.press("r")
+        await pilot.pause(0.2)
+
+    with patch(_MCP_PATCH, FakeMCPRegistry):
+        assert snap_compare(
+            "test_ui_snapshot_mcp_command.py:SnapshotTestAppWithMcpServers",
+            terminal_size=(120, 36),
+            run_before=run_before,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Apps with connectors
 # ---------------------------------------------------------------------------
@@ -183,6 +204,17 @@ class SnapshotTestAppConnectorsOnly(BaseSnapshotTestApp):
         config.mcp_servers = []
         super().__init__(config=config)
         registry = FakeConnectorRegistry(connectors=_FAKE_CONNECTORS)
+        self.agent_loop.connector_registry = registry
+        self.agent_loop.tool_manager._connector_registry = registry
+        self.agent_loop.tool_manager.integrate_connectors()
+
+
+class SnapshotTestAppConnectorsMixedState(BaseSnapshotTestApp):
+    def __init__(self) -> None:
+        config = default_config()
+        config.mcp_servers = []
+        super().__init__(config=config)
+        registry = FakeConnectorRegistry(connectors=_FAKE_CONNECTORS_MIXED_CONNECTION)
         self.agent_loop.connector_registry = registry
         self.agent_loop.tool_manager._connector_registry = registry
         self.agent_loop.tool_manager.integrate_connectors()
@@ -224,6 +256,19 @@ def test_snapshot_mcp_connectors_only(snap_compare: SnapCompare) -> None:
 
 @patch.dict("os.environ", {CONNECTORS_ENV_VAR: "1"})
 @pytest.mark.xdist_group(name="snapshots")
+def test_snapshot_mcp_connectors_sorted_by_status(snap_compare: SnapCompare) -> None:
+
+    async def run_before(pilot: Pilot) -> None:
+        await _run_mcp_command(pilot, "/mcp")
+
+    assert snap_compare(
+        "test_ui_snapshot_mcp_command.py:SnapshotTestAppConnectorsMixedState",
+        terminal_size=(120, 36),
+        run_before=run_before,
+    )
+
+
+@patch.dict("os.environ", {CONNECTORS_ENV_VAR: "1"})
 def test_snapshot_mcp_drill_into_connector(snap_compare: SnapCompare) -> None:
 
     async def run_before(pilot: Pilot) -> None:

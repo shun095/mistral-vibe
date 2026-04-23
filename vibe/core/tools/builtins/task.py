@@ -174,6 +174,7 @@ This is attempt {attempt + 1} of {max_attempts}. Provide a complete multi-paragr
             agent_name=args.agent,
             entrypoint_metadata=ctx.entrypoint_metadata,
             is_subagent=True,
+            defer_heavy_init=True,
         )
 
         if ctx and ctx.approval_callback:

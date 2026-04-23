@@ -32,6 +32,15 @@ from vibe.core.config._settings import (
     VibeConfig,
     load_dotenv_values,
 )
+from vibe.core.config.schema import (
+    DuplicateMergeMetadataError,
+    MergeFieldMetadata,
+    WithConcatMerge,
+    WithConflictMerge,
+    WithReplaceMerge,
+    WithShallowMerge,
+    WithUnionMerge,
+)
 
 __all__ = [
     "DEFAULT_MISTRAL_API_ENV_KEY",
@@ -42,12 +51,14 @@ __all__ = [
     "DEFAULT_TTS_MODELS",
     "DEFAULT_TTS_PROVIDERS",
     "Backend",
+    "DuplicateMergeMetadataError",
     "LSPConfig",
     "LSPServerConfig",
     "MCPHttp",
     "MCPServer",
     "MCPStdio",
     "MCPStreamableHttp",
+    "MergeFieldMetadata",
     "MissingAPIKeyError",
     "MissingPromptFileError",
     "ModelConfig",
@@ -63,5 +74,10 @@ __all__ = [
     "TranscribeModelConfig",
     "TranscribeProviderConfig",
     "VibeConfig",
+    "WithConcatMerge",
+    "WithConflictMerge",
+    "WithReplaceMerge",
+    "WithShallowMerge",
+    "WithUnionMerge",
     "load_dotenv_values",
 ]

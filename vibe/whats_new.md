@@ -1,3 +1,3 @@
-# What's new in v2.7.6
+# What's new in v2.8.1
 
-- **Streaming fix**: Fixed markdown fence context loss causing streaming rendering problems
+- **Builtin skills system**: Added self-awareness skill for enhanced functionality
