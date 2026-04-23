@@ -62,6 +62,7 @@ from textual.widgets import Static
 from vibe import __version__ as CORE_VERSION
 from vibe.cli.clipboard import copy_selection_to_clipboard
 from vibe.cli.commands import CommandRegistry
+from vibe.cli.history_manager import HistoryManager
 from vibe.cli.narrator_manager import (
     NarratorManager,
     NarratorManagerPort,
@@ -381,8 +382,8 @@ class VibeApp(App):  # noqa: PLR0904
         self._agent_running = False
         self._interrupt_requested = False
         self._agent_task: asyncio.Task | None = None
-        self._enhancement_running = False
-        self._enhancement_task: asyncio.Task | None = None
+        self._translation_running = False
+        self._translation_task: asyncio.Task | None = None
         self._remote_manager = RemoteSessionManager()
 
         self._loading_widget: LoadingWidget | None = None
@@ -681,23 +682,6 @@ class VibeApp(App):  # noqa: PLR0904
             return
 
         await self._handle_user_message(value)
-
-    async def on_chat_input_container_prompt_enhancement_requested(
-        self, event: ChatInputContainer.PromptEnhancementRequested
-    ) -> None:
-        """Handle prompt enhancement request from Ctrl+Y keybind."""
-        original_text = event.original_text.strip()
-        if not original_text:
-            return
-
-        # Cancel any existing enhancement task
-        if self._enhancement_task and not self._enhancement_task.done():
-            self._enhancement_task.cancel()
-
-        # Start the enhancement worker concurrently with agent loop
-        self._enhancement_task = asyncio.create_task(
-            self._enhance_prompt(original_text)
-        )
 
     async def on_approval_app_approval_granted(
         self, message: ApprovalApp.ApprovalGranted
@@ -1847,16 +1831,59 @@ class VibeApp(App):  # noqa: PLR0904
 
         self._interrupt_requested = False
 
-    async def _enhance_prompt(self, original_prompt: str) -> None:
-        """Enhance the user's prompt using the LLM."""
-        if self._enhancement_running:
+    async def do_translation(self, original_text: str) -> str | None:
+        """Core translation logic shared by TUI handler and Web endpoint."""
+        if not self.agent_loop.messages:
+            return None
+
+        try:
+            from vibe.core.prompts import UtilityPrompt
+
+            translation_template = UtilityPrompt.TRANSLATION.read()
+        except Exception as e:
+            logger.warning(f"Failed to load translation template: {e}")
+            # Fallback matches vibe/core/prompts/translation.md
+            translation_template = (
+                "Translate the following text to English. "
+                "Output only the translated text, nothing else.\n\n"
+                "Text to translate:\n{text}"
+            )
+
+        user_message = translation_template.format(text=original_text)
+        system_prompt = self.agent_loop.messages[0].content
+        active_model = self.config.get_active_model()
+
+        translated_text = ""
+        async for chunk in self.agent_loop.backend.complete_streaming(
+            model=active_model,
+            messages=[
+                LLMMessage(role=Role.system, content=system_prompt),
+                LLMMessage(role=Role.user, content=user_message),
+            ],
+            temperature=0.2,
+            tools=None,
+            max_tokens=None,
+            tool_choice=None,
+            extra_headers=None,
+        ):
+            if chunk.message.content:
+                content_str = (
+                    chunk.message.content
+                    if isinstance(chunk.message.content, str)
+                    else str(chunk.message.content)
+                )
+                translated_text += content_str
+        return translated_text.strip() or None
+
+    async def _translate_prompt(self, cmd_args: str = "", **kwargs: Any) -> None:
+        """Translate the user's input text to English using the LLM."""
+        if self._translation_running:
             return
 
-        self._enhancement_running = True
+        self._translation_running = True
 
         loading_area = self.query_one("#loading-area-content")
 
-        # Remove existing loading widget if present (only one should be visible)
         if self._loading_widget and self._loading_widget.parent:
             await self._loading_widget.remove()
 
@@ -1865,46 +1892,26 @@ class VibeApp(App):  # noqa: PLR0904
         await loading_area.mount(loading)
 
         try:
-            # Load the enhancement prompt template
-            try:
-                from vibe.core.prompts import UtilityPrompt
+            original_text = cmd_args.strip()
 
-                enhancement_template = UtilityPrompt.ENHANCEMENT.read()
-            except Exception as e:
-                logger.warning(f"Failed to load enhancement template: {e}")
-                enhancement_template = """Enhance the following prompt to make it clearer and more specific:
+            if not original_text:
+                await self._mount_and_scroll(
+                    UserCommandMessage("Usage: /translate <text to translate>")
+                )
+                return
 
-{original_prompt}
+            # Save original text to history
+            history = HistoryManager(self.history_file)
+            history.add(original_text)
 
-Enhanced prompt:"""
+            translated_text = await self.do_translation(original_text)
 
-            # Create the enhancement prompt
-            prompt = enhancement_template.format(original_prompt=original_prompt)
-            # Use backend.complete_streaming directly for enhancement
-            # This runs concurrently with the agent loop
-            enhanced_text = ""
-            active_model = self.config.get_active_model()
-            async for chunk in self.agent_loop.backend.complete_streaming(
-                model=active_model,
-                messages=[LLMMessage(role=Role.user, content=prompt)],
-                temperature=0.2,
-                tools=None,
-                max_tokens=None,
-                tool_choice=None,
-                extra_headers=None,
-            ):
-                if chunk.message.content:
-                    content_str = (
-                        chunk.message.content
-                        if isinstance(chunk.message.content, str)
-                        else str(chunk.message.content)
-                    )
-                    enhanced_text += content_str
-
-            if enhanced_text.strip():
-                # Replace the original prompt with the enhanced version
+            if translated_text:
+                # Replace the input with the translated text (no chat message)
                 input_widget = self.query_one(ChatInputContainer)
-                input_widget.value = enhanced_text
+                input_widget.value = translated_text
+                # Save translated text to vibehistory for later restoration
+                history.add(translated_text)
 
         except asyncio.CancelledError:
             if self._loading_widget and self._loading_widget.parent:
@@ -1917,11 +1924,11 @@ Enhanced prompt:"""
                 ErrorMessage(str(e), collapsed=self._tools_collapsed)
             )
         finally:
-            self._enhancement_running = False
+            self._translation_running = False
             if self._loading_widget:
                 await self._loading_widget.remove()
             self._loading_widget = None
-            self._enhancement_task = None
+            self._translation_task = None
 
     async def _show_help(self, **kwargs: Any) -> None:
         help_text = self.commands.get_help_text()
@@ -3102,8 +3109,8 @@ Enhanced prompt:"""
         if self._agent_running:
             self._handle_agent_running_escape()
 
-        if self._enhancement_running and self._enhancement_task:
-            self._enhancement_task.cancel()
+        if self._translation_running and self._translation_task:
+            self._translation_task.cancel()
 
         self._last_escape_time = current_time
         chat = self._cached_chat or self.query_one("#chat", ChatScroll)

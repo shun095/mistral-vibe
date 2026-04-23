@@ -1146,6 +1146,19 @@ class VibeClient {
                     return;
                 }
 
+                // Special handling for /translate - translate input text to English
+                if (command.name === 'translate') {
+                    if (!command.args) {
+                        this.addMessage('system', 'Usage: /translate <text to translate>');
+                        this.elements.input.value = '';
+                        this.autoResizeTextarea();
+                        this.updateSendButtonState();
+                        return;
+                    }
+                    await this.handleTranslate(command.args);
+                    return;
+                }
+
                 const result = await this.slashRegistry.execute(command.name, command.args);
 
                 if (result.success) {
@@ -2077,6 +2090,34 @@ class VibeClient {
         });
 
         this.updateToggleCardsIcon();
+    }
+
+    async handleTranslate(textToTranslate) {
+        try {
+            this.elements.sendBtn.disabled = true;
+            this.elements.sendBtn.textContent = '⏳';
+
+            const response = await fetch('/api/translate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: textToTranslate })
+            });
+
+            const result = await response.json();
+
+            if (result.success && result.translated) {
+                this.elements.input.value = result.translated;
+                this.autoResizeTextarea();
+                this.updateSendButtonState();
+            } else {
+                this.addMessage('system', `Translation error: ${result.error || 'Unknown error'}`);
+            }
+        } catch (error) {
+            this.addMessage('system', `Translation failed: ${error.message}`);
+        } finally {
+            this.elements.sendBtn.disabled = false;
+            this.elements.sendBtn.textContent = '➤';
+        }
     }
 
     // =========================================================================

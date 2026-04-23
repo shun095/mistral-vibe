@@ -30,7 +30,7 @@ class UtilityPrompt(Prompt):
     COMPACT = auto()
     DANGEROUS_DIRECTORY = auto()
     PROJECT_CONTEXT = auto()
-    ENHANCEMENT = auto()
+    TRANSLATION = auto()
     TURN_SUMMARY = auto()
 
 

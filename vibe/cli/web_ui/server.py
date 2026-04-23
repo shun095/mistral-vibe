@@ -25,6 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
+from vibe.cli.history_manager import HistoryManager
 from vibe.core.utils.mime import get_mime_type
 
 if TYPE_CHECKING:
@@ -699,6 +700,47 @@ def create_app(  # noqa: PLR0915
 
         tui_app.submit_message_from_web(command_text)
         return JSONResponse({"success": True})
+
+    @app.post("/api/translate")
+    async def translate_text(
+        text_data: dict,
+        _request: Request = Depends(verify_request_auth),  # noqa: B008
+    ) -> JSONResponse:
+        """Translate input text to English using the LLM.
+
+        Args:
+            text_data: Dict with 'text' key containing the text to translate.
+
+        Returns:
+            Translated text and character counts.
+        """
+        tui_app = getattr(app.state, "tui_app", None)
+        if tui_app is None:
+            return JSONResponse({"success": False, "error": "No TUI app available"})
+
+        original_text = text_data.get("text", "").strip()
+        if not original_text:
+            return JSONResponse({"success": False, "error": "No text to translate"})
+
+        try:
+            # Delegate to TUI app's shared translation logic
+            translated_text = await tui_app.do_translation(original_text)
+
+            # Save to history file
+            history = HistoryManager(HISTORY_FILE.path)
+            history.add(original_text)
+            if translated_text:
+                history.add(translated_text)
+
+            return JSONResponse({
+                "success": True,
+                "translated": translated_text or "",
+                "original_length": len(original_text),
+                "translated_length": len(translated_text or ""),
+            })
+
+        except Exception as e:
+            return JSONResponse({"success": False, "error": str(e)})
 
     @app.get("/api/download")
     async def download_file(

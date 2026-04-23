@@ -83,3 +83,25 @@ class TestCommandRegistry:
         assert result is not None
         _, cmd, _ = result
         assert cmd.handler == "_show_data_retention"
+
+    def test_translate_command_registration(self) -> None:
+        registry = CommandRegistry()
+        assert registry.get_command_name("/translate") == "translate"
+        result = registry.parse_command("/translate hello")
+        assert result is not None
+        cmd_name, cmd, cmd_args = result
+        assert cmd_name == "translate"
+        assert cmd.handler == "_translate_prompt"
+        assert cmd_args == "hello"
+
+    def test_translate_with_args(self) -> None:
+        registry = CommandRegistry()
+        result = registry.parse_command("/translate hola mundo")
+        assert result is not None
+        assert result[2] == "hola mundo"
+
+    def test_translate_without_args(self) -> None:
+        registry = CommandRegistry()
+        result = registry.parse_command("/translate")
+        assert result is not None
+        assert result[2] == ""

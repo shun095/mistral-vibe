@@ -121,6 +121,11 @@ class CommandRegistry:
                 description="Configure voice settings",
                 handler="_show_voice_settings",
             ),
+            "translate": Command(
+                aliases=frozenset(["/translate"]),
+                description="Translate input text to English",
+                handler="_translate_prompt",
+            ),
             "leanstall": Command(
                 aliases=frozenset(["/leanstall"]),
                 description="Install the Lean 4 agent (leanstral)",

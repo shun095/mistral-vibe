@@ -543,4 +543,84 @@ describe('VibeClient', () => {
             expect(messages[0].querySelector('.content').textContent).toBe('Failed to request interrupt');
         });
     });
+
+    describe('handleTranslate', () => {
+        let originalFetch;
+
+        beforeEach(() => {
+            originalFetch = global.fetch;
+            global.fetch = jest.fn();
+        });
+
+        afterEach(() => {
+            global.fetch = originalFetch;
+        });
+
+        test('replaces input with translated text on success', async () => {
+            global.fetch.mockResolvedValue({
+                json: async () => ({
+                    success: true,
+                    translated: 'Hello world',
+                    original_length: 18,
+                    translated_length: 11,
+                }),
+            });
+
+            client.elements.input.value = 'Hola mundo';
+            await client.handleTranslate('Hola mundo');
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/translate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: 'Hola mundo' }),
+            });
+            expect(client.elements.input.value).toBe('Hello world');
+        });
+
+        test('shows error message on translation failure', async () => {
+            global.fetch.mockResolvedValue({
+                json: async () => ({
+                    success: false,
+                    error: 'Model unavailable',
+                }),
+            });
+
+            await client.handleTranslate('Hola mundo');
+
+            const messages = client.elements.messages.children;
+            expect(messages).toHaveLength(1);
+            expect(messages[0].className).toBe('message system');
+            expect(messages[0].querySelector('.content').textContent).toBe('Translation error: Model unavailable');
+        });
+
+        test('shows error message on fetch exception', async () => {
+            global.fetch.mockRejectedValue(new Error('Network error'));
+
+            await client.handleTranslate('Hola mundo');
+
+            const messages = client.elements.messages.children;
+            expect(messages).toHaveLength(1);
+            expect(messages[0].className).toBe('message system');
+            expect(messages[0].querySelector('.content').textContent).toBe('Translation failed: Network error');
+        });
+
+        test('disables send button during translation', async () => {
+            let resolveFetch;
+            global.fetch.mockReturnValue(new Promise(resolve => {
+                resolveFetch = () => resolve({
+                    json: async () => ({ success: true, translated: 'OK', original_length: 4, translated_length: 2 }),
+                });
+            }));
+
+            client.elements.sendBtn.disabled = false;
+            const promise = client.handleTranslate('test');
+
+            expect(client.elements.sendBtn.disabled).toBe(true);
+
+            resolveFetch();
+            await promise;
+
+            expect(client.elements.sendBtn.disabled).toBe(false);
+        });
+    });
 });
