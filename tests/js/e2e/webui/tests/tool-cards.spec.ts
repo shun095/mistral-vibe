@@ -3,6 +3,7 @@
  * Covers US-07 (tool call visualization), US-30-35 (tool result formatting).
  */
 
+import path from "path";
 import { test, expect } from "../fixtures";
 import { Selectors, sendMessage, waitForResponse, triggerLLMError, formatAndAppendToolResult, createReasoningCard } from "../helpers/test-utils";
 
@@ -66,12 +67,13 @@ test.describe("Tool Card Visualization", () => {
   test("should collapse and expand tool call cards", async ({
     page,
     mockBackend,
+    webServer,
   }) => {
-    // Register a tool call
+    const testPath = path.join(webServer.e2eTestDir!, "test.txt");
     await mockBackend.registerToolCall(
       "read_file",
       JSON.stringify({
-        path: "test.txt",
+        path: testPath,
         offset: 0,
         limit: 100,
       })

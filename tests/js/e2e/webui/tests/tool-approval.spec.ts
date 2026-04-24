@@ -1,3 +1,4 @@
+import path from "path";
 import { test, expect } from "../fixtures";
 import { Selectors, sendMessage, waitForResponse } from "../helpers/test-utils";
 
@@ -5,19 +6,19 @@ test.describe("Tool Approval Flow", () => {
   test("should show approval popup for write_file tool", async ({
     page,
     mockBackend,
+    webServer,
   }) => {
-    // Page is already loaded with auth by fixture
-    // write_file requires ToolPermission.ASK by default
+    const testPath = path.join(webServer.e2eTestDir!, "approval_test.txt");
     await mockBackend.registerToolCall(
       "write_file",
       JSON.stringify({
-        path: "test.txt",
+        path: testPath,
         content: "test content",
         overwrite: false,
       })
     );
 
-    await sendMessage(page, "Write test.txt");
+    await sendMessage(page, "Write test file");
 
     // Wait for approval popup
     const approvalPopup = page.locator(Selectors.approvalPopup);
@@ -31,15 +32,13 @@ test.describe("Tool Approval Flow", () => {
   test("should approve tool execution with Yes button", async ({
     page,
     mockBackend,
+    webServer,
   }) => {
-    // Page is already loaded with auth by fixture
-    // Register TWO mock responses:
-    // 1. Tool call (agent requests to write file)
-    // 2. Post-approval response (agent confirms file was written)
+    const testPath = path.join(webServer.e2eTestDir!, "approval_test.txt");
     await mockBackend.registerToolCall(
       "write_file",
       JSON.stringify({
-        path: "test.txt",
+        path: testPath,
         content: "test content",
         overwrite: false,
       })
@@ -48,7 +47,7 @@ test.describe("Tool Approval Flow", () => {
       response_text: "File written successfully",
     });
 
-    await sendMessage(page, "Write test.txt");
+    await sendMessage(page, "Write test file");
 
     // Wait for and approve via Yes button (use .popup-btn class as used in WebUI)
     const yesButton = page.locator('.popup-btn.yes:has-text("Yes")').first();
@@ -100,18 +99,19 @@ test.describe("Tool Approval Flow", () => {
   test("should show multiple approval options in popup", async ({
     page,
     mockBackend,
+    webServer,
   }) => {
-    // Page is already loaded with auth by fixture
+    const testPath = path.join(webServer.e2eTestDir!, "approval_test.txt");
     await mockBackend.registerToolCall(
       "write_file",
       JSON.stringify({
-        path: "test.txt",
+        path: testPath,
         content: "test",
         overwrite: false,
       })
     );
 
-    await sendMessage(page, "Write test.txt");
+    await sendMessage(page, "Write test file");
 
     // Wait for approval popup
     const approvalPopup = page.locator(Selectors.approvalPopup);
