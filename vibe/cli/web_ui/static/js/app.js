@@ -2153,6 +2153,7 @@ class VibeClient {
                 this.elements.input.value = result.translated;
                 this.autoResizeTextarea();
                 this.updateSendButtonState();
+                this.addMessage('system', 'Text translated to English.');
             } else {
                 this.addMessage('system', `Translation error: ${result.error || 'Unknown error'}`);
             }

@@ -1900,6 +1900,9 @@ class VibeApp(App):  # noqa: PLR0904
                 input_widget.value = translated_text
                 # Save translated text to vibehistory for later restoration
                 history.add(translated_text)
+                await self._mount_and_scroll(
+                    UserCommandMessage("Text translated to English.")
+                )
 
         except asyncio.CancelledError:
             if self._loading_widget and self._loading_widget.parent:
