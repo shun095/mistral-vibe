@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -41,7 +41,7 @@ async def test_queue_message_during_compaction():
     # Mock the event handler and compact message
     app.event_handler = MagicMock()
     compact_msg = MagicMock(spec=CompactMessage)
-    app.event_handler.current_compact = compact_msg
+    app.event_handler.get_current_compact = AsyncMock(return_value=compact_msg)
 
     # Mock the mount_and_scroll method to avoid actual mounting
     async def noop_mount_and_scroll(widget, after=None):
@@ -82,7 +82,7 @@ async def test_update_queued_message():
     # Mock the event handler and compact message
     app.event_handler = MagicMock()
     compact_msg = MagicMock(spec=CompactMessage)
-    app.event_handler.current_compact = compact_msg
+    app.event_handler.get_current_compact = AsyncMock(return_value=compact_msg)
 
     # Mock the mount_and_scroll method to avoid actual mounting
     async def noop_mount_and_scroll(widget, after=None):
@@ -120,7 +120,7 @@ async def test_clear_queued_message_with_escape():
     # Mock the event handler and compact message
     app.event_handler = MagicMock()
     compact_msg = MagicMock(spec=CompactMessage)
-    app.event_handler.current_compact = compact_msg
+    app.event_handler.get_current_compact = AsyncMock(return_value=compact_msg)
 
     # Set current bottom app to Input
     from vibe.cli.textual_ui.app import BottomApp
@@ -204,7 +204,7 @@ async def test_no_interruption_during_compaction():
     # Mock the event handler and compact message
     app.event_handler = MagicMock()
     compact_msg = MagicMock(spec=CompactMessage)
-    app.event_handler.current_compact = compact_msg
+    app.event_handler.get_current_compact = AsyncMock(return_value=compact_msg)
 
     # Mock query_one to return appropriate widgets based on selector
     def mock_query_one(selector):

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import TYPE_CHECKING
+import asyncio
+from collections.abc import Callable, Coroutine
+from typing import TYPE_CHECKING, cast
 
 from vibe.cli.textual_ui.widgets.compact import CompactMessage
 from vibe.cli.textual_ui.widgets.messages import (
@@ -46,18 +47,29 @@ class EventHandler:
         self.mount_callback = mount_callback
         self.get_tools_collapsed = get_tools_collapsed
         self.on_profile_changed = on_profile_changed
-        self.is_remote = is_remote
+        self._is_remote = is_remote
         self.tool_calls: dict[str, ToolCallMessage] = {}
         self.current_compact: CompactMessage | None = None
         self.current_streaming_message: AssistantMessage | None = None
         self.current_streaming_reasoning: ReasoningMessage | None = None
+        self._latest_command_task: asyncio.Task[None] | None = None
 
-    async def handle_event(
+    def handle_event(
         self,
         event: BaseEvent,
         loading_active: bool = False,
         loading_widget: LoadingWidget | None = None,
-    ) -> ToolCallMessage | None:
+    ) -> None:
+        self._schedule_command(
+            self._process_event(event, loading_active, loading_widget)
+        )
+
+    async def _process_event(
+        self,
+        event: BaseEvent,
+        loading_active: bool = False,
+        loading_widget: LoadingWidget | None = None,
+    ) -> None:
         match event:
             case PromptProgressEvent():
                 await self._handle_prompt_progress(event, loading_widget)
@@ -66,36 +78,35 @@ class EventHandler:
             case AssistantEvent():
                 await self._handle_assistant_message(event)
             case ToolCallEvent():
-                await self.finalize_streaming()
-                return await self._handle_tool_call(event, loading_widget)
+                await self._finalize_streaming_internal()
+                await self._handle_tool_call(event, loading_widget)
             case ToolResultEvent():
-                await self.finalize_streaming()
+                await self._finalize_streaming_internal()
                 sanitized_event = self._sanitize_event(event)
                 await self._handle_tool_result(sanitized_event)
             case ToolStreamEvent():
                 await self._handle_tool_stream(event)
             case CompactStartEvent():
-                await self.finalize_streaming()
+                await self._finalize_streaming_internal()
                 await self._handle_compact_start()
             case CompactEndEvent():
-                await self.finalize_streaming()
+                await self._finalize_streaming_internal()
                 await self._handle_compact_end(event)
             case AgentProfileChangedEvent():
                 if self.on_profile_changed:
                     self.on_profile_changed()
             case UserMessageEvent():
-                await self.finalize_streaming()
-                if self.is_remote:
-                    await self.mount_callback(UserMessage(event.content))
+                await self._finalize_streaming_internal()
+                if self._is_remote:
+                    await self.mount_callback(UserMessage(cast(str, event.content)))
             case ContinueableUserMessageEvent():
-                await self.finalize_streaming()
+                await self._finalize_streaming_internal()
                 await self._handle_continueable_user_message(event)
             case WaitingForInputEvent():
-                await self.finalize_streaming()
+                await self._finalize_streaming_internal()
             case _:
-                await self.finalize_streaming()
+                await self._finalize_streaming_internal()
                 await self._handle_unknown_event(event)
-        return None
 
     def _sanitize_event(self, event: ToolResultEvent) -> ToolResultEvent:
         if isinstance(event, ToolResultEvent):
@@ -124,12 +135,11 @@ class EventHandler:
 
     async def _handle_tool_call(
         self, event: ToolCallEvent, loading_widget: LoadingWidget | None = None
-    ) -> ToolCallMessage | None:
+    ) -> None:
         tool_call_id = event.tool_call_id
         existing_tool_call = self.tool_calls.get(tool_call_id) if tool_call_id else None
         if existing_tool_call:
             existing_tool_call.update_event(event)
-            tool_call = existing_tool_call
         else:
             tool_call = ToolCallMessage(event)
             if tool_call_id:
@@ -139,8 +149,6 @@ class EventHandler:
         if loading_widget and event.tool_class:
             adapter = ToolUIDataAdapter(event.tool_class)
             loading_widget.set_status(adapter.get_status_text())
-
-        return tool_call
 
     async def _handle_tool_result(self, event: ToolResultEvent) -> None:
         tools_collapsed = self.get_tools_collapsed()
@@ -233,7 +241,10 @@ class EventHandler:
     async def _handle_unknown_event(self, event: BaseEvent) -> None:
         await self.mount_callback(NoMarkupStatic(str(event), classes="unknown-event"))
 
-    async def finalize_streaming(self) -> None:
+    def finalize_streaming(self) -> None:
+        self._schedule_command(self._finalize_streaming_internal())
+
+    async def _finalize_streaming_internal(self) -> None:
         if self.current_streaming_reasoning is not None:
             self.current_streaming_reasoning.stop_spinning()
             await self.current_streaming_reasoning.stop_stream()
@@ -242,12 +253,45 @@ class EventHandler:
             await self.current_streaming_message.stop_stream()
             self.current_streaming_message = None
 
-    def stop_current_tool_call(self, success: bool = True) -> None:
+    def set_is_remote(self, value: bool) -> None:
+        self._schedule_command(self._set_is_remote_internal(value))
+
+    async def _set_is_remote_internal(self, value: bool) -> None:
+        self._is_remote = value
+
+    def set_current_compact(self, value: CompactMessage | None) -> None:
+        self._schedule_command(self._set_current_compact_internal(value))
+
+    async def _set_current_compact_internal(self, value: CompactMessage | None) -> None:
+        self.current_compact = value
+
+    async def _await_pending_command(self) -> None:
+        task = self._latest_command_task
+        if task is not None and not task.done():
+            await task
+
+    async def get_current_compact(self) -> CompactMessage | None:
+        await self._await_pending_command()
+        return self.current_compact
+
+    async def stop_current_tool_call(self, success: bool = True) -> None:
+        await self._await_pending_command()
         for tool_call in self.tool_calls.values():
             tool_call.stop_spinning(success=success)
         self.tool_calls.clear()
 
-    def stop_current_compact(self) -> None:
+    async def stop_current_compact(self) -> None:
+        await self._await_pending_command()
         if self.current_compact:
             self.current_compact.stop_spinning(success=False)
             self.current_compact = None
+
+    def _schedule_command(self, coro: Coroutine[None, None, None]) -> None:
+        previous = self._latest_command_task
+
+        async def _chained() -> None:
+            if previous is not None and not previous.done():
+                await previous
+            await coro
+
+        self._latest_command_task = asyncio.create_task(_chained())

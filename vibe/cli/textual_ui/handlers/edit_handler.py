@@ -124,7 +124,7 @@ class EditHandler:
             # Trigger the agent loop to generate a new response
             async for event in self.agent_loop.act_without_adding_message():
                 if self.app.event_handler:
-                    await self.app.event_handler.handle_event(
+                    self.app.event_handler.handle_event(
                         event,
                         loading_active=self.app._loading_widget is not None,
                         loading_widget=self.app._loading_widget,
@@ -134,13 +134,13 @@ class EditHandler:
             if self.app._loading_widget and self.app._loading_widget.parent:
                 await self.app._loading_widget.remove()
             if self.app.event_handler:
-                self.app.event_handler.stop_current_tool_call(success=False)
+                await self.app.event_handler.stop_current_tool_call(success=False)
             raise
         except Exception as e:
             if self.app._loading_widget and self.app._loading_widget.parent:
                 await self.app._loading_widget.remove()
             if self.app.event_handler:
-                self.app.event_handler.stop_current_tool_call(success=False)
+                await self.app.event_handler.stop_current_tool_call(success=False)
 
             from vibe.cli.textual_ui.widgets.messages import ErrorMessage
 
@@ -154,7 +154,7 @@ class EditHandler:
                 await self.app._loading_widget.remove()
             self.app._loading_widget = None
             if self.app.event_handler:
-                await self.app.event_handler.finalize_streaming()
+                self.app.event_handler.finalize_streaming()
             await self.app._refresh_windowing_from_history()
             self.app._terminal_notifier.notify(NotificationContext.COMPLETE)
 

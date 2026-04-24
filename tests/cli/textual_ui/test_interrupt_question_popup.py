@@ -55,9 +55,9 @@ async def test_interrupt_during_question_popup_clears_state() -> None:
 
     # Mock event_handler
     mock_event_handler = MagicMock()
-    mock_event_handler.stop_current_tool_call = MagicMock()
-    mock_event_handler.stop_current_compact = MagicMock()
-    mock_event_handler.finalize_streaming = AsyncMock()
+    mock_event_handler.stop_current_tool_call = AsyncMock()
+    mock_event_handler.stop_current_compact = AsyncMock()
+    mock_event_handler.finalize_streaming = MagicMock()
     app.event_handler = mock_event_handler  # type: ignore
 
     # Mock TUI widgets
@@ -115,9 +115,9 @@ async def test_interrupt_during_approval_popup_clears_state() -> None:
 
     # Mock event_handler
     mock_event_handler = MagicMock()
-    mock_event_handler.stop_current_tool_call = MagicMock()
-    mock_event_handler.stop_current_compact = MagicMock()
-    mock_event_handler.finalize_streaming = AsyncMock()
+    mock_event_handler.stop_current_tool_call = AsyncMock()
+    mock_event_handler.stop_current_compact = AsyncMock()
+    mock_event_handler.finalize_streaming = MagicMock()
     app.event_handler = mock_event_handler  # type: ignore
 
     # Mock TUI widgets
@@ -194,9 +194,9 @@ async def test_interrupt_with_both_popups_clears_state() -> None:
 
     # Mock event_handler
     mock_event_handler = MagicMock()
-    mock_event_handler.stop_current_tool_call = MagicMock()
-    mock_event_handler.stop_current_compact = MagicMock()
-    mock_event_handler.finalize_streaming = AsyncMock()
+    mock_event_handler.stop_current_tool_call = AsyncMock()
+    mock_event_handler.stop_current_compact = AsyncMock()
+    mock_event_handler.finalize_streaming = MagicMock()
     app.event_handler = mock_event_handler  # type: ignore
 
     # Mock TUI widgets
@@ -247,9 +247,9 @@ async def test_interrupt_no_popups_no_switch_to_input() -> None:
 
     # Mock event_handler
     mock_event_handler = MagicMock()
-    mock_event_handler.stop_current_tool_call = MagicMock()
-    mock_event_handler.stop_current_compact = MagicMock()
-    mock_event_handler.finalize_streaming = AsyncMock()
+    mock_event_handler.stop_current_tool_call = AsyncMock()
+    mock_event_handler.stop_current_compact = AsyncMock()
+    mock_event_handler.finalize_streaming = MagicMock()
     app.event_handler = mock_event_handler  # type: ignore
 
     # Mock TUI widgets

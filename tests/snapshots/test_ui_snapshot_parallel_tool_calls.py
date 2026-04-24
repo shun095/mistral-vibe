@@ -45,7 +45,7 @@ class ParallelToolCallsApp(App):
         if self._handler is None:
             return
         for i in range(3):
-            await self._handler.handle_event(
+            self._handler.handle_event(
                 ToolCallEvent(
                     tool_call_id=f"tc_{i}",
                     tool_call_index=i,
@@ -54,6 +54,7 @@ class ParallelToolCallsApp(App):
                     args=ReadFileArgs(path=f"/src/file_{i}.py", offset=0),
                 )
             )
+        await self._handler._await_pending_command()
 
     def freeze_spinners(self) -> None:
         for widget in self.query(ToolCallMessage):
@@ -71,7 +72,7 @@ class ParallelToolCallsApp(App):
         if self._handler is None:
             return
         for i in range(3):
-            await self._handler.handle_event(
+            self._handler.handle_event(
                 ToolResultEvent(
                     tool_name="read_file",
                     tool_class=ReadFile,
@@ -84,6 +85,7 @@ class ParallelToolCallsApp(App):
                     tool_call_id=f"tc_{i}",
                 )
             )
+        await self._handler._await_pending_command()
 
 
 def test_snapshot_parallel_tool_calls_pending(snap_compare: SnapCompare) -> None:

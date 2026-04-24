@@ -96,9 +96,9 @@ async def test_interrupt_agent_loop_clears_flag() -> None:
 
     # Mock event_handler to avoid errors
     mock_event_handler = MagicMock()
-    mock_event_handler.stop_current_tool_call = MagicMock()
-    mock_event_handler.stop_current_compact = MagicMock()
-    mock_event_handler.finalize_streaming = AsyncMock()
+    mock_event_handler.stop_current_tool_call = AsyncMock()
+    mock_event_handler.stop_current_compact = AsyncMock()
+    mock_event_handler.finalize_streaming = MagicMock()
     app.event_handler = mock_event_handler  # type: ignore
 
     # Mock the TUI widgets to avoid errors
@@ -127,9 +127,9 @@ async def test_process_web_messages_handles_interrupt() -> None:
 
     # Mock event_handler
     mock_event_handler = MagicMock()
-    mock_event_handler.stop_current_tool_call = MagicMock()
-    mock_event_handler.stop_current_compact = MagicMock()
-    mock_event_handler.finalize_streaming = AsyncMock()
+    mock_event_handler.stop_current_tool_call = AsyncMock()
+    mock_event_handler.stop_current_compact = AsyncMock()
+    mock_event_handler.finalize_streaming = MagicMock()
     app.event_handler = mock_event_handler  # type: ignore
 
     # Mock TUI widgets

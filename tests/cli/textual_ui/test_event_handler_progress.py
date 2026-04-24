@@ -29,9 +29,10 @@ class TestEventHandlerPromptProgress:
         loading_widget = LoadingWidget()
         event = PromptProgressEvent(total=1000, cache=200, processed=500, time_ms=1500)
 
-        await self.event_handler.handle_event(
+        self.event_handler.handle_event(
             event, loading_active=True, loading_widget=loading_widget
         )
+        await self.event_handler._await_pending_command()
 
         # Verify loading widget progress was updated
         assert loading_widget._progress_percentage == 50.0
@@ -42,9 +43,10 @@ class TestEventHandlerPromptProgress:
         event = PromptProgressEvent(total=1000, cache=200, processed=500, time_ms=1500)
 
         # Should not raise
-        await self.event_handler.handle_event(
+        self.event_handler.handle_event(
             event, loading_active=False, loading_widget=None
         )
+        await self.event_handler._await_pending_command()
 
     @pytest.mark.asyncio
     async def test_handle_prompt_progress_zero_total(self) -> None:
@@ -52,9 +54,10 @@ class TestEventHandlerPromptProgress:
         loading_widget = LoadingWidget()
         event = PromptProgressEvent(total=0, cache=0, processed=0, time_ms=0)
 
-        await self.event_handler.handle_event(
+        self.event_handler.handle_event(
             event, loading_active=True, loading_widget=loading_widget
         )
+        await self.event_handler._await_pending_command()
 
         # Progress should be 0% when total is 0
         assert loading_widget._progress_percentage == 0.0
@@ -65,9 +68,10 @@ class TestEventHandlerPromptProgress:
         loading_widget = LoadingWidget()
         event = PromptProgressEvent(total=1000, cache=0, processed=1000, time_ms=2000)
 
-        await self.event_handler.handle_event(
+        self.event_handler.handle_event(
             event, loading_active=True, loading_widget=loading_widget
         )
+        await self.event_handler._await_pending_command()
 
         assert loading_widget._progress_percentage == 100.0
 
@@ -77,9 +81,10 @@ class TestEventHandlerPromptProgress:
         loading_widget = LoadingWidget()
         event = PromptProgressEvent(total=1000, cache=100, processed=350, time_ms=500)
 
-        await self.event_handler.handle_event(
+        self.event_handler.handle_event(
             event, loading_active=True, loading_widget=loading_widget
         )
+        await self.event_handler._await_pending_command()
 
         assert loading_widget._progress_percentage == 35.0
 
@@ -90,23 +95,26 @@ class TestEventHandlerPromptProgress:
 
         # First update: 10%
         event1 = PromptProgressEvent(total=1000, cache=0, processed=100, time_ms=100)
-        await self.event_handler.handle_event(
+        self.event_handler.handle_event(
             event1, loading_active=True, loading_widget=loading_widget
         )
+        await self.event_handler._await_pending_command()
         assert loading_widget._progress_percentage == 10.0
 
         # Second update: 50%
         event2 = PromptProgressEvent(total=1000, cache=0, processed=500, time_ms=500)
-        await self.event_handler.handle_event(
+        self.event_handler.handle_event(
             event2, loading_active=True, loading_widget=loading_widget
         )
+        await self.event_handler._await_pending_command()
         assert loading_widget._progress_percentage == 50.0
 
         # Third update: 100%
         event3 = PromptProgressEvent(total=1000, cache=0, processed=1000, time_ms=1000)
-        await self.event_handler.handle_event(
+        self.event_handler.handle_event(
             event3, loading_active=True, loading_widget=loading_widget
         )
+        await self.event_handler._await_pending_command()
         assert loading_widget._progress_percentage == 100.0
 
     @pytest.mark.asyncio
@@ -117,8 +125,53 @@ class TestEventHandlerPromptProgress:
 
         # finalize_streaming is called for other events but not PromptProgressEvent
         # Verify the event is handled without error
-        await self.event_handler.handle_event(
+        self.event_handler.handle_event(
             event, loading_active=True, loading_widget=loading_widget
         )
+        await self.event_handler._await_pending_command()
 
         assert loading_widget._progress_percentage == 50.0
+
+    @pytest.mark.asyncio
+    async def test_handle_event_is_fire_and_forget(self) -> None:
+        """Test that handle_event returns immediately without blocking."""
+        loading_widget = LoadingWidget()
+        event = PromptProgressEvent(total=1000, cache=0, processed=500, time_ms=1000)
+
+        # handle_event should return None (fire-and-forget)
+        result = self.event_handler.handle_event(
+            event, loading_active=True, loading_widget=loading_widget
+        )
+        assert result is None
+
+        # Task is scheduled but not yet complete
+        assert self.event_handler._latest_command_task is not None
+
+        # Await the task to complete
+        await self.event_handler._await_pending_command()
+        assert loading_widget._progress_percentage == 50.0
+
+    @pytest.mark.asyncio
+    async def test_commands_are_chained_in_order(self) -> None:
+        """Test that multiple commands execute in order."""
+        loading_widget = LoadingWidget()
+
+        # Schedule multiple events without awaiting
+        event1 = PromptProgressEvent(total=1000, cache=0, processed=100, time_ms=100)
+        self.event_handler.handle_event(
+            event1, loading_active=True, loading_widget=loading_widget
+        )
+
+        event2 = PromptProgressEvent(total=1000, cache=0, processed=500, time_ms=500)
+        self.event_handler.handle_event(
+            event2, loading_active=True, loading_widget=loading_widget
+        )
+
+        event3 = PromptProgressEvent(total=1000, cache=0, processed=1000, time_ms=1000)
+        self.event_handler.handle_event(
+            event3, loading_active=True, loading_widget=loading_widget
+        )
+
+        # Await the final command (which chains all previous)
+        await self.event_handler._await_pending_command()
+        assert loading_widget._progress_percentage == 100.0

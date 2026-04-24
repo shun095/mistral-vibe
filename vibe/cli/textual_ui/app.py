@@ -632,7 +632,7 @@ class VibeApp(App):  # noqa: PLR0904
         input_widget.value = ""
 
         # Queue message during compaction without interrupting it
-        if self.event_handler and self.event_handler.current_compact:
+        if self.event_handler and await self.event_handler.get_current_compact():
             # If there's already a queued message, update it
             if self._queued_message is not None:
                 self._queued_message = value
@@ -1180,7 +1180,7 @@ class VibeApp(App):  # noqa: PLR0904
             async with aclosing(self.agent_loop.act(cast(Content, content))) as events:
                 async for event in events:
                     if self.event_handler:
-                        await self.event_handler.handle_event(
+                        self.event_handler.handle_event(
                             event,
                             loading_active=self._loading_widget is not None,
                             loading_widget=self._loading_widget,
@@ -1190,13 +1190,13 @@ class VibeApp(App):  # noqa: PLR0904
             if self._loading_widget and self._loading_widget.parent:
                 await self._loading_widget.remove()
             if self.event_handler:
-                self.event_handler.stop_current_tool_call(success=False)
+                await self.event_handler.stop_current_tool_call(success=False)
             raise
         except Exception as e:
             if self._loading_widget and self._loading_widget.parent:
                 await self._loading_widget.remove()
             if self.event_handler:
-                self.event_handler.stop_current_tool_call(success=False)
+                await self.event_handler.stop_current_tool_call(success=False)
 
             error_message = str(e)
             if isinstance(e, RateLimitError):
@@ -1216,7 +1216,7 @@ class VibeApp(App):  # noqa: PLR0904
                 await self._loading_widget.remove()
             self._loading_widget = None
             if self.event_handler:
-                await self.event_handler.finalize_streaming()
+                self.event_handler.finalize_streaming()
             await self._refresh_windowing_from_history()
             self._terminal_notifier.notify(NotificationContext.COMPLETE)
             self._web_broadcast_manager._broadcast_web_notification(
@@ -1535,7 +1535,7 @@ class VibeApp(App):  # noqa: PLR0904
         if self._loading_widget and self._loading_widget.parent:
             await self._loading_widget.remove()
         if self.event_handler:
-            self.event_handler.stop_current_tool_call(success=False)
+            await self.event_handler.stop_current_tool_call(success=False)
 
     async def _handle_agent_loop_turn(self, prompt: str) -> None:
         self._agent_running = True
@@ -1565,7 +1565,7 @@ class VibeApp(App):  # noqa: PLR0904
                     elif self._loading_widget is None and is_progress_event(event):
                         await self._ensure_loading_widget()
                     if self.event_handler:
-                        await self.event_handler.handle_event(
+                        self.event_handler.handle_event(
                             event,
                             loading_active=self._loading_widget is not None,
                             loading_widget=self._loading_widget,
@@ -1603,7 +1603,7 @@ class VibeApp(App):  # noqa: PLR0904
                 await self._loading_widget.remove()
             self._loading_widget = None
             if self.event_handler:
-                await self.event_handler.finalize_streaming()
+                self.event_handler.finalize_streaming()
             await self._refresh_windowing_from_history()
             self._terminal_notifier.notify(NotificationContext.COMPLETE)
             self._web_broadcast_manager._broadcast_web_notification(
@@ -1804,9 +1804,9 @@ class VibeApp(App):  # noqa: PLR0904
                 pass
 
         if self.event_handler:
-            self.event_handler.stop_current_tool_call(success=False)
-            self.event_handler.stop_current_compact()
-            await self.event_handler.finalize_streaming()
+            await self.event_handler.stop_current_tool_call(success=False)
+            await self.event_handler.stop_current_compact()
+            self.event_handler.finalize_streaming()
 
         self._agent_running = False
         loading_area = self._cached_loading_area or self.query_one(
@@ -2179,7 +2179,7 @@ class VibeApp(App):  # noqa: PLR0904
         await messages_area.remove_children()
 
         if self.event_handler:
-            self.event_handler.is_remote = False
+            self.event_handler.set_is_remote(False)
         await self._resume_history_from_messages()
         # Notify listeners that history was reset (resume)
         self.agent_loop._notify_event_listeners(MessageResetEvent(reason="resume"))
@@ -2204,7 +2204,7 @@ class VibeApp(App):  # noqa: PLR0904
         await messages_area.remove_children()
 
         if self.event_handler:
-            self.event_handler.is_remote = True
+            self.event_handler.set_is_remote(True)
         self._remote_manager.start_stream(self)
 
     async def _resume_session_by_id(self, session_id: str) -> None:
@@ -2248,7 +2248,7 @@ class VibeApp(App):  # noqa: PLR0904
         self, event: BaseEvent, loading_active: bool, loading_widget: Any
     ) -> None:
         if self.event_handler:
-            await self.event_handler.handle_event(
+            self.event_handler.handle_event(
                 event, loading_active=loading_active, loading_widget=loading_widget
             )
 
@@ -2276,7 +2276,7 @@ class VibeApp(App):  # noqa: PLR0904
 
     async def on_remote_finalize_streaming(self) -> None:
         if self.event_handler:
-            await self.event_handler.finalize_streaming()
+            self.event_handler.finalize_streaming()
 
     async def remove_loading(self) -> None:
         await self._remove_loading_widget()
@@ -2347,12 +2347,12 @@ class VibeApp(App):  # noqa: PLR0904
                 await self._remote_manager.detach()
                 self._refresh_profile_widgets()
                 if self.event_handler:
-                    self.event_handler.is_remote = False
+                    self.event_handler.set_is_remote(False)
             if self._chat_input_container:
                 self._chat_input_container.set_custom_border(None)
             await self.agent_loop.clear_history()
             if self.event_handler:
-                await self.event_handler.finalize_streaming()
+                self.event_handler.finalize_streaming()
             messages_area = self._cached_messages_area or self.query_one("#messages")
             await messages_area.remove_children()
 
@@ -2481,7 +2481,7 @@ class VibeApp(App):  # noqa: PLR0904
 
         old_tokens = self.agent_loop.stats.context_tokens
         compact_msg = CompactMessage()
-        self.event_handler.current_compact = compact_msg
+        self.event_handler.set_current_compact(compact_msg)
         await self._mount_and_scroll(compact_msg)
 
         self._agent_task = asyncio.create_task(
@@ -2512,7 +2512,7 @@ class VibeApp(App):  # noqa: PLR0904
             self._agent_task = None
             self._queued_message = None
             if self.event_handler:
-                self.event_handler.current_compact = None
+                self.event_handler.set_current_compact(None)
 
     def _get_session_resume_info(self) -> str | None:
         if self._remote_manager.is_active:

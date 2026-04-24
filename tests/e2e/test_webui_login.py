@@ -40,10 +40,10 @@ def test_login_with_valid_token(page: Page, webui_server: WebUIServer) -> None:
 
     # Enter valid token
     page.fill("#token", "test-token")
-    page.click("#login-btn")
-
-    # Should be redirected to chat page
-    page.wait_for_url(f"http://127.0.0.1:{webui_server.port}/")
+    with page.expect_navigation(
+        url=f"http://127.0.0.1:{webui_server.port}/", timeout=15000
+    ):
+        page.click("#login-btn")
 
     # Verify chat page elements are present
     assert page.is_visible("#messages")  # Messages container
@@ -75,7 +75,10 @@ def test_logout_button(page: Page, webui_server: WebUIServer) -> None:
     # First login
     page.goto(f"http://127.0.0.1:{webui_server.port}/login")
     page.fill("#token", "test-token")
-    page.click("#login-btn")
+    with page.expect_navigation(
+        url=f"http://127.0.0.1:{webui_server.port}/", timeout=15000
+    ):
+        page.click("#login-btn")
 
     # Wait for main page to load by checking for the logout button
     page.wait_for_selector("#logout-btn", state="visible", timeout=15000)
