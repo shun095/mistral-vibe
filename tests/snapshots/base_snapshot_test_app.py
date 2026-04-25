@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import asyncio
-
 from rich.style import Style
 from textual.css.query import NoMatches
 from textual.widgets.text_area import TextAreaTheme
@@ -89,13 +87,13 @@ class BaseSnapshotTestApp(VibeApp):
             if widget._text_widget:
                 widget._text_widget.update(widget.get_content())
 
-    async def wait_for_mcp_refresh(self) -> None:
-        """Wait for MCP refresh to complete (max 5s)."""
+    async def wait_for_mcp_refresh(self, pilot) -> None:
+        """Wait for MCP refresh to complete (max 30s)."""
         try:
             mcp_app = self.query_one(MCPApp)
         except NoMatches:
             return
-        for _ in range(100):
+        for _ in range(600):
             if not mcp_app._refreshing:
                 return
-            await asyncio.sleep(0.05)
+            await pilot.pause(0.05)

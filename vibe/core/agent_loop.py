@@ -545,10 +545,18 @@ class AgentLoop:
 
     @requires_init
     async def act(
-        self, msg: Content, client_message_id: str | None = None
+        self, msg: Content | None = None, client_message_id: str | None = None
     ) -> AsyncGenerator[BaseEvent, None]:
-        self._clean_message_history()
-        self.rewind_manager.create_checkpoint()
+        """Run a conversation turn.
+
+        Args:
+            msg: User message content to append. Pass None to replay the
+                last user message already in history (e.g., after /edit).
+            client_message_id: Optional client-side message identifier.
+        """
+        if msg is not None:
+            self._clean_message_history()
+            self.rewind_manager.create_checkpoint()
         try:
             model_name = self.config.get_active_model().name
         except ValueError:
@@ -558,19 +566,6 @@ class AgentLoop:
                 msg, client_message_id=client_message_id
             ):
                 yield event
-
-    async def act_without_adding_message(self) -> AsyncGenerator[BaseEvent]:
-        """Trigger the LLM without adding a new message to history.
-
-        This is used when the message has already been added to history
-        (e.g., after editing a previous message).
-
-        Note: We do NOT call _clean_message_history() here because the message
-        history has already been cleaned up by edit_last_message(). Calling it
-        would incorrectly add "Understood." after the user message.
-        """
-        async for event in self._conversation_loop(None):
-            yield event
 
     @property
     def teleport_service(self) -> TeleportService:

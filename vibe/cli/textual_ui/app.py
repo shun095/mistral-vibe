@@ -97,7 +97,11 @@ from vibe.cli.textual_ui.widgets.debug_console import DebugConsole
 from vibe.cli.textual_ui.widgets.feedback_bar import FeedbackBar
 from vibe.cli.textual_ui.widgets.history_picker import HistoryPickerApp
 from vibe.cli.textual_ui.widgets.load_more import HistoryLoadMoreRequested
-from vibe.cli.textual_ui.widgets.loading import LoadingWidget, paused_timer
+from vibe.cli.textual_ui.widgets.loading import (
+    LoadingWidget,
+    _format_elapsed,
+    paused_timer,
+)
 from vibe.cli.textual_ui.widgets.mcp_app import MCPApp
 from vibe.cli.textual_ui.widgets.messages import (
     BashOutputMessage,
@@ -1171,6 +1175,8 @@ class VibeApp(App):  # noqa: PLR0904
             "#loading-area-content"
         )
 
+        start_time = time.monotonic()
+
         loading = LoadingWidget()
         self._loading_widget = loading
         await loading_area.mount(loading)
@@ -1218,6 +1224,11 @@ class VibeApp(App):  # noqa: PLR0904
             if self.event_handler:
                 self.event_handler.finalize_streaming()
             await self._refresh_windowing_from_history()
+            await self._mount_and_scroll(
+                UserCommandMessage(
+                    f"Task completed in {_format_elapsed(int(time.monotonic() - start_time))}."
+                )
+            )
             self._terminal_notifier.notify(NotificationContext.COMPLETE)
             self._web_broadcast_manager._broadcast_web_notification(
                 "complete",
@@ -2399,66 +2410,128 @@ class VibeApp(App):  # noqa: PLR0904
 
     async def _edit_last_message(self, **kwargs: Any) -> None:
         """Edit the last user message and restart the conversation."""
-        from vibe.cli.textual_ui.handlers.edit_handler import (
-            EditHandler,
-            EditValidationError,
-            extract_edit_content,
-            get_last_user_message,
-            validate_edit_preconditions,
-        )
-
         messages = self.agent_loop.messages
 
-        try:
-            # Validate preconditions
-            validate_edit_preconditions(self, messages)
-
-            # Get last user message
-            last_user_msg = get_last_user_message(messages)
-            if not last_user_msg:
-                await self._mount_and_scroll(
-                    ErrorMessage(
-                        "No user message found.", collapsed=self._tools_collapsed
-                    )
+        # Validate preconditions
+        if self._agent_running:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    "Cannot edit while agent is processing. Please wait.",
+                    collapsed=self._tools_collapsed,
                 )
-                return
-
-            # Extract new content from command (stored in _last_command_input)
-            user_input = getattr(self, "_last_command_input", None)
-            if not isinstance(user_input, str):
-                await self._mount_and_scroll(
-                    ErrorMessage(
-                        "Invalid command input.", collapsed=self._tools_collapsed
-                    )
-                )
-                return
-
-            new_content = extract_edit_content(user_input)
-
-            if not new_content:
-                await self._mount_and_scroll(
-                    ErrorMessage(
-                        "No content provided for edit.", collapsed=self._tools_collapsed
-                    )
-                )
-                return
-
-            # Execute edit asynchronously to allow interruption
-            handler = EditHandler(
-                app=self, agent_loop=self.agent_loop, new_content=new_content
             )
-            self._agent_task = asyncio.create_task(handler.execute())
+            return
 
-        except EditValidationError as e:
+        if len(messages) <= 1:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    "No messages to edit. Start a conversation first.",
+                    collapsed=self._tools_collapsed,
+                )
+            )
+            return
+
+        # Find last user message
+        if not any(msg.role == Role.user for msg in reversed(messages)):
+            await self._mount_and_scroll(
+                ErrorMessage("No user message found.", collapsed=self._tools_collapsed)
+            )
+            return
+
+        # Extract new content from command (stored in _last_command_input)
+        user_input = getattr(self, "_last_command_input", None)
+        if not isinstance(user_input, str) or not user_input.startswith("/edit "):
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    "Invalid edit command. Use /edit <new content>",
+                    collapsed=self._tools_collapsed,
+                )
+            )
+            return
+
+        new_content = user_input[6:].strip()
+        if not new_content:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    "No content provided for edit.", collapsed=self._tools_collapsed
+                )
+            )
+            return
+
+        # Spawn task immediately so UI remains responsive
+        self._agent_task = asyncio.create_task(self._execute_edit_turn(new_content))
+
+    async def _execute_edit_turn(self, new_content: str) -> None:
+        """Execute the edit turn: modify history, rebuild UI, run agent loop."""
+        self._agent_running = True
+
+        loading_area = self._cached_loading_area or self.query_one(
+            "#loading-area-content"
+        )
+        loading = LoadingWidget()
+        self._loading_widget = loading
+        await loading_area.mount(loading)
+
+        try:
+            # Edit the last message in the agent loop
+            await self.agent_loop.edit_last_message(new_content)
+
+            # Reset UI state
+            self._reset_ui_state()
+
+            # Remove old message widgets and rebuild
+            messages_area = self._cached_messages_area or self.query_one("#messages")
+            await messages_area.remove_children()
+            await self._resume_history_from_messages()
+
+            # Trigger the agent loop to generate a new response
+            async with aclosing(self.agent_loop.act(None)) as events:
+                async for event in events:
+                    if self.event_handler:
+                        self.event_handler.handle_event(
+                            event,
+                            loading_active=self._loading_widget is not None,
+                            loading_widget=self._loading_widget,
+                        )
+
+            # Success — notify after the loop completes without error
+            self._terminal_notifier.notify(NotificationContext.COMPLETE)
+            self._web_broadcast_manager._broadcast_web_notification(
+                "complete",
+                WEB_NOTIFICATION_COMPLETE_TITLE,
+                WEB_NOTIFICATION_COMPLETE_MESSAGE,
+            )
+            await self._mount_and_scroll(
+                UserCommandMessage("Message edited and conversation restarted.")
+            )
+
+        except asyncio.CancelledError:
+            if self._loading_widget and self._loading_widget.parent:
+                await self._loading_widget.remove()
+            if self.event_handler:
+                await self.event_handler.stop_current_tool_call(success=False)
+            raise
+        except Exception as e:
+            if self._loading_widget and self._loading_widget.parent:
+                await self._loading_widget.remove()
+            if self.event_handler:
+                await self.event_handler.stop_current_tool_call(success=False)
+
             await self._mount_and_scroll(
                 ErrorMessage(str(e), collapsed=self._tools_collapsed)
             )
-        except Exception as e:
-            await self._mount_and_scroll(
-                ErrorMessage(
-                    f"Failed to edit message: {e}", collapsed=self._tools_collapsed
-                )
-            )
+
+            # Broadcast LLM error to WebUI
+            self._web_broadcast_manager._broadcast_llm_error_event(e)
+        finally:
+            self._agent_running = False
+            self._interrupt_requested = False
+            if self._loading_widget:
+                await self._loading_widget.remove()
+            self._loading_widget = None
+            if self.event_handler:
+                self.event_handler.finalize_streaming()
+            await self._refresh_windowing_from_history()
 
     async def _compact_history(self, **kwargs: Any) -> None:
         if self._agent_running:

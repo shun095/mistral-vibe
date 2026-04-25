@@ -172,7 +172,7 @@ def test_snapshot_mcp_refresh_shortcut(snap_compare: SnapCompare) -> None:
         await _run_mcp_command(pilot, "/mcp")
         await pilot.press("r")
         app = cast(BaseSnapshotTestApp, pilot.app)
-        await app.wait_for_mcp_refresh()
+        await app.wait_for_mcp_refresh(pilot)
         await pilot.pause(0.1)
 
     with patch(_MCP_PATCH, FakeMCPRegistry):
