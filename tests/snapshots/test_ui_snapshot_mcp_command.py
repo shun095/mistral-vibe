@@ -17,8 +17,6 @@ from vibe.core.config import MCPHttp, MCPStdio
 from vibe.core.tools.connectors import CONNECTORS_ENV_VAR
 from vibe.core.tools.mcp.tools import RemoteTool
 
-_MCP_PATCH = "vibe.core.agent_loop.MCPRegistry"
-
 _FAKE_CONNECTORS = {
     "gmail": [
         RemoteTool(name="gmail_search", description="Search emails in Gmail"),
@@ -175,12 +173,8 @@ def test_snapshot_mcp_refresh_shortcut(snap_compare: SnapCompare) -> None:
         await app.wait_for_mcp_refresh(pilot)
         await pilot.pause(0.1)
 
-    with patch(_MCP_PATCH, FakeMCPRegistry):
-        assert snap_compare(
-            "test_ui_snapshot_mcp_command.py:SnapshotTestAppWithMcpServers",
-            terminal_size=(120, 36),
-            run_before=run_before,
-        )
+    app = SnapshotTestAppWithMcpServers(mcp_registry=FakeMCPRegistry())
+    assert snap_compare(app, terminal_size=(120, 36), run_before=run_before)
 
 
 # ---------------------------------------------------------------------------
@@ -235,12 +229,8 @@ def test_snapshot_mcp_with_connectors_overview(snap_compare: SnapCompare) -> Non
     async def run_before(pilot: Pilot) -> None:
         await _run_mcp_command(pilot, "/mcp")
 
-    with patch(_MCP_PATCH, FakeMCPRegistry):
-        assert snap_compare(
-            "test_ui_snapshot_mcp_command.py:SnapshotTestAppWithConnectors",
-            terminal_size=(120, 36),
-            run_before=run_before,
-        )
+    app = SnapshotTestAppWithConnectors()
+    assert snap_compare(app, terminal_size=(120, 36), run_before=run_before)
 
 
 @patch.dict("os.environ", {CONNECTORS_ENV_VAR: "1"})
@@ -272,6 +262,7 @@ def test_snapshot_mcp_connectors_sorted_by_status(snap_compare: SnapCompare) -> 
 
 
 @patch.dict("os.environ", {CONNECTORS_ENV_VAR: "1"})
+@pytest.mark.xdist_group(name="snapshots")
 def test_snapshot_mcp_drill_into_connector(snap_compare: SnapCompare) -> None:
 
     async def run_before(pilot: Pilot) -> None:
@@ -284,12 +275,8 @@ def test_snapshot_mcp_drill_into_connector(snap_compare: SnapCompare) -> None:
         await pilot.press("enter")  # drill in
         await pilot.pause(0.1)
 
-    with patch(_MCP_PATCH, FakeMCPRegistry):
-        assert snap_compare(
-            "test_ui_snapshot_mcp_command.py:SnapshotTestAppWithConnectors",
-            terminal_size=(120, 36),
-            run_before=run_before,
-        )
+    app = SnapshotTestAppWithConnectors()
+    assert snap_compare(app, terminal_size=(120, 36), run_before=run_before)
 
 
 @patch.dict("os.environ", {CONNECTORS_ENV_VAR: "1"})
@@ -305,9 +292,5 @@ def test_snapshot_mcp_connector_back_to_overview(snap_compare: SnapCompare) -> N
         await pilot.press("backspace")
         await pilot.pause(0.1)
 
-    with patch(_MCP_PATCH, FakeMCPRegistry):
-        assert snap_compare(
-            "test_ui_snapshot_mcp_command.py:SnapshotTestAppWithConnectors",
-            terminal_size=(120, 36),
-            run_before=run_before,
-        )
+    app = SnapshotTestAppWithConnectors()
+    assert snap_compare(app, terminal_size=(120, 36), run_before=run_before)
