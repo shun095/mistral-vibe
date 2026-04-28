@@ -744,12 +744,13 @@ class VibeClient {
         // Stop the elapsed timer
         this._stopElapsedTimer(data.toolCallId);
 
-        // Compute duration: prefer server-side duration, fallback to client-side calculation
+        // Compute total elapsed time from LLM generation start
+        // Prefer startTime-based calculation (includes LLM gen + tool exec), fallback to server duration
         let durationSec = null;
-        if (data.duration != null) {
-            durationSec = data.duration;
-        } else if (data.startTime) {
+        if (data.startTime) {
             durationSec = (Date.now() - data.startTime) / 1000;
+        } else if (data.duration != null) {
+            durationSec = data.duration;
         }
         const durationStr = durationSec != null ? ` (${formatDuration(durationSec)})` : '';
 

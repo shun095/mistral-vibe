@@ -54,7 +54,7 @@ def test_snapshot_tool_call_partial(snap_compare: SnapCompare) -> None:
 
     with (
         patch.object(StatusMessage, "start_spinner_timer"),
-        patch("vibe.cli.textual_ui.widgets.tools.monotonic_now", return_value=0.0),
+        patch("vibe.cli.textual_ui.widgets.tools.wall_now", return_value=0.0),
     ):
         assert snap_compare(
             "test_ui_snapshot_streaming_tool_call.py:ToolCallStreamingUpdateTest",
@@ -72,7 +72,7 @@ def test_snapshot_tool_call_updated(snap_compare: SnapCompare) -> None:
 
     with (
         patch.object(StatusMessage, "start_spinner_timer"),
-        patch("vibe.cli.textual_ui.widgets.tools.monotonic_now", return_value=0.0),
+        patch("vibe.cli.textual_ui.widgets.tools.wall_now", return_value=0.0),
     ):
         assert snap_compare(
             "test_ui_snapshot_streaming_tool_call.py:ToolCallStreamingUpdateTest",

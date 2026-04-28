@@ -19,6 +19,15 @@ def monotonic_now() -> float:
     return time.monotonic()
 
 
+def wall_now() -> float:
+    """Return the current wall-clock time as a UNIX timestamp.
+
+    Wrapper around ``time.time()`` to allow mocking in tests.
+    Used for cross-process timing (e.g., server-to-client elapsed calculations).
+    """
+    return time.time()
+
+
 def format_duration(seconds: float) -> str:
     """Format elapsed seconds into a human-readable string.
 

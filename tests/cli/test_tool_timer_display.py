@@ -20,7 +20,10 @@ class TestToolCallMessageElapsedTimer:
         )
         widget = ToolCallMessage(event)
 
-        with patch("time.monotonic", return_value=widget._start_time + 0.3):
+        with patch(
+            "vibe.cli.textual_ui.widgets.tools.wall_now",
+            return_value=widget._start_time + 0.3,
+        ):
             content = widget.get_content()
 
         assert "0.3s" in content
@@ -35,7 +38,10 @@ class TestToolCallMessageElapsedTimer:
         )
         widget = ToolCallMessage(event)
 
-        with patch("time.monotonic", return_value=widget._start_time + 2.5):
+        with patch(
+            "vibe.cli.textual_ui.widgets.tools.wall_now",
+            return_value=widget._start_time + 2.5,
+        ):
             content = widget.get_content()
 
         assert "2.5s" in content
@@ -50,7 +56,10 @@ class TestToolCallMessageElapsedTimer:
         )
         widget = ToolCallMessage(event)
 
-        with patch("time.monotonic", return_value=widget._start_time + 65.0):
+        with patch(
+            "vibe.cli.textual_ui.widgets.tools.wall_now",
+            return_value=widget._start_time + 65.0,
+        ):
             content = widget.get_content()
 
         assert "1m 5.0s" in content
@@ -66,7 +75,10 @@ class TestToolCallMessageElapsedTimer:
         widget = ToolCallMessage(event)
         widget._is_spinning = False
 
-        with patch("time.monotonic", return_value=widget._start_time + 5.0):
+        with patch(
+            "vibe.cli.textual_ui.widgets.tools.wall_now",
+            return_value=widget._start_time + 5.0,
+        ):
             content = widget.get_content()
 
         # When not spinning and no display_text, returns tool name with triangle

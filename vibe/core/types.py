@@ -405,6 +405,7 @@ class ToolCallEvent(BaseEvent):
     tool_class: type[BaseTool]
     tool_call_index: int | None = None
     args: BaseModel | None = None
+    start_time: float | None = None
 
 
 class ToolResultEvent(BaseEvent):

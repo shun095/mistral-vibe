@@ -15,7 +15,7 @@ from vibe.cli.textual_ui.widgets.status_message import StatusMessage
 from vibe.cli.textual_ui.widgets.tool_widgets import get_result_widget
 from vibe.core.tools.ui import ToolUIDataAdapter
 from vibe.core.types import ToolCallEvent, ToolResultEvent
-from vibe.core.utils.time import format_duration, monotonic_now
+from vibe.core.utils.time import format_duration, wall_now
 
 
 class ToolCallMessage(StatusMessage):
@@ -31,7 +31,13 @@ class ToolCallMessage(StatusMessage):
         self._display_text: str | None = None
         self._stream_widget: NoMarkupStatic | None = None
         self._result_widget: ToolResultMessage | None = None
-        self._start_time: float = monotonic_now() if not self._is_history else 0.0
+        self._start_time: float
+        if event is not None and event.start_time is not None:
+            self._start_time = event.start_time
+        elif not self._is_history:
+            self._start_time = wall_now()
+        else:
+            self._start_time = 0.0
 
         super().__init__()
         self.add_class("tool-call")
@@ -79,7 +85,7 @@ class ToolCallMessage(StatusMessage):
             if self._is_spinning:
                 adapter = ToolUIDataAdapter(self._event.tool_class)
                 display = adapter.get_call_display(self._event)
-                elapsed = monotonic_now() - self._start_time
+                elapsed = wall_now() - self._start_time
                 return f"{display.summary} {format_duration(elapsed)}"
             if self._display_text:
                 return self._display_text

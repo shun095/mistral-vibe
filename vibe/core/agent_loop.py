@@ -125,6 +125,7 @@ from vibe.core.utils import (
     get_user_cancellation_message,
     is_user_cancellation_event,
 )
+from vibe.core.utils.time import wall_now
 
 try:
     from vibe.core.teleport.teleport import TeleportService as _TeleportService
@@ -820,8 +821,9 @@ class AgentLoop:
             await self._save_messages()
 
     async def _perform_llm_turn(self) -> AsyncGenerator[BaseEvent, None]:
+        turn_start_time = wall_now()
         if self.enable_streaming:
-            async for event in self._stream_assistant_events():
+            async for event in self._stream_assistant_events(turn_start_time):
                 yield event
         else:
             assistant_event = await self._get_assistant_event()
@@ -837,13 +839,16 @@ class AgentLoop:
             return
 
         profile_before = self.agent_profile.name
-        async for event in self._handle_tool_calls(resolved):
+        async for event in self._handle_tool_calls(resolved, turn_start_time):
             yield event
         if self.agent_profile.name != profile_before:
             yield AgentProfileChangedEvent(agent_name=self.agent_profile.name)
 
     def _build_tool_call_events(
-        self, tool_calls: list[ToolCall] | None, emitted_ids: set[str]
+        self,
+        tool_calls: list[ToolCall] | None,
+        emitted_ids: set[str],
+        start_time: float | None = None,
     ) -> Generator[ToolCallEvent, None, None]:
         for tc in tool_calls or []:
             if tc.id is None or not tc.function.name:
@@ -860,10 +865,11 @@ class AgentLoop:
                 tool_call_index=tc.index,
                 tool_name=tc.function.name,
                 tool_class=tool_class,
+                start_time=start_time,
             )
 
     async def _stream_assistant_events(
-        self,
+        self, start_time: float | None = None
     ) -> AsyncGenerator[
         AssistantEvent | ReasoningEvent | ToolCallEvent | PromptProgressEvent
     ]:
@@ -887,7 +893,7 @@ class AgentLoop:
                 )
 
             for event in self._build_tool_call_events(
-                chunk.message.tool_calls, emitted_tool_call_ids
+                chunk.message.tool_calls, emitted_tool_call_ids, start_time
             ):
                 emitted_tool_call_ids.add(event.tool_call_id)
                 yield event
@@ -1085,7 +1091,7 @@ class AgentLoop:
             )
 
     async def _handle_tool_calls(
-        self, resolved: ResolvedMessage
+        self, resolved: ResolvedMessage, start_time: float | None = None
     ) -> AsyncGenerator[
         ToolCallEvent
         | ToolResultEvent
@@ -1132,6 +1138,7 @@ class AgentLoop:
                 tool_class=tool_call.tool_class,
                 args=tool_call.validated_args,
                 tool_call_id=tool_call.call_id,
+                start_time=start_time,
             )
 
         async for event in self._run_tools_concurrently(resolved.tool_calls):

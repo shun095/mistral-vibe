@@ -107,11 +107,11 @@ export class MessageStreamer {
      * @private
      */
     _handleToolCallEvent(event) {
-        const { tool_call_id: id, tool_name: name, args } = event;
+        const { tool_call_id: id, tool_name: name, args, start_time } = event;
 
         if (this.activeToolCallId !== id) {
             // New tool call
-            this._startToolCall(id, name, args);
+            this._startToolCall(id, name, args, start_time);
         } else {
             // Update existing tool call
             this._updateToolCall(id, name, args);
@@ -214,13 +214,15 @@ export class MessageStreamer {
      * @param {string} id
      * @param {string} name
      * @param {string} args
+     * @param {number} [startTime] - Server wall-clock timestamp (seconds)
      * @private
      */
-    _startToolCall(id, name, args) {
+    _startToolCall(id, name, args, startTime) {
         this.activeToolCallId = id;
-        const now = Date.now();
-        this._toolCallStartTimes.set(id, now);
-        const payload = { id, name, arguments: args, startTime: now };
+        // Use server wall-clock time if available (convert seconds to ms), else client time
+        const effectiveTime = startTime != null ? startTime * 1000 : Date.now();
+        this._toolCallStartTimes.set(id, effectiveTime);
+        const payload = { id, name, arguments: args, startTime: effectiveTime };
         if (this.callbacks.onToolCallStart) {
             this.callbacks.onToolCallStart(payload);
         }

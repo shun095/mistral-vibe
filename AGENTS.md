@@ -334,17 +334,20 @@ npm run test:e2e:headed           # Visible browser
 ```
 
 **E2E Test Notes:**
-- Always use `nohup npm run test:e2e > /tmp/e2e-test-output.log 2>&1 &` to run E2E tests in background
-- Monitor progress: `tail -f /tmp/e2e-test-output.log`
-- Check results: `grep -E "(passed|failed|skipped)" /tmp/e2e-test-output.log`
+- Step 1 — launch in background:
+  ```bash
+  nohup npm run test:e2e > /tmp/e2e-test-output.log 2>&1 & E2E_PID=$!
+  ```
+- Step 2 — wait for completion, then check results:
+  ```bash
+  while kill -0 $E2E_PID 2>/dev/null; do sleep 2; done; grep -E "(passed|failed|skipped)" /tmp/e2e-test-output.log
+  ```
+- NEVER use `tail -f /tmp/e2e-test-output.log` which blocks forever
 - **NEVER kill processes on ports 9091-9093** - these are production ports in use
 - E2E tests use ports 9100-9109 by default (safe to kill after tests complete)
 - **To kill E2E test processes safely:**
   ```bash
-  # Kill only E2E test servers (ports 9100-9109)
   lsof -ti :9100-9109 | xargs -r kill -9 2>/dev/null || true
-  # OR kill by PID file
-  cat /tmp/vibe-e2e-server-*.pid | xargs -r kill -9 2>/dev/null || true
   ```
 
 ### Build Commands
