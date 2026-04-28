@@ -44,6 +44,7 @@ from pydantic import BaseModel
 
 # Constants
 MESSAGE_PREVIEW_LENGTH = 50
+QUEUE_PREVIEW_LENGTH = 120
 
 # Web notification constants
 WEB_NOTIFICATION_ACTION_TITLE = "Action Required"
@@ -77,6 +78,7 @@ from vibe.cli.plan_offer.decide_plan_offer import (
     resolve_api_key_for_plan,
 )
 from vibe.cli.plan_offer.ports.whoami_gateway import WhoAmIGateway, WhoAmIPlanType
+from vibe.cli.queue_manager import QueueManager
 from vibe.cli.textual_ui.handlers.event_handler import EventHandler
 from vibe.cli.textual_ui.notifications import (
     NotificationContext,
@@ -393,6 +395,7 @@ class VibeApp(App):  # noqa: PLR0904
         self._pending_question: asyncio.Future | None = None
         self._user_interaction_lock = asyncio.Lock()
         self._initialize_web_broadcast_state()
+        self._initialize_queue_state()
         self._web_broadcast_manager = WebBroadcastManager(
             self.agent_loop, self.config, self.notify
         )
@@ -449,6 +452,10 @@ class VibeApp(App):  # noqa: PLR0904
         self._pending_approval_meta: PopupMetadata | None = None
         self._pending_question_meta: PopupMetadata | None = None
         self._queued_message: str | None = None
+
+    def _initialize_queue_state(self) -> None:
+        """Initialize queue auto-submit state."""
+        self._queue_mgr = QueueManager()
 
     def get_pending_approval_state(self) -> PopupMetadata | None:
         """Get the pending approval popup metadata if active.
@@ -999,6 +1006,7 @@ class VibeApp(App):  # noqa: PLR0904
                         stderr=stderr,
                     )
                 )
+            self._spawn_queue_task()
 
         except subprocess.TimeoutExpired as error:
             error_msg = "Command timed out after 30 seconds"
@@ -1192,6 +1200,9 @@ class VibeApp(App):  # noqa: PLR0904
                             loading_widget=self._loading_widget,
                         )
 
+            # Task completed successfully — process queued messages
+            self._spawn_queue_task()
+
         except asyncio.CancelledError:
             if self._loading_widget and self._loading_widget.parent:
                 await self._loading_widget.remove()
@@ -1302,6 +1313,29 @@ class VibeApp(App):  # noqa: PLR0904
             call_later_callback=self.call_later,
         )
 
+    async def _route_message(self, message: str) -> bool:
+        """Route a message through the same flow as TUI input.
+
+        Handles bash commands (!, !!), teleport (&), slash commands, skills,
+        and regular user messages. Shared by both _process_web_messages and
+        _route_queue_message to avoid duplicating routing logic.
+
+        Returns:
+            True if the message spawned an agent task that needs to be awaited.
+        """
+        if message.startswith("!!"):
+            await self._handle_bash_command(message[2:], inject_context=False)
+            return False
+        if message.startswith("!"):
+            await self._handle_bash_command(message[1:], inject_context=True)
+            return False
+        if await self._handle_command(message):
+            return False
+        if await self._handle_skill(message):
+            return self._agent_task is not None
+        await self._handle_user_message(message)
+        return self._agent_task is not None
+
     async def _process_web_messages(self) -> None:
         """Process messages from the web UI queue and interrupt requests."""
         # Process interrupt requests first
@@ -1324,31 +1358,42 @@ class VibeApp(App):  # noqa: PLR0904
                 await self._handle_user_message_with_image(message, image_data)
                 continue
 
-            # Check for !command (bash execution) first
-            if message.startswith("!!"):
-                # !!command: execute but don't inject as context
-                await self._handle_bash_command(message[2:], inject_context=False)
-                continue
-            if message.startswith("!"):
-                await self._handle_bash_command(message[1:], inject_context=True)
-                continue
+            # Route through shared message routing logic
+            await self._route_message(message)
 
-            # Check for teleport command
-            if message.startswith("&"):
-                if self.config.nuage_enabled:
-                    await self._handle_teleport_command(message[1:])
-                    continue
+    def _spawn_queue_task(self) -> None:
+        """Spawn _process_queue as a fire-and-forget task."""
+        asyncio.create_task(self._process_queue())
 
-            # Check for slash commands
-            if await self._handle_command(message):
-                continue
+    async def _process_queue(self) -> None:
+        """Process the first queued message from (cwd)/.vibe/queue.jsonl.
 
-            # Check for skills
-            if await self._handle_skill(message):
-                continue
+        Reads one entry, routes it through the normal message flow, and removes
+        it. For agent messages, the next entry is chained by _spawn_queue_task
+        called after the agent task completes successfully. For non-agent
+        messages (bash, slash commands), chains immediately. Stops on first
+        agent task failure.
+        """
+        entries = self._queue_mgr.read_entries()
+        if not entries:
+            return
 
-            # Regular user message
-            await self._handle_user_message(message)
+        message = entries[0]
+        if not message:
+            self._queue_mgr.remove_entry(0)
+            await self._process_queue()
+            return
+
+        logger.info("Queue entry: %s", message[:QUEUE_PREVIEW_LENGTH])
+        try:
+            await self._route_message(message)
+        except Exception:
+            logger.error("Queue processing stopped: routing failed for entry")
+            return
+
+        if not self._queue_mgr.remove_entry(0):
+            logger.warning("Failed to remove queue entry")
+            return
 
     async def _handle_remote_user_message(self, message: str) -> None:
         warning = self._remote_manager.validate_input()
@@ -1581,6 +1626,9 @@ class VibeApp(App):  # noqa: PLR0904
                             loading_active=self._loading_widget is not None,
                             loading_widget=self._loading_widget,
                         )
+
+            # Task completed successfully — process queued messages
+            self._spawn_queue_task()
 
         except asyncio.CancelledError:
             await self._handle_turn_error()
@@ -2383,6 +2431,7 @@ class VibeApp(App):  # noqa: PLR0904
                     f"Failed to clear history: {e}", collapsed=self._tools_collapsed
                 )
             )
+        self._spawn_queue_task()
 
     async def _show_log_path(self, **kwargs: Any) -> None:
         if not self.agent_loop.session_logger.enabled:
@@ -2407,6 +2456,64 @@ class VibeApp(App):  # noqa: PLR0904
                     f"Failed to get log path: {e}", collapsed=self._tools_collapsed
                 )
             )
+
+    async def _queue_command(self, cmd_args: str = "", **kwargs: Any) -> None:
+        """Queue a message for auto-submit, or show current queue status.
+
+        Usage:
+            /queue <message>  — Add message to queue
+            /queue clear      — Clear the queue
+            /queue            — Show current queue contents
+        """
+        stripped = cmd_args.strip()
+
+        match stripped:
+            case "clear":
+                if self._queue_mgr.clear():
+                    await self._mount_and_scroll(
+                        UserCommandMessage("## Queue\n\nQueue cleared.")
+                    )
+                else:
+                    await self._mount_and_scroll(
+                        ErrorMessage(
+                            "Failed to clear queue.", collapsed=self._tools_collapsed
+                        )
+                    )
+                return
+
+            case "":
+                entries = self._queue_mgr.read_entries()
+                if not entries:
+                    await self._mount_and_scroll(
+                        UserCommandMessage("## Queue\n\nQueue is empty.")
+                    )
+                else:
+                    lines = "\n".join(
+                        f"{i + 1}. `{msg[:QUEUE_PREVIEW_LENGTH]}{'...' if len(msg) > QUEUE_PREVIEW_LENGTH else ''}`"
+                        for i, msg in enumerate(entries)
+                    )
+                    await self._mount_and_scroll(
+                        UserCommandMessage(
+                            f"## Queue ({len(entries)} message(s))\n\n{lines}"
+                        )
+                    )
+                return
+
+            case _:
+                total = self._queue_mgr.append(stripped)
+                if total is not None:
+                    await self._mount_and_scroll(
+                        UserCommandMessage(
+                            f"## Queue\n\nMessage added. Total: {total} message(s)."
+                        )
+                    )
+                else:
+                    await self._mount_and_scroll(
+                        ErrorMessage(
+                            "Failed to add message to queue.",
+                            collapsed=self._tools_collapsed,
+                        )
+                    )
 
     async def _edit_last_message(self, **kwargs: Any) -> None:
         """Edit the last user message and restart the conversation."""
@@ -2504,6 +2611,7 @@ class VibeApp(App):  # noqa: PLR0904
             await self._mount_and_scroll(
                 UserCommandMessage("Message edited and conversation restarted.")
             )
+            self._spawn_queue_task()
 
         except asyncio.CancelledError:
             if self._loading_widget and self._loading_widget.parent:
@@ -2570,6 +2678,8 @@ class VibeApp(App):  # noqa: PLR0904
             summary = await self.agent_loop.compact()
             new_tokens = self.agent_loop.stats.context_tokens
             compact_msg.set_complete(old_tokens=old_tokens, new_tokens=new_tokens)
+
+            self._spawn_queue_task()
 
             # Mount summary widget if there's content
             if summary and self.event_handler:

@@ -139,6 +139,11 @@ class CommandRegistry:
                 description="Show data retention information",
                 handler="_show_data_retention",
             ),
+            "queue": Command(
+                aliases=frozenset(["/queue"]),
+                description="Queue messages for auto-submit after task completion",
+                handler="_queue_command",
+            ),
         }
 
         for command in excluded_commands:
