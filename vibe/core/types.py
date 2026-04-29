@@ -336,6 +336,11 @@ class LLMMessage(BaseModel):
             message_id=self.message_id,
         )
 
+    @property
+    def is_reasoning_only(self) -> bool:
+        """True if this message has reasoning_content but no text content and no tool calls."""
+        return bool(self.reasoning_content) and not self.content and not self.tool_calls
+
 
 class LLMUsage(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -499,6 +504,9 @@ class MessageList(Sequence[LLMMessage]):
     def append(self, msg: LLMMessage) -> None:
         self._data.append(msg)
         self._notify(msg)
+
+    def pop(self, index: int = -1) -> LLMMessage:
+        return self._data.pop(index)
 
     def insert(self, i: int, msg: LLMMessage) -> None:
         self._data.insert(i, msg)

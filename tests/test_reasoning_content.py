@@ -19,7 +19,13 @@ from vibe.core.config import ModelConfig, ProviderConfig, VibeConfig
 from vibe.core.llm.backend.generic import GenericBackend, OpenAIAdapter
 from vibe.core.llm.backend.mistral import MistralBackend, MistralMapper, ParsedContent
 from vibe.core.llm.format import APIToolFormatHandler
-from vibe.core.types import AssistantEvent, LLMMessage, ReasoningEvent, Role
+from vibe.core.types import (
+    AssistantEvent,
+    LLMMessage,
+    LLMRetryEvent,
+    ReasoningEvent,
+    Role,
+)
 
 
 def make_config() -> VibeConfig:
@@ -737,3 +743,172 @@ class TestMistralReasoningFieldNameValidation:
 
         backend = MistralBackend(provider=provider)
         assert backend is not None
+
+
+class TestReasoningOnlyAutoRetry:
+    @pytest.mark.asyncio
+    async def test_retry_on_reasoning_only_streaming(self):
+        backend = FakeBackend([
+            # Attempt 1: reasoning only — will trigger retry
+            [mock_llm_chunk(content="", reasoning_content="Thinking...")],
+            # Attempt 2: has content — succeeds
+            [mock_llm_chunk(content="The answer is 42.")],
+        ])
+        agent = build_test_agent_loop(
+            config=make_config(), backend=backend, enable_streaming=True
+        )
+
+        events = [event async for event in agent.act("What is 6 times 7?")]
+
+        retry_events = [e for e in events if isinstance(e, LLMRetryEvent)]
+        assert len(retry_events) == 1
+        assert retry_events[0].attempt == 1
+        assert retry_events[0].max_attempts == 3
+
+        assistant_events = [e for e in events if isinstance(e, AssistantEvent)]
+        assert len(assistant_events) == 1
+        assert assistant_events[0].content == "The answer is 42."
+
+        # Only the successful message is kept — reasoning-only was discarded
+        assistant_msgs = [m for m in agent.messages if m.role == Role.assistant]
+        assert len(assistant_msgs) == 1
+        assert assistant_msgs[0].content == "The answer is 42."
+
+    @pytest.mark.asyncio
+    async def test_retry_on_reasoning_only_non_streaming(self):
+        backend = FakeBackend([
+            # Attempt 1: reasoning only — each complete() call gets one stream
+            [mock_llm_chunk(content="", reasoning_content="Let me think...")],
+            # Attempt 2: has content
+            [mock_llm_chunk(content="Result.")],
+        ])
+        agent = build_test_agent_loop(
+            config=make_config(), backend=backend, enable_streaming=False
+        )
+
+        events = [event async for event in agent.act("Compute")]
+
+        retry_events = [e for e in events if isinstance(e, LLMRetryEvent)]
+        assert len(retry_events) == 1
+
+        assistant_events = [e for e in events if isinstance(e, AssistantEvent)]
+        assert len(assistant_events) == 1
+        assert assistant_events[0].content == "Result."
+
+    @pytest.mark.asyncio
+    async def test_no_retry_when_reasoning_with_content(self):
+        backend = FakeBackend([
+            [mock_llm_chunk(content="Answer.", reasoning_content="Thinking...")]
+        ])
+        agent = build_test_agent_loop(
+            config=make_config(), backend=backend, enable_streaming=True
+        )
+
+        events = [event async for event in agent.act("Question")]
+
+        retry_events = [e for e in events if isinstance(e, LLMRetryEvent)]
+        assert len(retry_events) == 0
+
+        assistant_events = [e for e in events if isinstance(e, AssistantEvent)]
+        assert len(assistant_events) == 1
+
+    @pytest.mark.asyncio
+    async def test_no_retry_when_reasoning_with_tool_calls(self):
+        from vibe.core.types import FunctionCall, ToolCall
+
+        backend = FakeBackend([
+            [
+                mock_llm_chunk(
+                    content="",
+                    reasoning_content="I'll search for that.",
+                    tool_calls=[
+                        ToolCall(
+                            id="call_1",
+                            index=0,
+                            function=FunctionCall(
+                                name="search", arguments='{"query":"test"}'
+                            ),
+                            type="function",
+                        )
+                    ],
+                )
+            ]
+        ])
+        agent = build_test_agent_loop(
+            config=make_config(), backend=backend, enable_streaming=True
+        )
+
+        events = [event async for event in agent.act("Search something")]
+
+        retry_events = [e for e in events if isinstance(e, LLMRetryEvent)]
+        assert len(retry_events) == 0
+
+    @pytest.mark.asyncio
+    async def test_exhausted_retries_keeps_reasoning_message(self):
+        backend = FakeBackend([
+            [mock_llm_chunk(content="", reasoning_content="Thought 1.")],
+            [mock_llm_chunk(content="", reasoning_content="Thought 2.")],
+            [mock_llm_chunk(content="", reasoning_content="Thought 3.")],
+        ])
+        agent = build_test_agent_loop(
+            config=make_config(), backend=backend, enable_streaming=True
+        )
+
+        events = [event async for event in agent.act("Hard question")]
+
+        retry_events = [e for e in events if isinstance(e, LLMRetryEvent)]
+        assert (
+            len(retry_events) == 2
+        )  # retries on attempt 0 and 1, not on attempt 2 (last)
+
+        # Last reasoning-only message is kept
+        assistant_msgs = [m for m in agent.messages if m.role == Role.assistant]
+        assert len(assistant_msgs) == 1
+        assert assistant_msgs[0].reasoning_content == "Thought 3."
+        assert not assistant_msgs[0].content
+
+    @pytest.mark.asyncio
+    async def test_retry_sends_same_messages_to_llm(self):
+        backend = FakeBackend([
+            [mock_llm_chunk(content="", reasoning_content="Thinking...")],
+            [mock_llm_chunk(content="Answer.")],
+        ])
+        agent = build_test_agent_loop(
+            config=make_config(), backend=backend, enable_streaming=True
+        )
+
+        [_ async for _ in agent.act("Question")]
+
+        # Both LLM calls received the same messages (just the user prompt)
+        assert len(backend.requests_messages) == 2
+        assert backend.requests_messages[0] == backend.requests_messages[1]
+
+    @pytest.mark.asyncio
+    async def test_no_retry_on_empty_response(self):
+        backend = FakeBackend([[mock_llm_chunk(content="")]])
+        agent = build_test_agent_loop(
+            config=make_config(), backend=backend, enable_streaming=True
+        )
+
+        events = [event async for event in agent.act("Question")]
+
+        retry_events = [e for e in events if isinstance(e, LLMRetryEvent)]
+        assert len(retry_events) == 0
+
+    @pytest.mark.asyncio
+    async def test_retry_event_has_provider_and_model(self):
+        backend = FakeBackend([
+            [mock_llm_chunk(content="", reasoning_content="Thinking...")],
+            [mock_llm_chunk(content="Answer.")],
+        ])
+        agent = build_test_agent_loop(
+            config=make_config(), backend=backend, enable_streaming=True
+        )
+
+        events = [event async for event in agent.act("Question")]
+
+        retry_events = [e for e in events if isinstance(e, LLMRetryEvent)]
+        assert len(retry_events) == 1
+        assert retry_events[0].provider is not None
+        assert retry_events[0].model is not None
+        assert retry_events[0].delay_seconds > 0

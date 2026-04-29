@@ -821,14 +821,39 @@ class AgentLoop:
             await self._save_messages()
 
     async def _perform_llm_turn(self) -> AsyncGenerator[BaseEvent, None]:
+        max_attempts = 3
+        active_model = self.config.get_active_model()
+        provider = self.config.get_provider_for_model(active_model)
+
         turn_start_time = wall_now()
-        if self.enable_streaming:
-            async for event in self._stream_assistant_events(turn_start_time):
-                yield event
-        else:
-            assistant_event = await self._get_assistant_event()
-            if assistant_event.content:
-                yield assistant_event
+        for attempt in range(max_attempts):
+            if self.enable_streaming:
+                async for event in self._stream_assistant_events(turn_start_time):
+                    yield event
+            else:
+                assistant_event = await self._get_assistant_event()
+                if assistant_event.content:
+                    yield assistant_event
+
+            last_message = self.messages[-1]
+
+            if last_message.is_reasoning_only and attempt < max_attempts - 1:
+                # Retry: remove the reasoning-only message and try again
+                self.messages.pop()
+                delay_seconds = 0.5 * (2**attempt)
+                yield LLMRetryEvent(
+                    attempt=attempt + 1,
+                    max_attempts=max_attempts,
+                    error_message="LLM returned reasoning content but no text or tool calls",
+                    delay_seconds=delay_seconds,
+                    provider=provider.name,
+                    model=active_model.name,
+                )
+                await asyncio.sleep(delay_seconds)
+                continue
+
+            # Final attempt or successful response — proceed normally
+            break
 
         last_message = self.messages[-1]
 
