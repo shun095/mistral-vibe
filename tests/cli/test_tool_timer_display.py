@@ -84,24 +84,101 @@ class TestToolCallMessageElapsedTimer:
         # When not spinning and no display_text, returns tool name with triangle
         assert "5.0s" not in content
 
+    def test_start_time_always_wall_now_not_server_start_time(self) -> None:
+        event = ToolCallEvent(
+            tool_call_id="tc-1",
+            tool_call_index=0,
+            tool_name="read_file",
+            tool_class=ReadFile,
+            args=self._args,
+            start_time=100.0,  # server start_time — should be ignored
+        )
+        widget = ToolCallMessage(event)
+
+        assert widget._start_time > 0
+        assert widget._start_time != event.start_time
+
+    def test_history_widget_start_time_is_zero(self) -> None:
+        widget = ToolCallMessage(tool_name="read_file")
+        assert widget._start_time == 0.0
+
 
 class TestToolResultMessageDuration:
     _args = ReadFileArgs(path="/test.txt", offset=0)
 
-    def test_get_result_text_appends_duration_on_success(self) -> None:
+    def test_get_result_text_uses_call_widget_elapsed_on_error(self) -> None:
+        call_event = ToolCallEvent(
+            tool_call_id="tc-1",
+            tool_call_index=0,
+            tool_name="read_file",
+            tool_class=ReadFile,
+            args=self._args,
+        )
+        call_widget = ToolCallMessage(call_event)
+
+        result_event = ToolResultEvent(
+            tool_call_id="tc-1",
+            tool_name="read_file",
+            tool_class=ReadFile,
+            error="File not found",
+            duration=0.1,
+        )
+        widget = ToolResultMessage(result_event, call_widget)
+
+        with patch(
+            "vibe.cli.textual_ui.widgets.tools.wall_now",
+            return_value=call_widget._start_time + 4.0,
+        ):
+            text = widget._get_result_text()
+
+        assert "error" in text
+        assert "(4.0s)" in text
+        assert "(0.1s)" not in text
+
+    def test_get_result_text_uses_call_widget_elapsed_over_server_duration(
+        self,
+    ) -> None:
+        call_event = ToolCallEvent(
+            tool_call_id="tc-1",
+            tool_call_index=0,
+            tool_name="read_file",
+            tool_class=ReadFile,
+            args=self._args,
+        )
+        call_widget = ToolCallMessage(call_event)
+
+        result_event = ToolResultEvent(
+            tool_call_id="tc-1",
+            tool_name="read_file",
+            tool_class=ReadFile,
+            result=self._args,
+            duration=0.5,  # server tool-only time — should NOT be used
+        )
+        widget = ToolResultMessage(result_event, call_widget)
+
+        with patch(
+            "vibe.cli.textual_ui.widgets.tools.wall_now",
+            return_value=call_widget._start_time + 3.0,
+        ):
+            text = widget._get_result_text()
+
+        assert "(3.0s)" in text
+        assert "(0.5s)" not in text
+
+    def test_get_result_text_shows_no_duration_without_call_widget(self) -> None:
         event = ToolResultEvent(
             tool_call_id="tc-1",
             tool_name="read_file",
             tool_class=ReadFile,
             result=self._args,
-            duration=2.3,
+            duration=2.3,  # should NOT be shown
         )
         widget = ToolResultMessage(event)
         text = widget._get_result_text()
 
-        assert "(2.3s)" in text
+        assert "(2.3s)" not in text
 
-    def test_get_result_text_appends_duration_on_error(self) -> None:
+    def test_get_result_text_shows_error_without_duration(self) -> None:
         event = ToolResultEvent(
             tool_call_id="tc-1",
             tool_name="read_file",
@@ -113,9 +190,9 @@ class TestToolResultMessageDuration:
         text = widget._get_result_text()
 
         assert "error" in text
-        assert "(0.1s)" in text
+        assert "(0.1s)" not in text
 
-    def test_get_result_text_appends_duration_on_skipped(self) -> None:
+    def test_get_result_text_shows_skipped_without_duration(self) -> None:
         event = ToolResultEvent(
             tool_call_id="tc-1",
             tool_name="read_file",
@@ -128,7 +205,7 @@ class TestToolResultMessageDuration:
         text = widget._get_result_text()
 
         assert "skipped" in text
-        assert "(0.0s)" in text
+        assert "(0.0s)" not in text
 
     def test_get_result_text_no_duration_when_none(self) -> None:
         event = ToolResultEvent(
@@ -143,18 +220,49 @@ class TestToolResultMessageDuration:
 
         assert "(" not in text or "s)" not in text
 
-    def test_get_result_text_minutes_format(self) -> None:
-        event = ToolResultEvent(
+    def test_get_result_text_shows_elapsed_with_call_widget_minutes_format(
+        self,
+    ) -> None:
+        call_event = ToolCallEvent(
+            tool_call_id="tc-1",
+            tool_call_index=0,
+            tool_name="read_file",
+            tool_class=ReadFile,
+            args=self._args,
+        )
+        call_widget = ToolCallMessage(call_event)
+
+        result_event = ToolResultEvent(
             tool_call_id="tc-1",
             tool_name="read_file",
             tool_class=ReadFile,
-            result=None,
-            duration=123.4,
+            result=self._args,
+            duration=0.5,  # not used
         )
-        widget = ToolResultMessage(event)
-        text = widget._get_result_text()
+        widget = ToolResultMessage(result_event, call_widget)
+
+        with patch(
+            "vibe.cli.textual_ui.widgets.tools.wall_now",
+            return_value=call_widget._start_time + 123.4,
+        ):
+            text = widget._get_result_text()
 
         assert "2m 3.4s" in text
+
+    def test_get_result_text_shows_no_duration_for_history_call_widget(self) -> None:
+        call_widget = ToolCallMessage(tool_name="read_file")
+
+        result_event = ToolResultEvent(
+            tool_call_id="tc-1",
+            tool_name="read_file",
+            tool_class=ReadFile,
+            result=self._args,
+            duration=1.7,  # should NOT be shown
+        )
+        widget = ToolResultMessage(result_event, call_widget)
+        text = widget._get_result_text()
+
+        assert "(1.7s)" not in text
 
     def test_get_result_text_history_event_no_duration(self) -> None:
         widget = ToolResultMessage(None, tool_name="read_file", content="File content")

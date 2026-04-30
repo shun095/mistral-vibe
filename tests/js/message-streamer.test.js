@@ -165,7 +165,7 @@ describe('MessageStreamer', () => {
             expect(callArgs.id).toBe('tool-1');
             expect(callArgs.name).toBe('search');
             expect(callArgs.arguments).toEqual({ query: 'test' });
-            expect(callArgs.startTime).toBeGreaterThan(0);
+            expect(callArgs.startTime).toBeUndefined();
         });
 
         test('handles tool call updates', () => {
@@ -210,19 +210,16 @@ describe('MessageStreamer', () => {
             expect(resultArgs.skipped).toBeUndefined();
             expect(resultArgs.skip_reason).toBeUndefined();
             expect(resultArgs.duration).toBeUndefined();
-            expect(resultArgs.startTime).toBeNull();
+            expect(resultArgs.startTime).toBeUndefined();
         });
 
-        test('passes startTime from prior ToolCallEvent to ToolResultEvent', () => {
+        test('does not pass startTime or duration in ToolResultEvent callback', () => {
             streamer.handleEvent({
                 __type: 'ToolCallEvent',
                 tool_call_id: 'tool-2',
                 tool_name: 'bash',
                 args: { command: 'ls' }
             });
-
-            const callArgs = callbacks.onToolCallStart.mock.calls[0][0];
-            expect(callArgs.startTime).toBeGreaterThan(0);
 
             streamer.handleEvent({
                 __type: 'ToolResultEvent',
@@ -233,8 +230,8 @@ describe('MessageStreamer', () => {
             });
 
             const resultArgs = callbacks.onToolResult.mock.calls[0][0];
-            expect(resultArgs.startTime).toBe(callArgs.startTime);
-            expect(resultArgs.duration).toBe(1.5);
+            expect(resultArgs.startTime).toBeUndefined();
+            expect(resultArgs.duration).toBeUndefined();
         });
     });
 

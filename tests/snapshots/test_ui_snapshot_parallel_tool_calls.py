@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import cast
+from unittest.mock import patch
 
 from textual.app import App, ComposeResult
 from textual.containers import VerticalScroll
@@ -108,8 +109,13 @@ def test_snapshot_parallel_tool_calls_resolved(snap_compare: SnapCompare) -> Non
         app = cast(ParallelToolCallsApp, pilot.app)
         await app.emit_all_tool_calls()
         await pilot.pause(0.3)
-        await app.resolve_all_results()
-        await pilot.pause(0.3)
+        # Normalize _start_time and patch wall_now before resolving results
+        # so on_mount sees deterministic elapsed (0.5s)
+        for widget in app.query(ToolCallMessage):
+            widget._start_time = 1000.0
+        with patch("vibe.cli.textual_ui.widgets.tools.wall_now", return_value=1000.5):
+            await app.resolve_all_results()
+            await pilot.pause(0.3)
 
     assert snap_compare(
         "test_ui_snapshot_parallel_tool_calls.py:ParallelToolCallsApp",

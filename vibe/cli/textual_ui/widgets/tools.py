@@ -31,13 +31,7 @@ class ToolCallMessage(StatusMessage):
         self._display_text: str | None = None
         self._stream_widget: NoMarkupStatic | None = None
         self._result_widget: ToolResultMessage | None = None
-        self._start_time: float
-        if event is not None and event.start_time is not None:
-            self._start_time = event.start_time
-        elif not self._is_history:
-            self._start_time = wall_now()
-        else:
-            self._start_time = 0.0
+        self._start_time: float = wall_now() if not self._is_history else 0.0
 
         super().__init__()
         self.add_class("tool-call")
@@ -202,8 +196,9 @@ class ToolResultMessage(Static):
 
     def _get_result_text(self) -> str:
         text = self._base_result_text()
-        if self._event is not None and self._event.duration is not None:
-            text = f"{text} ({format_duration(self._event.duration)})"
+        if self._call_widget is not None and not self._call_widget._is_history:
+            elapsed = wall_now() - self._call_widget._start_time
+            text = f"{text} ({format_duration(elapsed)})"
         return text
 
     async def _render_result(self) -> None:

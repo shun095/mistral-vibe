@@ -13,8 +13,6 @@ export class MessageStreamer {
         this.activeReasoningId = null;
         this.activeAssistantId = null;
         this.activeToolCallId = null;
-        // Track start times for tool calls (id -> timestamp in ms)
-        this._toolCallStartTimes = new Map();
     }
 
     /**
@@ -107,11 +105,11 @@ export class MessageStreamer {
      * @private
      */
     _handleToolCallEvent(event) {
-        const { tool_call_id: id, tool_name: name, args, start_time } = event;
+        const { tool_call_id: id, tool_name: name, args } = event;
 
         if (this.activeToolCallId !== id) {
             // New tool call
-            this._startToolCall(id, name, args, start_time);
+            this._startToolCall(id, name, args);
         } else {
             // Update existing tool call
             this._updateToolCall(id, name, args);
@@ -124,12 +122,10 @@ export class MessageStreamer {
      * @private
      */
     _handleToolResultEvent(event) {
-        const { tool_call_id: toolCallId, tool_name, result, error, skipped, skip_reason, duration } = event;
-        const startTime = this._toolCallStartTimes.get(toolCallId) || null;
-        this._toolCallStartTimes.delete(toolCallId);
+        const { tool_call_id: toolCallId, tool_name, result, error, skipped, skip_reason } = event;
 
         if (this.callbacks.onToolResult) {
-            this.callbacks.onToolResult({ toolCallId, tool_name, result, error, skipped, skip_reason, duration, startTime });
+            this.callbacks.onToolResult({ toolCallId, tool_name, result, error, skipped, skip_reason });
         }
     }
 
@@ -214,15 +210,11 @@ export class MessageStreamer {
      * @param {string} id
      * @param {string} name
      * @param {string} args
-     * @param {number} [startTime] - Server wall-clock timestamp (seconds)
      * @private
      */
-    _startToolCall(id, name, args, startTime) {
+    _startToolCall(id, name, args) {
         this.activeToolCallId = id;
-        // Use server wall-clock time if available (convert seconds to ms), else client time
-        const effectiveTime = startTime != null ? startTime * 1000 : Date.now();
-        this._toolCallStartTimes.set(id, effectiveTime);
-        const payload = { id, name, arguments: args, startTime: effectiveTime };
+        const payload = { id, name, arguments: args };
         if (this.callbacks.onToolCallStart) {
             this.callbacks.onToolCallStart(payload);
         }
@@ -278,7 +270,6 @@ export class MessageStreamer {
         this.activeReasoningId = null;
         this.activeAssistantId = null;
         this.activeToolCallId = null;
-        this._toolCallStartTimes.clear();
     }
 }
 

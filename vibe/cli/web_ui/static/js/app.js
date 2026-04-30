@@ -662,11 +662,9 @@ class VibeClient {
         this.currentToolCall = toolCallDiv;
         this.currentToolCallId = data.id;
         this.toolCallMap.set(data.id, toolCallDiv);
-        const startTime = data.startTime || Date.now();
-        if (!data.startTime) {
-            console.warn('[VibeClient] ToolCallEvent missing startTime, falling back to current time');
+        if (this.historyLoaded) {
+            this._startElapsedTimer(data.id, toolCallDiv, Date.now());
         }
-        this._startElapsedTimer(data.id, toolCallDiv, startTime);
         this.scrollToBottom();
     }
 
@@ -691,8 +689,11 @@ class VibeClient {
         const timer = this._toolCallTimers.get(toolCallId);
         if (timer) {
             clearInterval(timer.intervalId);
+            const elapsed = (Date.now() - timer.startTime) / 1000;
             this._toolCallTimers.delete(toolCallId);
+            return elapsed;
         }
+        return null;
     }
 
     _updateExistingToolCall(data) {
@@ -741,18 +742,9 @@ class VibeClient {
             return;
         }
 
-        // Stop the elapsed timer
-        this._stopElapsedTimer(data.toolCallId);
-
-        // Compute total elapsed time from LLM generation start
-        // Prefer startTime-based calculation (includes LLM gen + tool exec), fallback to server duration
-        let durationSec = null;
-        if (data.startTime) {
-            durationSec = (Date.now() - data.startTime) / 1000;
-        } else if (data.duration != null) {
-            durationSec = data.duration;
-        }
-        const durationStr = durationSec != null ? ` (${formatDuration(durationSec)})` : '';
+        // Stop the realtime timer and show the elapsed time the user last saw ticking.
+        const elapsed = this._stopElapsedTimer(data.toolCallId);
+        const durationStr = elapsed != null ? ` (${formatDuration(elapsed)})` : '';
 
         // Capture scroll height BEFORE modifying content
         const previousScrollHeight = this.elements.messages.scrollHeight;

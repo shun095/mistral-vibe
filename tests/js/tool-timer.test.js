@@ -232,7 +232,7 @@ describe('VibeClient Elapsed Timer', () => {
         expect(statusSpan.textContent).toContain('3.0s');
     });
 
-    test('_stopElapsedTimer clears interval and removes from map', () => {
+    test('_stopElapsedTimer clears interval, removes from map, and returns elapsed time', () => {
         const toolCallDiv = document.createElement('div');
         toolCallDiv.className = 'tool-call';
         const statusSpan = document.createElement('span');
@@ -241,11 +241,18 @@ describe('VibeClient Elapsed Timer', () => {
         toolCallDiv.appendChild(statusSpan);
         document.body.appendChild(toolCallDiv);
 
-        client._startElapsedTimer('tool-1', toolCallDiv, Date.now());
+        const startTime = Date.now() - 2500; // 2.5s ago
+        client._startElapsedTimer('tool-1', toolCallDiv, startTime);
         expect(client._toolCallTimers.has('tool-1')).toBe(true);
 
-        client._stopElapsedTimer('tool-1');
+        const elapsed = client._stopElapsedTimer('tool-1');
         expect(client._toolCallTimers.has('tool-1')).toBe(false);
+        expect(elapsed).toBeCloseTo(2.5, 1);
+    });
+
+    test('_stopElapsedTimer returns null when no timer exists', () => {
+        const elapsed = client._stopElapsedTimer('nonexistent');
+        expect(elapsed).toBeNull();
     });
 
     test('destroy clears all elapsed timers', () => {
@@ -265,7 +272,7 @@ describe('VibeClient Elapsed Timer', () => {
         expect(client._toolCallTimers.size).toBe(0);
     });
 
-    test('_handleToolResultUpdate stops timer and shows duration', () => {
+    test('_handleToolResultUpdate stops timer and shows elapsed from realtime counter', () => {
         const toolCallDiv = document.createElement('div');
         toolCallDiv.className = 'tool-call';
         const statusSpan = document.createElement('span');
@@ -277,22 +284,24 @@ describe('VibeClient Elapsed Timer', () => {
         toolCallDiv.appendChild(contentDiv);
         document.body.appendChild(toolCallDiv);
 
+        const startTime = Date.now() - 3000; // 3s ago
         client.toolCallMap.set('tool-1', toolCallDiv);
-        client._startElapsedTimer('tool-1', toolCallDiv, Date.now());
+        client._startElapsedTimer('tool-1', toolCallDiv, startTime);
 
         client._handleToolResultUpdate({
             toolCallId: 'tool-1',
             tool_name: 'read_file',
             result: { content: 'file content' },
-            duration: 2.3,
+            duration: 2.3, // server tool-only duration — should NOT be used
         });
 
         expect(client._toolCallTimers.has('tool-1')).toBe(false);
         expect(statusSpan.textContent).toContain('Completed');
-        expect(statusSpan.textContent).toContain('(2.3s)');
+        // Should show ~3s from the realtime timer, NOT 2.3s from server duration
+        expect(statusSpan.textContent).toContain('(3.0s)');
     });
 
-    test('_handleToolResultUpdate shows duration on error', () => {
+    test('_handleToolResultUpdate shows elapsed time on error', () => {
         const toolCallDiv = document.createElement('div');
         toolCallDiv.className = 'tool-call';
         const statusSpan = document.createElement('span');
@@ -304,8 +313,9 @@ describe('VibeClient Elapsed Timer', () => {
         toolCallDiv.appendChild(contentDiv);
         document.body.appendChild(toolCallDiv);
 
+        const startTime = Date.now() - 1500; // 1.5s ago
         client.toolCallMap.set('tool-1', toolCallDiv);
-        client._startElapsedTimer('tool-1', toolCallDiv, Date.now());
+        client._startElapsedTimer('tool-1', toolCallDiv, startTime);
 
         client._handleToolResultUpdate({
             toolCallId: 'tool-1',
@@ -315,10 +325,37 @@ describe('VibeClient Elapsed Timer', () => {
         });
 
         expect(statusSpan.textContent).toContain('Failed');
-        expect(statusSpan.textContent).toContain('(0.1s)');
+        // Should show ~1.5s from the realtime timer, NOT 0.1s from server duration
+        expect(statusSpan.textContent).toContain('(1.5s)');
     });
 
-    test('_handleToolResultUpdate formats long duration as minutes', () => {
+    test('_handleToolResultUpdate shows no duration when no timer running', () => {
+        const toolCallDiv = document.createElement('div');
+        toolCallDiv.className = 'tool-call';
+        const statusSpan = document.createElement('span');
+        statusSpan.className = 'tool-status';
+        statusSpan.innerHTML = '<span class="material-symbols-outlined">hourglass_empty</span> Running...';
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'content';
+        toolCallDiv.appendChild(statusSpan);
+        toolCallDiv.appendChild(contentDiv);
+        document.body.appendChild(toolCallDiv);
+
+        // No timer started — simulates history replay or missed ToolCallEvent
+        client.toolCallMap.set('tool-1', toolCallDiv);
+
+        client._handleToolResultUpdate({
+            toolCallId: 'tool-1',
+            tool_name: 'read_file',
+            result: { content: 'file content' },
+            duration: 2.3,  // should NOT be shown
+        });
+
+        expect(statusSpan.textContent).toContain('Completed');
+        expect(statusSpan.textContent).not.toContain('(');
+    });
+
+    test('_handleToolResultUpdate shows no duration when both timer and duration missing', () => {
         const toolCallDiv = document.createElement('div');
         toolCallDiv.className = 'tool-call';
         const statusSpan = document.createElement('span');
@@ -334,11 +371,81 @@ describe('VibeClient Elapsed Timer', () => {
 
         client._handleToolResultUpdate({
             toolCallId: 'tool-1',
+            tool_name: 'read_file',
+            result: { content: 'file content' },
+            // No duration field
+        });
+
+        expect(statusSpan.textContent).toContain('Completed');
+        expect(statusSpan.textContent).not.toContain('(');
+    });
+
+    test('_handleToolResultUpdate uses timer elapsed for skipped tool', () => {
+        const toolCallDiv = document.createElement('div');
+        toolCallDiv.className = 'tool-call';
+        const statusSpan = document.createElement('span');
+        statusSpan.className = 'tool-status';
+        statusSpan.innerHTML = '<span class="material-symbols-outlined">hourglass_empty</span> Running...';
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'content';
+        toolCallDiv.appendChild(statusSpan);
+        toolCallDiv.appendChild(contentDiv);
+        document.body.appendChild(toolCallDiv);
+
+        const startTime = Date.now() - 2000;
+        client.toolCallMap.set('tool-1', toolCallDiv);
+        client._startElapsedTimer('tool-1', toolCallDiv, startTime);
+
+        client._handleToolResultUpdate({
+            toolCallId: 'tool-1',
+            tool_name: 'read_file',
+            skipped: true,
+            skip_reason: 'Permission denied',
+            duration: 0.0,
+        });
+
+        expect(statusSpan.textContent).toContain('Skipped');
+        expect(statusSpan.textContent).toContain('(2.0s)');
+    });
+
+    test('_handleToolResultUpdate formats long elapsed time as minutes', () => {
+        const toolCallDiv = document.createElement('div');
+        toolCallDiv.className = 'tool-call';
+        const statusSpan = document.createElement('span');
+        statusSpan.className = 'tool-status';
+        statusSpan.innerHTML = '<span class="material-symbols-outlined">hourglass_empty</span> Running...';
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'content';
+        toolCallDiv.appendChild(statusSpan);
+        toolCallDiv.appendChild(contentDiv);
+        document.body.appendChild(toolCallDiv);
+
+        const startTime = Date.now() - 123400; // 123.4s ago
+        client.toolCallMap.set('tool-1', toolCallDiv);
+        client._startElapsedTimer('tool-1', toolCallDiv, startTime);
+
+        client._handleToolResultUpdate({
+            toolCallId: 'tool-1',
             tool_name: 'bash',
             result: { stdout: 'output' },
-            duration: 123.4,
         });
 
         expect(statusSpan.textContent).toContain('2m 3.4s');
+    });
+
+    test('_createNewToolCall does not start timer during history replay', () => {
+        client.historyLoaded = false;
+        client._createNewToolCall({ id: 'tool-1', name: 'read_file', arguments: null });
+        expect(client._toolCallTimers.has('tool-1')).toBe(false);
+
+        client.historyLoaded = true;
+        client._createNewToolCall({ id: 'tool-2', name: 'bash', arguments: null });
+        expect(client._toolCallTimers.has('tool-2')).toBe(true);
+    });
+
+    test('_createNewToolCall starts timer for live tool calls', () => {
+        client.historyLoaded = true;
+        client._createNewToolCall({ id: 'tool-1', name: 'read_file', arguments: null });
+        expect(client._toolCallTimers.has('tool-1')).toBe(true);
     });
 });
