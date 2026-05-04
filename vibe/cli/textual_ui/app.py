@@ -677,7 +677,7 @@ class VibeApp(App):  # noqa: PLR0904
         if self._fatal_init_error:
             self.exit()
 
-    async def on_chat_input_container_submitted(
+    async def on_chat_input_container_submitted(  # noqa: PLR0911 – kept early returns to minimize diff vs origin/main
         self, event: ChatInputContainer.Submitted
     ) -> None:
         if self._banner:
@@ -696,41 +696,32 @@ class VibeApp(App):  # noqa: PLR0904
 
         # Queue message during compaction without interrupting it
         if self.event_handler and await self.event_handler.get_current_compact():
-            # If there's already a queued message, update it
-            if self._queued_message is not None:
-                self._queued_message = value
-                # Show notification that message is updated
-                await self._mount_and_scroll(
-                    UserMessage(
-                        f"Queued message updated: {value[:MESSAGE_PREVIEW_LENGTH]}{'...' if len(value) > MESSAGE_PREVIEW_LENGTH else ''}"
-                    )
+            label = (
+                "Queued message updated"
+                if self._queued_message is not None
+                else "Message queued"
+            )
+            self._queued_message = value
+            await self._mount_and_scroll(
+                UserMessage(
+                    f"{label}: {value[:MESSAGE_PREVIEW_LENGTH]}{'...' if len(value) > MESSAGE_PREVIEW_LENGTH else ''}"
                 )
-            else:
-                self._queued_message = value
-                # Show notification that message is queued
-                await self._mount_and_scroll(
-                    UserMessage(
-                        f"Message queued: {value[:MESSAGE_PREVIEW_LENGTH]}{'...' if len(value) > MESSAGE_PREVIEW_LENGTH else ''}"
-                    )
-                )
+            )
             return
 
         if self._agent_running and not value.startswith(NON_INTERRUPT_COMMANDS):
             await self._interrupt_agent_loop()
 
-        handled = False
         if value.startswith("!!"):
-            # !!command: execute but don't inject as context
             await self._handle_bash_command(value[2:], inject_context=False)
-            handled = True
-        elif value.startswith("!"):
-            await self._handle_bash_command(value[1:], inject_context=True)
-            handled = True
-        elif value.startswith("&") and self.commands.has_command("teleport"):
-            await self._handle_teleport_command(value[1:])
-            handled = True
+            return
 
-        if handled:
+        if value.startswith("!"):
+            await self._handle_bash_command(value[1:], inject_context=True)
+            return
+
+        if value.startswith("&") and self.commands.has_command("teleport"):
+            await self._handle_teleport_command(value[1:])
             return
 
         if await self._handle_command(value):
