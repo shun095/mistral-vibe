@@ -46,6 +46,7 @@ from pydantic import BaseModel
 # Constants
 MESSAGE_PREVIEW_LENGTH = 50
 QUEUE_PREVIEW_LENGTH = 120
+NON_INTERRUPT_COMMANDS = ("/queue",)
 
 # Web notification constants
 WEB_NOTIFICATION_ACTION_TITLE = "Action Required"
@@ -714,7 +715,7 @@ class VibeApp(App):  # noqa: PLR0904
                 )
             return
 
-        if self._agent_running:
+        if self._agent_running and not value.startswith(NON_INTERRUPT_COMMANDS):
             await self._interrupt_agent_loop()
 
         handled = False
