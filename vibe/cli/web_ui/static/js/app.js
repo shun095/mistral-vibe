@@ -66,6 +66,8 @@ class VibeClient {
             promptHistoryContent: document.getElementById('prompt-history-content'),
             promptHistoryClose: document.getElementById('prompt-history-close'),
             promptHistorySearch: document.getElementById('prompt-history-search'),
+            gitStatusBtn: document.getElementById('git-status-btn'),
+            gitDiffBtn: document.getElementById('git-diff-btn'),
         };
 
         // Initialize modules
@@ -300,7 +302,7 @@ class VibeClient {
                 this.handleMessageReset(event.reason);
                 break;
             case 'BashCommandEvent':
-                this._renderBashCommandResult(event);
+                this._renderBashCommandEvent(event);
                 break;
             case 'WebNotificationEvent':
                 this.handleWebNotification(event);
@@ -311,6 +313,22 @@ class VibeClient {
             case 'PromptProgressEvent':
                 this.handlePromptProgress(event);
                 break;
+        }
+    }
+
+    /**
+     * Route bash command events to the appropriate renderer
+     * @param {Object} event
+     * @private
+     */
+    _renderBashCommandEvent(event) {
+        const cmd = event.command || '';
+        if (cmd.startsWith('git status')) {
+            this._renderGitStatusResult(event);
+        } else if (cmd.startsWith('git diff')) {
+            this._renderGitDiffResult(event);
+        } else {
+            this._renderBashCommandResult(event);
         }
     }
 
@@ -342,7 +360,7 @@ class VibeClient {
                 this._renderUserMessage(event.content);
                 break;
             case 'BashCommandEvent':
-                this._renderBashCommandResult(event);
+                this._renderBashCommandEvent(event);
                 break;
             case 'ApprovalPopupEvent':
                 // Skip popup events during replay - ToolResultEvent already contains the result
@@ -2338,6 +2356,8 @@ class VibeClient {
 
     bindPromptHistoryEvents() {
         this._on(this.elements.promptHistoryBtn, 'click', () => this.showPromptHistory());
+        this._on(this.elements.gitStatusBtn, 'click', () => this.executeGitCommand('git status'));
+        this._on(this.elements.gitDiffBtn, 'click', () => this.executeGitCommand('git diff'));
         this._on(this.elements.promptHistoryClose, 'click', () => this.hidePromptHistory());
 
         const overlay = this.elements.promptHistoryModal.querySelector('.modal-overlay');
@@ -2412,6 +2432,114 @@ class VibeClient {
         if (this.codeModal) {
             this.hideCodeFullscreen();
         }
+    }
+
+    executeGitCommand(command) {
+        if (!this.wsClient.isConnected()) return;
+
+        const message = { type: 'user_message', content: `!!${command}` };
+        this.wsClient.send(message);
+    }
+
+    _renderGitStatusResult(event) {
+        const { command, output, exit_code: exitCode } = event;
+        const isSuccess = exitCode === 0;
+
+        const previousScrollHeight = this.elements.messages.scrollHeight;
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message bash-command';
+        this.elements.messages.appendChild(messageDiv);
+
+        const header = document.createElement('div');
+        header.className = 'bash-card-header';
+        header.innerHTML = `
+            <div class="bash-card-title">
+                <span class="material-symbols-rounded">${isSuccess ? 'terminal' : 'error'}</span>
+                <span>Git Status</span>
+            </div>
+            <div class="bash-exit-code ${isSuccess ? 'success' : 'failure'}">
+                ${isSuccess ? 'OK' : `Exit ${exitCode}`}
+            </div>
+        `;
+
+        const commandDiv = document.createElement('div');
+        commandDiv.className = 'bash-command-line';
+        commandDiv.textContent = this.escapeHtml(command);
+
+        const outputDiv = document.createElement('div');
+        outputDiv.className = 'bash-output';
+        const pre = document.createElement('pre');
+        pre.textContent = output || '(clean working tree)';
+        outputDiv.appendChild(pre);
+
+        messageDiv.appendChild(header);
+        messageDiv.appendChild(commandDiv);
+        messageDiv.appendChild(outputDiv);
+
+        this._scrollAfterUpdate(previousScrollHeight);
+    }
+
+    _renderGitDiffResult(event) {
+        const { command, output, exit_code: exitCode } = event;
+        const isSuccess = exitCode === 0;
+
+        const previousScrollHeight = this.elements.messages.scrollHeight;
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message bash-command';
+        this.elements.messages.appendChild(messageDiv);
+
+        const header = document.createElement('div');
+        header.className = 'bash-card-header';
+        header.innerHTML = `
+            <div class="bash-card-title">
+                <span class="material-symbols-rounded">${isSuccess ? 'terminal' : 'error'}</span>
+                <span>Git Diff</span>
+            </div>
+            <div class="bash-exit-code ${isSuccess ? 'success' : 'failure'}">
+                ${isSuccess ? 'OK' : `Exit ${exitCode}`}
+            </div>
+        `;
+
+        const commandDiv = document.createElement('div');
+        commandDiv.className = 'bash-command-line';
+        commandDiv.textContent = this.escapeHtml(command);
+
+        const outputDiv = document.createElement('div');
+        outputDiv.className = 'bash-output';
+
+        if (output && output.trim()) {
+            const codeBlock = document.createElement('pre');
+            codeBlock.className = 'tool-formatter-code-block diff-block';
+            codeBlock.style.margin = '0';
+            codeBlock.style.padding = '0';
+
+            const code = document.createElement('code');
+            code.className = 'language-diff';
+            code.textContent = output;
+
+            codeBlock.appendChild(code);
+            outputDiv.appendChild(codeBlock);
+
+            if (window.hljs) {
+                window.hljs.highlightElement(codeBlock);
+            }
+        } else {
+            const pre = document.createElement('pre');
+            pre.textContent = '(no changes)';
+            outputDiv.appendChild(pre);
+        }
+
+        messageDiv.appendChild(header);
+        messageDiv.appendChild(commandDiv);
+        messageDiv.appendChild(outputDiv);
+
+        this._scrollAfterUpdate(previousScrollHeight);
+    }
+
+    _scrollAfterUpdate(previousScrollHeight) {
+        this.scrollToBottomIfWasAtBottom(previousScrollHeight);
     }
 }
 

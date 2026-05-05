@@ -131,6 +131,8 @@ function createTestElements() {
         'prompt-history-content': document.createElement('div'),
         'prompt-history-close': document.createElement('button'),
         'prompt-history-search': document.createElement('input'),
+        'git-status-btn': document.createElement('button'),
+        'git-diff-btn': document.createElement('button'),
     };
 
     // Add scroll buttons
@@ -621,6 +623,153 @@ describe('VibeClient', () => {
             await promise;
 
             expect(client.elements.sendBtn.disabled).toBe(false);
+        });
+    });
+
+    describe('executeGitCommand', () => {
+        test('sends git status command via websocket', () => {
+            client.executeGitCommand('git status');
+
+            expect(_mockWs.send).toHaveBeenCalledWith({
+                type: 'user_message',
+                content: '!!git status',
+            });
+        });
+
+        test('sends git diff command via websocket', () => {
+            client.executeGitCommand('git diff');
+
+            expect(_mockWs.send).toHaveBeenCalledWith({
+                type: 'user_message',
+                content: '!!git diff',
+            });
+        });
+
+        test('does not send when websocket is disconnected', () => {
+            _mockWs.isConnected.mockReturnValue(false);
+
+            client.executeGitCommand('git status');
+
+            expect(_mockWs.send).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('renderGitStatusResult', () => {
+        test('renders git status card with output', () => {
+            client._renderGitStatusResult({
+                command: 'git status',
+                output: 'On branch main\nnothing to commit',
+                exit_code: 0,
+            });
+
+            const messages = client.elements.messages.children;
+            expect(messages).toHaveLength(1);
+            expect(messages[0].className).toBe('message bash-command');
+            expect(messages[0].querySelector('.bash-card-title span:last-child').textContent.trim()).toBe('Git Status');
+            expect(messages[0].querySelector('.bash-command-line').textContent).toBe('git status');
+            expect(messages[0].querySelector('.bash-output pre').textContent).toBe('On branch main\nnothing to commit');
+            expect(messages[0].querySelector('.bash-exit-code').textContent.trim()).toBe('OK');
+        });
+
+        test('shows clean working tree when output is empty', () => {
+            client._renderGitStatusResult({
+                command: 'git status',
+                output: '',
+                exit_code: 0,
+            });
+
+            const messages = client.elements.messages.children;
+            expect(messages[0].querySelector('.bash-output pre').textContent).toBe('(clean working tree)');
+        });
+
+        test('shows exit code on failure', () => {
+            client._renderGitStatusResult({
+                command: 'git status',
+                output: 'fatal: not a git repository',
+                exit_code: 128,
+            });
+
+            const messages = client.elements.messages.children;
+            expect(messages[0].querySelector('.bash-exit-code').textContent.trim()).toBe('Exit 128');
+            expect(messages[0].querySelector('.bash-exit-code').className).toContain('failure');
+        });
+    });
+
+    describe('renderGitDiffResult', () => {
+        test('renders git diff card with highlighted diff output', () => {
+            client._renderGitDiffResult({
+                command: 'git diff',
+                output: '--- a/file.py\n+++ b/file.py\n@@ -1,3 +1,3 @@\n-old\n+new',
+                exit_code: 0,
+            });
+
+            const messages = client.elements.messages.children;
+            expect(messages).toHaveLength(1);
+            expect(messages[0].className).toBe('message bash-command');
+            expect(messages[0].querySelector('.bash-card-title span:last-child').textContent.trim()).toBe('Git Diff');
+            expect(messages[0].querySelector('.bash-command-line').textContent).toBe('git diff');
+
+            const codeBlock = messages[0].querySelector('.diff-block');
+            expect(codeBlock).toBeTruthy();
+            expect(codeBlock.querySelector('code').className).toBe('language-diff');
+            expect(messages[0].querySelector('.bash-exit-code').textContent.trim()).toBe('OK');
+        });
+
+        test('shows no changes when output is empty', () => {
+            client._renderGitDiffResult({
+                command: 'git diff',
+                output: '',
+                exit_code: 0,
+            });
+
+            const messages = client.elements.messages.children;
+            expect(messages[0].querySelector('.bash-output pre').textContent).toBe('(no changes)');
+        });
+
+        test('shows exit code on failure', () => {
+            client._renderGitDiffResult({
+                command: 'git diff',
+                output: '',
+                exit_code: 128,
+            });
+
+            const messages = client.elements.messages.children;
+            expect(messages[0].querySelector('.bash-exit-code').textContent.trim()).toBe('Exit 128');
+        });
+    });
+
+    describe('renderBashCommandEvent routing', () => {
+        test('routes git status to git status renderer', () => {
+            client._renderBashCommandEvent({
+                command: 'git status',
+                output: 'On branch main',
+                exit_code: 0,
+            });
+
+            const messages = client.elements.messages.children;
+            expect(messages[0].querySelector('.bash-card-title span:last-child').textContent.trim()).toBe('Git Status');
+        });
+
+        test('routes git diff to git diff renderer', () => {
+            client._renderBashCommandEvent({
+                command: 'git diff',
+                output: '--- a/file.py',
+                exit_code: 0,
+            });
+
+            const messages = client.elements.messages.children;
+            expect(messages[0].querySelector('.bash-card-title span:last-child').textContent.trim()).toBe('Git Diff');
+        });
+
+        test('routes other commands to default bash renderer', () => {
+            client._renderBashCommandEvent({
+                command: 'ls -la',
+                output: 'total 0',
+                exit_code: 0,
+            });
+
+            const messages = client.elements.messages.children;
+            expect(messages[0].querySelector('.bash-card-title span:last-child').textContent.trim()).toBe('Bash Command');
         });
     });
 });

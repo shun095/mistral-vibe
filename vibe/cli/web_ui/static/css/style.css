@@ -161,7 +161,8 @@ body {
     .context-progress {
         font-size: 0.65rem;
         padding: 2px 6px;
-        margin-right: 4px;
+        order: -1;
+        margin-bottom: 4px;
     }
 
     .theme-toggle-btn {
@@ -194,7 +195,8 @@ body {
 
 .header-actions {
     display: flex;
-    gap: 12px;
+    flex-wrap: wrap;
+    gap: 4px;
     align-items: center;
 }
 
