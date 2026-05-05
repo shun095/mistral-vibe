@@ -213,6 +213,7 @@ from vibe.core.types import (
     LLMMessage,
     RateLimitError,
     Role,
+    TaskCompletedEvent,
     UserMessageEvent,
     WaitingForInputEvent,
 )
@@ -1269,83 +1270,7 @@ class VibeApp(App):  # noqa: PLR0904
         # Add message with image to agent loop history and process
         if not self._agent_running:
             self._agent_task = asyncio.create_task(
-                self._handle_agent_loop_turn_with_content(content)
-            )
-
-    async def _handle_agent_loop_turn_with_content(self, content: list[dict]) -> None:
-        """Handle agent loop turn with multi-part content (text + image).
-
-        Args:
-            content: Multi-part content list for the LLM.
-        """
-        self._agent_running = True
-
-        loading_area = self._cached_loading_area or self.query_one(
-            "#loading-area-content"
-        )
-
-        start_time = time.monotonic()
-
-        loading = LoadingWidget()
-        self._loading_widget = loading
-        await loading_area.mount(loading)
-
-        try:
-            # Use act() with multi-part content - cast since Content is str | list[str] but we're using list[dict]
-            async with aclosing(self.agent_loop.act(cast(Content, content))) as events:
-                async for event in events:
-                    if self.event_handler:
-                        self.event_handler.handle_event(
-                            event,
-                            loading_active=self._loading_widget is not None,
-                            loading_widget=self._loading_widget,
-                        )
-
-            # Task completed successfully — process queued messages
-            self._spawn_queue_task()
-
-        except asyncio.CancelledError:
-            if self._loading_widget and self._loading_widget.parent:
-                await self._loading_widget.remove()
-            if self.event_handler:
-                await self.event_handler.stop_current_tool_call(success=False)
-            raise
-        except Exception as e:
-            if self._loading_widget and self._loading_widget.parent:
-                await self._loading_widget.remove()
-            if self.event_handler:
-                await self.event_handler.stop_current_tool_call(success=False)
-
-            error_message = str(e)
-            if isinstance(e, RateLimitError):
-                error_message = self._rate_limit_message()
-
-            await self._mount_and_scroll(
-                ErrorMessage(error_message, collapsed=self._tools_collapsed)
-            )
-
-            # Broadcast LLM error to WebUI
-            self._web_broadcast_manager._broadcast_llm_error_event(e)
-        finally:
-            self._agent_running = False
-            self._interrupt_requested = False
-            self._agent_task = None
-            if self._loading_widget:
-                await self._loading_widget.remove()
-            self._loading_widget = None
-            if self.event_handler:
-                self.event_handler.finalize_streaming()
-            await self._refresh_windowing_from_history()
-            await self._mount_and_scroll(
-                UserCommandMessage(
-                    f"Task completed in {_format_elapsed(int(time.monotonic() - start_time))}."
-                )
-            )
-            self._terminal_notifier.notify(NotificationContext.COMPLETE)
-            self._web_broadcast_manager._broadcast_web_notification(
-                "complete",
-                WEB_NOTIFICATION_COMPLETE_TITLE,
-                WEB_NOTIFICATION_COMPLETE_MESSAGE,
+                self._handle_agent_loop_turn(content)
             )
 
     # =========================================================================
@@ -1721,35 +1646,36 @@ class VibeApp(App):  # noqa: PLR0904
                     event, loading_widget=self._loading_widget
                 )
 
-    async def _handle_agent_loop_turn(self, prompt: str) -> None:
+    async def _handle_agent_loop_turn(self, content: str | list[dict]) -> None:
         self._agent_running = True
 
         await self._remove_loading_widget()
 
+        start_time = time.monotonic()
+        is_text = isinstance(content, str)
+        act_content: Content = cast(
+            Content,
+            render_path_prompt(content, base_dir=Path.cwd()) if is_text else content,
+        )
+
         try:
             await self._handle_agent_loop_init()
             await self._ensure_loading_widget()
-            rendered_prompt = render_path_prompt(prompt, base_dir=Path.cwd())
             self._narrator_manager.cancel()
-            self._narrator_manager.on_turn_start(rendered_prompt)
-            async with aclosing(self.agent_loop.act(rendered_prompt)) as events:
-                async for event in events:
-                    self._narrator_manager.on_turn_event(event)
-                    if isinstance(event, WaitingForInputEvent):
-                        await self._remove_loading_widget()
-                        if self._remote_manager.is_active:
-                            await self._handle_remote_waiting_input(event)
-                    elif self._loading_widget is None and is_progress_event(event):
-                        await self._ensure_loading_widget()
-                    if self.event_handler:
-                        self.event_handler.handle_event(
-                            event,
-                            loading_active=self._loading_widget is not None,
-                            loading_widget=self._loading_widget,
-                        )
+            self._narrator_manager.on_turn_start(
+                act_content if isinstance(act_content, str) else ""
+            )
+            async with aclosing(self.agent_loop.act(act_content)) as events:
+                await self._handle_agent_loop_events(events)
 
             # Task completed successfully — process queued messages
             self._spawn_queue_task()
+            if self.event_handler:
+                self.event_handler.handle_event(
+                    TaskCompletedEvent(
+                        elapsed_text=f"Task completed in {_format_elapsed(int(time.monotonic() - start_time))}."
+                    )
+                )
 
         except asyncio.CancelledError:
             await self._handle_turn_error()

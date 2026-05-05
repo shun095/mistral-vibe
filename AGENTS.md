@@ -421,6 +421,24 @@ E2E tests:        X passed, Y skipped
 
 All TUI changes MUST be tested with `terminalcp` skill.
 
+### Snapshot Tests
+
+When a snapshot test fails, **never update the reference snapshot blindly**. Always verify the visual change first:
+
+1. Run the failing test with `--snapshot-report=snapshot_report.html` to generate a diff report (this does NOT overwrite the reference)
+2. Use the `playwright-cli` skill to open `snapshot_report.html` and take a screenshot
+3. Use `read_image` to inspect the screenshot and verify the change is intentional
+4. Only update the snapshot with `--snapshot-update` if the visual change is correct and expected
+5. If the change is unwanted, fix the code instead of updating the snapshot
+
+Example:
+```bash
+uv run pytest tests/snapshots/test_xxx.py --snapshot-report=snapshot_report.html
+# Then use playwright-cli to screenshot snapshot_report.html
+# Then use read_image to review
+# If correct: uv run pytest tests/snapshots/test_xxx.py --snapshot-update
+```
+
 ### Testing Commands
 
 ```bash

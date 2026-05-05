@@ -137,9 +137,7 @@ class TestTUIImageMessageDisplay:
         # Patch both methods
         with (
             patch.object(
-                app,
-                "_handle_agent_loop_turn_with_content",
-                side_effect=mock_handle_agent_turn,
+                app, "_handle_agent_loop_turn", side_effect=mock_handle_agent_turn
             ),
             patch.object(app, "_mount_and_scroll", side_effect=mock_mount_and_scroll),
         ):
