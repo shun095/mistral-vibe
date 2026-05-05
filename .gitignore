@@ -220,3 +220,4 @@ test-results/
 *-profile.txt
 
 snapshot_report.html
+.playwright-cli/
