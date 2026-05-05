@@ -645,6 +645,12 @@ class LLMRetryEvent(BaseEvent):
     model: str | None = None
 
 
+class TaskCompletedEvent(BaseEvent):
+    """Event fired when an agent task completes, carrying the elapsed time."""
+
+    elapsed_text: str
+
+
 # New model classes
 
 

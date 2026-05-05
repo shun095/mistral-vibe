@@ -34,6 +34,7 @@ from vibe.core.types import (
     ContinueableUserMessageEvent,
     PromptProgressEvent,
     ReasoningEvent,
+    TaskCompletedEvent,
     ToolCallEvent,
     ToolResultEvent,
     ToolStreamEvent,
@@ -143,6 +144,8 @@ class EventHandler:
                 await self._handle_hook_event(event, loading_widget)
             case WaitingForInputEvent():
                 await self._finalize_streaming_internal()
+            case TaskCompletedEvent():
+                await self._handle_task_completed(event)
             case _:
                 await self._finalize_streaming_internal()
                 await self._handle_unknown_event(event)
@@ -279,6 +282,11 @@ class EventHandler:
 
     async def _handle_unknown_event(self, event: BaseEvent) -> None:
         await self.mount_callback(NoMarkupStatic(str(event), classes="unknown-event"))
+
+    async def _handle_task_completed(self, event: TaskCompletedEvent) -> None:
+        from vibe.cli.textual_ui.widgets.messages import UserCommandMessage
+
+        await self.mount_callback(UserCommandMessage(event.elapsed_text))
 
     def finalize_streaming(self) -> None:
         self._schedule_command(self._finalize_streaming_internal())
