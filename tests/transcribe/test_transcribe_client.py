@@ -5,6 +5,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+pytestmark = pytest.mark.skip(reason="Transcription is disabled")
+
 from vibe.core.config import TranscribeModelConfig, TranscribeProviderConfig
 from vibe.core.transcribe import (
     MistralTranscribeClient,

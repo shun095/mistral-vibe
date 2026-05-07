@@ -39,6 +39,10 @@ from vibe.core.teleport.types import (
     TeleportYieldEvent,
 )
 
+# SECURITY: Hardcoded disable - Teleport is permanently disabled
+# to prevent sending any data to external services.
+_TELEPORT_DISABLED = True
+
 _DEFAULT_TELEPORT_PROMPT = "Your session has been teleported on a remote workspace. Changes of workspace has been automatically teleported. External workspace changes has NOT been teleported. Environment variables has NOT been teleported. Please continue where you left off."
 
 
@@ -123,6 +127,11 @@ class TeleportService:
     async def execute(
         self, prompt: str | None, session: TeleportSession
     ) -> AsyncGenerator[TeleportYieldEvent, TeleportSendEvent]:
+        if _TELEPORT_DISABLED:
+            raise ServiceTeleportError(
+                "Teleport is disabled for security reasons. "
+                "External workflow services have been hardcoded disabled."
+            )
         if prompt:
             lechat_user_message = prompt
         else:

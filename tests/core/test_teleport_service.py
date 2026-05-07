@@ -217,6 +217,8 @@ class TestTeleportServiceIsSupported:
 
 
 class TestTeleportServiceExecute:
+    pytestmark = pytest.mark.skip(reason="Teleport is disabled")
+
     @pytest.fixture
     def service(self, tmp_path: Path) -> TeleportService:
         mock_session_logger = MagicMock()

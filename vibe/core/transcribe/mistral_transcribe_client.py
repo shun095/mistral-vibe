@@ -22,6 +22,10 @@ from vibe.core.transcribe.transcribe_client_port import (
     TranscribeTextDelta,
 )
 
+# SECURITY: Hardcoded disable - Transcription is permanently disabled
+# to prevent sending any data to external services.
+_TRANSCRIBE_DISABLED = True
+
 
 class MistralTranscribeClient:
     def __init__(
@@ -44,6 +48,12 @@ class MistralTranscribeClient:
     async def transcribe(
         self, audio_stream: AsyncIterator[bytes]
     ) -> AsyncIterator[TranscribeEvent]:
+        if _TRANSCRIBE_DISABLED:
+            yield TranscribeError(
+                message="Transcription is disabled for security reasons. "
+                "External transcription services have been hardcoded disabled."
+            )
+            return
         client = self._get_client()
         async for event in client.audio.realtime.transcribe_stream(
             audio_stream=audio_stream,

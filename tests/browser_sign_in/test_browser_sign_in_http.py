@@ -9,6 +9,8 @@ from urllib.parse import urlencode
 import httpx
 import pytest
 
+pytestmark = pytest.mark.skip(reason="Browser sign-in is disabled")
+
 from vibe.setup.auth import (
     BrowserSignInError,
     BrowserSignInErrorCode,
