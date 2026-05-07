@@ -772,4 +772,89 @@ describe('VibeClient', () => {
             expect(messages[0].querySelector('.bash-card-title span:last-child').textContent.trim()).toBe('Bash Command');
         });
     });
+
+    describe('parallel tool call deduplication', () => {
+        test('creates single card when same tool call id emitted twice', () => {
+            client._onToolCallStart({ id: 'call-1', name: 'bash', arguments: { command: 'sleep 5' } });
+            client._onToolCallStart({ id: 'call-1', name: 'bash', arguments: { command: 'sleep 5', timeout: 10 } });
+
+            const cards = client.elements.messages.querySelectorAll('.message.tool-call');
+            expect(cards).toHaveLength(1);
+        });
+
+        test('creates separate cards for different tool call ids', () => {
+            client._onToolCallStart({ id: 'call-1', name: 'bash', arguments: { command: 'sleep 5' } });
+            client._onToolCallStart({ id: 'call-2', name: 'grep', arguments: { pattern: 'todo' } });
+
+            const cards = client.elements.messages.querySelectorAll('.message.tool-call');
+            expect(cards).toHaveLength(2);
+        });
+
+        test('updates args when duplicate event has complete args', () => {
+            client._onToolCallStart({ id: 'call-1', name: 'bash', arguments: { command: 'sleep 5' } });
+            client._onToolCallStart({ id: 'call-1', name: 'bash', arguments: { command: 'sleep 5', timeout: 10 } });
+
+            const argsPre = client.elements.messages.querySelector('.tool-args');
+            expect(argsPre.textContent).toContain('"timeout": 10');
+        });
+
+        test('handles interleaved parallel tool calls without duplicates', () => {
+            client._onToolCallStart({ id: 'call-1', name: 'bash', arguments: { command: 'sleep 5' } });
+            client._onToolCallStart({ id: 'call-2', name: 'bash', arguments: { command: 'sleep 5' } });
+            client._onToolCallStart({ id: 'call-1', name: 'bash', arguments: { command: 'sleep 5', timeout: 10 } });
+            client._onToolCallStart({ id: 'call-2', name: 'bash', arguments: { command: 'sleep 5', timeout: 10 } });
+
+            const cards = client.elements.messages.querySelectorAll('.message.tool-call');
+            expect(cards).toHaveLength(2);
+        });
+
+        test('tool result updates correct card by id', () => {
+            client._onToolCallStart({ id: 'call-1', name: 'bash', arguments: { command: 'sleep 5' } });
+            client._onToolCallStart({ id: 'call-2', name: 'bash', arguments: { command: 'sleep 5' } });
+
+            client._onToolResult({ toolCallId: 'call-1', tool_name: 'bash', result: { exit_code: 0 } });
+
+            const cards = client.elements.messages.querySelectorAll('.message.tool-call');
+            expect(cards).toHaveLength(2);
+            const firstStatus = cards[0].querySelector('.tool-status');
+            expect(firstStatus.textContent).toContain('Completed');
+        });
+
+        test('duplicate for call-1 does not hijack currentToolCall from call-2', () => {
+            client._onToolCallStart({ id: 'call-1', name: 'bash', arguments: { command: 'a' } });
+            client._onToolCallStart({ id: 'call-2', name: 'bash', arguments: { command: 'b' } });
+            client._onToolCallStart({ id: 'call-1', name: 'bash', arguments: { command: 'a', timeout: 10 } });
+
+            expect(client.currentToolCallId).toBe('call-2');
+        });
+
+        test('result for call-1 does not clear call-2 streaming state', () => {
+            client._onToolCallStart({ id: 'call-1', name: 'bash', arguments: { command: 'a' } });
+            client._onToolCallStart({ id: 'call-2', name: 'bash', arguments: { command: 'b' } });
+            client._onToolCallStart({ id: 'call-1', name: 'bash', arguments: { command: 'a' } });
+            client._onToolResult({ toolCallId: 'call-1', tool_name: 'bash', result: { exit_code: 0 } });
+
+            const cards = client.elements.messages.querySelectorAll('.message.tool-call');
+            expect(cards).toHaveLength(2);
+            expect(cards[1].querySelector('.tool-status').textContent).toContain('Running');
+        });
+
+        test('onToolCallUpdate callback updates existing tool call from map', () => {
+            client._onToolCallStart({ id: 'call-1', name: 'bash', arguments: { command: 'sleep 3' } });
+            // Simulate onToolCallUpdate callback from MessageStreamer
+            const updateCallback = (data) => client._updateExistingToolCall(client.toolCallMap.get(data.id), data);
+            updateCallback({ id: 'call-1', name: 'bash', arguments: { command: 'sleep 3', timeout: 10 } });
+
+            const cards = client.elements.messages.querySelectorAll('.message.tool-call');
+            expect(cards).toHaveLength(1);
+            expect(cards[0].querySelector('.tool-args').textContent).toContain('"timeout": 10');
+        });
+
+        test('onToolCallUpdate with unknown id is a no-op', () => {
+            const updateCallback = (data) => client._updateExistingToolCall(client.toolCallMap.get(data.id), data);
+            updateCallback({ id: 'nonexistent', name: 'bash', arguments: { command: 'ls' } });
+
+            expect(client.elements.messages.children).toHaveLength(0);
+        });
+    });
 });

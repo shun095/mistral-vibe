@@ -98,7 +98,7 @@ class VibeClient {
             onAssistantUpdate: (data) => this._onAssistantUpdate(data),
             onAssistantEnd: () => this._onAssistantEnd(),
             onToolCallStart: (data) => this._onToolCallStart(data),
-            onToolCallUpdate: (data) => this._updateExistingToolCall(data),
+            onToolCallUpdate: (data) => this._updateExistingToolCall(this.toolCallMap.get(data.id), data),
             onToolResult: (data) => this._onToolResult(data),
             onStopStreaming: () => this._onStopStreaming()
         });
@@ -618,11 +618,12 @@ class VibeClient {
     }
 
     _onToolCallStart(data) {
-        if (this.currentToolCall && this.currentToolCallId === data.id) {
-            this._updateExistingToolCall(data);
-        } else {
-            this._createNewToolCall(data);
+        const existing = this.toolCallMap.get(data.id);
+        if (existing) {
+            this._updateExistingToolCall(existing, data);
+            return;
         }
+        this._createNewToolCall(data);
     }
 
     _onToolResult(data) {
@@ -714,9 +715,9 @@ class VibeClient {
         return null;
     }
 
-    _updateExistingToolCall(data) {
-        const contentDiv = this.currentToolCall?.querySelector('.content');
-        const toolNameSpan = this.currentToolCall?.querySelector('.tool-name');
+    _updateExistingToolCall(toolCallDiv, data) {
+        const contentDiv = toolCallDiv?.querySelector('.content');
+        const toolNameSpan = toolCallDiv?.querySelector('.tool-name');
 
         if (!contentDiv || !toolNameSpan) {
             return;
@@ -728,23 +729,29 @@ class VibeClient {
 
         if (data.arguments) {
             const previousScrollHeight = this.elements.messages.scrollHeight;
-            this._appendToolArgs(contentDiv, data.arguments);
+            const existingArgs = contentDiv.querySelector('.tool-args');
+            if (existingArgs) {
+                existingArgs.textContent = this._formatToolArgs(data.arguments);
+            } else {
+                this._appendToolArgs(contentDiv, data.arguments);
+            }
             this._scrollAfterUpdate(previousScrollHeight);
         }
     }
 
-    _appendToolArgs(contentDiv, args) {
+    _formatToolArgs(args) {
         try {
-            const argsPre = document.createElement('pre');
-            argsPre.className = 'tool-args';
-            argsPre.textContent = JSON.stringify(args, null, 2);
-            contentDiv.appendChild(argsPre);
+            return JSON.stringify(args, null, 2);
         } catch (e) {
-            const argsDiv = document.createElement('div');
-            argsDiv.className = 'tool-args';
-            argsDiv.textContent = String(args);
-            contentDiv.appendChild(argsDiv);
+            return String(args);
         }
+    }
+
+    _appendToolArgs(contentDiv, args) {
+        const argsPre = document.createElement('pre');
+        argsPre.className = 'tool-args';
+        argsPre.textContent = this._formatToolArgs(args);
+        contentDiv.appendChild(argsPre);
     }
 
     _handleToolResultUpdate(data) {
