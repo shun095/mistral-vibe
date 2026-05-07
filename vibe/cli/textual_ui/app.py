@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import codecs
 from collections.abc import AsyncGenerator
 from contextlib import aclosing
 from dataclasses import dataclass
@@ -10,7 +11,6 @@ import json
 import os
 from pathlib import Path
 import signal
-import subprocess
 import time
 from typing import Any, ClassVar, Literal, assert_never, cast
 from uuid import uuid4
@@ -163,6 +163,7 @@ from vibe.core.agent_loop import AgentLoop, TeleportError
 from vibe.core.agents import AgentProfile, BuiltinAgentName
 from vibe.core.audio_player.audio_player import AudioPlayer
 from vibe.core.audio_recorder import AudioRecorder
+from vibe.core.autocompletion.path_prompt import build_path_prompt_payload
 from vibe.core.autocompletion.path_prompt_adapter import render_path_prompt
 from vibe.core.config import VibeConfig
 from vibe.core.data_retention import DATA_RETENTION_MESSAGE
@@ -177,6 +178,7 @@ from vibe.core.session.resume_sessions import (
     list_remote_resume_sessions,
     short_session_id,
 )
+from vibe.core.session.saved_sessions import update_saved_session_title_at_path
 from vibe.core.session.session_loader import SessionLoader
 from vibe.core.skills.manager import SkillManager
 from vibe.core.teleport.types import (
@@ -355,6 +357,7 @@ class StartupOptions:
     initial_prompt: str | None = None
     teleport_on_start: bool = False
     show_resume_picker: bool = False
+    is_resuming_session: bool = False
 
 
 class VibeApp(App):  # noqa: PLR0904
@@ -416,6 +419,7 @@ class VibeApp(App):  # noqa: PLR0904
         self._agent_task: asyncio.Task | None = None
         self._translation_running = False
         self._translation_task: asyncio.Task | None = None
+        self._bash_task: asyncio.Task | None = None
         self._remote_manager = RemoteSessionManager()
 
         self._loading_widget: LoadingWidget | None = None
@@ -446,12 +450,7 @@ class VibeApp(App):  # noqa: PLR0904
         self._update_cache_repository = update_cache_repository
         self._current_version = current_version
         self._plan_offer_gateway = plan_offer_gateway
-        opts = startup or StartupOptions()
-        self._initial_prompt = opts.initial_prompt
-        self._teleport_on_start = (
-            opts.teleport_on_start and self.agent_loop.base_config.vibe_code_enabled
-        )
-        self._show_resume_picker = opts.show_resume_picker
+        self._configure_startup_options(startup)
         self._last_escape_time: float | None = None
         self._quit_manager = QuitManager(self)
         self._banner: Banner | None = None
@@ -498,6 +497,15 @@ class VibeApp(App):  # noqa: PLR0904
             PopupMetadata if there's a pending question, None otherwise.
         """
         return self._pending_question_meta if self._pending_question_meta else None
+
+    def _configure_startup_options(self, startup: StartupOptions | None) -> None:
+        opts = startup or StartupOptions()
+        self._initial_prompt = opts.initial_prompt
+        self._teleport_on_start = (
+            opts.teleport_on_start and self.agent_loop.base_config.vibe_code_enabled
+        )
+        self._show_resume_picker = opts.show_resume_picker
+        self._is_resuming_session = opts.is_resuming_session
 
     @property
     def config(self) -> VibeConfig:
@@ -606,7 +614,8 @@ class VibeApp(App):  # noqa: PLR0904
         await self._resume_history_from_messages()
         await self._check_and_show_whats_new()
         self._schedule_update_notification()
-        self.agent_loop.emit_new_session_telemetry()
+        if not self._is_resuming_session:
+            self.agent_loop.emit_new_session_telemetry()
 
         self.call_after_refresh(self._refresh_banner)
         self._show_hook_config_issues_once()
@@ -710,6 +719,10 @@ class VibeApp(App):  # noqa: PLR0904
             )
             return
 
+        if self._bash_task and not self._bash_task.done():
+            self._bash_task.cancel()
+            self._bash_task = None
+
         if self._agent_running and not value.startswith(NON_INTERRUPT_COMMANDS):
             await self._interrupt_agent_loop()
 
@@ -718,7 +731,7 @@ class VibeApp(App):  # noqa: PLR0904
             return
 
         if value.startswith("!"):
-            await self._handle_bash_command(value[1:], inject_context=True)
+            self._bash_task = asyncio.create_task(self._handle_bash_command(value[1:], inject_context=True))
             return
 
         if value.startswith("&") and self.commands.has_command("teleport"):
@@ -758,6 +771,16 @@ class VibeApp(App):  # noqa: PLR0904
         if self.agent_loop:
             await self.agent_loop.switch_agent(BuiltinAgentName.AUTO_APPROVE)
             self._update_profile_widgets(self.agent_loop.agent_profile)
+
+    async def on_approval_app_approval_granted_always_permanent(
+        self, message: ApprovalApp.ApprovalGrantedAlwaysPermanent
+    ) -> None:
+        self.agent_loop.approve_always(
+            message.tool_name, message.required_permissions, save_permanently=True
+        )
+
+        if self._pending_approval and not self._pending_approval.done():
+            self._pending_approval.set_result((ApprovalResponse.YES, None))
 
     async def on_approval_app_approval_rejected(
         self, message: ApprovalApp.ApprovalRejected
@@ -1056,6 +1079,40 @@ class VibeApp(App):  # noqa: PLR0904
         await self._handle_user_message(prompt)
         return True
 
+    @staticmethod
+    async def _bash_read_stream(
+        stream: asyncio.StreamReader | None,
+        parts: list[str],
+        bash_msg: BashOutputMessage,
+    ) -> None:
+        if not stream:
+            return
+        decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        while True:
+            chunk = await stream.read(4096)
+            if not chunk:
+                break
+            text = decoder.decode(chunk)
+            if not text:
+                continue
+            parts.append(text)
+            await bash_msg.append_output(text)
+        final_text = decoder.decode(b"", final=True)
+        if not final_text:
+            return
+        parts.append(final_text)
+        await bash_msg.append_output(final_text)
+
+    @staticmethod
+    async def _kill_running_process(proc: asyncio.subprocess.Process | None) -> None:
+        if proc is None or proc.returncode is not None:
+            return
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+        await proc.wait()
+
     async def _handle_bash_command(
         self, command: str, inject_context: bool = True
     ) -> None:
@@ -1067,32 +1124,61 @@ class VibeApp(App):  # noqa: PLR0904
             )
             return
 
-        try:
-            result = subprocess.run(
-                command, shell=True, capture_output=True, text=False, timeout=30
-            )
-            stdout = (
-                result.stdout.decode("utf-8", errors="replace") if result.stdout else ""
-            )
-            stderr = (
-                result.stderr.decode("utf-8", errors="replace") if result.stderr else ""
-            )
-            output = stdout or stderr or "(no output)"
-            exit_code = result.returncode
+        bash_msg = BashOutputMessage(command, str(Path.cwd()), pending=True)
+        await self._mount_and_scroll(bash_msg)
 
-            # Mount the widget in TUI
-            await self._mount_and_scroll(
-                BashOutputMessage(command, str(Path.cwd()), output, exit_code)
+        proc: asyncio.subprocess.Process | None = None
+        stdout_parts: list[str] = []
+        stderr_parts: list[str] = []
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
+
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(
+                        self._bash_read_stream(proc.stdout, stdout_parts, bash_msg),
+                        self._bash_read_stream(proc.stderr, stderr_parts, bash_msg),
+                        proc.wait(),
+                    ),
+                    timeout=30,
+                )
+            except TimeoutError:
+                await self._kill_running_process(proc)
+                stdout = "".join(stdout_parts)
+                stderr = "".join(stderr_parts)
+                await bash_msg.finish(1)
+                await self._mount_and_scroll(
+                    ErrorMessage(
+                        "Command timed out after 30 seconds",
+                        collapsed=self._tools_collapsed,
+                    )
+                )
+                if inject_context:
+                    await self.agent_loop.inject_user_context(
+                        self._format_manual_command_context(
+                            command=command,
+                            cwd=str(Path.cwd()),
+                            stdout=stdout,
+                            stderr=stderr,
+                            status="timed out after 30 seconds",
+                        )
+                    )
+                self._spawn_queue_task()
+                return
+
+            stdout = "".join(stdout_parts)
+            stderr = "".join(stderr_parts)
+            exit_code = proc.returncode or 0
+            await bash_msg.finish(exit_code)
 
             # Emit events to agent_loop for web UI broadcasting
-            # Emit user message event for the bash command
             user_event = UserMessageEvent(content=f"!{command}", message_id="")
             self.agent_loop._notify_event_listeners(user_event)
 
-            # Emit bash command event for web UI
             bash_event = BashCommandEvent(
-                command=command, exit_code=exit_code, output=output, message_id=None
+                command=command, exit_code=exit_code, output=stdout + stderr, message_id=None
             )
             self.agent_loop._notify_event_listeners(bash_event)
 
@@ -1109,31 +1195,11 @@ class VibeApp(App):  # noqa: PLR0904
                 )
             self._spawn_queue_task()
 
-        except subprocess.TimeoutExpired as error:
-            error_msg = "Command timed out after 30 seconds"
-            stdout = (
-                error.stdout.decode("utf-8", errors="replace")
-                if isinstance(error.stdout, bytes)
-                else (error.stdout or "")
-            )
-            stderr = (
-                error.stderr.decode("utf-8", errors="replace")
-                if isinstance(error.stderr, bytes)
-                else (error.stderr or "")
-            )
-            await self._mount_and_scroll(
-                ErrorMessage(error_msg, collapsed=self._tools_collapsed)
-            )
-
-            # Emit error event to web UI
-            user_event = UserMessageEvent(content=f"!{command}", message_id="")
-            self.agent_loop._notify_event_listeners(user_event)
-
-            assistant_event = AssistantEvent(
-                content=f"Error: {error_msg}", message_id=None
-            )
-            self.agent_loop._notify_event_listeners(assistant_event)
-
+        except asyncio.CancelledError:
+            await self._kill_running_process(proc)
+            await bash_msg.finish(1, interrupted=True)
+            stdout = "".join(stdout_parts)
+            stderr = "".join(stderr_parts)
             if inject_context:
                 await self.agent_loop.inject_user_context(
                     self._format_manual_command_context(
@@ -1141,11 +1207,15 @@ class VibeApp(App):  # noqa: PLR0904
                         cwd=str(Path.cwd()),
                         stdout=stdout,
                         stderr=stderr,
-                        status="timed out after 30 seconds",
+                        status="interrupted by user",
                     )
                 )
         except Exception as e:
             error_msg = f"Command failed: {e}"
+            await self._kill_running_process(proc)
+            await bash_msg.finish(1)
+            stdout = "".join(stdout_parts)
+            stderr = "".join(stderr_parts)
             await self._mount_and_scroll(
                 ErrorMessage(error_msg, collapsed=self._tools_collapsed)
             )
@@ -1154,6 +1224,8 @@ class VibeApp(App):  # noqa: PLR0904
                     self._format_manual_command_context(
                         command=command,
                         cwd=str(Path.cwd()),
+                        stdout=stdout,
+                        stderr=stderr,
                         status=f"failed before completion: {e}",
                     )
                 )
@@ -1661,11 +1733,32 @@ class VibeApp(App):  # noqa: PLR0904
         try:
             await self._handle_agent_loop_init()
             await self._ensure_loading_widget()
+            rendered_prompt = render_path_prompt(prompt, base_dir=Path.cwd())
+            message_id = str(uuid4())
+            prompt_payload = build_path_prompt_payload(prompt, base_dir=Path.cwd())
+            if prompt_payload.all_resources:
+                context_types: dict[str, int] = {}
+                for r in prompt_payload.all_resources:
+                    context_types[r.kind] = context_types.get(r.kind, 0) + 1
+                file_ext_counts: dict[str, int] = {}
+                for r in prompt_payload.all_resources:
+                    if r.kind == "file" and r.path.suffix:
+                        file_ext_counts[r.path.suffix] = (
+                            file_ext_counts.get(r.path.suffix, 0) + 1
+                        )
+                self.agent_loop.telemetry_client.send_at_mention_inserted(
+                    nb_mentions=len(prompt_payload.all_resources),
+                    context_types=context_types,
+                    file_extensions=file_ext_counts or None,
+                    message_id=message_id,
+                )
             self._narrator_manager.cancel()
             self._narrator_manager.on_turn_start(
                 act_content if isinstance(act_content, str) else ""
             )
-            async with aclosing(self.agent_loop.act(act_content)) as events:
+            async with aclosing(
+                self.agent_loop.act(act_content, client_message_id=message_id)
+            ) as events:
                 await self._handle_agent_loop_events(events)
 
             # Task completed successfully — process queued messages
@@ -2210,6 +2303,53 @@ class VibeApp(App):  # noqa: PLR0904
     async def _show_data_retention(self, **kwargs: Any) -> None:
         await self._mount_and_scroll(UserCommandMessage(DATA_RETENTION_MESSAGE))
 
+    async def _rename_local_session(self, title: str) -> str:
+        session_logger = self.agent_loop.session_logger
+        if not session_logger.enabled or session_logger.session_metadata is None:
+            raise ValueError("Session logging is disabled in configuration.")
+
+        if (
+            session_logger.session_dir is not None
+            and session_logger.metadata_filepath.exists()
+        ):
+            await update_saved_session_title_at_path(session_logger.session_dir, title)
+
+        session_logger.set_title(title)
+        renamed_title = session_logger.session_metadata.title
+        assert renamed_title is not None
+        return renamed_title
+
+    async def _rename_session(self, cmd_args: str = "", **kwargs: Any) -> None:
+        if self._remote_manager.is_active:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    "Renaming is only supported for local sessions.",
+                    collapsed=self._tools_collapsed,
+                )
+            )
+            return
+
+        title = cmd_args.strip()
+        if not title:
+            await self._mount_and_scroll(
+                ErrorMessage("Usage: /rename <title>", collapsed=self._tools_collapsed)
+            )
+            return
+
+        try:
+            renamed_title = await self._rename_local_session(title)
+        except Exception as e:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    f"Failed to rename session: {e}", collapsed=self._tools_collapsed
+                )
+            )
+            return
+
+        await self._mount_and_scroll(
+            UserCommandMessage(f'Session renamed to "{renamed_title}".')
+        )
+
     async def _show_session_picker(self, **kwargs: Any) -> None:
         cwd = str(Path.cwd())
         local_sessions = (
@@ -2252,7 +2392,8 @@ class VibeApp(App):  # noqa: PLR0904
         sessions = sorted(raw_sessions, key=lambda s: s.end_time or "", reverse=True)
 
         latest_messages = {
-            s.option_id: SessionLoader.get_first_user_message(
+            s.option_id: s.title
+            or SessionLoader.get_first_user_message(
                 s.session_id, self.config.session_logging
             )
             for s in sessions
@@ -3519,6 +3660,8 @@ class VibeApp(App):  # noqa: PLR0904
     def _force_quit(self) -> None:
         if self._agent_task and not self._agent_task.done():
             self._agent_task.cancel()
+        if self._bash_task and not self._bash_task.done():
+            self._bash_task.cancel()
         self._remote_manager.cancel_stream_task()
 
         self._log_reader.shutdown()

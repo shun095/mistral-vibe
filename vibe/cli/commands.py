@@ -144,6 +144,11 @@ class CommandRegistry:
                 description="Edit the last submitted message and restart conversation",
                 handler="_edit_last_message",
             ),
+            "rename": Command(
+                aliases=frozenset(["/rename"]),
+                description="Rename the current session",
+                handler="_rename_session",
+            ),
             "mcp": Command(
                 aliases=frozenset(["/mcp", "/connectors"]),
                 description=(
@@ -251,7 +256,7 @@ class CommandRegistry:
             "- `Ctrl+C` Quit (or clear input if text present)",
             "- `Ctrl+G` Edit input in external editor",
             "- `Ctrl+O` Toggle tool output view",
-            "- `Shift+Tab` Toggle auto-approve mode",
+            "- `Shift+Tab` Cycle through agents (default, plan, ...)",
             f"- `{ALT_KEY}+↑↓` / `Ctrl+P/N` Rewind to previous/next message",
             "",
             "### Special Features",
