@@ -5,6 +5,9 @@
 import { test, expect } from "../fixtures";
 import { Selectors, formatAndAppendToolResult } from "../helpers/test-utils";
 
+// Directory within project for E2E test files (tool restricts to project dir)
+const E2E_FILES_DIR = "tests/js/e2e/webui/.e2e-files";
+
 test.describe("Download Feature UI", () => {
   test("should render download card with filename, MIME type, and button", async ({
     page,
@@ -81,15 +84,14 @@ test.describe("Download Feature UI", () => {
 
   test("should persist download card after browser reload", async ({
     page,
-    webServer,
     mockBackend,
   }) => {
-    // Create a test file in the E2E test directory
-    const testDir = webServer.e2eTestDir;
-    expect(testDir).not.toBeNull();
+    // Create a test file within the project directory (tool restricts to project dir)
     const fs = require("fs");
     const path = require("path");
-    const testFilePath = path.join(testDir!, "reload_test.txt");
+    const testDir = path.resolve(E2E_FILES_DIR);
+    fs.mkdirSync(testDir, { recursive: true });
+    const testFilePath = path.join(testDir, "reload_test.txt");
     fs.writeFileSync(testFilePath, "persist me across reload", "utf-8");
 
     // Register a mock tool call for register_download
@@ -129,15 +131,14 @@ test.describe("Download Feature UI", () => {
 
   test("should trigger download API when button is clicked", async ({
     page,
-    webServer,
     mockBackend,
   }) => {
-    // Create a test file in the E2E test directory
-    const testDir = webServer.e2eTestDir;
-    expect(testDir).not.toBeNull();
+    // Create a test file within the project directory (tool restricts to project dir)
     const fs = require("fs");
     const path = require("path");
-    const testFilePath = path.join(testDir!, "download_link_test.txt");
+    const testDir = path.resolve(E2E_FILES_DIR);
+    fs.mkdirSync(testDir, { recursive: true });
+    const testFilePath = path.join(testDir, "download_link_test.txt");
     fs.writeFileSync(testFilePath, "downloadable content", "utf-8");
 
     // Register a mock tool call for register_download

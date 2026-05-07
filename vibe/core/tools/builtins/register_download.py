@@ -55,7 +55,7 @@ class RegisterDownload(
 ):
     description: ClassVar[str] = (
         "Register a file as downloadable content in the WebUI. "
-        "The file must exist on disk. "
+        "The file must exist on disk and be within the current project directory. "
         "This creates a download button in the chat interface. "
         "The filename is auto-generated from the file path, and MIME type is auto-detected."
     )
@@ -64,23 +64,35 @@ class RegisterDownload(
         self, args: RegisterDownloadArgs, ctx: InvokeContext | None = None
     ) -> AsyncGenerator[RegisterDownloadResult, None]:
         """Validate file exists and register it for download."""
+        # Determine the project (working) directory
+        project_dir = Path.cwd().resolve()
+
         # Resolve the file path
         file_path = Path(args.file_path).expanduser()
 
-        # Make path absolute if relative
+        # Make path absolute if relative — always relative to project directory
         if not file_path.is_absolute():
-            # Use session_dir from context if available, otherwise current directory
-            session_dir = ctx.session_dir if ctx and ctx.session_dir else Path.cwd()
-            file_path = session_dir / file_path
+            file_path = project_dir / file_path
+
+        resolved = file_path.resolve()
+
+        # Validate file is within project directory (avoid re-resolving cwd)
+        try:
+            resolved.relative_to(project_dir)
+        except ValueError:
+            raise ToolError(
+                f"File is outside the project directory: {file_path}\n"
+                f"Only files within {project_dir} can be registered for download."
+            )
 
         # Validate file exists
-        if not file_path.exists():
+        if not resolved.exists():
             raise ToolError(f"File does not exist: {file_path}")
 
-        if not file_path.is_file():
+        if not resolved.is_file():
             raise ToolError(f"Path is not a file: {file_path}")
 
-        # Auto-generate filename from path
+        # Auto-generate filename from path (preserve symlink name, not target)
         filename = file_path.name
 
         # Auto-detect MIME type
@@ -88,7 +100,7 @@ class RegisterDownload(
 
         yield RegisterDownloadResult(
             filename=filename,
-            file_path=str(file_path),
+            file_path=str(resolved),
             mime_type=mime_type,
             description=args.description,
         )

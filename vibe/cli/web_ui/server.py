@@ -760,40 +760,40 @@ def create_app(  # noqa: PLR0915
             path = Path(file_path).expanduser()
             resolved_path = path.resolve()
 
-            # Security check: ensure file exists and is a file
-            if not resolved_path.exists():
-                raise HTTPException(status_code=404, detail="File not found")
-            if not resolved_path.is_file():
-                raise HTTPException(status_code=400, detail="Not a file")
+            # Path traversal protection FIRST (before existence check to avoid info leak)
+            project_dir = Path.cwd().resolve()
 
-            # Path traversal protection: only allow files in session dir or /tmp
+            # Also allow session directory (may differ in E2E tests)
+            session_dir = None
             tui_app = getattr(app.state, "tui_app", None)
-            allowed_dirs = [Path("/tmp").resolve()]
             if (
                 tui_app
                 and hasattr(tui_app, "agent_loop")
                 and tui_app.agent_loop.session_logger
             ):
-                allowed_dirs.append(
-                    tui_app.agent_loop.session_logger.session_dir.resolve()
-                )
+                session_dir = tui_app.agent_loop.session_logger.session_dir.resolve()
 
             is_allowed = False
-            for allowed_dir in allowed_dirs:
+            for allowed_dir in [project_dir, session_dir]:
+                if allowed_dir is None:
+                    continue
                 try:
                     if resolved_path.is_relative_to(allowed_dir):
                         is_allowed = True
                         break
-                except AttributeError:
-                    # Python 3.9 fallback
-                    if str(resolved_path).startswith(str(allowed_dir)):
-                        is_allowed = True
-                        break
+                except ValueError:
+                    continue
             if not is_allowed:
                 raise HTTPException(
                     status_code=403,
                     detail="Access denied: file path outside allowed directories",
                 )
+
+            # Security check: ensure file exists and is a file (after path check)
+            if not resolved_path.exists():
+                raise HTTPException(status_code=404, detail="File not found")
+            if not resolved_path.is_file():
+                raise HTTPException(status_code=400, detail="Not a file")
 
             # Get MIME type using shared utility
             mime_type = get_mime_type(resolved_path.name)

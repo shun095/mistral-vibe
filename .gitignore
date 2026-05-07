@@ -221,3 +221,4 @@ test-results/
 
 snapshot_report.html
 .playwright-cli/
+.e2e-files/

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from vibe.core.tools.base import BaseToolState, InvokeContext, ToolError
@@ -25,16 +27,23 @@ class TestRegisterDownload:
     """Test register_download tool functionality."""
 
     @pytest.fixture
-    def temp_file(self, tmp_path):
-        """Create a temporary file for testing."""
-        file_path = tmp_path / "test_file.txt"
+    def test_dir(self):
+        """Create a test subdirectory within the project directory (cwd)."""
+        test_dir = Path.cwd() / "download_test"
+        test_dir.mkdir(exist_ok=True)
+        return test_dir
+
+    @pytest.fixture
+    def temp_file(self, test_dir):
+        """Create a temporary file for testing within project directory."""
+        file_path = test_dir / "test_file.txt"
         file_path.write_text("Test content")
         return file_path
 
     @pytest.fixture
-    def invoke_context(self, tmp_path):
+    def invoke_context(self, test_dir):
         """Create an InvokeContext for testing."""
-        return InvokeContext(tool_call_id="test-call-id", session_dir=tmp_path)
+        return InvokeContext(tool_call_id="test-call-id", session_dir=test_dir)
 
     def test_get_name(self, download_tool):
         """Test that tool has correct name."""
@@ -78,9 +87,20 @@ class TestRegisterDownload:
     @pytest.mark.anyio
     async def test_run_file_not_found(self, download_tool, invoke_context):
         """Test that tool raises error for non-existent file."""
-        args = RegisterDownloadArgs(file_path="/nonexistent/file.txt")
+        args = RegisterDownloadArgs(
+            file_path=str(invoke_context.session_dir / "nonexistent.txt")
+        )
 
         with pytest.raises(ToolError, match="File does not exist"):
+            async for _ in download_tool.run(args, invoke_context):
+                pass
+
+    @pytest.mark.anyio
+    async def test_run_outside_project_directory(self, download_tool, invoke_context):
+        """Test that tool raises error for files outside project directory."""
+        args = RegisterDownloadArgs(file_path="/etc/hosts")
+
+        with pytest.raises(ToolError, match="outside the project directory"):
             async for _ in download_tool.run(args, invoke_context):
                 pass
 
@@ -94,14 +114,14 @@ class TestRegisterDownload:
                 pass
 
     @pytest.mark.anyio
-    async def test_run_relative_path(self, download_tool, tmp_path, invoke_context):
+    async def test_run_relative_path(self, download_tool, test_dir, invoke_context):
         """Test that relative paths are resolved correctly."""
-        # Create file in session_dir
-        temp_file = tmp_path / "relative_test.txt"
+        # Create file in project directory subdirectory
+        temp_file = test_dir / "relative_test.txt"
         temp_file.write_text("Relative path test")
 
-        # Use relative path from session_dir
-        args = RegisterDownloadArgs(file_path="relative_test.txt")
+        # Use relative path from cwd (e.g., "download_test/relative_test.txt")
+        args = RegisterDownloadArgs(file_path=f"{test_dir.name}/relative_test.txt")
 
         results = []
         async for result in download_tool.run(args, invoke_context):
@@ -112,7 +132,7 @@ class TestRegisterDownload:
 
     @pytest.mark.anyio
     async def test_run_different_mime_types(
-        self, download_tool, tmp_path, invoke_context
+        self, download_tool, test_dir, invoke_context
     ):
         """Test MIME type detection for different file types."""
         test_files = [
@@ -125,7 +145,7 @@ class TestRegisterDownload:
         ]
 
         for filename, expected_mime in test_files:
-            temp_file = tmp_path / filename
+            temp_file = test_dir / filename
             temp_file.write_text("Test content")
 
             args = RegisterDownloadArgs(file_path=str(temp_file))
@@ -175,9 +195,9 @@ class TestRegisterDownload:
         assert "text/plain" in display.message
 
     @pytest.mark.anyio
-    async def test_run_empty_file(self, download_tool, tmp_path, invoke_context):
+    async def test_run_empty_file(self, download_tool, test_dir, invoke_context):
         """Test registration of empty file."""
-        temp_file = tmp_path / "empty.txt"
+        temp_file = test_dir / "empty.txt"
         temp_file.write_text("")
 
         args = RegisterDownloadArgs(file_path=str(temp_file))
@@ -192,10 +212,10 @@ class TestRegisterDownload:
 
     @pytest.mark.anyio
     async def test_run_special_characters_in_filename(
-        self, download_tool, tmp_path, invoke_context
+        self, download_tool, test_dir, invoke_context
     ):
         """Test registration of file with special characters."""
-        temp_file = tmp_path / "test-file_v2.0.txt"
+        temp_file = test_dir / "test-file_v2.0.txt"
         temp_file.write_text("Test content")
 
         args = RegisterDownloadArgs(file_path=str(temp_file))
@@ -208,9 +228,9 @@ class TestRegisterDownload:
         assert result.filename == "test-file_v2.0.txt"
 
     @pytest.mark.anyio
-    async def test_run_unicode_filename(self, download_tool, tmp_path, invoke_context):
+    async def test_run_unicode_filename(self, download_tool, test_dir, invoke_context):
         """Test registration of file with unicode characters."""
-        temp_file = tmp_path / "测试文件.txt"
+        temp_file = test_dir / "测试文件.txt"
         temp_file.write_text("Test content")
 
         args = RegisterDownloadArgs(file_path=str(temp_file))
@@ -223,12 +243,12 @@ class TestRegisterDownload:
         assert result.filename == "测试文件.txt"
 
     @pytest.mark.anyio
-    async def test_run_symlink(self, download_tool, tmp_path, invoke_context):
+    async def test_run_symlink(self, download_tool, test_dir, invoke_context):
         """Test registration of symlink to file."""
-        target_file = tmp_path / "target.txt"
+        target_file = test_dir / "target.txt"
         target_file.write_text("Target content")
 
-        link_file = tmp_path / "link.txt"
+        link_file = test_dir / "link.txt"
         link_file.symlink_to(target_file)
 
         args = RegisterDownloadArgs(file_path=str(link_file))
@@ -239,3 +259,16 @@ class TestRegisterDownload:
 
         result = results[0]
         assert result.filename == "link.txt"
+
+    @pytest.mark.anyio
+    async def test_run_symlink_to_outside_project(
+        self, download_tool, test_dir, invoke_context
+    ):
+        """Test that symlinks pointing outside project are rejected."""
+        link_file = test_dir / "evil_link"
+        link_file.symlink_to(Path("/etc/hosts"))
+
+        args = RegisterDownloadArgs(file_path=str(link_file))
+        with pytest.raises(ToolError, match="outside the project directory"):
+            async for _ in download_tool.run(args, invoke_context):
+                pass
