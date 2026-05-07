@@ -1165,7 +1165,6 @@ class VibeApp(App):  # noqa: PLR0904
                             status="timed out after 30 seconds",
                         )
                     )
-                self._spawn_queue_task()
                 return
 
             stdout = "".join(stdout_parts)
@@ -1733,10 +1732,9 @@ class VibeApp(App):  # noqa: PLR0904
         try:
             await self._handle_agent_loop_init()
             await self._ensure_loading_widget()
-            rendered_prompt = render_path_prompt(prompt, base_dir=Path.cwd())
             message_id = str(uuid4())
-            prompt_payload = build_path_prompt_payload(prompt, base_dir=Path.cwd())
-            if prompt_payload.all_resources:
+            prompt_payload = build_path_prompt_payload(content, base_dir=Path.cwd()) if is_text else None
+            if prompt_payload and prompt_payload.all_resources:
                 context_types: dict[str, int] = {}
                 for r in prompt_payload.all_resources:
                     context_types[r.kind] = context_types.get(r.kind, 0) + 1

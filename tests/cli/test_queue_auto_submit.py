@@ -369,45 +369,73 @@ async def test_bash_command_spawns_queue_on_success(tmp_path: Path) -> None:
     app.agent_loop.inject_user_context = AsyncMock()
     app.agent_loop._notify_event_listeners = MagicMock()
 
+    mock_proc = AsyncMock()
+    mock_proc.returncode = 0
+    mock_proc.wait = AsyncMock()
+    mock_stdout = AsyncMock()
+    mock_stdout.read = AsyncMock(side_effect=[b"output", b""])
+    mock_stderr = AsyncMock()
+    mock_stderr.read = AsyncMock(side_effect=[b"", b""])
+    mock_proc.stdout = mock_stdout
+    mock_proc.stderr = mock_stderr
+
+    mock_bash_msg = AsyncMock()
+
     with patch.object(app, "_spawn_queue_task") as mock_spawn:
-        with patch.object(app, "_mount_and_scroll", new_callable=AsyncMock):
-            with patch("subprocess.run") as mock_run:
-                mock_run.return_value = MagicMock(
-                    stdout=b"output", stderr=b"", returncode=0
-                )
-                await app._handle_bash_command("echo hello", inject_context=True)
+        with patch("vibe.cli.textual_ui.app.BashOutputMessage", return_value=mock_bash_msg):
+            with patch.object(app, "_mount_and_scroll", new_callable=AsyncMock):
+                with patch("vibe.cli.textual_ui.app.asyncio.create_subprocess_shell", return_value=mock_proc):
+                    await app._handle_bash_command("echo hello", inject_context=True)
 
     mock_spawn.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_bash_command_no_spawn_on_timeout(tmp_path: Path) -> None:
-    import subprocess
 
     app = _create_mock_app(tmp_path)
     app.agent_loop.inject_user_context = AsyncMock()
     app.agent_loop._notify_event_listeners = MagicMock()
 
+    mock_proc = AsyncMock()
+    mock_proc.returncode = None
+    mock_proc.wait = AsyncMock()
+    mock_stdout = AsyncMock()
+    mock_stdout.read = AsyncMock(side_effect=[b"partial", b""])
+    mock_stderr = AsyncMock()
+    mock_stderr.read = AsyncMock(side_effect=[b"", b""])
+    mock_proc.stdout = mock_stdout
+    mock_proc.stderr = mock_stderr
+
+    mock_bash_msg = AsyncMock()
+
+    async def slow_gather(*args, **kwargs):
+        raise TimeoutError()
+
     with patch.object(app, "_spawn_queue_task") as mock_spawn:
-        with patch.object(app, "_mount_and_scroll", new_callable=AsyncMock):
-            with patch(
-                "subprocess.run", side_effect=subprocess.TimeoutExpired("cmd", 30)
-            ):
-                await app._handle_bash_command("slow_cmd", inject_context=False)
+        with patch("vibe.cli.textual_ui.app.BashOutputMessage", return_value=mock_bash_msg):
+            with patch.object(app, "_mount_and_scroll", new_callable=AsyncMock):
+                with patch("vibe.cli.textual_ui.app.asyncio.create_subprocess_shell", return_value=mock_proc):
+                    with patch("vibe.cli.textual_ui.app.asyncio.wait_for", side_effect=slow_gather):
+                        await app._handle_bash_command("slow_cmd", inject_context=False)
 
     mock_spawn.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_bash_command_no_spawn_on_error(tmp_path: Path) -> None:
+
     app = _create_mock_app(tmp_path)
     app.agent_loop.inject_user_context = AsyncMock()
     app.agent_loop._notify_event_listeners = MagicMock()
 
+    mock_bash_msg = AsyncMock()
+
     with patch.object(app, "_spawn_queue_task") as mock_spawn:
-        with patch.object(app, "_mount_and_scroll", new_callable=AsyncMock):
-            with patch("subprocess.run", side_effect=RuntimeError("boom")):
-                await app._handle_bash_command("bad_cmd", inject_context=False)
+        with patch("vibe.cli.textual_ui.app.BashOutputMessage", return_value=mock_bash_msg):
+            with patch.object(app, "_mount_and_scroll", new_callable=AsyncMock):
+                with patch("vibe.cli.textual_ui.app.asyncio.create_subprocess_shell", side_effect=RuntimeError("boom")):
+                    await app._handle_bash_command("bad_cmd", inject_context=False)
 
     mock_spawn.assert_not_called()
 

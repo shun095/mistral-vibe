@@ -95,33 +95,32 @@ async def test_approval_app_bindings_include_key_3():
 
 
 @pytest.mark.asyncio
-async def test_approval_app_bindings_include_key_4():
-    """Test that the approval app has bindings for key 4 (No option)."""
-    # Check that the BINDINGS class variable includes key 4
+async def test_approval_app_bindings_include_key_5():
+    # Check that the BINDINGS class variable includes key 5
     bindings = ApprovalApp.BINDINGS
 
-    # Find the binding for key "4"
+    # Find the binding for key "5"
     # BindingType can be Binding object or tuple[str, str] or tuple[str, str, str]
-    key_4_bindings = []
+    key_5_bindings = []
     for b in bindings:
         if hasattr(b, "key"):
             # It's a Binding object
-            if b.key == "4":
-                key_4_bindings.append(b)
+            if b.key == "5":
+                key_5_bindings.append(b)
         elif isinstance(b, tuple):
             # It's a tuple
-            if b[0] == "4":
-                key_4_bindings.append(b)
+            if b[0] == "5":
+                key_5_bindings.append(b)
 
-    # Should have exactly one binding for key "4"
-    assert len(key_4_bindings) == 1
+    # Should have exactly one binding for key "5"
+    assert len(key_5_bindings) == 1
 
-    # The action should be "select_4"
-    binding = key_4_bindings[0]
+    # The action should be "select_5"
+    binding = key_5_bindings[0]
     if hasattr(binding, "action"):
-        assert binding.action == "select_4"
+        assert binding.action == "select_5"
     else:
-        assert binding[1] == "select_4"
+        assert binding[1] == "select_5"
 
     # The description should mention "No"
     if hasattr(binding, "description"):
