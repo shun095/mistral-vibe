@@ -122,6 +122,54 @@ def test_find_not_in_default_allowlist():
     )
 
 
+@pytest.mark.parametrize("predicate", ["-exec", "-execdir", "-ok", "-okdir"])
+def test_find_execution_predicates_force_ask(predicate: str):
+    config = BashToolConfig(permission=ToolPermission.ALWAYS)
+    bash_tool = Bash(config_getter=lambda: config, state=BaseToolState())
+
+    permission = bash_tool.resolve_permission(
+        BashArgs(command=f"find . {predicate} id \\;", timeout=10)
+    )
+
+    assert isinstance(permission, PermissionContext)
+    assert permission.permission is ToolPermission.ASK
+    assert [required.label for required in permission.required_permissions] == [
+        f"find . {predicate} id \\;"
+    ]
+
+
+def test_find_exec_compound_includes_companion_required_permission():
+    config = BashToolConfig(permission=ToolPermission.ALWAYS)
+    bash_tool = Bash(config_getter=lambda: config, state=BaseToolState())
+
+    permission = bash_tool.resolve_permission(
+        BashArgs(command='find . -exec id \\; && python3 -c "import os"', timeout=10)
+    )
+
+    assert isinstance(permission, PermissionContext)
+    assert permission.permission is ToolPermission.ASK
+    labels = {rp.label for rp in permission.required_permissions}
+    assert any("find" in label for label in labels), (
+        f"Expected a find-exec RequiredPermission, got {labels}"
+    )
+    assert any("python3" in label for label in labels), (
+        f"Companion command should also require permission, got {labels}"
+    )
+
+
+def test_find_execution_predicate_does_not_override_denylist():
+    config = BashToolConfig(denylist=["passwd"])
+    bash_tool = Bash(config_getter=lambda: config, state=BaseToolState())
+
+    permission = bash_tool.resolve_permission(
+        BashArgs(command="find . -exec id \\; && passwd root", timeout=10)
+    )
+
+    assert isinstance(permission, PermissionContext)
+    assert permission.permission is ToolPermission.NEVER
+    assert "matches denylist pattern 'passwd'" in (permission.reason or "")
+
+
 def test_resolve_permission():
     config = BashToolConfig(allowlist=["echo", "pwd"], denylist=["rm"])
     bash_tool = Bash(config_getter=lambda: config, state=BaseToolState())

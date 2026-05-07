@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 import shlex
 import tomllib
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Any, Literal, cast, get_args
 from urllib.parse import urljoin
 
 from dotenv import dotenv_values
@@ -37,6 +37,18 @@ from vibe.core.prompts import SystemPrompt
 from vibe.core.types import Backend
 from vibe.core.utils import get_server_url_from_api_base
 from vibe.core.utils.io import read_safe
+
+
+def deep_update(
+    mapping: dict[str, Any], updating_mapping: dict[str, Any]
+) -> dict[str, Any]:
+    merged = dict(mapping)
+    for key, value in updating_mapping.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = deep_update(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
 
 
 def load_dotenv_values(
@@ -166,6 +178,7 @@ class ProviderConfig(BaseModel):
     reasoning_field_name: str = "reasoning_content"
     project_id: str = ""
     region: str = ""
+    extra_headers: dict[str, str] = Field(default_factory=dict)
 
     def _is_legacy_mistral_provider_without_backend(self) -> bool:
         return (
@@ -227,6 +240,17 @@ class _MCPBase(BaseModel):
     sampling_enabled: bool = Field(
         default=True,
         description="Allow this MCP server to request LLM completions via sampling/createMessage.",
+    )
+    disabled: bool = Field(
+        default=False,
+        description="Disable all tools from this MCP server. Tools are still discovered but hidden.",
+    )
+    disabled_tools: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Tool names (without the server prefix) to disable from this server. "
+            "E.g. ['search', 'read'] to hide '{alias}_search' and '{alias}_read'."
+        ),
     )
 
     @field_validator("name", mode="after")
@@ -312,11 +336,32 @@ MCPServer = Annotated[
 ]
 
 
+class ConnectorConfig(BaseModel):
+    """Per-connector settings persisted in config.toml under ``[[connectors]]``."""
+
+    name: str = Field(description="Normalized connector alias to match against.")
+    disabled: bool = Field(
+        default=False,
+        description="Disable all tools from this connector. Tools are still discovered but hidden.",
+    )
+    disabled_tools: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Tool names (without the connector prefix) to disable. "
+            "E.g. ['search'] to hide 'connector_{name}_search'."
+        ),
+    )
+
+
 def _default_alias_to_name(data: Any) -> Any:
     if isinstance(data, dict):
         if "alias" not in data or data["alias"] is None:
             data["alias"] = data.get("name")
     return data
+
+
+ThinkingLevel = Literal["off", "low", "medium", "high", "max"]
+THINKING_LEVELS: list[str] = list(get_args(ThinkingLevel))
 
 
 class ModelConfig(BaseModel):
@@ -326,7 +371,7 @@ class ModelConfig(BaseModel):
     temperature: float | None = None
     input_price: float = 0.0  # Price per million input tokens
     output_price: float = 0.0  # Price per million output tokens
-    thinking: Literal["off", "low", "medium", "high", "max"] = "off"
+    thinking: ThinkingLevel = "off"
     auto_compact_threshold: int = 200_000
 
     _default_alias_to_name = model_validator(mode="before")(_default_alias_to_name)
@@ -395,9 +440,11 @@ DEFAULT_MODELS = [
     ModelConfig(
         name="mistral-vibe-cli-latest",
         provider="mistral",
-        alias="devstral-2",
-        input_price=0.4,
-        output_price=2.0,
+        alias="mistral-medium-3.5",
+        temperature=1.0,
+        input_price=1.5,
+        output_price=7.5,
+        thinking="high",
     ),
     ModelConfig(
         name="devstral-small-latest",
@@ -461,6 +508,7 @@ class VibeConfig(BaseSettings):
     active_transcribe_model: str = "voxtral-realtime"
     active_tts_model: str = "voxtral-tts"
     auto_approve: bool = False
+    bypass_tool_permissions: bool = False
     enable_telemetry: bool = False
     loop_detection_enabled: bool = True
     loop_detection_threshold: int = 3
@@ -476,16 +524,18 @@ class VibeConfig(BaseSettings):
     api_timeout: float = 720.0
     auto_compact_threshold: int = 200_000
 
-    nuage_enabled: bool = Field(default=False, exclude=True)
-    nuage_base_url: str = Field(default="https://api.mistral.ai", exclude=True)
-    nuage_workflow_id: str = Field(default="__shared-nuage-workflow", exclude=True)
-    nuage_task_queue: str | None = Field(default="shared-vibe-nuage", exclude=True)
-    nuage_api_key_env_var: str = Field(default="MISTRAL_API_KEY", exclude=True)
-    nuage_project_name: str = Field(default="Vibe", exclude=True)
+    vibe_code_enabled: bool = Field(default=True, exclude=True)
+    vibe_code_base_url: str = Field(default="https://api.mistral.ai", exclude=True)
+    vibe_code_workflow_id: str = Field(default="__shared-nuage-workflow", exclude=True)
+    vibe_code_task_queue: str | None = Field(default="shared-vibe-nuage", exclude=True)
+    vibe_code_api_key_env_var: str = Field(default="MISTRAL_API_KEY", exclude=True)
+    vibe_code_project_name: str | None = Field(default=None, exclude=True)
 
     # TODO(otel): remove exclude=True once the feature is publicly available
     enable_otel: bool = Field(default=False, exclude=True)
     otel_endpoint: str = Field(default="", exclude=True)
+
+    enable_experimental_hooks: bool = Field(default=False, exclude=True)
 
     providers: list[ProviderConfig] = Field(
         default_factory=lambda: list(DEFAULT_PROVIDERS)
@@ -522,6 +572,10 @@ class VibeConfig(BaseSettings):
 
     mcp_servers: list[MCPServer] = Field(
         default_factory=list, description="Preferred MCP server configuration entries."
+    )
+    connectors: list[ConnectorConfig] = Field(
+        default_factory=list,
+        description="Per-connector settings (disable, disabled_tools).",
     )
 
     lsp: LSPConfig = Field(
@@ -611,8 +665,8 @@ class VibeConfig(BaseSettings):
         return super().model_dump(**kwargs)
 
     @property
-    def nuage_api_key(self) -> str:
-        return os.getenv(self.nuage_api_key_env_var, "")
+    def vibe_code_api_key(self) -> str:
+        return os.getenv(self.vibe_code_api_key_env_var, "")
 
     @property
     def otel_span_exporter_config(self) -> OtelSpanExporterConfig | None:
@@ -654,11 +708,6 @@ class VibeConfig(BaseSettings):
 
     @property
     def system_prompt(self) -> str:
-        try:
-            return SystemPrompt[self.system_prompt_id.upper()].read()
-        except KeyError:
-            pass
-
         mgr = get_harness_files_manager()
         prompt_dirs = mgr.project_prompts_dirs + mgr.user_prompts_dirs
         for current_prompt_dir in prompt_dirs:
@@ -667,6 +716,11 @@ class VibeConfig(BaseSettings):
             )
             if custom_sp_path.is_file():
                 return read_safe(custom_sp_path).text
+
+        try:
+            return SystemPrompt[self.system_prompt_id.upper()].read()
+        except KeyError:
+            pass
 
         raise MissingPromptFileError(
             self.system_prompt_id, *(str(d) for d in prompt_dirs)
@@ -687,7 +741,7 @@ class VibeConfig(BaseSettings):
 
     def get_mistral_provider(self) -> ProviderConfig | None:
         try:
-            active_provider = self.get_provider_for_model(self.get_active_model())
+            active_provider = self.get_active_provider()
             if active_provider.backend == Backend.MISTRAL:
                 return active_provider
         except ValueError:
@@ -701,6 +755,15 @@ class VibeConfig(BaseSettings):
         raise ValueError(
             f"Provider '{model.provider}' for model '{model.name}' not found in configuration."
         )
+
+    def get_active_provider(self) -> ProviderConfig:
+        return self.get_provider_for_model(self.get_active_model())
+
+    def is_active_model_mistral(self) -> bool:
+        try:
+            return self.get_active_provider().backend == Backend.MISTRAL
+        except ValueError:
+            return False
 
     def get_active_transcribe_model(self) -> TranscribeModelConfig:
         for model in self.transcribe_models:
@@ -778,7 +841,7 @@ class VibeConfig(BaseSettings):
 
         compaction_provider = self.get_provider_for_model(self.compaction_model)
         try:
-            active_provider = self.get_provider_for_model(self.get_active_model())
+            active_provider = self.get_active_provider()
         except ValueError:
             return self
         if active_provider.name != compaction_provider.name:
@@ -792,8 +855,7 @@ class VibeConfig(BaseSettings):
     @model_validator(mode="after")
     def _check_api_key(self) -> VibeConfig:
         try:
-            active_model = self.get_active_model()
-            provider = self.get_provider_for_model(active_model)
+            provider = self.get_active_provider()
             api_key_env = provider.api_key_env_var
             if api_key_env and not os.getenv(api_key_env):
                 raise MissingAPIKeyError(api_key_env, provider.name)
@@ -868,6 +930,39 @@ class VibeConfig(BaseSettings):
         _ = self.system_prompt
         return self
 
+    def set_thinking(self, level: ThinkingLevel) -> None:
+        model = self.get_active_model()
+
+        for i, m in enumerate(self.models):
+            if m.alias == model.alias:
+                self.models[i] = m.model_copy(update={"thinking": level})
+                break
+
+        current_config = TomlFileSettingsSource(type(self)).toml_data
+        models = current_config.get("models", [])
+        for entry in models:
+            if entry.get("alias", entry.get("name")) == model.alias:
+                entry["thinking"] = level
+                break
+        else:
+            # Model comes from defaults; materialize the full list so we
+            # don't lose the other models.
+            models = [
+                {
+                    "alias": m.alias,
+                    "name": m.name,
+                    "provider": m.provider,
+                    "thinking": level if m.alias == model.alias else m.thinking,
+                }
+                for m in self.models
+            ]
+        type(self).save_updates({"models": models})
+
+    @classmethod
+    def get_persisted_config(cls) -> dict[str, Any]:
+        """Return the raw config as persisted in the TOML file (no profile merging)."""
+        return TomlFileSettingsSource(cls).toml_data
+
     @classmethod
     def save_updates(cls, updates: dict[str, Any]) -> None:
         if not get_harness_files_manager().persist_allowed:
@@ -876,7 +971,9 @@ class VibeConfig(BaseSettings):
 
         def deep_merge(target: dict, source: dict) -> None:
             for key, value in source.items():
-                if (
+                if value is None:
+                    target.pop(key, None)
+                elif (
                     key in target
                     and isinstance(target.get(key), dict)
                     and isinstance(value, dict)
@@ -1109,9 +1206,9 @@ class VibeConfig(BaseSettings):
             doc = tomlkit.document()
 
         # Update document with provided values (already excludes defaults)
-        # Skip providers and models - they're managed separately
         for key, value in config.items():
             if key in {"providers", "models"}:
+                doc[key] = value
                 continue
 
             if isinstance(value, dict):
@@ -1126,8 +1223,11 @@ class VibeConfig(BaseSettings):
                         del table[k]
                     # Then update/add keys
                     for subkey, subvalue in value.items():
-                        table[subkey] = subvalue
-            else:
+                        if subvalue is None:
+                            table.pop(subkey, None)
+                        else:
+                            table[subkey] = subvalue
+            elif value is not None:
                 doc[key] = value
 
         # Remove top-level keys that are not in config (they were filtered as defaults)
@@ -1434,17 +1534,37 @@ class VibeConfig(BaseSettings):
         except (FileNotFoundError, tomllib.TOMLDecodeError, OSError, TOMLKitError):
             return
 
+        changed = False
+
         bash_tools = doc.get("tools", {})
         if isinstance(bash_tools, dict):
             bash_config = bash_tools.get("bash", {})
             if isinstance(bash_config, dict):
                 allowlist = bash_config.get("allowlist")
-                if allowlist is not None and "find" in allowlist:
-                    allowlist.remove("find")
-                    # Write back directly using tomlkit to preserve document structure
-                    with file.open("wb") as f:
-                        f.write(tomlkit.dumps(doc).encode("utf-8"))
-                    return
+                if allowlist is not None and "find" not in allowlist:
+                    sorted_list = sorted(list(allowlist) + ["find"])
+                    bash_config["allowlist"] = sorted_list
+                    changed = True
+
+        for model in doc.get("models", []):
+            if (
+                model.get("name") == "mistral-vibe-cli-latest"
+                and model.get("alias") == "devstral-2"
+            ):
+                model["alias"] = "mistral-medium-3.5"
+                model["temperature"] = 1.0
+                model["input_price"] = 1.5
+                model["output_price"] = 7.5
+                model["thinking"] = "high"
+                changed = True
+
+        if doc.get("active_model") == "devstral-2":
+            doc["active_model"] = "mistral-medium-3.5"
+            changed = True
+
+        if changed:
+            with file.open("wb") as f:
+                f.write(tomlkit.dumps(doc).encode("utf-8"))
 
     @classmethod
     def load(cls, **overrides: Any) -> VibeConfig:

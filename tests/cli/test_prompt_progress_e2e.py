@@ -29,7 +29,7 @@ async def test_prompt_progress_shown_in_hint_text() -> None:
     Full e2e flow using pilot:
     1. User types a message and presses Enter
     2. Backend streams response with prompt_progress updates
-    3. LoadingWidget hint text shows: "(45% 2s esc to interrupt)"
+    3. LoadingWidget hint text shows: "(45% 2s Esc/Ctrl+C to interrupt)"
     4. Progress updates incrementally in the hint text
     5. Conversation completes
 
@@ -103,10 +103,10 @@ async def test_prompt_progress_shown_in_hint_text() -> None:
             await pilot.pause(0.1)
         hint = _get_hint_text(loading_widget)
         assert "%" in hint, f"Hint should show progress percentage, got: {hint}"
-        assert "esc to interrupt" in hint, (
+        assert "Esc/Ctrl+C to interrupt" in hint, (
             f"Hint should show interrupt text, got: {hint}"
         )
-        # Verify the format is correct: (XX% Ys esc to interrupt)
+        # Verify the format is correct: (XX% Ys Esc/Ctrl+C to interrupt)
         assert hint.startswith("("), f"Hint should start with '(', got: {hint}"
         assert ")" in hint, f"Hint should end with ')', got: {hint}"
 
@@ -115,7 +115,7 @@ async def test_prompt_progress_shown_in_hint_text() -> None:
 async def test_prompt_progress_format_in_hint() -> None:
     """Test that prompt progress is formatted correctly in hint text.
 
-    Expected format: "(XX% Ys esc to interrupt)"
+    Expected format: "(XX% Ys Esc/Ctrl+C to interrupt)"
     Where XX is the progress percentage and Y is elapsed time in seconds.
     """
     backend = FakeBackend(
@@ -171,7 +171,9 @@ async def test_prompt_progress_format_in_hint() -> None:
 
         # Verify format: should contain percentage, time, and interrupt text
         assert "50%" in hint, f"Should show 50% progress, got: {hint}"
-        assert "esc to interrupt" in hint, f"Should show interrupt text, got: {hint}"
+        assert "Esc/Ctrl+C to interrupt" in hint, (
+            f"Should show interrupt text, got: {hint}"
+        )
         # Should have time in seconds (e.g., "0s", "1s", etc.)
         import re
 
@@ -230,4 +232,6 @@ async def test_no_progress_when_not_provided() -> None:
             f"Should not show percentage when not provided, got: {hint}"
         )
         # Should still show time and interrupt text
-        assert "esc to interrupt" in hint, f"Should show interrupt text, got: {hint}"
+        assert "Esc/Ctrl+C to interrupt" in hint, (
+            f"Should show interrupt text, got: {hint}"
+        )

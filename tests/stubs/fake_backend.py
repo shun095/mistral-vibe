@@ -150,5 +150,8 @@ class FakeBackend(BackendLike):
         extra_headers: dict[str, str] | None = None,
         metadata: dict[str, str] | None = None,
     ) -> int:
+        self._requests_messages.append(list(messages))
+        self._requests_extra_headers.append(extra_headers)
+        self._requests_metadata.append(metadata)
         self._count_tokens_calls.append(list(messages))
         return self._token_counter(messages)

@@ -15,6 +15,8 @@ from vibe.cli.textual_ui.constants import MistralColors
 from vibe.cli.textual_ui.widgets.no_markup_static import NoMarkupStatic
 from vibe.cli.textual_ui.widgets.spinner import SpinnerMixin, SpinnerType
 
+DEFAULT_LOADING_STATUS = "Generating"
+
 
 def _format_elapsed(seconds: int) -> str:
     if seconds < 60:  # noqa: PLR2004
@@ -71,7 +73,7 @@ class LoadingWidget(SpinnerMixin, Static):
         "Writing holiday cards",
     ]
 
-    def __init__(self, status: str | None = None) -> None:
+    def __init__(self, status: str | None = None, *, show_hint: bool = True) -> None:
         super().__init__(classes="loading-widget")
         self.init_spinner()
         self.status = status or self._get_default_status()
@@ -81,6 +83,7 @@ class LoadingWidget(SpinnerMixin, Static):
         self._indicator_widget: Static | None = None
         self._status_widget: Static | None = None
         self.hint_widget: Static | None = None
+        self._show_hint = show_hint
         self.start_time: float | None = None
         self._last_elapsed: int = -1
         self._paused_total: float = 0.0
@@ -105,7 +108,7 @@ class LoadingWidget(SpinnerMixin, Static):
         return None
 
     def _get_default_status(self) -> str:
-        return self._get_easter_egg() or "Generating"
+        return self._get_easter_egg() or DEFAULT_LOADING_STATUS
 
     def _apply_easter_egg(self, status: str) -> str:
         return self._get_easter_egg() or status
@@ -121,7 +124,8 @@ class LoadingWidget(SpinnerMixin, Static):
 
     def set_status(self, status: str) -> None:
         self.status = self._apply_easter_egg(status)
-        self._update_animation()
+        if self._status_widget:
+            self._status_widget.update(self._build_status_text())
 
     def set_progress(self, percentage: float) -> None:
         """Set the prompt processing progress percentage.
@@ -141,7 +145,7 @@ class LoadingWidget(SpinnerMixin, Static):
                 time() - self._pause_start if self._pause_start else 0
             )
             elapsed = int(time() - self.start_time - paused)
-            hint_text = f"{_format_elapsed(elapsed)} esc to interrupt"
+            hint_text = f"{_format_elapsed(elapsed)} Esc/Ctrl+C to interrupt"
             if self._progress_percentage is not None:
                 hint_text = f"{self._progress_percentage:.0f}% {hint_text}"
             self.hint_widget.update(f"({hint_text})")
@@ -156,10 +160,11 @@ class LoadingWidget(SpinnerMixin, Static):
             self._status_widget = Static("", classes="loading-status")
             yield self._status_widget
 
-            self.hint_widget = NoMarkupStatic(
-                "(0s esc to interrupt)", classes="loading-hint"
-            )
-            yield self.hint_widget
+            if self._show_hint:
+                self.hint_widget = NoMarkupStatic(
+                    "(0s Esc/Ctrl+C to interrupt)", classes="loading-hint"
+                )
+                yield self.hint_widget
 
     def on_mount(self) -> None:
         self.start_time = time()
@@ -219,7 +224,7 @@ class LoadingWidget(SpinnerMixin, Static):
             elapsed = int(time() - self.start_time - paused)
             if elapsed != self._last_elapsed:
                 self._last_elapsed = elapsed
-                hint_text = f"{_format_elapsed(elapsed)} esc to interrupt"
+                hint_text = f"{_format_elapsed(elapsed)} Esc/Ctrl+C to interrupt"
                 if self._progress_percentage is not None:
                     hint_text = f"{self._progress_percentage:.0f}% {hint_text}"
                 self.hint_widget.update(f"({hint_text})")

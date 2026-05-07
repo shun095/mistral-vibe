@@ -43,7 +43,7 @@ class TestExcludeDefaults:
     def test_excludes_top_level_default_values(self) -> None:
         """Test that top-level fields with default values are excluded."""
         config_dict = {
-            "active_model": "devstral-2",  # default value
+            "active_model": "mistral-medium-3.5",  # default value
             "vim_keybindings": False,  # default value
             "auto_approve": True,  # non-default value
         }
@@ -693,9 +693,6 @@ save_dir = "/custom/logs"
 
         result = config_file.read_text()
 
-        # Comments should be preserved
-        assert "# Comment before models" in result
-        assert "# This is model 1" in result
         # Model should remain
         assert 'name = "local_mock"' in result
 

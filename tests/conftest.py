@@ -100,6 +100,7 @@ def _reset_trusted_folders_manager(config_dir: Path) -> None:
     trusted_folders_manager._file_path = config_dir / "trusted_folders.toml"
     trusted_folders_manager._trusted = []
     trusted_folders_manager._untrusted = []
+    trusted_folders_manager._session_trusted = []
 
 
 @pytest.fixture(autouse=True)
@@ -113,6 +114,33 @@ def _init_harness_files_manager(config_dir: Path):
     init_harness_files_manager("user", "project")
     yield
     reset_harness_files_manager()
+
+
+@pytest.fixture(autouse=True)
+def _scratchpad_dir(
+    monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+) -> Generator[Path]:
+    import vibe.core.scratchpad as scratchpad_mod
+
+    scratchpad_mod._active_scratchpads.clear()
+
+    scratchpad_root = tmp_path_factory.mktemp("scratchpad")
+    _counter = 0
+
+    def _fake_mkdtemp(
+        suffix: str = "", prefix: str = "", dir: str | None = None
+    ) -> str:
+        nonlocal _counter
+        _counter += 1
+        d = scratchpad_root / f"{prefix}{_counter}{suffix}"
+        d.mkdir(parents=True, exist_ok=True)
+        return str(d)
+
+    monkeypatch.setattr("vibe.core.scratchpad.tempfile.mkdtemp", _fake_mkdtemp)
+
+    yield scratchpad_root
+
+    scratchpad_mod._active_scratchpads.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -139,7 +167,7 @@ def _mock_update_commands(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture(autouse=True)
 def _disable_feedback_bar(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "vibe.cli.textual_ui.widgets.feedback_bar.FEEDBACK_PROBABILITY", 0
+        "vibe.cli.textual_ui.widgets.feedback_bar_manager.FEEDBACK_PROBABILITY", 0
     )
 
 

@@ -192,6 +192,14 @@ This is attempt {attempt + 1} of {max_attempts}. Provide a complete multi-paragr
                 args.task, attempt, self.config.max_retries
             )
 
+            # Inject scratchpad context if available
+            if ctx.scratchpad_dir:
+                task_instruction = (
+                    f"Scratchpad directory: {ctx.scratchpad_dir}\n"
+                    "You can read and write files here without permission prompts.\n\n"
+                    f"{task_instruction}"
+                )
+
             try:
                 # Run the agent loop for this attempt
                 async with aclosing(subagent_loop.act(task_instruction)) as events:

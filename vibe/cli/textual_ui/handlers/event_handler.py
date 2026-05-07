@@ -5,15 +5,25 @@ from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, cast
 
 from vibe.cli.textual_ui.widgets.compact import CompactMessage
+from vibe.cli.textual_ui.widgets.loading import DEFAULT_LOADING_STATUS
 from vibe.cli.textual_ui.widgets.messages import (
     AssistantMessage,
     CompactSummaryMessage,
+    HookRunContainer,
+    HookSystemMessageLine,
     ImageMessage,
     ReasoningMessage,
     UserMessage,
 )
 from vibe.cli.textual_ui.widgets.no_markup_static import NoMarkupStatic
 from vibe.cli.textual_ui.widgets.tools import ToolCallMessage, ToolResultMessage
+from vibe.core.hooks.models import (
+    HookEndEvent,
+    HookEvent,
+    HookRunEndEvent,
+    HookRunStartEvent,
+    HookStartEvent,
+)
 from vibe.core.tools.ui import ToolUIDataAdapter
 from vibe.core.types import (
     AgentProfileChangedEvent,
@@ -53,6 +63,33 @@ class EventHandler:
         self.current_streaming_message: AssistantMessage | None = None
         self.current_streaming_reasoning: ReasoningMessage | None = None
         self._latest_command_task: asyncio.Task[None] | None = None
+        self._hook_run_container: HookRunContainer | None = None
+
+    async def _handle_hook_event(
+        self, event: HookEvent, loading_widget: LoadingWidget | None = None
+    ) -> None:
+        match event:
+            case HookRunStartEvent():
+                self._hook_run_container = HookRunContainer()
+                await self.mount_callback(self._hook_run_container)
+            case HookRunEndEvent():
+                if self._hook_run_container and not self._hook_run_container.display:
+                    await self._hook_run_container.remove()
+                self._hook_run_container = None
+            case HookStartEvent():
+                self.finalize_streaming()
+                if loading_widget:
+                    loading_widget.set_status(f"Running hook {event.hook_name}")
+            case HookEndEvent():
+                if event.content and self._hook_run_container is not None:
+                    widget = HookSystemMessageLine(
+                        hook_name=event.hook_name,
+                        content=event.content,
+                        severity=event.status,
+                    )
+                    await self._hook_run_container.add_message(widget)
+                if loading_widget:
+                    loading_widget.set_status(DEFAULT_LOADING_STATUS)
 
     def handle_event(
         self,
@@ -64,7 +101,7 @@ class EventHandler:
             self._process_event(event, loading_active, loading_widget)
         )
 
-    async def _process_event(
+    async def _process_event(  # noqa: PLR0912
         self,
         event: BaseEvent,
         loading_active: bool = False,
@@ -102,6 +139,8 @@ class EventHandler:
             case ContinueableUserMessageEvent():
                 await self._finalize_streaming_internal()
                 await self._handle_continueable_user_message(event)
+            case HookEvent():
+                await self._handle_hook_event(event, loading_widget)
             case WaitingForInputEvent():
                 await self._finalize_streaming_internal()
             case _:

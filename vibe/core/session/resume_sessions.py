@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal
 
 from vibe.core.config import VibeConfig
@@ -24,10 +25,11 @@ def short_session_id(session_id: str, source: ResumeSessionSource = "local") -> 
     return session_id[:SHORT_SESSION_ID_LEN]
 
 
-_ACTIVE_STATUSES = {
+_ACTIVE_STATUSES = [
     WorkflowExecutionStatus.RUNNING,
     WorkflowExecutionStatus.RETRYING_AFTER_ERROR,
-}
+    WorkflowExecutionStatus.CONTINUED_AS_NEW,
+]
 
 
 @dataclass(frozen=True)
@@ -63,38 +65,42 @@ async def list_remote_resume_sessions(config: VibeConfig) -> list[ResumeSessionI
     if _NUAGE_REMOTE_SESSIONS_DISABLED:
         logger.debug("Remote resume listing skipped: permanently disabled for security")
         return []
-    if not config.nuage_enabled or not config.nuage_api_key:
-        logger.debug("Remote resume listing skipped: missing Nuage configuration")
+    if not config.vibe_code_enabled or not config.vibe_code_api_key:
+        logger.debug("Remote resume listing skipped: missing Vibe Code configuration")
         return []
 
     async with WorkflowsClient(
-        base_url=config.nuage_base_url,
-        api_key=config.nuage_api_key,
+        base_url=config.vibe_code_base_url,
+        api_key=config.vibe_code_api_key,
         timeout=config.api_timeout,
     ) as client:
         response = await client.get_workflow_runs(
-            workflow_identifier=config.nuage_workflow_id, page_size=50
+            workflow_identifier=config.vibe_code_workflow_id,
+            page_size=50,
+            status=_ACTIVE_STATUSES,
         )
 
-    sessions: list[ResumeSessionInfo] = []
+    seen: dict[str, ResumeSessionInfo] = {}
+    latest_start: dict[str, datetime] = {}
     for execution in response.executions:
-        if execution.status not in _ACTIVE_STATUSES:
-            continue
-
-        sessions.append(
-            ResumeSessionInfo(
-                session_id=execution.execution_id,
-                source="remote",
-                cwd="",
-                title="Vibe Nuage",
-                end_time=(
-                    execution.end_time.isoformat()
-                    if execution.end_time
-                    else execution.start_time.isoformat()
-                ),
-                status=execution.status,
-            )
+        session = ResumeSessionInfo(
+            session_id=execution.execution_id,
+            source="remote",
+            cwd="",
+            title="Vibe Code",
+            end_time=(
+                execution.end_time.isoformat()
+                if execution.end_time
+                else execution.start_time.isoformat()
+            ),
+            status=execution.status,
         )
+        prev_start = latest_start.get(execution.execution_id)
+        if prev_start is None or execution.start_time > prev_start:
+            seen[execution.execution_id] = session
+            latest_start[execution.execution_id] = execution.start_time
+
+    sessions = list(seen.values())
 
     logger.debug("Remote resume listing filtered sessions: %d", len(sessions))
     return sessions
