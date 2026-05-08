@@ -225,6 +225,7 @@ class TestTUIImageMessageHandling:
         # Create mock agent loop
         mock_agent_loop = MagicMock(spec=AgentLoop)
         mock_agent_loop.telemetry_client = MagicMock()
+        mock_agent_loop.session_logger = MagicMock()
 
         mock_voice_manager = MagicMock()
         mock_voice_manager.transcribe_state = TranscribeState.IDLE

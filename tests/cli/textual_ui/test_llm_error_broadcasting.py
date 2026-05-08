@@ -16,6 +16,7 @@ class TestLLMErrorBroadcasting:
 
         # Create mock agent_loop to capture events
         mock_agent_loop = MagicMock(spec=AgentLoop)
+        mock_agent_loop.session_logger = MagicMock()
         mock_agent_loop._notify_event_listeners = MagicMock()
 
         # Create manager with real implementation
@@ -61,6 +62,7 @@ class TestLLMErrorBroadcasting:
 
         # Create mock agent_loop to capture events
         mock_agent_loop = MagicMock(spec=AgentLoop)
+        mock_agent_loop.session_logger = MagicMock()
         mock_agent_loop._notify_event_listeners = MagicMock()
 
         # Create manager with real implementation
@@ -94,6 +96,7 @@ class TestLLMErrorBroadcasting:
 
         # Create mock agent_loop to capture events
         mock_agent_loop = MagicMock(spec=AgentLoop)
+        mock_agent_loop.session_logger = MagicMock()
         mock_agent_loop._notify_event_listeners = MagicMock()
 
         # Create manager with real implementation
@@ -127,6 +130,7 @@ class TestLLMErrorBroadcasting:
 
         # Create mock agent_loop to capture events
         mock_agent_loop = MagicMock(spec=AgentLoop)
+        mock_agent_loop.session_logger = MagicMock()
         mock_agent_loop._notify_event_listeners = MagicMock()
 
         # Create manager with real implementation
@@ -158,6 +162,7 @@ class TestLLMErrorBroadcasting:
 
         # Create mock agent_loop to capture events
         mock_agent_loop = MagicMock(spec=AgentLoop)
+        mock_agent_loop.session_logger = MagicMock()
         mock_agent_loop._notify_event_listeners = MagicMock()
 
         # Create manager with real implementation
@@ -186,6 +191,7 @@ class TestLLMErrorBroadcasting:
 
         # Create mock agent_loop that raises on notification
         mock_agent_loop = MagicMock(spec=AgentLoop)
+        mock_agent_loop.session_logger = MagicMock()
         mock_agent_loop._notify_event_listeners.side_effect = Exception(
             "Notification failed"
         )

@@ -25,6 +25,7 @@ class TestApprovalPopupBroadcasting:
 
         # Create mock agent_loop to capture events
         mock_agent_loop = MagicMock(spec=AgentLoop)
+        mock_agent_loop.session_logger = MagicMock()
         mock_agent_loop._notify_event_listeners = MagicMock()
 
         # Create manager with real implementation
@@ -56,6 +57,7 @@ class TestApprovalPopupBroadcasting:
 
         # Create mock agent_loop to capture events
         mock_agent_loop = MagicMock(spec=AgentLoop)
+        mock_agent_loop.session_logger = MagicMock()
         mock_agent_loop._notify_event_listeners = MagicMock()
 
         # Create manager with real implementation
@@ -95,6 +97,7 @@ class TestQuestionPopupBroadcasting:
 
         # Create mock agent_loop to capture events
         mock_agent_loop = MagicMock(spec=AgentLoop)
+        mock_agent_loop.session_logger = MagicMock()
         mock_agent_loop._notify_event_listeners = MagicMock()
 
         # Create manager with real implementation
@@ -143,6 +146,7 @@ class TestQuestionPopupBroadcasting:
 
         # Create mock agent_loop to capture events
         mock_agent_loop = MagicMock(spec=AgentLoop)
+        mock_agent_loop.session_logger = MagicMock()
         mock_agent_loop._notify_event_listeners = MagicMock()
 
         # Create manager with real implementation
@@ -189,6 +193,7 @@ class TestWebResponseHandlers:
         try:
             # Create mock agent_loop
             mock_agent_loop = MagicMock(spec=AgentLoop)
+            mock_agent_loop.session_logger = MagicMock()
             mock_agent_loop._notify_event_listeners = MagicMock()
 
             # Create manager with real implementation
@@ -238,6 +243,7 @@ class TestWebResponseHandlers:
         try:
             # Create mock agent_loop
             mock_agent_loop = MagicMock(spec=AgentLoop)
+            mock_agent_loop.session_logger = MagicMock()
             mock_agent_loop._notify_event_listeners = MagicMock()
 
             # Create manager with real implementation
@@ -284,6 +290,7 @@ class TestWebResponseHandlers:
         try:
             # Create mock agent_loop
             mock_agent_loop = MagicMock(spec=AgentLoop)
+            mock_agent_loop.session_logger = MagicMock()
             mock_agent_loop._notify_event_listeners = MagicMock()
 
             # Create manager with real implementation
@@ -339,6 +346,7 @@ class TestWebResponseHandlers:
         try:
             # Create mock agent_loop
             mock_agent_loop = MagicMock(spec=AgentLoop)
+            mock_agent_loop.session_logger = MagicMock()
             mock_agent_loop._notify_event_listeners = MagicMock()
             mock_agent_loop.approve_always = MagicMock()
 
@@ -396,6 +404,7 @@ class TestWebResponseHandlers:
         try:
             # Create mock agent_loop
             mock_agent_loop = MagicMock(spec=AgentLoop)
+            mock_agent_loop.session_logger = MagicMock()
             mock_agent_loop._notify_event_listeners = MagicMock()
             mock_agent_loop.switch_agent = MagicMock()
 

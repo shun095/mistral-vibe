@@ -947,7 +947,7 @@ async def test_neutral_subagent_falls_through_to_ask() -> None:
     """NEUTRAL subagents should NOT be blocked; they fall through to _ask_approval."""
     from vibe.core.agents.models import AgentProfile, AgentSafety, AgentType
 
-    # Create a NEUTRAL subagent profile and register it
+    # Create a NEUTRAL subagent profile
     neutral_subagent = AgentProfile(
         name="test_neutral_subagent",
         display_name="Test Neutral Subagent",
@@ -962,14 +962,13 @@ async def test_neutral_subagent_falls_through_to_ask() -> None:
             include_project_context=False,
             include_prompt_detail=False,
         ),
-        agent_name="test_neutral_subagent",
         backend=FakeBackend([
             [mock_llm_chunk(content="Let me check.", tool_calls=[])],
             [mock_llm_chunk(content="Done.")],
         ]),
         is_subagent=True,
     )
-    agent_loop.agent_manager.register_agent(neutral_subagent)
+    agent_loop.agent_manager.active_profile = neutral_subagent
 
     # The agent should NOT be blocked by _should_block_safe_subagent
     # because it is NEUTRAL, not SAFE. It should fall through to _ask_approval.

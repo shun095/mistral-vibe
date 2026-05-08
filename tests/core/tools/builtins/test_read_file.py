@@ -76,7 +76,9 @@ class TestReadFileExecution:
             state=ReadFileState(),
         )
 
-        result = await collect_result(tool.run(ReadFileArgs(path=str(test_file))))
+        result = await collect_result(
+            tool.run(ReadFileArgs(path=str(test_file), offset=0))
+        )
 
         assert result.was_truncated
         assert result.lines_read > 0
@@ -93,7 +95,9 @@ class TestReadFileExecution:
             state=ReadFileState(),
         )
 
-        result = await collect_result(tool.run(ReadFileArgs(path=str(test_file))))
+        result = await collect_result(
+            tool.run(ReadFileArgs(path=str(test_file), offset=0))
+        )
 
         assert not result.was_truncated
         assert result.lines_read == 3
@@ -111,7 +115,7 @@ class TestReadFileExecution:
         )
 
         result = await collect_result(
-            tool.run(ReadFileArgs(path=str(test_file), limit=10))
+            tool.run(ReadFileArgs(path=str(test_file), offset=0, limit=10))
         )
 
         assert not result.was_truncated

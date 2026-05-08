@@ -24,6 +24,7 @@ from vibe.core.tools.builtins.ask_user_question import (
 def _create_mock_app():
     """Create a mock VibeApp with proper initialization."""
     mock_agent_loop = MagicMock(spec=AgentLoop)
+    mock_agent_loop.session_logger = MagicMock()
     mock_agent_loop.telemetry_client = MagicMock()
 
     mock_voice_manager = MagicMock()

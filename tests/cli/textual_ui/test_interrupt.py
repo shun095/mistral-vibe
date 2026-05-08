@@ -15,6 +15,7 @@ def _create_mock_app():
     """Create a mock VibeApp with proper initialization."""
     mock_agent_loop = MagicMock(spec=AgentLoop)
     mock_agent_loop.telemetry_client = MagicMock()
+    mock_agent_loop.session_logger = MagicMock()
     mock_agent_loop.skill_manager = MagicMock()
     mock_agent_loop.skill_manager.available_skills = {}
     mock_agent_loop.skill_manager.parse_skill_command.return_value = None

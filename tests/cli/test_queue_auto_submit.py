@@ -382,9 +382,14 @@ async def test_bash_command_spawns_queue_on_success(tmp_path: Path) -> None:
     mock_bash_msg = AsyncMock()
 
     with patch.object(app, "_spawn_queue_task") as mock_spawn:
-        with patch("vibe.cli.textual_ui.app.BashOutputMessage", return_value=mock_bash_msg):
+        with patch(
+            "vibe.cli.textual_ui.app.BashOutputMessage", return_value=mock_bash_msg
+        ):
             with patch.object(app, "_mount_and_scroll", new_callable=AsyncMock):
-                with patch("vibe.cli.textual_ui.app.asyncio.create_subprocess_shell", return_value=mock_proc):
+                with patch(
+                    "vibe.cli.textual_ui.app.asyncio.create_subprocess_shell",
+                    return_value=mock_proc,
+                ):
                     await app._handle_bash_command("echo hello", inject_context=True)
 
     mock_spawn.assert_called_once()
@@ -413,10 +418,18 @@ async def test_bash_command_no_spawn_on_timeout(tmp_path: Path) -> None:
         raise TimeoutError()
 
     with patch.object(app, "_spawn_queue_task") as mock_spawn:
-        with patch("vibe.cli.textual_ui.app.BashOutputMessage", return_value=mock_bash_msg):
+        with patch(
+            "vibe.cli.textual_ui.app.BashOutputMessage", return_value=mock_bash_msg
+        ):
             with patch.object(app, "_mount_and_scroll", new_callable=AsyncMock):
-                with patch("vibe.cli.textual_ui.app.asyncio.create_subprocess_shell", return_value=mock_proc):
-                    with patch("vibe.cli.textual_ui.app.asyncio.wait_for", side_effect=slow_gather):
+                with patch(
+                    "vibe.cli.textual_ui.app.asyncio.create_subprocess_shell",
+                    return_value=mock_proc,
+                ):
+                    with patch(
+                        "vibe.cli.textual_ui.app.asyncio.wait_for",
+                        side_effect=slow_gather,
+                    ):
                         await app._handle_bash_command("slow_cmd", inject_context=False)
 
     mock_spawn.assert_not_called()
@@ -432,9 +445,14 @@ async def test_bash_command_no_spawn_on_error(tmp_path: Path) -> None:
     mock_bash_msg = AsyncMock()
 
     with patch.object(app, "_spawn_queue_task") as mock_spawn:
-        with patch("vibe.cli.textual_ui.app.BashOutputMessage", return_value=mock_bash_msg):
+        with patch(
+            "vibe.cli.textual_ui.app.BashOutputMessage", return_value=mock_bash_msg
+        ):
             with patch.object(app, "_mount_and_scroll", new_callable=AsyncMock):
-                with patch("vibe.cli.textual_ui.app.asyncio.create_subprocess_shell", side_effect=RuntimeError("boom")):
+                with patch(
+                    "vibe.cli.textual_ui.app.asyncio.create_subprocess_shell",
+                    side_effect=RuntimeError("boom"),
+                ):
                     await app._handle_bash_command("bad_cmd", inject_context=False)
 
     mock_spawn.assert_not_called()
@@ -462,7 +480,7 @@ async def test_run_compact_spawns_queue_on_success(tmp_path: Path) -> None:
         def set_error(self, msg):
             pass
 
-    await app._run_compact(cast(Any, FakeCompactMsg()), 200)
+    await app._run_compact(cast(Any, FakeCompactMsg()), 200, "test-session-id")
 
     assert len(spawn_calls) == 1
 
@@ -489,7 +507,7 @@ async def test_run_compact_no_spawn_on_error(tmp_path: Path) -> None:
         def set_error(self, msg):
             pass
 
-    await app._run_compact(cast(Any, FakeCompactMsg()), 200)
+    await app._run_compact(cast(Any, FakeCompactMsg()), 200, "test-session-id")
 
     assert len(spawn_calls) == 0
 

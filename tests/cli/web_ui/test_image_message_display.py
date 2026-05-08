@@ -23,6 +23,7 @@ def _create_mock_app():
     mock_agent_loop.config.auto_approve = False
     mock_agent_loop._notify_event_listeners = MagicMock()
     mock_agent_loop.telemetry_client = MagicMock()
+    mock_agent_loop.session_logger = MagicMock()
 
     mock_voice_manager = MagicMock()
     mock_voice_manager.transcribe_state = TranscribeState.IDLE

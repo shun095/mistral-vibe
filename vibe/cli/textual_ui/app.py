@@ -209,7 +209,6 @@ from vibe.core.transcribe import make_transcribe_client
 from vibe.core.types import (
     AgentStats,
     ApprovalResponse,
-    AssistantEvent,
     BaseEvent,
     BashCommandEvent,
     Content,
@@ -744,7 +743,9 @@ class VibeApp(App):  # noqa: PLR0904
             return
 
         if value.startswith("!"):
-            self._bash_task = asyncio.create_task(self._handle_bash_command(value[1:], inject_context=True))
+            self._bash_task = asyncio.create_task(
+                self._handle_bash_command(value[1:], inject_context=True)
+            )
             return
 
         if value.startswith("&") and self.commands.has_command("teleport"):
@@ -1190,7 +1191,10 @@ class VibeApp(App):  # noqa: PLR0904
             self.agent_loop._notify_event_listeners(user_event)
 
             bash_event = BashCommandEvent(
-                command=command, exit_code=exit_code, output=stdout + stderr, message_id=None
+                command=command,
+                exit_code=exit_code,
+                output=stdout + stderr,
+                message_id=None,
             )
             self.agent_loop._notify_event_listeners(bash_event)
 
@@ -1746,7 +1750,11 @@ class VibeApp(App):  # noqa: PLR0904
             await self._handle_agent_loop_init()
             await self._ensure_loading_widget()
             message_id = str(uuid4())
-            prompt_payload = build_path_prompt_payload(content, base_dir=Path.cwd()) if is_text else None
+            prompt_payload = (
+                build_path_prompt_payload(content, base_dir=Path.cwd())
+                if is_text
+                else None
+            )
             if prompt_payload and prompt_payload.all_resources:
                 context_types: dict[str, int] = {}
                 for r in prompt_payload.all_resources:
