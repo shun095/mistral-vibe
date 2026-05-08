@@ -15,6 +15,12 @@ import { formatDuration } from './format-utils.js';
 import * as toolFormatters from './tool-formatters.js';
 
 class VibeClient {
+    static _severityMap = {
+        'OK': { icon: 'check_circle', cls: 'hook-ok' },
+        'WARNING': { icon: 'warning', cls: 'hook-warning' },
+        'ERROR': { icon: 'error', cls: 'hook-error' }
+    };
+
     constructor() {
         // Authentication is handled via HTTP-only cookie, no token in JS
         this.historyLoaded = false;
@@ -313,6 +319,39 @@ class VibeClient {
             case 'PromptProgressEvent':
                 this.handlePromptProgress(event);
                 break;
+            case 'ToolStreamEvent':
+                this.handleToolStream(event);
+                break;
+            case 'CompactStartEvent':
+                this.handleCompactStart(event);
+                break;
+            case 'CompactEndEvent':
+                this.handleCompactEnd(event);
+                break;
+            case 'AgentProfileChangedEvent':
+                this.handleAgentProfileChanged(event);
+                break;
+            case 'TaskCompletedEvent':
+                this.handleTaskCompleted(event);
+                break;
+            case 'WaitingForInputEvent':
+                this.handleWaitingForInput(event);
+                break;
+            case 'HookRunStartEvent':
+                this.handleHookRunStart(event);
+                break;
+            case 'HookRunEndEvent':
+                this.handleHookRunEnd(event);
+                break;
+            case 'HookStartEvent':
+                this.handleHookStart(event);
+                break;
+            case 'HookEndEvent':
+                this.handleHookEnd(event);
+                break;
+            case 'LLMRetryEvent':
+                this.handleLLMRetry(event);
+                break;
         }
     }
 
@@ -370,6 +409,39 @@ class VibeClient {
                 break;
             case 'PopupResponseEvent':
                 // Skip popup events during replay - ToolResultEvent already contains the result
+                break;
+            case 'ToolStreamEvent':
+                this.handleToolStream(event);
+                break;
+            case 'CompactStartEvent':
+                // Skip during replay - CompactEndEvent shows the final result
+                break;
+            case 'CompactEndEvent':
+                this.handleCompactEnd(event);
+                break;
+            case 'AgentProfileChangedEvent':
+                // Skip during replay - profile is current on page load
+                break;
+            case 'TaskCompletedEvent':
+                this.handleTaskCompleted(event);
+                break;
+            case 'WaitingForInputEvent':
+                // Skip during replay - input is no longer waiting
+                break;
+            case 'HookRunStartEvent':
+                this.handleHookRunStart(event);
+                break;
+            case 'HookRunEndEvent':
+                this.handleHookRunEnd(event);
+                break;
+            case 'HookStartEvent':
+                // Skip during replay - HookEndEvent shows the final result
+                break;
+            case 'HookEndEvent':
+                this.handleHookEnd(event);
+                break;
+            case 'LLMRetryEvent':
+                // Skip during replay - retry is no longer in progress
                 break;
         }
     }
@@ -479,6 +551,270 @@ class VibeClient {
         if (percentageSpan) {
             percentageSpan.textContent = `${percentage}%`;
         }
+    }
+
+    /**
+     * Handle ToolStreamEvent - incremental tool output
+     * @param {Object} event - {tool_name, message, tool_call_id}
+     */
+    handleToolStream(event) {
+        const { tool_call_id: toolCallId, message } = event;
+        if (!toolCallId || !message) return;
+        const toolCallElement = this.toolCallMap.get(toolCallId);
+        if (!toolCallElement) return;
+
+        let streamContainer = toolCallElement.querySelector('.tool-stream');
+        if (!streamContainer) {
+            streamContainer = document.createElement('div');
+            streamContainer.className = 'tool-stream';
+            const contentDiv = toolCallElement.querySelector('.content');
+            if (contentDiv) {
+                contentDiv.appendChild(streamContainer);
+            }
+        }
+        const line = document.createElement('div');
+        line.className = 'tool-stream-line';
+        line.innerHTML = `<span class="material-symbols-rounded">arrow_right</span> ${this.escapeHtml(message)}`;
+        streamContainer.appendChild(line);
+        this.scrollToBottom();
+    }
+
+    /**
+     * Create a system message card and append to messages container.
+     * @param {string} className - CSS class (without 'message' prefix)
+     * @param {string} html - Inner HTML content
+     * @returns {HTMLDivElement}
+     * @private
+     */
+    _createSystemMessage(className, html) {
+        const div = document.createElement('div');
+        div.className = `message ${className}`;
+        div.innerHTML = html;
+        this.elements.messages.appendChild(div);
+        this.scrollToBottom();
+        return div;
+    }
+
+    /**
+     * Handle CompactStartEvent - show compaction in progress
+     * @param {Object} event - {current_context_tokens, threshold, tool_call_id}
+     */
+    handleCompactStart(event) {
+        const { tool_call_id: toolCallId } = event;
+        if (!toolCallId) return;
+        const compactDiv = this._createSystemMessage('compact compact-starting', `
+            <div class="content">
+                <span class="material-symbols-rounded compact-icon">compress</span>
+                <span class="compact-text">Compacting conversation history...</span>
+                <span class="compact-spinner"></span>
+            </div>
+        `);
+        compactDiv.dataset.toolCallId = toolCallId;
+    }
+
+    /**
+     * Handle CompactEndEvent - show compaction result
+     * @param {Object} event - {old_context_tokens, new_context_tokens, summary_length, summary_content, error, tool_call_id}
+     */
+    handleCompactEnd(event) {
+        const { old_context_tokens: oldTokens, new_context_tokens: newTokens, summary_content: summary, error, tool_call_id: toolCallId } = event;
+        if (oldTokens == null || newTokens == null || !toolCallId) return;
+
+        let compactDiv = this.elements.messages.querySelector(`.compact[data-tool-call-id="${toolCallId}"]`);
+
+        if (!compactDiv) {
+            compactDiv = this._createSystemMessage('compact', '');
+            compactDiv.dataset.toolCallId = toolCallId;
+        }
+
+        compactDiv.classList.remove('compact-starting');
+
+        if (error) {
+            compactDiv.classList.add('compact-error');
+            compactDiv.innerHTML = `
+                <div class="content">
+                    <span class="material-symbols-rounded compact-icon">error</span>
+                    <span class="compact-text">Compaction failed: ${this.escapeHtml(error)}</span>
+                </div>
+            `;
+        } else {
+            const reduction = oldTokens > 0 ? Math.round((1 - newTokens / oldTokens) * 100) : 0;
+            compactDiv.classList.add('compact-complete');
+            const summaryHtml = summary
+                ? `<div class="compact-summary">${this.renderMarkdownToHtml(summary)}</div>`
+                : '';
+            compactDiv.innerHTML = `
+                <div class="content">
+                    <span class="material-symbols-rounded compact-icon">check_circle</span>
+                    <span class="compact-text">Compaction complete: ${this.formatTokenCount(oldTokens)} → ${this.formatTokenCount(newTokens)} tokens (-${reduction}%)</span>
+                    ${summaryHtml}
+                </div>
+            `;
+        }
+        this.scrollToBottom();
+    }
+
+    /**
+     * Handle AgentProfileChangedEvent - show profile switch notification
+     * @param {Object} event - {agent_name}
+     */
+    handleAgentProfileChanged(event) {
+        const { agent_name: agentName } = event;
+        if (!agentName) return;
+        this._createSystemMessage('agent-profile-changed', `
+            <div class="content">
+                <span class="material-symbols-rounded">swap_horiz</span>
+                <span>Switched to <strong>${this.escapeHtml(agentName)}</strong></span>
+            </div>
+        `);
+    }
+
+    /**
+     * Handle TaskCompletedEvent - show elapsed time
+     * @param {Object} event - {elapsed_text}
+     */
+    handleTaskCompleted(event) {
+        const { elapsed_text: elapsedText } = event;
+        if (!elapsedText) return;
+        this._createSystemMessage('task-completed', `
+            <div class="content">
+                <span class="material-symbols-rounded">check_circle</span>
+                <span>${this.escapeHtml(elapsedText)}</span>
+            </div>
+        `);
+    }
+
+    /**
+     * Handle WaitingForInputEvent - show input waiting indicator
+     * @param {Object} event - {task_id, label, predefined_answers}
+     */
+    handleWaitingForInput(event) {
+        this.updateProcessingState(false);
+    }
+
+    /**
+     * Handle HookRunStartEvent - create hook container
+     * @param {Object} event
+     */
+    handleHookRunStart() {
+        const hookContainer = document.createElement('div');
+        hookContainer.className = 'message hook-run-container';
+        this.elements.messages.appendChild(hookContainer);
+    }
+
+    /**
+     * Handle HookRunEndEvent - remove hook container if empty
+     * @param {Object} event
+     */
+    handleHookRunEnd() {
+        const containers = this.elements.messages.querySelectorAll('.hook-run-container');
+        containers.forEach(container => {
+            if (container.children.length === 0) {
+                container.remove();
+            }
+        });
+    }
+
+    /**
+     * Handle HookStartEvent - show hook running status
+     * @param {Object} event - {hook_name}
+     */
+    handleHookStart(event) {
+        const { hook_name: hookName } = event;
+        if (!hookName) return;
+        const containers = this.elements.messages.querySelectorAll('.hook-run-container');
+        const container = containers[containers.length - 1];
+        if (!container) return;
+
+        const hookDiv = document.createElement('div');
+        hookDiv.className = 'hook-system-message hook-running';
+        hookDiv.innerHTML = `
+            <div class="content">
+                <span class="material-symbols-rounded hook-icon">hourglass_empty</span>
+                <span class="hook-text">Running hook <strong>${this.escapeHtml(hookName)}</strong>...</span>
+            </div>
+        `;
+        container.appendChild(hookDiv);
+        this.scrollToBottom();
+    }
+
+    /**
+     * Handle HookEndEvent - show hook result with severity
+     * @param {Object} event - {hook_name, status, content}
+     */
+    handleHookEnd(event) {
+        const { hook_name: hookName, status, content } = event;
+        if (!hookName || !status) return;
+        const containers = this.elements.messages.querySelectorAll('.hook-run-container');
+        const container = containers[containers.length - 1];
+        if (!container) return;
+
+        // Update the running indicator to show result
+        const runningMessages = container.querySelectorAll('.hook-running');
+        let hookDiv = runningMessages[runningMessages.length - 1];
+        if (!hookDiv) {
+            hookDiv = document.createElement('div');
+            container.appendChild(hookDiv);
+        }
+
+        const { icon, cls } = VibeClient._severityMap[status] || { icon: 'check', cls: '' };
+
+        hookDiv.className = `hook-system-message ${cls}`;
+
+        const contentText = content ? `: ${this.escapeHtml(content)}` : '';
+        hookDiv.innerHTML = `
+            <div class="content">
+                <span class="material-symbols-rounded hook-icon">${icon}</span>
+                <span class="hook-text"><strong>${this.escapeHtml(hookName)}</strong>${contentText}</span>
+            </div>
+        `;
+        this.scrollToBottom();
+    }
+
+    /**
+     * Handle LLMRetryEvent - show retry progress
+     * @param {Object} event - {attempt, max_attempts, error_message, delay_seconds, provider, model}
+     */
+    handleLLMRetry(event) {
+        const { attempt, max_attempts: maxAttempts, error_message: errorMessage, delay_seconds: delaySeconds, provider, model } = event;
+        if (attempt == null || maxAttempts == null || !errorMessage) return;
+
+        const parts = [];
+        if (provider) parts.push(provider);
+        if (model) parts.push(model);
+        const meta = parts.length > 0 ? parts.join(' / ') : '';
+
+        this._createSystemMessage('llm-retry', `
+            <div class="content">
+                <span class="material-symbols-rounded">refresh</span>
+                <span>Retrying (${this.escapeHtml(String(attempt))}/${this.escapeHtml(String(maxAttempts))}) in ${this.escapeHtml(String(delaySeconds))}s${meta ? ` — ${this.escapeHtml(meta)}` : ''}: ${this.escapeHtml(errorMessage)}</span>
+            </div>
+        `);
+    }
+
+    /**
+     * Format token count with commas
+     * @param {number} count
+     * @returns {string}
+     * @private
+     */
+    formatTokenCount(count) {
+        return count.toLocaleString();
+    }
+
+    /**
+     * Simple markdown to HTML converter for compact summaries
+     * @param {string} text
+     * @returns {string}
+     * @private
+     */
+    renderMarkdownToHtml(text) {
+        let html = this.escapeHtml(text);
+        html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+        html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+        html = html.replace(/\n/g, '<br>');
+        return html;
     }
 
     /**

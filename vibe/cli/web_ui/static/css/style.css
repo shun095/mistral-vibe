@@ -1741,3 +1741,192 @@ body {
     font-size: 0.9rem;
     color: var(--text-secondary);
 }
+
+/* Tool Stream Messages */
+.tool-stream {
+    margin-top: 4px;
+    padding: 4px 0 4px 12px;
+    border-left: 2px solid var(--border-color);
+}
+
+.tool-stream-line {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    padding: 2px 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
+}
+
+.tool-stream-line .material-symbols-rounded {
+    font-size: 0.9rem;
+    flex-shrink: 0;
+}
+
+/* Shared System Message Card Base */
+/* Used by: .compact, .agent-profile-changed, .task-completed, .llm-retry */
+.message.compact,
+.message.agent-profile-changed,
+.message.task-completed,
+.message.llm-retry {
+    background-color: var(--bg-secondary);
+    border-radius: 8px;
+    padding: 8px 14px;
+    margin-top: 8px;
+    margin-bottom: 4px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.message.compact .material-symbols-rounded,
+.message.agent-profile-changed .material-symbols-rounded,
+.message.task-completed .material-symbols-rounded,
+.message.llm-retry .material-symbols-rounded {
+    font-size: 0.9rem;
+    flex-shrink: 0;
+}
+
+/* Compact Messages */
+.message.compact {
+    padding: 10px 14px;
+    border: 1px solid var(--border-color);
+}
+
+.message.compact .content {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    width: 100%;
+}
+
+.compact-icon {
+    color: var(--green);
+    flex-shrink: 0;
+}
+
+.compact-text {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    flex: 1;
+}
+
+.compact-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--blue);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    flex-shrink: 0;
+}
+
+.compact-summary {
+    width: 100%;
+    margin-top: 8px;
+    padding: 8px 12px;
+    background-color: var(--bg-tertiary);
+    border-radius: 4px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.compact-summary code {
+    background-color: var(--bg-secondary);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-family: monospace;
+}
+
+.compact-error .compact-icon {
+    color: var(--red);
+}
+
+/* Agent Profile Changed */
+.message.agent-profile-changed {
+    text-align: center;
+    justify-content: center;
+    color: var(--text-secondary);
+}
+
+.message.agent-profile-changed .material-symbols-rounded {
+    color: var(--blue);
+}
+
+/* Task Completed */
+.message.task-completed .material-symbols-rounded {
+    color: var(--green);
+}
+
+/* Hook Run Container */
+.message.hook-run-container {
+    margin-top: 8px;
+    margin-bottom: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.hook-system-message {
+    background-color: var(--bg-secondary);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+}
+
+.hook-system-message .content {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+}
+
+.hook-icon {
+    flex-shrink: 0;
+    font-size: 0.9rem;
+}
+
+.hook-text {
+    color: var(--text-secondary);
+}
+
+.hook-running .hook-icon {
+    color: var(--yellow);
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+.hook-ok .hook-icon {
+    color: var(--green);
+}
+
+.hook-warning .hook-icon {
+    color: var(--yellow);
+}
+
+.hook-error .hook-icon {
+    color: var(--red);
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+/* LLM Retry — base styles from shared group (.message.llm-retry at line 1771) */
+.message.llm-retry .content {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+}
+
+.message.llm-retry .material-symbols-rounded {
+    color: var(--yellow);
+    animation: spin 2s linear infinite;
+}

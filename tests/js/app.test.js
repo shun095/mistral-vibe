@@ -521,6 +521,311 @@ describe('VibeClient', () => {
                 __type: 'ToolResultEvent', tool_call_id: 't1', tool_name: 'bash', result: 'output'
             });
         });
+
+        test('renders ToolStreamEvent as stream lines below tool call', () => {
+            const toolCallDiv = document.createElement('div');
+            toolCallDiv.className = 'message tool-call';
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'content';
+            toolCallDiv.appendChild(contentDiv);
+            client.toolCallMap.set('t1', toolCallDiv);
+
+            client.handleEvent({ __type: 'ToolStreamEvent', tool_name: 'grep', message: 'found 12 matches', tool_call_id: 't1' });
+
+            const stream = toolCallDiv.querySelector('.tool-stream');
+            expect(stream).toBeTruthy();
+            expect(stream.children).toHaveLength(1);
+            expect(stream.querySelector('.tool-stream-line').textContent).toContain('found 12 matches');
+        });
+
+        test('appends multiple ToolStreamEvent lines', () => {
+            const toolCallDiv = document.createElement('div');
+            toolCallDiv.className = 'message tool-call';
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'content';
+            toolCallDiv.appendChild(contentDiv);
+            client.toolCallMap.set('t1', toolCallDiv);
+
+            client.handleEvent({ __type: 'ToolStreamEvent', tool_name: 'grep', message: 'line 1', tool_call_id: 't1' });
+            client.handleEvent({ __type: 'ToolStreamEvent', tool_name: 'grep', message: 'line 2', tool_call_id: 't1' });
+
+            expect(toolCallDiv.querySelector('.tool-stream').children).toHaveLength(2);
+        });
+
+        test('ignores ToolStreamEvent for unknown tool call id', () => {
+            client.handleEvent({ __type: 'ToolStreamEvent', tool_name: 'grep', message: 'orphan', tool_call_id: 'unknown' });
+
+            expect(client.elements.messages.querySelectorAll('.tool-stream')).toHaveLength(0);
+        });
+
+        test('renders CompactStartEvent with spinner', () => {
+            client.handleEvent({ __type: 'CompactStartEvent', current_context_tokens: 100000, threshold: 80000, tool_call_id: 'c1' });
+
+            const compact = client.elements.messages.querySelector('.compact');
+            expect(compact).toBeTruthy();
+            expect(compact.dataset.toolCallId).toBe('c1');
+            expect(compact.classList.contains('compact-starting')).toBe(true);
+            expect(compact.querySelector('.compact-spinner')).toBeTruthy();
+        });
+
+        test('renders CompactEndEvent success with token stats', () => {
+            client.handleEvent({
+                __type: 'CompactEndEvent',
+                old_context_tokens: 100000,
+                new_context_tokens: 50000,
+                summary_length: 200,
+                summary_content: null,
+                error: null,
+                tool_call_id: 'c1'
+            });
+
+            const compact = client.elements.messages.querySelector('.compact');
+            expect(compact.classList.contains('compact-complete')).toBe(true);
+            expect(compact.querySelector('.compact-text').textContent).toContain('100,000');
+            expect(compact.querySelector('.compact-text').textContent).toContain('50,000');
+        });
+
+        test('renders CompactEndEvent error with red icon', () => {
+            client.handleEvent({
+                __type: 'CompactEndEvent',
+                old_context_tokens: 100000,
+                new_context_tokens: 100000,
+                summary_length: 0,
+                summary_content: null,
+                error: 'Service unavailable',
+                tool_call_id: 'c1'
+            });
+
+            const compact = client.elements.messages.querySelector('.compact');
+            expect(compact.classList.contains('compact-error')).toBe(true);
+            expect(compact.querySelector('.compact-text').textContent).toContain('Service unavailable');
+        });
+
+        test('renders AgentProfileChangedEvent notification', () => {
+            client.handleEvent({ __type: 'AgentProfileChangedEvent', agent_name: 'Code Agent' });
+
+            const msg = client.elements.messages.querySelector('.agent-profile-changed');
+            expect(msg).toBeTruthy();
+            expect(msg.textContent).toContain('Code Agent');
+        });
+
+        test('renders TaskCompletedEvent with elapsed text', () => {
+            client.handleEvent({ __type: 'TaskCompletedEvent', elapsed_text: 'Completed in 12s' });
+
+            const msg = client.elements.messages.querySelector('.task-completed');
+            expect(msg).toBeTruthy();
+            expect(msg.textContent).toContain('Completed in 12s');
+        });
+
+        test('ignores TaskCompletedEvent with empty elapsed_text', () => {
+            client.handleEvent({ __type: 'TaskCompletedEvent', elapsed_text: '' });
+
+            expect(client.elements.messages.children).toHaveLength(0);
+        });
+
+        test('handles WaitingForInputEvent without error', () => {
+            expect(() => {
+                client.handleEvent({ __type: 'WaitingForInputEvent', task_id: 'task-1', label: 'Continue?', predefined_answers: ['yes', 'no'] });
+            }).not.toThrow();
+        });
+
+        test('creates container on HookRunStartEvent', () => {
+            client.handleEvent({ __type: 'HookRunStartEvent' });
+
+            const container = client.elements.messages.querySelector('.hook-run-container');
+            expect(container).toBeTruthy();
+        });
+
+        test('removes empty container on HookRunEndEvent', () => {
+            client.handleEvent({ __type: 'HookRunStartEvent' });
+            client.handleEvent({ __type: 'HookRunEndEvent' });
+
+            expect(client.elements.messages.querySelectorAll('.hook-run-container')).toHaveLength(0);
+        });
+
+        test('keeps non-empty container on HookRunEndEvent', () => {
+            client.handleEvent({ __type: 'HookRunStartEvent' });
+            client.handleEvent({ __type: 'HookStartEvent', hook_name: 'ruff' });
+            client.handleEvent({ __type: 'HookEndEvent', hook_name: 'ruff', status: 'OK', content: 'clean' });
+            client.handleEvent({ __type: 'HookRunEndEvent' });
+
+            const containers = client.elements.messages.querySelectorAll('.hook-run-container');
+            expect(containers).toHaveLength(1);
+        });
+
+        test('renders HookStartEvent as running indicator', () => {
+            client.handleEvent({ __type: 'HookRunStartEvent' });
+            client.handleEvent({ __type: 'HookStartEvent', hook_name: 'ruff-check' });
+
+            const hook = client.elements.messages.querySelector('.hook-running');
+            expect(hook).toBeTruthy();
+            expect(hook.textContent).toContain('ruff-check');
+        });
+
+        test('renders HookEndEvent OK with green icon', () => {
+            client.handleEvent({ __type: 'HookRunStartEvent' });
+            client.handleEvent({ __type: 'HookEndEvent', hook_name: 'ruff', status: 'OK', content: 'no issues' });
+
+            const hook = client.elements.messages.querySelector('.hook-ok');
+            expect(hook).toBeTruthy();
+            expect(hook.textContent).toContain('ruff');
+            expect(hook.textContent).toContain('no issues');
+        });
+
+        test('renders HookEndEvent WARNING with yellow icon', () => {
+            client.handleEvent({ __type: 'HookRunStartEvent' });
+            client.handleEvent({ __type: 'HookEndEvent', hook_name: 'pyright', status: 'WARNING', content: '2 warnings' });
+
+            const hook = client.elements.messages.querySelector('.hook-warning');
+            expect(hook).toBeTruthy();
+        });
+
+        test('renders HookEndEvent ERROR with red icon', () => {
+            client.handleEvent({ __type: 'HookRunStartEvent' });
+            client.handleEvent({ __type: 'HookEndEvent', hook_name: 'pre-commit', status: 'ERROR', content: 'staged files not found' });
+
+            const hook = client.elements.messages.querySelector('.hook-error');
+            expect(hook).toBeTruthy();
+        });
+
+        test('renders LLMRetryEvent with retry progress', () => {
+            client.handleEvent({
+                __type: 'LLMRetryEvent',
+                attempt: 2,
+                max_attempts: 3,
+                error_message: 'Rate limit exceeded',
+                delay_seconds: 5.0,
+                provider: 'anthropic',
+                model: 'claude-3-5-sonnet'
+            });
+
+            const msg = client.elements.messages.querySelector('.llm-retry');
+            expect(msg).toBeTruthy();
+            expect(msg.textContent).toContain('2/3');
+            expect(msg.textContent).toContain('Rate limit exceeded');
+        });
+
+        test('escapes HTML in HookEndEvent content', () => {
+            client.handleEvent({ __type: 'HookRunStartEvent' });
+            client.handleEvent({ __type: 'HookEndEvent', hook_name: 'ruff', status: 'OK', content: '<script>alert(1)</script>' });
+
+            const hook = client.elements.messages.querySelector('.hook-ok .hook-text');
+            expect(hook.innerHTML).not.toContain('<script>');
+            expect(hook.textContent).toContain('<script>alert(1)</script>');
+        });
+
+        test('escapes HTML in CompactEndEvent error', () => {
+            client.handleEvent({
+                __type: 'CompactEndEvent',
+                old_context_tokens: 100,
+                new_context_tokens: 50,
+                summary_length: 0,
+                summary_content: null,
+                error: '<img onerror=alert(1)>',
+                tool_call_id: 'c1'
+            });
+
+            const compact = client.elements.messages.querySelector('.compact-error .compact-text');
+            expect(compact.innerHTML).not.toContain('<img');
+            expect(compact.textContent).toContain('<img onerror=alert(1)>');
+        });
+
+        test('escapes HTML in ToolStreamEvent message', () => {
+            const toolCallDiv = document.createElement('div');
+            toolCallDiv.className = 'message tool-call';
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'content';
+            toolCallDiv.appendChild(contentDiv);
+            client.toolCallMap.set('t1', toolCallDiv);
+
+            client.handleEvent({ __type: 'ToolStreamEvent', tool_name: 'grep', message: '<b>xss</b>', tool_call_id: 't1' });
+
+            const line = toolCallDiv.querySelector('.tool-stream-line');
+            expect(line.innerHTML).not.toContain('<b>');
+            expect(line.textContent).toContain('<b>xss</b>');
+        });
+
+        test('escapes HTML in AgentProfileChangedEvent', () => {
+            client.handleEvent({ __type: 'AgentProfileChangedEvent', agent_name: '<script>x</script>' });
+
+            const msg = client.elements.messages.querySelector('.agent-profile-changed');
+            expect(msg.innerHTML).not.toContain('<script>');
+            expect(msg.textContent).toContain('<script>x</script>');
+        });
+
+        test('escapes HTML in TaskCompletedEvent', () => {
+            client.handleEvent({ __type: 'TaskCompletedEvent', elapsed_text: '<b>done</b>' });
+
+            const msg = client.elements.messages.querySelector('.task-completed');
+            expect(msg.innerHTML).not.toContain('<b>');
+            expect(msg.textContent).toContain('<b>done</b>');
+        });
+
+        test('escapes HTML in LLMRetryEvent provider/model', () => {
+            client.handleEvent({
+                __type: 'LLMRetryEvent',
+                attempt: 1,
+                max_attempts: 3,
+                error_message: 'timeout',
+                delay_seconds: 2,
+                provider: '<img src=x>',
+                model: 'test'
+            });
+
+            const msg = client.elements.messages.querySelector('.llm-retry');
+            expect(msg.innerHTML).not.toContain('<img');
+            expect(msg.textContent).toContain('<img src=x>');
+        });
+
+        test('CompactEndEvent updates existing CompactStartEvent element', () => {
+            client.handleEvent({ __type: 'CompactStartEvent', current_context_tokens: 100000, threshold: 80000, tool_call_id: 'c1' });
+            expect(client.elements.messages.querySelector('.compact-starting')).toBeTruthy();
+
+            client.handleEvent({
+                __type: 'CompactEndEvent',
+                old_context_tokens: 100000,
+                new_context_tokens: 50000,
+                summary_length: 200,
+                summary_content: null,
+                error: null,
+                tool_call_id: 'c1'
+            });
+
+            expect(client.elements.messages.querySelectorAll('.compact')).toHaveLength(1);
+            expect(client.elements.messages.querySelector('.compact-starting')).toBeNull();
+            expect(client.elements.messages.querySelector('.compact-complete')).toBeTruthy();
+        });
+
+        test('CompactEndEvent with summary_content renders markdown', () => {
+            client.handleEvent({
+                __type: 'CompactEndEvent',
+                old_context_tokens: 1000,
+                new_context_tokens: 500,
+                summary_length: 50,
+                summary_content: 'Agent explored **core** and `utils` modules.',
+                error: null,
+                tool_call_id: 'c1'
+            });
+
+            const summary = client.elements.messages.querySelector('.compact-summary');
+            expect(summary).toBeTruthy();
+            expect(summary.innerHTML).toContain('<strong>core</strong>');
+            expect(summary.innerHTML).toContain('<code>utils</code>');
+        });
+
+        test('ignores CompactEndEvent with missing tool_call_id', () => {
+            client.handleEvent({
+                __type: 'CompactEndEvent',
+                old_context_tokens: 100,
+                new_context_tokens: 50,
+                summary_length: 0,
+                summary_content: null,
+                error: null,
+                tool_call_id: null
+            });
+
+            expect(client.elements.messages.children).toHaveLength(0);
+        });
     });
 
     describe('requestInterrupt', () => {
