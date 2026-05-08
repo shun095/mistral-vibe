@@ -27,7 +27,7 @@ _OTEL_DISABLED = True
 def setup_tracing(config: VibeConfig) -> None:
     if _OTEL_DISABLED:
         return
-    if not config.enable_otel:
+    if not config.enable_telemetry or not config.enable_otel:
         return
 
     exporter_cfg = config.otel_span_exporter_config

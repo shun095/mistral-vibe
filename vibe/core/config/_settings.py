@@ -29,6 +29,7 @@ from pydantic_settings import (
 import tomlkit
 from tomlkit.exceptions import TOMLKitError
 
+from vibe.core.agents.models import BuiltinAgentName
 from vibe.core.config.harness_files import get_harness_files_manager
 from vibe.core.logger import logger
 from vibe.core.lsp.config import LSPConfig, LSPServerConfig
@@ -629,6 +630,15 @@ class VibeConfig(BaseSettings):
         default_factory=list,
         description=(
             "A list of opt-in builtin agent names that have been explicitly installed."
+        ),
+    )
+    default_agent: str = Field(
+        default=BuiltinAgentName.DEFAULT,
+        description=(
+            "Agent profile to use when no --agent flag is passed in interactive "
+            "mode. Builtin: default, plan, accept-edits, auto-approve. "
+            "Ignored in programmatic mode (-p/--prompt), which falls back to "
+            "auto-approve when --agent is not provided."
         ),
     )
     skill_paths: list[Path] = Field(

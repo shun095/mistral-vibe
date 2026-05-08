@@ -8,6 +8,7 @@ from vibe.core.config import VibeConfig
 from vibe.core.logger import logger
 from vibe.core.nuage.client import WorkflowsClient
 from vibe.core.nuage.workflow import WorkflowExecutionStatus
+from vibe.core.session.session_id import shorten_session_id
 from vibe.core.session.session_loader import SessionLoader
 
 # SECURITY: Hardcoded disable - Nuage remote sessions are permanently disabled
@@ -16,13 +17,9 @@ _NUAGE_REMOTE_SESSIONS_DISABLED = True
 
 ResumeSessionSource = Literal["local", "remote"]
 
-SHORT_SESSION_ID_LEN = 8
-
 
 def short_session_id(session_id: str, source: ResumeSessionSource = "local") -> str:
-    if source == "remote":
-        return session_id[-SHORT_SESSION_ID_LEN:]
-    return session_id[:SHORT_SESSION_ID_LEN]
+    return shorten_session_id(session_id, from_end=source == "remote")
 
 
 _ACTIVE_STATUSES = [

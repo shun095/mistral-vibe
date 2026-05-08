@@ -155,3 +155,13 @@ class TestCommandRegistry:
         result = registry.parse_command("/translate")
         assert result is not None
         assert result[2] == ""
+
+    def test_loop_command_registration(self) -> None:
+        registry = CommandRegistry()
+        assert registry.get_command_name("/loop") == "loop"
+        result = registry.parse_command("/loop 30s ping")
+        assert result is not None
+        cmd_name, cmd, cmd_args = result
+        assert cmd_name == "loop"
+        assert cmd.handler == "_loop_command"
+        assert cmd_args == "30s ping"
