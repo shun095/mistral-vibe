@@ -72,6 +72,8 @@ class TestGrepFieldMeta:
 
     def test_result_locations_from_parsed_matches(self) -> None:
         result = GrepResult(
+            pattern="match",
+            path="src",
             matches="src/a.py:10:match\nsrc/b.py:20:other",
             match_count=2,
             was_truncated=False,

@@ -214,8 +214,7 @@ class WriteFileResultWidget(ToolResultWidget[WriteFileResult]):
 
         if self.result.content:
             yield NoMarkupStatic("")
-            content, _ = _truncate_lines(self.result.content, 10)
-            yield Markdown(f"```{ext}\n{content}\n```")
+            yield Markdown(f"```{ext}\n{self.result.content}\n```")
         yield from self._footer()
 
 
@@ -248,14 +247,17 @@ class EditFileResultWidget(ToolResultWidget[EditFileResult]):
         for warning in self.warnings:
             yield NoMarkupStatic(f"⚠ {warning}", classes="tool-result-warning")
 
-        # Display LSP diagnostics if available
-        if self.result and self.result.lsp_diagnostics:
-            yield NoMarkupStatic("")
-            # Convert JSON to Markdown for UI display
-            markdown_content = LSPDiagnosticFormatter.format_json_to_markdown(
-                self.result.lsp_diagnostics
+        if not self.collapsed:
+            yield NoMarkupStatic(
+                f"Path: {self.result.file}", classes="tool-result-detail"
             )
-            yield Markdown(markdown_content)
+            # Display LSP diagnostics if available
+            if self.result.lsp_diagnostics:
+                yield NoMarkupStatic("")
+                markdown_content = LSPDiagnosticFormatter.format_json_to_markdown(
+                    self.result.lsp_diagnostics
+                )
+                yield Markdown(markdown_content)
 
         if self.result.content:
             # Parse and render the unified diff
@@ -284,14 +286,17 @@ class SearchReplaceResultWidget(ToolResultWidget[SearchReplaceResult]):
         for warning in self.warnings:
             yield NoMarkupStatic(f"⚠ {warning}", classes="tool-result-warning")
 
-        # Display LSP diagnostics if available
-        if self.result and self.result.lsp_diagnostics:
-            yield NoMarkupStatic("")
-            # Convert JSON to Markdown for UI display
-            markdown_content = LSPDiagnosticFormatter.format_json_to_markdown(
-                self.result.lsp_diagnostics
+        if not self.collapsed:
+            yield NoMarkupStatic(
+                f"Path: {self.result.file}", classes="tool-result-detail"
             )
-            yield Markdown(markdown_content)
+            # Display LSP diagnostics if available
+            if self.result.lsp_diagnostics:
+                yield NoMarkupStatic("")
+                markdown_content = LSPDiagnosticFormatter.format_json_to_markdown(
+                    self.result.lsp_diagnostics
+                )
+                yield Markdown(markdown_content)
 
         if self.result.content:
             for line in parse_search_replace_to_diff(self.result.content):
@@ -365,7 +370,6 @@ class ReadFileResultWidget(ToolResultWidget[ReadFileResult]):
             )
         for warning in self.warnings:
             yield NoMarkupStatic(f"⚠ {warning}", classes="tool-result-warning")
-        truncation_info = None
         # Display LSP diagnostics if available
         if self.result and self.result.lsp_diagnostics:
             yield NoMarkupStatic("")
@@ -378,9 +382,8 @@ class ReadFileResultWidget(ToolResultWidget[ReadFileResult]):
         if self.result and self.result.content:
             yield NoMarkupStatic("")
             ext = Path(self.result.path).suffix.lstrip(".") or "text"
-            content, truncation_info = _truncate_lines(self.result.content, 10)
-            yield Markdown(f"```{ext}\n{content}\n```")
-        yield from self._footer(truncation_info)
+            yield Markdown(f"```{ext}\n{self.result.content}\n```")
+        yield from self._footer()
 
 
 class GrepApprovalWidget(ToolApprovalWidget[GrepArgs]):
@@ -399,7 +402,17 @@ class GrepResultWidget(ToolResultWidget[GrepResult]):
     def compose(self) -> ComposeResult:
         for warning in self.warnings:
             yield NoMarkupStatic(f"⚠ {warning}", classes="tool-result-warning")
-        if not self.result or not self.result.matches:
+        if not self.result:
+            yield from self._footer()
+            return
+        if not self.collapsed:
+            yield NoMarkupStatic(
+                f"Path: {self.result.path}", classes="tool-result-detail"
+            )
+            yield NoMarkupStatic(
+                f"Pattern: {self.result.pattern}", classes="tool-result-detail"
+            )
+        if not self.result.matches:
             yield from self._footer()
             return
         max_lines = 10 if self.collapsed else None
