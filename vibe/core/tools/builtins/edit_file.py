@@ -10,18 +10,21 @@ import anyio
 from pydantic import BaseModel, Field
 
 from vibe.core.lsp import LSPClientManager, LSPDiagnosticFormatter
-
-STRING_PREVIEW_LENGTH = 100
+from vibe.core.rewind.manager import FileSnapshot
 from vibe.core.tools.base import (
     BaseTool,
     BaseToolConfig,
     BaseToolState,
     InvokeContext,
     ToolError,
-    ToolPermission,
 )
+from vibe.core.tools.permissions import PermissionContext
 from vibe.core.tools.ui import ToolCallDisplay, ToolResultDisplay, ToolUIData
+from vibe.core.tools.utils import resolve_file_tool_permission
 from vibe.core.types import ToolResultEvent, ToolStreamEvent
+from vibe.core.utils.io import ReadSafeResult, read_safe_async
+
+STRING_PREVIEW_LENGTH = 100
 
 
 class EditFileArgs(BaseModel):
@@ -61,6 +64,10 @@ class EditFileResult(BaseModel):
 
 
 class EditFileConfig(BaseToolConfig):
+    sensitive_patterns: list[str] = Field(
+        default=["**/.env", "**/.env.*"],
+        description="File patterns that trigger ASK even when permission is ALWAYS.",
+    )
     max_content_size: int = 100_000
     create_backup: bool = False
     fuzzy_threshold: float = 0.9
@@ -73,12 +80,8 @@ class FuzzyMatch(NamedTuple):
     text: str
 
 
-class EditFileState(BaseToolState):
-    pass
-
-
 class EditFile(
-    BaseTool[EditFileArgs, EditFileResult, EditFileConfig, EditFileState],
+    BaseTool[EditFileArgs, EditFileResult, EditFileConfig, BaseToolState],
     ToolUIData[EditFileArgs, EditFileResult],
 ):
     description: ClassVar[str] = (
@@ -113,23 +116,18 @@ class EditFile(
     def get_status_text(cls) -> str:
         return "Editing files"
 
-    def check_allowlist_denylist(self, args: EditFileArgs) -> ToolPermission | None:
-        import fnmatch
+    def get_file_snapshot(self, args: EditFileArgs) -> FileSnapshot | None:
+        return self.get_file_snapshot_for_path(args.file_path)
 
-        file_path = Path(args.file_path).expanduser()
-        if not file_path.is_absolute():
-            file_path = Path.cwd() / file_path
-        file_str = str(file_path)
-
-        for pattern in self.config.denylist:
-            if fnmatch.fnmatch(file_str, pattern):
-                return ToolPermission.NEVER
-
-        for pattern in self.config.allowlist:
-            if fnmatch.fnmatch(file_str, pattern):
-                return ToolPermission.ALWAYS
-
-        return None
+    def resolve_permission(self, args: EditFileArgs) -> PermissionContext | None:
+        return resolve_file_tool_permission(
+            args.file_path,
+            tool_name=self.get_name(),
+            allowlist=self.config.allowlist,
+            denylist=self.config.denylist,
+            config_permission=self.config.permission,
+            sensitive_patterns=self.config.sensitive_patterns,
+        )
 
     @final
     async def run(  # noqa: PLR0914
@@ -137,7 +135,8 @@ class EditFile(
     ) -> AsyncGenerator[ToolStreamEvent | EditFileResult, None]:
         file_path = self._prepare_and_validate_args(args)
 
-        original_content = await self._read_file(file_path)
+        decoded = await self._read_file(file_path)
+        original_content = decoded.text
 
         # Count occurrences
         occurrences = original_content.count(args.old_string)
@@ -203,7 +202,7 @@ class EditFile(
             # Don't fail the operation if backup fails
             pass
 
-        await self._write_file(file_path, modified_content)
+        await self._write_file(file_path, modified_content, decoded.encoding)
 
         # Automatically check for LSP diagnostics after modification
         lsp_diagnostics = None
@@ -242,9 +241,8 @@ class EditFile(
         old_string = args.old_string
         new_string = args.new_string
 
-        # Validate file_path is absolute
-        if not file_path_str.startswith("/"):
-            raise ToolError(f"file_path must be an absolute path, got: {file_path_str}")
+        if not file_path_str:
+            raise ToolError("File path cannot be empty")
 
         content_bytes = len((old_string + new_string).encode("utf-8"))
         if content_bytes > self.config.max_content_size:
@@ -259,8 +257,11 @@ class EditFile(
         if not new_string:
             raise ToolError("new_string cannot be empty")
 
-        # Expand user home directory and resolve to absolute path
-        file_path = Path(file_path_str).expanduser().resolve()
+        project_root = Path.cwd()
+        file_path = Path(file_path_str).expanduser()
+        if not file_path.is_absolute():
+            file_path = project_root / file_path
+        file_path = file_path.resolve()
 
         # Validate file exists
         if not file_path.exists():
@@ -272,26 +273,29 @@ class EditFile(
 
         return file_path
 
-    async def _read_file(self, file_path: Path) -> str:
+    async def _read_file(self, file_path: Path) -> ReadSafeResult:
         try:
-            async with await anyio.Path(file_path).open(encoding="utf-8") as f:
-                return await f.read()
-        except UnicodeDecodeError as e:
-            raise ToolError(f"Unicode decode error reading {file_path}: {e}") from e
+            return await read_safe_async(file_path, raise_on_error=True)
         except PermissionError:
             raise ToolError(f"Permission denied reading file: {file_path}")
+        except OSError as e:
+            raise ToolError(f"OS error reading {file_path}: {e}") from e
         except Exception as e:
             raise ToolError(f"Unexpected error reading {file_path}: {e}") from e
 
     async def _backup_file(self, file_path: Path) -> None:
         shutil.copy2(file_path, file_path.with_suffix(file_path.suffix + ".bak"))
 
-    async def _write_file(self, file_path: Path, content: str) -> None:
+    async def _write_file(self, file_path: Path, content: str, encoding: str) -> None:
         try:
             async with await anyio.Path(file_path).open(
-                mode="w", encoding="utf-8"
+                mode="w", encoding=encoding
             ) as f:
                 await f.write(content)
+        except UnicodeEncodeError as e:
+            raise ToolError(
+                f"Cannot encode patched content for {file_path} using {encoding!r}: {e}"
+            ) from e
         except PermissionError:
             raise ToolError(f"Permission denied writing to file: {file_path}")
         except OSError as e:

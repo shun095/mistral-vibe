@@ -2,7 +2,7 @@ Use `edit_file` to replace text within a file. By default, replaces a single occ
 
 ## Arguments
 
-- `file_path`: The path to the file to modify (must be absolute, starting with `/`)
+- `file_path`: The path to the file to modify (absolute or relative)
 - `old_string`: The exact text to find and replace
 - `new_string`: The text to replace it with
 - `replace_all`: Set to `true` to replace all occurrences (default: `false`)

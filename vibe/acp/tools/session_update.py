@@ -34,6 +34,7 @@ TOOL_KIND_MAP: dict[str, ToolKind] = {
     "web_fetch": "fetch",
     "write_file": "edit",
     "search_replace": "edit",
+    "edit_file": "edit",
     "bash": "execute",
     "skill": "read",
 }

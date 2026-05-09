@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -216,13 +217,10 @@ class TestAcpWriteFileSessionUpdates:
     def test_tool_call_session_update_invalid_args(self) -> None:
         from vibe.core.types import FunctionCall, ToolCall
 
-        class InvalidArgs:
-            pass
-
         event = ToolCallEvent.model_construct(
             tool_name="write_file",
             tool_call_id="test_call_123",
-            args=InvalidArgs(),  # type: ignore[arg-type]
+            args=cast(Any, object()),
             tool_class=WriteFile,
             llm_tool_call=ToolCall(
                 function=FunctionCall(name="write_file", arguments="{}"),
@@ -264,13 +262,10 @@ class TestAcpWriteFileSessionUpdates:
         assert update.locations[0].path == str(Path("/tmp/test.txt").resolve())
 
     def test_tool_result_session_update_invalid_result(self) -> None:
-        class InvalidResult:
-            pass
-
         event = ToolResultEvent.model_construct(
             tool_name="write_file",
             tool_call_id="test_call_123",
-            result=InvalidResult(),  # type: ignore[arg-type]
+            result=cast(Any, object()),
             tool_class=WriteFile,
         )
 

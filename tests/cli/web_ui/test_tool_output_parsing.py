@@ -11,15 +11,12 @@ class TestParseToolOutput:
 
     def test_parse_edit_file_output(self) -> None:
         """Test parsing edit_file tool output with multi-line content."""
-        from vibe.core.tools.builtins.edit_file import (
-            EditFile,
-            EditFileConfig,
-            EditFileState,
-        )
+        from vibe.core.tools.base import BaseToolState
+        from vibe.core.tools.builtins.edit_file import EditFile, EditFileConfig
 
         mock_tm = MockToolManager({
             "edit_file": EditFile(
-                config_getter=lambda: EditFileConfig(), state=EditFileState()
+                config_getter=lambda: EditFileConfig(), state=BaseToolState()
             )
         })
 

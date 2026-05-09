@@ -416,7 +416,7 @@ class VibeAcpAgentLoop(AcpAgent):
                 if fs.read_text_file:
                     overrides.append("read_file")
                 if fs.write_text_file:
-                    overrides.extend(["write_file", "search_replace"])
+                    overrides.extend(["write_file", "search_replace", "edit_file"])
 
         return [
             VIBE_ROOT / "acp" / "tools" / "builtins" / f"{override}.py"
