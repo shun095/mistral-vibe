@@ -44,6 +44,9 @@ class VibeClient {
         this._toolCallTimers = new Map(); // Map<toolCallId, {intervalId, startTime}>
         this._preferCollapsed = true; // Track collapse preference
 
+        // Pending input — cleared only after server acknowledges via event
+        this._pendingInputContent = null;
+
         // Event listener registry for cleanup
         this._listeners = [];
 
@@ -220,7 +223,7 @@ class VibeClient {
             this.elements.processingIndicator.style.display = 'none';
             this.elements.interruptBtn.style.display = 'none';
             this.elements.sendBtn.style.display = 'flex';
-            this.elements.input.disabled = false;
+            this.elements.input.disabled = !!this._pendingInputContent;
         }
     }
 
@@ -241,6 +244,10 @@ class VibeClient {
 
     _onWsClose() {
         this.updateStatus('Disconnected');
+        if (this._pendingInputContent) {
+            this.elements.input.disabled = false;
+            this.elements.sendBtn.disabled = false;
+        }
     }
 
     _onWsError(error) {
@@ -276,6 +283,9 @@ class VibeClient {
                     this._clearUiState();
                 }
                 this._renderUserMessage(event.content);
+                if (this._matchPendingContent(event.content)) {
+                    this._clearPendingInput();
+                }
                 break;
             case 'AssistantEvent':
                 this.messageStreamer.handleEvent(event);
@@ -294,6 +304,9 @@ class VibeClient {
                     this._clearUiState();
                 }
                 this._renderUserMessage(event.content);
+                if (this._matchPendingContent(event.content)) {
+                    this._clearPendingInput();
+                }
                 break;
             case 'ApprovalPopupEvent':
                 this.showApprovalPopup(event);
@@ -309,6 +322,13 @@ class VibeClient {
                 break;
             case 'BashCommandEvent':
                 this._renderBashCommandEvent(event);
+                const pending = this._pendingInputContent;
+                if (pending && (pending.startsWith('!!') || pending.startsWith('!'))) {
+                    const stripped = pending.startsWith('!!') ? pending.slice(2) : pending.slice(1);
+                    if (stripped === event.command) {
+                        this._clearPendingInput();
+                    }
+                }
                 break;
             case 'WebNotificationEvent':
                 this.handleWebNotification(event);
@@ -1437,6 +1457,26 @@ class VibeClient {
         this.elements.sendBtn.disabled = !(hasText || hasImage);
     }
 
+    _clearPendingInput() {
+        if (!this._pendingInputContent) return;
+        this._pendingInputContent = null;
+        this.elements.input.value = '';
+        this.elements.input.disabled = false;
+        this.autoResizeTextarea();
+        this.updateSendButtonState();
+        this.imageAttachment?.clear();
+    }
+
+    _matchPendingContent(eventContent) {
+        if (!this._pendingInputContent) return false;
+        if (typeof eventContent === 'string') return eventContent === this._pendingInputContent;
+        if (Array.isArray(eventContent)) {
+            const textPart = eventContent.find(p => p && p.type === 'text');
+            return textPart?.text === this._pendingInputContent;
+        }
+        return false;
+    }
+
     escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
@@ -1521,14 +1561,19 @@ class VibeClient {
         if (content && !imageData) {
             // Check for !!command or !command (bash execution) first
             if (content.startsWith('!!') || content.startsWith('!')) {
-                this.elements.input.value = '';
-                this.autoResizeTextarea();
-                this.updateSendButtonState();
+                if (!this.wsClient.isConnected()) return;
 
-                // Forward to TUI for execution via websocket
-                if (this.wsClient.isConnected()) {
+                this._pendingInputContent = content;
+                this.elements.input.disabled = true;
+                this.elements.sendBtn.disabled = true;
+
+                try {
                     const message = { type: 'user_message', content };
                     this.wsClient.send(message);
+                } catch {
+                    this._pendingInputContent = null;
+                    this.elements.input.disabled = false;
+                    this.elements.sendBtn.disabled = false;
                 }
                 return;
             }
@@ -1575,10 +1620,17 @@ class VibeClient {
         const message = { type: 'user_message', content };
         if (imageData) message.image = imageData;
 
-        this.wsClient.send(message);
-        this.elements.input.value = '';
-        this.autoResizeTextarea();
-        this.imageAttachment?.clear();
+        this._pendingInputContent = content;
+        this.elements.input.disabled = true;
+        this.elements.sendBtn.disabled = true;
+
+        try {
+            this.wsClient.send(message);
+        } catch {
+            this._pendingInputContent = null;
+            this.elements.input.disabled = false;
+            this.elements.sendBtn.disabled = false;
+        }
     }
 
     updateStatus(text, connected = false) {

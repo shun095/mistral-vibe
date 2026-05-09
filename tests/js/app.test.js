@@ -1162,4 +1162,117 @@ describe('VibeClient', () => {
             expect(client.elements.messages.children).toHaveLength(0);
         });
     });
+
+    describe('pending input acknowledgment', () => {
+        test('_clearPendingInput clears content and re-enables input', () => {
+            client._pendingInputContent = 'test message';
+            client.elements.input.value = 'test message';
+            client.elements.input.disabled = true;
+            client.elements.sendBtn.disabled = true;
+
+            client._clearPendingInput();
+
+            expect(client._pendingInputContent).toBeNull();
+            expect(client.elements.input.value).toBe('');
+            expect(client.elements.input.disabled).toBe(false);
+            expect(client.elements.sendBtn.disabled).toBe(true);
+            expect(client.imageAttachment.clear).toHaveBeenCalled();
+        });
+
+        test('_clearPendingInput is a no-op when no pending content', () => {
+            client._pendingInputContent = null;
+            client.elements.input.value = '';
+            client.elements.input.disabled = false;
+
+            client._clearPendingInput();
+
+            expect(client._pendingInputContent).toBeNull();
+            expect(client.elements.input.value).toBe('');
+            expect(client.elements.input.disabled).toBe(false);
+        });
+
+        test('_matchPendingContent matches plain string content', () => {
+            client._pendingInputContent = 'hello world';
+            expect(client._matchPendingContent('hello world')).toBe(true);
+            expect(client._matchPendingContent('goodbye')).toBe(false);
+        });
+
+        test('_matchPendingContent matches multi-part content with text part', () => {
+            client._pendingInputContent = 'hello world';
+            const multipart = [
+                { type: 'text', text: 'hello world' },
+                { type: 'image_url', image_url: { url: 'data:image/png;base64,abc' } },
+            ];
+            expect(client._matchPendingContent(multipart)).toBe(true);
+        });
+
+        test('_matchPendingContent rejects multi-part with mismatched text', () => {
+            client._pendingInputContent = 'hello world';
+            const multipart = [
+                { type: 'text', text: 'different text' },
+                { type: 'image_url', image_url: { url: 'data:image/png;base64,abc' } },
+            ];
+            expect(client._matchPendingContent(multipart)).toBe(false);
+        });
+
+        test('_matchPendingContent returns false for null content', () => {
+            client._pendingInputContent = 'hello';
+            expect(client._matchPendingContent(null)).toBe(false);
+        });
+
+        test('_matchPendingContent returns false when no pending content', () => {
+            client._pendingInputContent = null;
+            expect(client._matchPendingContent('hello')).toBe(false);
+        });
+
+        test('_matchPendingContent returns false for multi-part without text part', () => {
+            client._pendingInputContent = 'hello';
+            const multipart = [
+                { type: 'image_url', image_url: { url: 'data:image/png;base64,abc' } },
+            ];
+            expect(client._matchPendingContent(multipart)).toBe(false);
+        });
+
+        test('updateProcessingState keeps input disabled when pending content exists', () => {
+            client._pendingInputContent = 'test message';
+            client.isProcessing = true;
+
+            client.updateProcessingState(false);
+
+            expect(client.isProcessing).toBe(false);
+            expect(client.elements.input.disabled).toBe(true);
+        });
+
+        test('updateProcessingState re-enables input when no pending content', () => {
+            client._pendingInputContent = null;
+            client.isProcessing = true;
+
+            client.updateProcessingState(false);
+
+            expect(client.isProcessing).toBe(false);
+            expect(client.elements.input.disabled).toBe(false);
+        });
+
+        test('_onWsClose re-enables input when pending content exists', () => {
+            client._pendingInputContent = 'test message';
+            client.elements.input.disabled = true;
+            client.elements.sendBtn.disabled = true;
+
+            client._onWsClose();
+
+            expect(client.elements.input.disabled).toBe(false);
+            expect(client.elements.sendBtn.disabled).toBe(false);
+        });
+
+        test('_onWsClose does nothing when no pending content', () => {
+            client._pendingInputContent = null;
+            client.elements.input.disabled = false;
+            client.elements.sendBtn.disabled = false;
+
+            client._onWsClose();
+
+            expect(client.elements.input.disabled).toBe(false);
+            expect(client.elements.sendBtn.disabled).toBe(false);
+        });
+    });
 });
