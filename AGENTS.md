@@ -382,6 +382,8 @@ After any code modification, always run relevant tests before claiming the fix i
 
 ### MANDATORY: Run ALL Three Test Suites
 
+Run **sequentially** — never in parallel. Suites share ports and resources; concurrent runs cause flaky failures.
+
 ```bash
 uv run pytest tests/    # Python tests (timeout=300)
 npm test                # JavaScript unit tests
@@ -448,28 +450,22 @@ npm install                       # JavaScript dependencies
 npm run playwright:install        # Playwright browsers
 uv run pytest tests/              # Python tests
 npm test                          # JavaScript tests
-nohup npm run test:e2e > /tmp/e2e-test-output.log 2>&1 &  # E2E tests (background with logging)
+nohup npm run test:e2e > /tmp/e2e-test-output.log 2>&1 & echo $! > /tmp/e2e-pid  # E2E tests (background)
 npm run test:e2e:coverage         # E2E tests with JS coverage + HTML report
 npm run test:e2e:ui               # Interactive E2E
 npm run test:e2e:headed           # Visible browser
 ```
 
 **E2E Test Notes:**
-- Step 1 — launch in background:
+- `bash` calls are stateless — `$!` vanishes between calls. Run these as **two separate** `bash` calls:
   ```bash
-  nohup npm run test:e2e > /tmp/e2e-test-output.log 2>&1 & E2E_PID=$!
+  nohup npm run test:e2e > /tmp/e2e-test-output.log 2>&1 & echo $! > /tmp/e2e-pid
   ```
-- Step 2 — wait for completion, then check results:
   ```bash
-  while kill -0 $E2E_PID 2>/dev/null; do sleep 2; done; grep -E "(passed|failed|skipped)" /tmp/e2e-test-output.log
+  while kill -0 $(cat /tmp/e2e-pid) 2>/dev/null; do sleep 2; done; tail -20 /tmp/e2e-test-output.log
   ```
-- NEVER use `tail -f /tmp/e2e-test-output.log` which blocks forever
-- **NEVER kill processes on ports 9091-9093** - these are production ports in use
-- E2E tests use ports 9100-9109 by default (safe to kill after tests complete)
-- **To kill E2E test processes safely:**
-  ```bash
-  lsof -ti :9100-9109 | xargs -r kill -9 2>/dev/null || true
-  ```
+- NEVER use `tail -f` (blocks forever). NEVER kill ports 9091-9093 (production).
+- E2E uses ports 9100-9109. Kill safely: `lsof -ti :9100-9109 | xargs -r kill -9 2>/dev/null || true`
 
 ### Build Commands
 
