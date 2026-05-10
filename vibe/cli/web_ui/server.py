@@ -422,7 +422,7 @@ def messages_to_events(  # noqa: PLR0912, PLR0914, PLR0915
 
 
 # Maximum number of history entries to return in prompt history API
-MAX_HISTORY_ENTRIES = 100
+MAX_HISTORY_ENTRIES = 5000
 
 
 def _load_prompt_history(history_path: Path) -> list[str]:

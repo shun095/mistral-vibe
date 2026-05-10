@@ -102,4 +102,46 @@ test.describe("Authentication", () => {
 
     await loginPage.close();
   });
+
+  test("should login with valid token and show chat interface", async ({
+    webServer,
+    context,
+    authToken,
+  }) => {
+    const loginPage = await context.newPage();
+
+    try {
+      await loginPage.goto(`${webServer.getUrl()}/login`);
+      await loginPage.fill("#token", authToken);
+      await loginPage.click("#login-btn");
+
+      await expect(loginPage).toHaveURL(webServer.getUrl(), { timeout: 15000 });
+      await expect(loginPage.locator("#messages")).toBeVisible();
+      await expect(loginPage.locator("#message-input")).toBeVisible();
+      await expect(loginPage.locator("#send-btn")).toBeVisible();
+      await expect(loginPage.locator("#status-dot")).toBeVisible();
+    } finally {
+      await loginPage.close();
+    }
+  });
+
+  test("should show error on invalid token", async ({
+    webServer,
+    context,
+  }) => {
+    const loginPage = await context.newPage();
+
+    try {
+      await loginPage.goto(`${webServer.getUrl()}/login`);
+      await loginPage.fill("#token", "invalid-token");
+      await loginPage.click("#login-btn");
+
+      await expect(loginPage).toHaveURL(/.*\/login$/);
+      const errorMsg = loginPage.locator("#error-message");
+      await expect(errorMsg).toBeVisible({ timeout: 5000 });
+      await expect(errorMsg).toContainText("Invalid");
+    } finally {
+      await loginPage.close();
+    }
+  });
 });

@@ -1325,12 +1325,15 @@ class VibeApp(App):  # noqa: PLR0904
 
     async def _handle_user_message_with_image(
         self, message: str, image_data: dict
-    ) -> None:
+    ) -> bool:
         """Handle a user message with an attached image from web UI.
 
         Args:
             message: The user text message.
             image_data: Dictionary with 'data' (base64) and 'mime_type' keys.
+
+        Returns:
+            True if an agent task was spawned.
         """
         # Build multi-part content for LLM
         base64_data = image_data.get("data", "")
@@ -1360,6 +1363,8 @@ class VibeApp(App):  # noqa: PLR0904
             self._agent_task = asyncio.create_task(
                 self._handle_agent_loop_turn(content)
             )
+            return True
+        return False
 
     # =========================================================================
     # Thin wrappers for WebBroadcastManager (kept for backward compatibility)
@@ -1368,9 +1373,12 @@ class VibeApp(App):  # noqa: PLR0904
     def submit_message_from_web(
         self, message: str, image_data: dict | None = None
     ) -> None:
-        """Submit a message from the web UI to the TUI."""
-        if not self._tui_ready:
-            return
+        """Submit a message from the web UI to the TUI.
+
+        Messages are queued even if the TUI isn't ready yet, so they're not
+        dropped during the startup window between WebSocket connect and
+        TUI mount (e.g., while the trust-folder dialog is showing).
+        """
         self._web_message_queue.append({"message": message, "image": image_data})
 
     def resume_session_from_web(self, session_id: str) -> None:
@@ -1452,28 +1460,31 @@ class VibeApp(App):  # noqa: PLR0904
 
     async def _process_web_messages(self) -> None:
         """Process messages from the web UI queue and interrupt requests."""
-        # Process interrupt requests first
         if self._interrupt_requested and self._agent_running:
             await self._interrupt_agent_loop()
             return
 
-        # Process queued messages - same flow as TUI input
-        while self._web_message_queue:
-            item = self._web_message_queue.pop(0)
-            message = item.get("message", "")
-            image_data = item.get("image")
+        # Process at most one message per tick when no agent is running.
+        # The await after routing yields to the event loop so the agent
+        # task can start and set _agent_running = True, preventing the
+        # next tick from processing another message until the agent finishes.
+        if not self._web_message_queue or self._agent_running:
+            return
 
-            # Ensure message is a string (handle potential type issues)
-            if not isinstance(message, str):
-                message = str(message) if message is not None else ""
+        item = self._web_message_queue.pop(0)
+        message = item.get("message", "")
+        image_data = item.get("image")
 
-            # Handle messages with image attachments
-            if image_data and isinstance(image_data, dict):
-                await self._handle_user_message_with_image(message, image_data)
-                continue
+        if not isinstance(message, str):
+            message = str(message) if message is not None else ""
 
-            # Route through shared message routing logic
-            await self._route_message(message)
+        if image_data and isinstance(image_data, dict):
+            spawned = await self._handle_user_message_with_image(message, image_data)
+        else:
+            spawned = await self._route_message(message)
+
+        if spawned:
+            await asyncio.sleep(0)
 
     def _spawn_queue_task(self) -> None:
         """Spawn _process_queue as a fire-and-forget task."""

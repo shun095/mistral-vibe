@@ -85,8 +85,18 @@ export async function waitForHidden(
 
 /**
  * Send a message through the chat interface.
+ * Waits for the input to be enabled (previous message acknowledged by server)
+ * before filling, avoiding a race with deferred input clearing.
  */
 export async function sendMessage(page: Page, message: string): Promise<void> {
+  await page.waitForFunction(
+    (selector) => {
+      const el = document.querySelector(selector);
+      return el && !el.hasAttribute("disabled");
+    },
+    Selectors.messageInput,
+    { timeout: 10000 }
+  );
   await page.fill(Selectors.messageInput, message);
   await page.click(Selectors.sendButton);
 }

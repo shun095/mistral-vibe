@@ -9,7 +9,7 @@ from vibe.core.utils.io import read_safe
 
 
 class HistoryManager:
-    def __init__(self, history_file: Path, max_entries: int = 100) -> None:
+    def __init__(self, history_file: Path, max_entries: int = 5000) -> None:
         self.history_file = history_file
         self.max_entries = max_entries
         self._entries: list[str] = []
