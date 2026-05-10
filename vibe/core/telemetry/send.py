@@ -174,6 +174,14 @@ class TelemetryClient:
             await self._client.aclose()
             self._client = None
 
+    def disable(self) -> None:
+        """Synchronously disable telemetry, dropping pending events."""
+        for task in self._pending_tasks.copy():
+            task.cancel()
+        self._pending_tasks.clear()
+        if self._client is not None:
+            self._client = None
+
     def _calculate_file_metrics(
         self,
         tool_call: ResolvedToolCall,

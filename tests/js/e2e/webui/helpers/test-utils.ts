@@ -85,7 +85,7 @@ export async function waitForHidden(
 
 /**
  * Send a message through the chat interface.
- * Waits for the input to be enabled (previous message acknowledged by server)
+ * Waits for the input to be enabled (previous turn fully complete)
  * before filling, avoiding a race with deferred input clearing.
  */
 export async function sendMessage(page: Page, message: string): Promise<void> {
@@ -248,16 +248,25 @@ export async function createReasoningCard(page: Page): Promise<void> {
 }
 
 /**
- * Wait for assistant response.
- * Returns the most recent assistant message.
+ * Wait for assistant response and full turn completion.
+ * Returns only after the input is re-enabled, ensuring the agent loop
+ * has finished (updateProcessingState(false) fired).
  */
 export async function waitForResponse(
   page: Page,
-  timeout: number = 15000
+  timeout: number = 30000
 ): Promise<Locator> {
-  // Wait for a new assistant message to appear
   const locator = page.locator(Selectors.assistantMessage).last();
   await locator.waitFor({ state: "visible", timeout });
+  // Wait for input to re-enable — the actual signal the turn is complete
+  await page.waitForFunction(
+    (selector) => {
+      const el = document.querySelector(selector);
+      return el && !el.hasAttribute("disabled");
+    },
+    Selectors.messageInput,
+    { timeout }
+  );
   return locator;
 }
 

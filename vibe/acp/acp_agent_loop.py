@@ -340,8 +340,8 @@ class VibeAcpAgentLoop(AcpAgent):
         """
         try:
             await agent_loop.wait_until_ready()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Agent loop warm-up failed (will retry on first act): %s", e)
 
     def _create_agent_loop(
         self, config: VibeConfig, agent_name: str, hook_config_result: Any = None
@@ -1004,7 +1004,7 @@ class VibeAcpAgentLoop(AcpAgent):
     async def emit_session_closed_for_active_sessions(self) -> None:
         agent_loops = [session.agent_loop for session in self.sessions.values()]
         for agent_loop in agent_loops:
-            agent_loop.telemetry_client._client = None
+            agent_loop.telemetry_client.disable()
             agent_loop.emit_session_closed_telemetry()
         await asyncio.gather(
             *(agent_loop.telemetry_client.aclose() for agent_loop in agent_loops),
@@ -1437,30 +1437,43 @@ class VibeAcpAgentLoop(AcpAgent):
 SESSION_CLOSED_FLUSH_TIMEOUT_SECONDS = 1.0
 
 
-def run_acp_server() -> None:
-    agent = VibeAcpAgentLoop()
-    install_sigterm_flush = TelemetryClient(config_getter=VibeConfig.load).is_active()
+async def _run_acp_server_with_sigterm(
+    agent: VibeAcpAgentLoop, install_sigterm_flush: bool
+) -> bool:
+    """Run the ACP server, returning True if SIGTERM was received."""
     received_sigterm = False
-    previous_sigterm_handler = signal.getsignal(signal.SIGTERM)
 
-    def _handle_sigterm(_signum: int, _frame: Any) -> None:
+    async def _handle_sigterm() -> None:
         nonlocal received_sigterm
         received_sigterm = True
         raise KeyboardInterrupt
 
+    loop = asyncio.get_running_loop()
     if install_sigterm_flush:
-        signal.signal(signal.SIGTERM, _handle_sigterm)
+        loop.add_signal_handler(
+            signal.SIGTERM, lambda: asyncio.create_task(_handle_sigterm())
+        )
     try:
-        asyncio.run(
-            run_agent(
-                agent=agent,
-                use_unstable_protocol=True,
-                observers=[acp_message_observer],
-            )
+        await run_agent(
+            agent=agent, use_unstable_protocol=True, observers=[acp_message_observer]
+        )
+    finally:
+        if install_sigterm_flush:
+            loop.remove_signal_handler(signal.SIGTERM)
+    return received_sigterm
+
+
+def run_acp_server() -> None:
+    agent = VibeAcpAgentLoop()
+    install_sigterm_flush = TelemetryClient(config_getter=VibeConfig.load).is_active()
+    received_sigterm = False
+
+    try:
+        received_sigterm = asyncio.run(
+            _run_acp_server_with_sigterm(agent, install_sigterm_flush)
         )
     except KeyboardInterrupt:
         if received_sigterm:
-            signal.signal(signal.SIGTERM, previous_sigterm_handler)
             try:
                 asyncio.run(
                     asyncio.wait_for(
@@ -1476,6 +1489,3 @@ def run_acp_server() -> None:
         # Log any unexpected errors
         print(f"ACP Agent Server error: {e}", file=sys.stderr)
         raise
-    finally:
-        if install_sigterm_flush:
-            signal.signal(signal.SIGTERM, previous_sigterm_handler)

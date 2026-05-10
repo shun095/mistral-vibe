@@ -271,11 +271,6 @@ class TestTUIImageMessageHandling:
         assert item["image"] is None
 
     def test_submit_message_from_web_not_ready(self, mock_tui_app) -> None:
-        """Test that submit_message_from_web queues messages even when TUI not ready.
-
-        Messages are queued during the startup window between WebSocket connect
-        and TUI mount so they are not dropped.
-        """
         assert not mock_tui_app._tui_ready
 
         mock_tui_app.submit_message_from_web(
