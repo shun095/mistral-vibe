@@ -26,6 +26,7 @@ from vibe.core.types import (
     StrToolChoice,
 )
 from vibe.core.utils.retry import apply_retry_decorator
+from vibe.core.utils.http import build_ssl_context
 
 if TYPE_CHECKING:
     from vibe.core.config import ModelConfig, ProviderConfig
@@ -258,6 +259,7 @@ class GenericBackend:
             self._client = httpx.AsyncClient(
                 timeout=httpx.Timeout(self._timeout),
                 limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+                verify=build_ssl_context(),
             )
         return self
 
@@ -276,6 +278,7 @@ class GenericBackend:
             self._client = httpx.AsyncClient(
                 timeout=httpx.Timeout(self._timeout),
                 limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+                verify=build_ssl_context(),
             )
             self._owns_client = True
         return self._client

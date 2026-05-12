@@ -1140,6 +1140,8 @@ class VibeApp(App):  # noqa: PLR0904
 
         bash_msg = BashOutputMessage(command, str(Path.cwd()), pending=True)
         await self._mount_and_scroll(bash_msg)
+        await self._ensure_loading_widget("Running command")
+        bash_loading_widget = self._loading_widget
 
         proc: asyncio.subprocess.Process | None = None
         stdout_parts: list[str] = []
@@ -1245,6 +1247,10 @@ class VibeApp(App):  # noqa: PLR0904
                         status=f"failed before completion: {e}",
                     )
                 )
+            )
+        finally:
+            if self._loading_widget is bash_loading_widget:
+                await self._remove_loading_widget()
 
     def _get_bash_max_output_bytes(self) -> int:
         from vibe.core.tools.builtins.bash import BashToolConfig
@@ -3017,7 +3023,9 @@ class VibeApp(App):  # noqa: PLR0904
         self._emit_session_closed_for_active_session()
         await self._loop_runner.stop()
         self._log_reader.shutdown()
+        await self._voice_manager.close()
         await self._narrator_manager.close()
+        await self.agent_loop.aclose()
         try:
             await self.agent_loop.telemetry_client.aclose()
         except Exception as exc:
@@ -3554,6 +3562,9 @@ class VibeApp(App):  # noqa: PLR0904
             return True
 
         interrupted = False
+        if self._bash_task and not self._bash_task.done():
+            self._bash_task.cancel()
+            interrupted = True
         if self._agent_running:
             self._handle_agent_running_escape()
             interrupted = True
@@ -3743,6 +3754,7 @@ class VibeApp(App):  # noqa: PLR0904
 
         self._log_reader.shutdown()
         self._narrator_manager.cancel()
+        await self.agent_loop.aclose()
         try:
             await self.agent_loop.telemetry_client.aclose()
         except Exception as exc:

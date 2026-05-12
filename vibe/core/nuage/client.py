@@ -20,6 +20,7 @@ from vibe.core.nuage.workflow import (
     WorkflowExecutionListResponse,
     WorkflowExecutionStatus,
 )
+from vibe.core.utils.http import build_ssl_context
 
 
 class WorkflowsClient:
@@ -36,7 +37,9 @@ class WorkflowsClient:
         headers: dict[str, str] = {}
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
-        self._client = httpx.AsyncClient(timeout=self._timeout, headers=headers)
+        self._client = httpx.AsyncClient(
+            timeout=self._timeout, headers=headers, verify=build_ssl_context()
+        )
         return self
 
     async def __aexit__(
@@ -55,7 +58,9 @@ class WorkflowsClient:
             headers: dict[str, str] = {}
             if self._api_key:
                 headers["Authorization"] = f"Bearer {self._api_key}"
-            self._client = httpx.AsyncClient(timeout=self._timeout, headers=headers)
+            self._client = httpx.AsyncClient(
+                timeout=self._timeout, headers=headers, verify=build_ssl_context()
+            )
             self._owns_client = True
         return self._client
 

@@ -11,6 +11,7 @@ import httpx
 from pydantic import BaseModel, Field, ValidationError
 
 from vibe.core.teleport.errors import ServiceTeleportError
+from vibe.core.utils.http import build_ssl_context
 
 # SECURITY: Hardcoded disable - Teleport/Nuage workflow is permanently disabled
 # to prevent sending any data to external services.
@@ -125,7 +126,9 @@ class NuageClient:
 
     async def __aenter__(self) -> NuageClient:
         if self._client is None:
-            self._client = httpx.AsyncClient(timeout=httpx.Timeout(self._timeout))
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(self._timeout), verify=build_ssl_context()
+            )
         return self
 
     async def __aexit__(
@@ -141,7 +144,9 @@ class NuageClient:
     @property
     def _http_client(self) -> httpx.AsyncClient:
         if self._client is None:
-            self._client = httpx.AsyncClient(timeout=httpx.Timeout(self._timeout))
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(self._timeout), verify=build_ssl_context()
+            )
             self._owns_client = True
         return self._client
 
