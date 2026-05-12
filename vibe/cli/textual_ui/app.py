@@ -46,7 +46,7 @@ from pydantic import BaseModel
 # Constants
 MESSAGE_PREVIEW_LENGTH = 50
 QUEUE_PREVIEW_LENGTH = 120
-NON_INTERRUPT_COMMANDS = ("/queue",)
+NON_INTERRUPT_COMMANDS = ("/queue", "!!")
 
 # Web notification constants
 WEB_NOTIFICATION_ACTION_TITLE = "Action Required"

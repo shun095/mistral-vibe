@@ -573,3 +573,28 @@ async def test_non_command_interrupts_running_agent(tmp_path: Path) -> None:
         await pilot.pause()
 
         assert app._agent_running is False
+
+
+@pytest.mark.asyncio
+async def test_bash_command_does_not_interrupt_running_agent(tmp_path: Path) -> None:
+    from tests.conftest import build_test_vibe_app
+
+    app = build_test_vibe_app()
+
+    async with app.run_test() as pilot:
+        app._agent_running = True
+        app._agent_task = asyncio.create_task(asyncio.sleep(10))
+
+        await pilot.press(*"!!echo hello")
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert app._agent_running is True
+        assert app._agent_task is not None
+        assert not app._agent_task.done()
+
+        app._agent_task.cancel()
+        try:
+            await app._agent_task
+        except asyncio.CancelledError:
+            pass
