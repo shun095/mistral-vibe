@@ -4,7 +4,7 @@
  */
 
 import { test, expect } from "../fixtures";
-import { Selectors, sendMessage, callVibeClient } from "../helpers/test-utils";
+import { Selectors, sendMessage, callVibeClient, waitForResponse } from "../helpers/test-utils";
 
 test.describe("Collapsible Cards Toggle", () => {
   test("should show toggle all cards button in header", async ({ page }) => {
@@ -167,6 +167,7 @@ test.describe("Collapsible Cards Toggle", () => {
     await sendMessage(page, "Read first file");
     const firstCard = page.locator(".message.tool-call").last();
     await expect(firstCard).toBeVisible({ timeout: 15000 });
+    await waitForResponse(page, 30000);
 
     // Register second tool call
     await mockBackend.registerToolCall(
@@ -176,6 +177,7 @@ test.describe("Collapsible Cards Toggle", () => {
     await sendMessage(page, "Read second file");
     const secondCard = page.locator(".message.tool-call").last();
     await expect(secondCard).toBeVisible({ timeout: 15000 });
+    await waitForResponse(page, 30000);
 
     // Wait for third tool call
     await mockBackend.registerToolCall(
@@ -184,6 +186,7 @@ test.describe("Collapsible Cards Toggle", () => {
     );
     await sendMessage(page, "Read third file");
     await expect(page.locator(".message.tool-call").last()).toBeVisible({ timeout: 15000 });
+    await waitForResponse(page, 30000);
 
     // All cards should start collapsed
     const allCards = page.locator(".message.tool-call");

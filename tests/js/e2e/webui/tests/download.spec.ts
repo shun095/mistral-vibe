@@ -3,7 +3,7 @@
  */
 
 import { test, expect } from "../fixtures";
-import { Selectors, formatAndAppendToolResult } from "../helpers/test-utils";
+import { Selectors, formatAndAppendToolResult, waitForResponse } from "../helpers/test-utils";
 
 // Directory within project for E2E test files (tool restricts to project dir)
 const E2E_FILES_DIR = "tests/js/e2e/webui/.e2e-files";
@@ -109,6 +109,9 @@ test.describe("Download Feature UI", () => {
     await downloadCard.waitFor({ state: "attached", timeout: 20000 });
     await expect(downloadCard).toContainText("reload_test.txt");
     await expect(downloadCard).toContainText("text/plain");
+
+    // Wait for the full agent turn to complete before reload
+    await waitForResponse(page, 30000);
 
     // Reload the page (use "load" instead of "networkidle" for WebSocket apps)
     await page.reload({ waitUntil: "load" });

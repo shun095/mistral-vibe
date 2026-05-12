@@ -3,7 +3,7 @@
  */
 
 import { test, expect } from "../fixtures";
-import { sendMessage, waitForConnected } from "../helpers/test-utils";
+import { sendMessage, waitForConnected, waitForResponse } from "../helpers/test-utils";
 
 test.describe("Tool Error Persistence", () => {
   test("should persist tool error after page reload", async ({
@@ -33,6 +33,9 @@ test.describe("Tool Error Persistence", () => {
 
     // Verify the error message contains "File not found"
     await expect(errorDiv).toContainText("File not found");
+
+    // Wait for the full agent turn to complete (assistant response rendered, input re-enabled)
+    await waitForResponse(page, 30000);
 
     // Reload the page (use "load" instead of "networkidle" for WebSocket apps)
     await page.reload({ waitUntil: "load" });

@@ -99,7 +99,13 @@ export const test = base.extend<WebUIFixtures & { page: Page }>({
 
   // Page fixture with automatic state reset between tests
   // Depends on mockBackend to ensure mock data is reset before and after each test
-  page: async ({ page, webServer, authToken, mockBackend }, use) => {
+  page: async ({ page, webServer, authToken, mockBackend }, use, testInfo) => {
+    // Capture browser console logs
+    const consoleLogs: string[] = [];
+    page.on("console", (msg) => {
+      consoleLogs.push(`[${msg.type()}] ${msg.text()}`);
+    });
+
     // Start JS coverage before each test (if enabled)
     if (COLLECT_COVERAGE) {
       await page.coverage.startJSCoverage({ resetOnNavigation: false });
@@ -134,6 +140,13 @@ export const test = base.extend<WebUIFixtures & { page: Page }>({
     // Stop coverage after test (if enabled)
     if (COLLECT_COVERAGE) {
       saveCoverage(page);
+    }
+
+    // Write console logs to test-results directory
+    if (consoleLogs.length > 0) {
+      const outputDir = testInfo.outputDir || "test-results";
+      const logPath = path.join(outputDir, "console.log");
+      fs.writeFileSync(logPath, consoleLogs.join("\n") + "\n", "utf-8");
     }
 
     // After test, reset mock data and page state

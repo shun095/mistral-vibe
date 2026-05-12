@@ -90,14 +90,22 @@ export async function waitForHidden(
  */
 export async function sendMessage(page: Page, message: string): Promise<void> {
   await page.waitForFunction(
-    (selector) => {
-      const el = document.querySelector(selector);
-      return el && !el.hasAttribute("disabled");
-    },
+    (s) => { const el = document.querySelector(s); return el && !el.hasAttribute("disabled"); },
     Selectors.messageInput,
     { timeout: 10000 }
   );
   await page.fill(Selectors.messageInput, message);
+  // _clearPendingInput may asynchronously wipe the input after fill.
+  // Verify content is still there; if cleared, refill and wait again.
+  const actual = await page.inputValue(Selectors.messageInput);
+  if (actual !== message) {
+    await page.waitForFunction(
+      (s) => { const el = document.querySelector(s); return el && !el.hasAttribute("disabled"); },
+      Selectors.messageInput,
+      { timeout: 10000 }
+    );
+    await page.fill(Selectors.messageInput, message);
+  }
   await page.click(Selectors.sendButton);
 }
 
