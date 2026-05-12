@@ -4,7 +4,7 @@ from collections.abc import AsyncGenerator
 import functools
 import io
 import re
-from typing import ClassVar, final
+from typing import ClassVar, TYPE_CHECKING, final
 from urllib.parse import urlparse
 
 import httpx

@@ -1573,12 +1573,13 @@ class VibeConfig(BaseSettings):
                     sorted_list = sorted(list(allowlist) + ["find"])
                     bash_config["allowlist"] = sorted_list
                     changed = True
+                    allowlist = sorted_list
 
-        if allowlist is not None and any(p.endswith(" *") for p in allowlist):
-            stripped = [_strip_bash_pattern_wildcard(p) for p in allowlist]
-            deduped = sorted(set(stripped))
-            bash_tools["allowlist"] = deduped
-            changed = True
+                if allowlist is not None and any(p.endswith(" *") for p in allowlist):
+                    stripped = [_strip_bash_pattern_wildcard(p) for p in allowlist]
+                    deduped = sorted(set(stripped))
+                    bash_config["allowlist"] = deduped
+                    changed = True
 
         for model in doc.get("models", []):
             if (

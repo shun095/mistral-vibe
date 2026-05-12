@@ -1247,7 +1247,6 @@ class VibeApp(App):  # noqa: PLR0904
                         status=f"failed before completion: {e}",
                     )
                 )
-            )
         finally:
             if self._loading_widget is bash_loading_widget:
                 await self._remove_loading_widget()
