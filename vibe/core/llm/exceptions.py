@@ -6,9 +6,11 @@ import json
 from typing import Any
 
 import httpx
-from mistralai.client.errors import SDKError
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from vibe.core.llm._mistralai_stub import (
+    SDKError,  # pyright: ignore[reportAttributeAccessIssue]
+)
 from vibe.core.types import AvailableTool, LLMMessage, StrToolChoice
 
 type HttpError = SDKError | httpx.HTTPStatusError

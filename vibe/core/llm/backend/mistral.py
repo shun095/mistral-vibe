@@ -7,11 +7,11 @@ import types
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple, cast
 
 import httpx
-from mistralai.client import Mistral
-from mistralai.client.errors import SDKError
-from mistralai.client.models import (
+
+from vibe.core.llm._mistralai_stub import (  # pyright: ignore[reportAttributeAccessIssue]
     AssistantMessage,
     AssistantMessageContent,
+    BackoffStrategy,
     ChatCompletionRequestMessage,
     ChatCompletionStreamRequestToolChoice,
     ContentChunk,
@@ -19,6 +19,9 @@ from mistralai.client.models import (
     Function,
     FunctionCall as MistralFunctionCall,
     FunctionName,
+    Mistral,
+    RetryConfig,
+    SDKError,
     SystemMessage,
     TextChunk,
     ThinkChunk,
@@ -29,8 +32,6 @@ from mistralai.client.models import (
     ToolMessage,
     UserMessage,
 )
-from mistralai.client.utils.retries import BackoffStrategy, RetryConfig
-
 from vibe.core.llm.exceptions import BackendErrorBuilder
 from vibe.core.llm.message_utils import merge_consecutive_user_messages
 from vibe.core.logger import logger

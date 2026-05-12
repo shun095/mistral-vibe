@@ -45,7 +45,7 @@ dependencies = [
     "markdownify>=1.2.2",
     "markitdown[pdf]>=0.1.0",
     "mcp>=1.14.0",
-    "mistralai==2.4.4",
+    # "mistralai==2.4.4",  # quarantined on PyPI - commented out; restore when unquarantined
     "opentelemetry-api>=1.39.1",
     "opentelemetry-exporter-otlp-proto-http>=1.39.1",
     "opentelemetry-sdk>=1.39.1",
@@ -99,7 +99,7 @@ vibe-acp = "vibe.acp.entrypoint:main"
 
 [tool.uv]
 exclude-newer = "7 days"
-exclude-newer-package = { agent-client-protocol = false, mistralai = false }
+exclude-newer-package = { agent-client-protocol = false }
 
 package = true
 required-version = ">=0.8.0"
@@ -165,7 +165,7 @@ reportMissingTypeStubs = false
 reportPrivateImportUsage = false
 
 include = ["vibe/**/*.py", "tests/**/*.py"]
-exclude = ["pyinstaller/"]
+exclude = ["pyinstaller/", "vibe/core/llm/_mistralai_stub.py"]
 venvPath = "."
 venv = ".venv"
 

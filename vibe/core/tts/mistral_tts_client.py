@@ -4,10 +4,12 @@ import base64
 import os
 
 import httpx
-from mistralai.client import Mistral
-from mistralai.client.models import SpeechOutputFormat
 
 from vibe.core.config import TTSModelConfig, TTSProviderConfig
+from vibe.core.llm._mistralai_stub import (  # pyright: ignore[reportAttributeAccessIssue]
+    Mistral,
+    SpeechOutputFormat,
+)
 from vibe.core.tts.tts_client_port import TTSResult
 from vibe.core.utils.http import build_ssl_context
 

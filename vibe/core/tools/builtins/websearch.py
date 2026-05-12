@@ -5,16 +5,16 @@ import os
 from typing import TYPE_CHECKING, ClassVar, final
 
 import httpx
-from mistralai.client import Mistral
-from mistralai.client.errors import SDKError
-from mistralai.client.models import (
+from pydantic import BaseModel, Field
+
+from vibe.core.llm._mistralai_stub import (  # pyright: ignore[reportAttributeAccessIssue]
     ConversationResponse,
     MessageOutputEntry,
+    Mistral,
+    SDKError,
     TextChunk,
     ToolReferenceChunk,
 )
-from pydantic import BaseModel, Field
-
 from vibe.core.tools.base import (
     BaseTool,
     BaseToolConfig,

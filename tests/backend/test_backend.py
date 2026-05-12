@@ -18,9 +18,18 @@ from typing import ClassVar, Literal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
-from mistralai.client.errors import SDKError
-from mistralai.client.models import AssistantMessage
-from mistralai.client.utils.retries import BackoffStrategy, RetryConfig
+import pytest
+
+pytest.importorskip("mistralai")
+
+from mistralai.client.errors import SDKError  # pyright: ignore[reportMissingImports]
+from mistralai.client.models import (
+    AssistantMessage,  # pyright: ignore[reportMissingImports]
+)
+from mistralai.client.utils.retries import (  # pyright: ignore[reportMissingImports]
+    BackoffStrategy,
+    RetryConfig,
+)
 import pytest
 import respx
 

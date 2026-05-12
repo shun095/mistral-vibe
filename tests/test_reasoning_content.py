@@ -4,7 +4,11 @@ import json
 from unittest.mock import MagicMock
 
 import httpx
-from mistralai.client.models import (
+import pytest
+
+pytest.importorskip("mistralai")
+
+from mistralai.client.models import (  # pyright: ignore[reportMissingImports]
     AssistantMessage,
     ContentChunk,
     TextChunk,

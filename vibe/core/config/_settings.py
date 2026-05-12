@@ -11,7 +11,10 @@ from typing import Annotated, Any, Literal, cast, get_args
 from urllib.parse import urljoin
 
 from dotenv import dotenv_values
-from mistralai.client.models import SpeechOutputFormat
+
+from vibe.core.llm._mistralai_stub import (
+    SpeechOutputFormat,  # pyright: ignore[reportAttributeAccessIssue]
+)
 
 # Magic values for type annotation processing
 DICT_ARGS_MIN_LENGTH = 2

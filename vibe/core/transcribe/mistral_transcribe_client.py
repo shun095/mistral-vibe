@@ -4,17 +4,17 @@ from collections.abc import AsyncIterator
 import os
 
 import httpx
-from mistralai.client import Mistral
-from mistralai.client.models import (
+
+from vibe.core.config import TranscribeModelConfig, TranscribeProviderConfig
+from vibe.core.llm._mistralai_stub import (  # pyright: ignore[reportAttributeAccessIssue]
     AudioFormat,
+    Mistral,
     RealtimeTranscriptionError,
     RealtimeTranscriptionSessionCreated,
     TranscriptionStreamDone,
     TranscriptionStreamTextDelta,
+    UnknownRealtimeEvent,
 )
-from mistralai.extra.realtime import UnknownRealtimeEvent
-
-from vibe.core.config import TranscribeModelConfig, TranscribeProviderConfig
 from vibe.core.transcribe.transcribe_client_port import (
     TranscribeDone,
     TranscribeError,

@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from mistralai.client import Mistral
-from mistralai.client.errors import SDKError
-from mistralai.client.models import (
+import pytest
+
+pytest.importorskip("mistralai")
+
+from mistralai.client import Mistral  # pyright: ignore[reportMissingImports]
+from mistralai.client.errors import SDKError  # pyright: ignore[reportMissingImports]
+from mistralai.client.models import (  # pyright: ignore[reportMissingImports]
     ConversationResponse,
     ConversationUsageInfo,
     MessageOutputEntry,
