@@ -69,22 +69,24 @@ class MistralMapper:
                 content = msg.content if isinstance(msg.content, str) else None
                 return UserMessage(role="user", content=content)
             case Role.assistant:
-                if msg.reasoning_content:
-                    chunks: list[ContentChunk] = []
-                    if isinstance(msg.reasoning_content, str):
-                        chunks.append(
-                            ThinkChunk(
-                                type="thinking",
-                                thinking=[
-                                    TextChunk(type="text", text=msg.reasoning_content)
-                                ],
-                            )
+                reasoning = (
+                    msg.reasoning_content
+                    if isinstance(msg.reasoning_content, str)
+                    else None
+                )
+                text = msg.content if isinstance(msg.content, str) else None
+                if reasoning:
+                    chunks: list[ContentChunk] = [
+                        ThinkChunk(
+                            type="thinking",
+                            thinking=[TextChunk(type="text", text=reasoning)],
                         )
-                    if isinstance(msg.content, str) and msg.content:
-                        chunks.append(TextChunk(type="text", text=msg.content))
-                    content = chunks if chunks else ""
+                    ]
+                    if text:
+                        chunks.append(TextChunk(type="text", text=text))
+                    content = chunks
                 else:
-                    content = msg.content if isinstance(msg.content, str) else ""
+                    content = text or ""
 
                 return AssistantMessage(
                     role="assistant",
@@ -223,7 +225,6 @@ class MistralBackend:
         self._timeout = timeout
         self._retry_config = self._build_retry_config()
 
-        # Apply retry decorators dynamically with callback if provided
         if on_retry is not None:
             self._apply_retry_decorators()
 
@@ -315,32 +316,33 @@ class MistralBackend:
             if reasoning_effort is not None:
                 temperature = 1.0
 
-            kwargs: dict[str, Any] = {
-                "model": model.name,
-                "messages": [
-                    self._mapper.prepare_message(msg) for msg in merged_messages
-                ],
-                "tools": [self._mapper.prepare_tool(tool) for tool in tools]
-                if tools
-                else None,
-                "max_tokens": max_tokens,
-                "tool_choice": self._mapper.prepare_tool_choice(tool_choice)
-                if tool_choice
-                else None,
-                "http_headers": extra_headers,
-                "metadata": metadata,
-                "stream": False,
-                "reasoning_effort": reasoning_effort,
-            }
-            if temperature is not None:
-                kwargs["temperature"] = temperature
-
             logger.debug(
-                "Mistral Backend Request: %s",
-                json.dumps(kwargs.copy(), default=str, ensure_ascii=False),
+                "Mistral Backend Request: model=%s messages=%d tools=%s max_tokens=%s",
+                model.name,
+                len(merged_messages),
+                bool(tools),
+                max_tokens,
             )
 
-            response = await self._get_client().chat.complete_async(**kwargs)
+            _temp: dict[str, Any] = (
+                {"temperature": temperature} if temperature is not None else {}
+            )
+            response = await self._get_client().chat.complete_async(
+                model=model.name,
+                messages=[self._mapper.prepare_message(msg) for msg in merged_messages],
+                **_temp,
+                tools=[self._mapper.prepare_tool(tool) for tool in tools]
+                if tools
+                else None,
+                max_tokens=max_tokens,
+                tool_choice=self._mapper.prepare_tool_choice(tool_choice)
+                if tool_choice
+                else None,
+                http_headers=extra_headers,
+                metadata=metadata,
+                stream=False,
+                reasoning_effort=reasoning_effort,
+            )
 
             logger.debug(
                 "Mistral Backend Response: %s",
@@ -409,31 +411,31 @@ class MistralBackend:
             if reasoning_effort is not None:
                 temperature = 1.0
 
-            kwargs: dict[str, Any] = {
-                "model": model.name,
-                "messages": [
-                    self._mapper.prepare_message(msg) for msg in merged_messages
-                ],
-                "tools": [self._mapper.prepare_tool(tool) for tool in tools]
-                if tools
-                else None,
-                "max_tokens": max_tokens,
-                "tool_choice": self._mapper.prepare_tool_choice(tool_choice)
-                if tool_choice
-                else None,
-                "http_headers": extra_headers,
-                "metadata": metadata,
-                "reasoning_effort": reasoning_effort,
-            }
-            if temperature is not None:
-                kwargs["temperature"] = temperature
-
             logger.debug(
-                "Mistral Backend Streaming Request: %s",
-                json.dumps(kwargs.copy(), indent=2, default=str, ensure_ascii=False),
+                "Mistral Backend Streaming Request: model=%s messages=%d tools=%s",
+                model.name,
+                len(merged_messages),
+                bool(tools),
             )
 
-            stream = await self._get_client().chat.stream_async(**kwargs)
+            _temp: dict[str, Any] = (
+                {"temperature": temperature} if temperature is not None else {}
+            )
+            stream = await self._get_client().chat.stream_async(
+                model=model.name,
+                messages=[self._mapper.prepare_message(msg) for msg in merged_messages],
+                **_temp,
+                tools=[self._mapper.prepare_tool(tool) for tool in tools]
+                if tools
+                else None,
+                max_tokens=max_tokens,
+                tool_choice=self._mapper.prepare_tool_choice(tool_choice)
+                if tool_choice
+                else None,
+                http_headers=extra_headers,
+                metadata=metadata,
+                reasoning_effort=reasoning_effort,
+            )
             correlation_id = stream.response.headers.get("mistral-correlation-id")
             async for chunk in stream:
                 logger.debug(

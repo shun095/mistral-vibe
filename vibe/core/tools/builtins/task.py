@@ -97,7 +97,6 @@ class Task(
         if not response or not response.strip():
             return False, "Response is empty. Please provide a comprehensive summary."
 
-        # Check if response is a single line
         lines = response.strip().split("\n")
         if len(lines) == 1:
             return (
@@ -113,10 +112,8 @@ class Task(
     ) -> str:
         """Get the task instruction for the subagent, with enhanced instructions for retries."""
         if attempt == 0:
-            # First attempt - use original task
             return original_task
 
-        # Subsequent attempts - add guidance
         return f"""
 {original_task}
 
@@ -181,28 +178,21 @@ This is attempt {attempt + 1} of {max_attempts}. Provide a complete multi-paragr
             subagent_loop.set_approval_callback(ctx.approval_callback)
 
         attempt = 0
-
-        # Main loop: continue until response is complete or max retries reached
         while attempt < self.config.max_retries:  # noqa: PLR1702
-            accumulated_response: list[str] = []
-            completed = True
-
-            # Determine task instruction based on attempt
-            task_instruction = self._get_task_instruction(
+            task_text = self._get_task_instruction(
                 args.task, attempt, self.config.max_retries
             )
-
-            # Inject scratchpad context if available
             if ctx.scratchpad_dir:
-                task_instruction = (
+                task_text = (
                     f"Scratchpad directory: {ctx.scratchpad_dir}\n"
                     "You can read and write files here without permission prompts.\n\n"
-                    f"{task_instruction}"
+                    f"{task_text}"
                 )
 
+            accumulated_response: list[str] = []
+            completed = True
             try:
-                # Run the agent loop for this attempt
-                async with aclosing(subagent_loop.act(task_instruction)) as events:
+                async with aclosing(subagent_loop.act(task_text)) as events:
                     async for event in events:
                         if isinstance(event, AssistantEvent) and event.content:
                             accumulated_response.append(event.content)
@@ -232,16 +222,13 @@ This is attempt {attempt + 1} of {max_attempts}. Provide a complete multi-paragr
                     msg.role == Role.assistant for msg in subagent_loop.messages
                 )
 
-            # Get the concatenated response for validation
+            # Validate response quality
             concatenated_response = (
                 "".join(accumulated_response) if accumulated_response else ""
             )
-
-            # Validate response quality using the concatenated response
             is_complete, feedback = self._is_response_complete(concatenated_response)
 
             if is_complete:
-                # Success! Return the result
                 yield TaskResult(
                     response="".join(accumulated_response),
                     turns_used=turns_used,
@@ -249,19 +236,15 @@ This is attempt {attempt + 1} of {max_attempts}. Provide a complete multi-paragr
                 )
                 return
 
-            # Response was insufficient, prepare for retry
             if attempt < self.config.max_retries - 1:
-                # Yield feedback to user (but NOT TaskResult!)
                 yield ToolStreamEvent(
                     tool_name=self.get_name(),
                     message=f"Subagent response was insufficient: {feedback}",
                     tool_call_id=ctx.tool_call_id,
                 )
-                # Continue to next iteration of retry loop
                 attempt += 1
                 continue
 
-            # Last attempt failed - return incomplete result
             yield TaskResult(
                 response="".join(accumulated_response),
                 turns_used=turns_used,
