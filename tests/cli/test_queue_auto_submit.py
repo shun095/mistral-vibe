@@ -551,7 +551,7 @@ async def test_normal_command_interrupts_running_agent(tmp_path: Path) -> None:
         app._agent_running = True
         app._agent_task = asyncio.create_task(asyncio.sleep(10))
 
-        await pilot.press(*"/help")
+        await pilot.press(*"/clear")
         await pilot.press("enter")
         await pilot.pause()
 
