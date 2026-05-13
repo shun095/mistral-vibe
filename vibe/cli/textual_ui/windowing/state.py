@@ -8,7 +8,7 @@ from vibe.cli.textual_ui.widgets.load_more import HistoryLoadMoreMessage
 from vibe.core.types import LLMMessage
 
 HISTORY_RESUME_TAIL_MESSAGES = 20
-LOAD_MORE_BATCH_SIZE = 10
+LOAD_MORE_BATCH_SIZE = 20
 
 
 @dataclass(frozen=True)
@@ -75,12 +75,7 @@ class SessionWindowing:
             else:
                 backfill_end = self._backfill_cursor
         else:
-            # When visible_indices is empty (e.g., during streaming when _history_widget_indices
-            # is not yet populated), don't calculate backfill based on widget count difference.
-            # Instead, preserve existing backfill state or reset to 0 if no backfill was set.
-            # This prevents false positives where the "Load more messages" button appears
-            # incorrectly for short conversations.
-            backfill_end = self._backfill_cursor
+            backfill_end = max(len(history_messages) - visible_history_widgets_count, 0)
         backfill_end = min(backfill_end, len(history_messages))
         self._backfill_messages = history_messages[:backfill_end]
         self._backfill_cursor = len(self._backfill_messages)
@@ -92,10 +87,20 @@ class HistoryLoadMoreManager:
         self.widget: HistoryLoadMoreMessage | None = None
 
     async def show(self, messages_area: Widget, remaining: int) -> None:
-        if self.widget is None:
-            widget = HistoryLoadMoreMessage()
-            await messages_area.mount(widget, before=0)
-            self.widget = widget
+        if self.widget is not None:
+            if self.widget.parent is None:
+                self.widget = None
+            else:
+                self.set_remaining(remaining)
+                return
+        # Guard: don't mount if a LoadMore widget already exists in DOM
+        existing = messages_area.query(HistoryLoadMoreMessage)
+        if existing:
+            self.set_remaining(remaining)
+            return
+        widget = HistoryLoadMoreMessage()
+        await messages_area.mount(widget, before=0)
+        self.widget = widget
         self.set_remaining(remaining)
 
     async def hide(self) -> None:

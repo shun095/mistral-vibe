@@ -31,11 +31,12 @@ from vibe.cli.textual_ui.widgets.load_more import (
     HistoryLoadMoreMessage,
     HistoryLoadMoreRequested,
 )
-from vibe.cli.textual_ui.widgets.messages import UserMessage
+from vibe.cli.textual_ui.widgets.messages import AssistantMessage, UserMessage
 from vibe.cli.textual_ui.windowing import (
     HISTORY_RESUME_TAIL_MESSAGES,
     LOAD_MORE_BATCH_SIZE,
 )
+from vibe.cli.textual_ui.windowing.history import non_system_history_messages
 from vibe.core.config import SessionLoggingConfig, VibeConfig
 from vibe.core.types import Role
 
@@ -163,11 +164,9 @@ async def test_ui_load_more_shown_after_prune(vibe_config: VibeConfig) -> None:
         )
 
         # Patch the PRUNE marks to low values so pruning is triggered with
-        # a reasonable amount of content (simulating a tall chat window)
-        # PRUNE_LOW_MARK=20, PRUNE_HIGH_MARK=30 means pruning triggers when
-        # virtual height exceeds 30px (about 1-2 message widgets)
-        with patch("vibe.cli.textual_ui.app.PRUNE_LOW_MARK", 20):
-            with patch("vibe.cli.textual_ui.app.PRUNE_HIGH_MARK", 30):
+        # a reasonable amount of content (widget count thresholds)
+        with patch("vibe.cli.textual_ui.app.PRUNE_LOW_MARK", 5):
+            with patch("vibe.cli.textual_ui.app.PRUNE_HIGH_MARK", 10):
                 # User submits a new message via pilot.press()
                 # This will trigger the agent loop which will add many messages
                 await pilot.press(*"New question after resume")
@@ -208,8 +207,8 @@ async def test_ui_load_more_count_updates_after_multiple_loads_and_prune(
     3. _refresh_windowing_from_history correctly recomputes the backfill state
     """
     # Create a scenario with enough messages to have backfill
-    # Need enough messages so that even after 2 loads (20 messages), there's still backfill
-    total_turns = 30  # 30 turns = 60 messages (user + assistant each)
+    # Need enough messages so that even after 2 loads (40 messages @ batch_size=20), there's still backfill
+    total_turns = 40  # 40 turns = 80 messages (user + assistant each)
     total_messages = total_turns * 2
 
     # Build initial conversation history with alternating user/assistant messages
@@ -269,8 +268,8 @@ async def test_ui_load_more_count_updates_after_multiple_loads_and_prune(
             )
 
         # Patch the PRUNE marks to trigger pruning
-        with patch("vibe.cli.textual_ui.app.PRUNE_LOW_MARK", 20):
-            with patch("vibe.cli.textual_ui.app.PRUNE_HIGH_MARK", 30):
+        with patch("vibe.cli.textual_ui.app.PRUNE_LOW_MARK", 5):
+            with patch("vibe.cli.textual_ui.app.PRUNE_HIGH_MARK", 10):
                 # User submits a new message
                 await pilot.press(*"New question after resume")
                 await pilot.press("enter")
@@ -298,4 +297,397 @@ async def test_ui_load_more_count_updates_after_multiple_loads_and_prune(
         # The key is that the count is positive and the widget is shown
         assert remaining_after_prune > 0, (
             f"Remaining count should be positive: {remaining_after_prune}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_prune_with_existing_loadmore_updates_count(
+    vibe_config: VibeConfig,
+) -> None:
+    """Branch 1a: prune triggers + LoadMore already exists → count updates.
+
+    When pruning occurs and a LoadMore widget already exists (from history resume),
+    the remaining count should increase to include the pruned widgets.
+    """
+    total_turns = 30  # 60 messages → 20 tail + 2 new = 22 visible, need > 30 for prune
+    initial_messages = []
+    for i in range(total_turns):
+        initial_messages.append(
+            mock_llm_chunk(content=f"User {i}", role=Role.user).message
+        )
+        initial_messages.append(
+            mock_llm_chunk(content=f"Assistant {i}", role=Role.assistant).message
+        )
+
+    long_response_chunks = [mock_llm_chunk(content=f"Line {i}\n") for i in range(60)]
+    backend = FakeBackend([long_response_chunks])
+
+    agent_loop = build_test_agent_loop(config=vibe_config, backend=backend)  # type: ignore
+    agent_loop.messages.extend(initial_messages)
+
+    app = build_test_vibe_app(
+        agent_loop=agent_loop,
+        plan_offer_gateway=FakeWhoAmIGateway(
+            WhoAmIResponse(
+                plan_type=WhoAmIPlanType.CHAT,
+                plan_name="INDIVIDUAL",
+                prompt_switching_to_pro_plan=False,
+            )
+        ),
+    )
+
+    async with app.run_test(size=(120, 30)) as pilot:
+        await _wait_for_user_message(
+            app, pilot.pause, HISTORY_RESUME_TAIL_MESSAGES // 2
+        )
+        await _wait_for_load_more(app, pilot.pause)
+
+        remaining_before = _load_more_remaining(app)
+
+        with patch("vibe.cli.textual_ui.app.PRUNE_LOW_MARK", 5):
+            with patch("vibe.cli.textual_ui.app.PRUNE_HIGH_MARK", 10):
+                await pilot.press(*"New question")
+                await pilot.press("enter")
+                await _wait_for_agent_complete(app, pilot.pause)
+
+        await pilot.pause()
+
+        assert _has_load_more(app), "LoadMore widget must still exist after prune"
+        remaining_after = _load_more_remaining(app)
+        assert remaining_after > remaining_before, (
+            f"LoadMore count must increase after prune: {remaining_before} -> {remaining_after}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_prune_protects_loadmore_widget_from_removal(
+    vibe_config: VibeConfig,
+) -> None:
+    """Branch 1b: LoadMore widget is protected from pruning when backfill exists.
+
+    When there's backfill remaining, _try_prune adds the LoadMore widget to
+    protected_widgets so it won't be removed by prune_oldest_children.
+    This ensures the widget survives pruning and shows the updated count.
+    """
+    total_turns = 25  # 50 messages
+    initial_messages = []
+    for i in range(total_turns):
+        initial_messages.append(mock_llm_chunk(content=f"U{i}", role=Role.user).message)
+        initial_messages.append(
+            mock_llm_chunk(content=f"A{i}", role=Role.assistant).message
+        )
+
+    backend = FakeBackend([[mock_llm_chunk(content=f"Line {i}\n") for i in range(60)]])
+
+    agent_loop = build_test_agent_loop(config=vibe_config, backend=backend)  # type: ignore
+    agent_loop.messages.extend(initial_messages)
+
+    app = build_test_vibe_app(
+        agent_loop=agent_loop,
+        plan_offer_gateway=FakeWhoAmIGateway(
+            WhoAmIResponse(
+                plan_type=WhoAmIPlanType.CHAT,
+                plan_name="INDIVIDUAL",
+                prompt_switching_to_pro_plan=False,
+            )
+        ),
+    )
+
+    async with app.run_test(size=(120, 30)) as pilot:
+        await _wait_for_user_message(
+            app, pilot.pause, HISTORY_RESUME_TAIL_MESSAGES // 2
+        )
+        await _wait_for_load_more(app, pilot.pause)
+
+        loadmore_widget = app.query_one(HistoryLoadMoreMessage)
+        widget_id_before = id(loadmore_widget)
+
+        with patch("vibe.cli.textual_ui.app.PRUNE_LOW_MARK", 5):
+            with patch("vibe.cli.textual_ui.app.PRUNE_HIGH_MARK", 10):
+                await pilot.press(*"New question")
+                await pilot.press("enter")
+                await _wait_for_agent_complete(app, pilot.pause)
+
+        await pilot.pause()
+
+        # LoadMore must still exist (protected from pruning)
+        assert _has_load_more(app), "LoadMore must survive pruning"
+
+        # It should be the same widget instance (not recreated)
+        loadmore_widget_after = app.query_one(HistoryLoadMoreMessage)
+        assert id(loadmore_widget_after) == widget_id_before, (
+            "LoadMore widget should be the same instance (protected, not pruned)"
+        )
+        assert _load_more_remaining(app) > 0, "Remaining count must be positive"
+
+
+@pytest.mark.asyncio
+async def test_no_prune_when_under_limit(vibe_config: VibeConfig) -> None:
+    """Branch 2: height under limit → no prune, no LoadMore widget.
+
+    When the agent generates a short response that doesn't exceed the prune
+    threshold, no pruning occurs and no LoadMore widget appears.
+    """
+    short_response = [mock_llm_chunk(content="Short answer.\n")]
+    backend = FakeBackend([short_response])
+
+    agent_loop = build_test_agent_loop(config=vibe_config, backend=backend)  # type: ignore
+    # No initial history
+
+    app = build_test_vibe_app(
+        agent_loop=agent_loop,
+        plan_offer_gateway=FakeWhoAmIGateway(
+            WhoAmIResponse(
+                plan_type=WhoAmIPlanType.CHAT,
+                plan_name="INDIVIDUAL",
+                prompt_switching_to_pro_plan=False,
+            )
+        ),
+    )
+
+    async with app.run_test(size=(120, 30)) as pilot:
+        await pilot.press(*"Hello")
+        await pilot.press("enter")
+        await _wait_for_agent_complete(app, pilot.pause)
+        await pilot.pause()
+
+        # No LoadMore — no history and no pruning needed
+        assert not _has_load_more(app), "No LoadMore widget when under prune limit"
+
+
+@pytest.mark.asyncio
+async def test_agent_task_finished_refreshes_windowing(vibe_config: VibeConfig) -> None:
+    """Branch 3: agent task finished → finally block calls _refresh_windowing_from_history.
+
+    When the agent task completes (via the finally block in _handle_agent_loop_turn),
+    _refresh_windowing_from_history is called, which correctly shows/hides
+    the LoadMore widget based on the current backfill state.
+    """
+    total_turns = 20
+    initial_messages = []
+    for i in range(total_turns):
+        initial_messages.append(mock_llm_chunk(content=f"U{i}", role=Role.user).message)
+        initial_messages.append(
+            mock_llm_chunk(content=f"A{i}", role=Role.assistant).message
+        )
+
+    backend = FakeBackend([[mock_llm_chunk(content="Done\n")]])
+
+    agent_loop = build_test_agent_loop(config=vibe_config, backend=backend)  # type: ignore
+    agent_loop.messages.extend(initial_messages)
+
+    app = build_test_vibe_app(
+        agent_loop=agent_loop,
+        plan_offer_gateway=FakeWhoAmIGateway(
+            WhoAmIResponse(
+                plan_type=WhoAmIPlanType.CHAT,
+                plan_name="INDIVIDUAL",
+                prompt_switching_to_pro_plan=False,
+            )
+        ),
+    )
+
+    async with app.run_test(size=(120, 30)) as pilot:
+        # Initial load shows tail + LoadMore
+        await _wait_for_user_message(
+            app, pilot.pause, HISTORY_RESUME_TAIL_MESSAGES // 2
+        )
+        await _wait_for_load_more(app, pilot.pause)
+        assert _has_load_more(app), "LoadMore exists from history resume"
+
+        # Submit a new message — agent responds with short content (no prune)
+        await pilot.press(*"Final question")
+        await pilot.press("enter")
+        await _wait_for_agent_complete(app, pilot.pause)
+        await pilot.pause()
+
+        # After agent completes, finally block calls _refresh_windowing_from_history
+        # LoadMore should still be shown (backfill was not exhausted)
+        assert _has_load_more(app), (
+            "LoadMore must still exist after agent task finishes "
+            "(_refresh_windowing_from_history in finally block)"
+        )
+        assert _load_more_remaining(app) > 0, "Backfill must still have remaining"
+
+
+@pytest.mark.asyncio
+async def test_load_more_click_after_prune_loads_correct_messages(
+    vibe_config: VibeConfig,
+) -> None:
+    """Verify clicking LoadMore after pruning loads correct messages without gaps.
+
+    After pruning removes oldest widgets, clicking LoadMore should load the
+    next batch of history messages that precede the oldest visible widget,
+    with no duplicates or skipped messages.
+    """
+    total_turns = 30  # 60 messages (U0,A0, U1,A1, ... U29,A29)
+    initial_messages = []
+    for i in range(total_turns):
+        initial_messages.append(
+            mock_llm_chunk(content=f"User {i}", role=Role.user).message
+        )
+        initial_messages.append(
+            mock_llm_chunk(content=f"Assistant {i}", role=Role.assistant).message
+        )
+
+    backend = FakeBackend([[mock_llm_chunk(content=f"Line {i}\n") for i in range(60)]])
+
+    agent_loop = build_test_agent_loop(config=vibe_config, backend=backend)  # type: ignore
+    agent_loop.messages.extend(initial_messages)
+
+    app = build_test_vibe_app(
+        agent_loop=agent_loop,
+        plan_offer_gateway=FakeWhoAmIGateway(
+            WhoAmIResponse(
+                plan_type=WhoAmIPlanType.CHAT,
+                plan_name="INDIVIDUAL",
+                prompt_switching_to_pro_plan=False,
+            )
+        ),
+    )
+
+    async with app.run_test(size=(120, 30)) as pilot:
+        await _wait_for_user_message(
+            app, pilot.pause, HISTORY_RESUME_TAIL_MESSAGES // 2
+        )
+        await _wait_for_load_more(app, pilot.pause)
+
+        # Record user message count before prune
+        user_msgs_before = len(app.query(UserMessage))
+
+        with patch("vibe.cli.textual_ui.app.PRUNE_LOW_MARK", 5):
+            with patch("vibe.cli.textual_ui.app.PRUNE_HIGH_MARK", 10):
+                await pilot.press(*"New question")
+                await pilot.press("enter")
+                await _wait_for_agent_complete(app, pilot.pause)
+
+        await pilot.pause()
+
+        # LoadMore exists after prune
+        assert _has_load_more(app), "LoadMore must exist after prune"
+        remaining_after_prune = _load_more_remaining(app)
+        assert remaining_after_prune > 0
+
+        # Verify remaining count is reasonable
+        visible_user_count = len(app.query(UserMessage))
+        history_len = len([
+            m for m in agent_loop.messages if m.role in (Role.user, Role.assistant)
+        ])
+        # remaining = messages before oldest visible widget
+        assert remaining_after_prune < history_len, (
+            f"Remaining ({remaining_after_prune}) must be less than history "
+            f"({history_len}) since some widgets are visible"
+        )
+        assert remaining_after_prune >= visible_user_count, (
+            f"Remaining ({remaining_after_prune}) should account for pruned + "
+            f"unloaded messages, visible user widgets = {visible_user_count}"
+        )
+
+        # Click LoadMore and verify messages load
+        app.post_message(HistoryLoadMoreRequested())
+        await pilot.pause()
+        await pilot.pause()
+
+        # User message count must have increased (new widgets mounted)
+        user_msgs_after = len(app.query(UserMessage))
+        assert user_msgs_after > user_msgs_before, (
+            f"Clicking LoadMore must mount new widgets: {user_msgs_before} -> {user_msgs_after}"
+        )
+
+        # Remaining count must have decreased
+        remaining_after_click = _load_more_remaining(app)
+        assert remaining_after_click < remaining_after_prune, (
+            f"Remaining must decrease after click: {remaining_after_prune} -> {remaining_after_click}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_backfill_cursor_correct_after_prune_with_expanded_messages(
+    vibe_config: VibeConfig,
+) -> None:
+    """Verify _backfill_cursor equals total - visible_count after pruning.
+
+    Without the fix, recompute_backfill preserves the stale cursor when
+    visible_indices is empty, causing the backfill to be too small.
+
+    With the fix, backfill_end = total - visible_history_widgets_count,
+    so the cursor correctly reflects all folded messages.
+
+    This test FAILS without the fix because the cursor stays at the
+    pre-prune value instead of being recomputed from visible count.
+    """
+    total_turns = 30  # 60 messages
+    initial_messages = []
+    for i in range(total_turns):
+        initial_messages.append(mock_llm_chunk(content=f"U{i}", role=Role.user).message)
+        initial_messages.append(
+            mock_llm_chunk(content=f"A{i}", role=Role.assistant).message
+        )
+
+    backend = FakeBackend(mock_llm_chunk(content="Agent response after prune."))
+
+    agent_loop = build_test_agent_loop(config=vibe_config, backend=backend)  # type: ignore
+    agent_loop.messages.extend(initial_messages)
+
+    app = build_test_vibe_app(
+        agent_loop=agent_loop,
+        plan_offer_gateway=FakeWhoAmIGateway(
+            WhoAmIResponse(
+                plan_type=WhoAmIPlanType.CHAT,
+                plan_name="INDIVIDUAL",
+                prompt_switching_to_pro_plan=False,
+            )
+        ),
+    )
+
+    async with app.run_test(size=(120, 30)) as pilot:
+        await _wait_for_user_message(
+            app, pilot.pause, HISTORY_RESUME_TAIL_MESSAGES // 2
+        )
+        await _wait_for_load_more(app, pilot.pause)
+
+        # Click LoadMore once to decrease cursor
+        # 60 messages - 20 tail = 40 remaining; click loads 20 → 20 remaining
+        app.post_message(HistoryLoadMoreRequested())
+        await _wait_until(
+            pilot.pause, lambda: _load_more_remaining(app) == 20, timeout=5.0
+        )
+        assert app._windowing._backfill_cursor == 20, (
+            "Cursor should be 20 after loading one batch"
+        )
+
+        # Trigger aggressive pruning: keep only 2 widgets (user command + agent response)
+        # All history widgets get pruned → visible_indices becomes empty
+        with patch("vibe.cli.textual_ui.app.PRUNE_LOW_MARK", 2):
+            with patch("vibe.cli.textual_ui.app.PRUNE_HIGH_MARK", 3):
+                await pilot.press(*"New question")
+                await pilot.press("enter")
+                await _wait_for_agent_complete(app, pilot.pause)
+
+        await pilot.pause()
+
+        # Count visible history widgets in DOM
+        msgs_area = app.query_one("#messages")
+        visible_count = sum(
+            1
+            for c in msgs_area.children
+            if isinstance(c, (UserMessage, AssistantMessage))
+        )
+
+        # Total history = 60 original + 1 user command + 1 assistant response = 62
+        total_history = len(non_system_history_messages(agent_loop.messages))
+
+        # CRITICAL: cursor must equal total - visible_count
+        # Without fix: cursor stays at stale value (20), buffer too small
+        # With fix: cursor = total - visible_count, buffer correct
+        expected_cursor = max(total_history - visible_count, 0)
+        assert app._windowing._backfill_cursor == expected_cursor, (
+            f"Backfill cursor mismatch: got {app._windowing._backfill_cursor}, "
+            f"expected {expected_cursor} "
+            f"(total={total_history}, visible={visible_count})"
+        )
+        assert len(app._windowing._backfill_messages) == expected_cursor, (
+            f"Backfill messages length mismatch: "
+            f"got {len(app._windowing._backfill_messages)}, "
+            f"expected {expected_cursor}"
         )

@@ -90,7 +90,7 @@ async def test_ui_session_incremental_loader_shows_tail_and_load_more(
 async def test_ui_session_incremental_loader_load_more_shows_remaining_count(
     vibe_config: VibeConfig,
 ) -> None:
-    total_messages = 31
+    total_messages = 45  # 20 tail + 25 remaining; 1 click loads 20, 5 remain
     agent_loop = build_test_agent_loop(config=vibe_config, enable_streaming=False)
     agent_loop.messages.extend([
         LLMMessage(role=Role.user, content=f"msg-{idx}")
