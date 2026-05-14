@@ -691,3 +691,69 @@ async def test_backfill_cursor_correct_after_prune_with_expanded_messages(
             f"got {len(app._windowing._backfill_messages)}, "
             f"expected {expected_cursor}"
         )
+
+
+@pytest.mark.asyncio
+async def test_prune_counts_collapsed_widgets(vibe_config: VibeConfig) -> None:
+    """Regression: prune_oldest_children must count ALL children, not just visible.
+
+    When tool results are collapsed (display=False), their child widgets are still
+    in the DOM. Pruning thresholds are widget counts, not pixel visibility.
+    Without this fix, collapsed widgets were excluded from the count, causing
+    pruning to be skipped when the DOM was actually bloated.
+    """
+    from vibe.cli.textual_ui.app import prune_oldest_children
+
+    initial_messages = []
+    for i in range(30):
+        initial_messages.append(
+            mock_llm_chunk(content=f"User question {i}", role=Role.user).message
+        )
+        initial_messages.append(
+            mock_llm_chunk(
+                content=f"Assistant answer {i} with detail.", role=Role.assistant
+            ).message
+        )
+
+    backend = FakeBackend([mock_llm_chunk(content="Done.")])
+    agent_loop = build_test_agent_loop(config=vibe_config, backend=backend)
+    agent_loop.messages.extend(initial_messages)
+
+    plan_offer_gateway = FakeWhoAmIGateway(
+        WhoAmIResponse(
+            plan_type=WhoAmIPlanType.CHAT,
+            plan_name="INDIVIDUAL",
+            prompt_switching_to_pro_plan=False,
+        )
+    )
+
+    app = build_test_vibe_app(
+        config=vibe_config, agent_loop=agent_loop, plan_offer_gateway=plan_offer_gateway
+    )
+
+    async with app.run_test(size=(120, 30)) as pilot:
+        await _wait_for_user_message(
+            app, pilot.pause, HISTORY_RESUME_TAIL_MESSAGES // 2
+        )
+
+        msgs_area = app.query_one("#messages")
+        children = list(msgs_area.children)
+        total_count = len(children)
+
+        # Collapse half the widgets
+        for child in children[: total_count // 2]:
+            child.display = False
+
+        visible_count = sum(1 for c in msgs_area.children if c.display)
+        high_mark = visible_count + 1
+        low_mark = 2
+
+        # Call prune_oldest_children directly
+        removed = await prune_oldest_children(msgs_area, low_mark, high_mark)
+
+        # With fix: total > high_mark → pruning occurs
+        # Without fix: visible <= high_mark → no pruning
+        assert len(removed) > 0, (
+            f"Pruning did not occur: total={total_count} > high_mark={high_mark}, "
+            f"but visible={visible_count} <= high_mark"
+        )

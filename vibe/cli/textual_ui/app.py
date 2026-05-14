@@ -325,8 +325,8 @@ async def prune_oldest_children(
 ) -> list[Widget]:
     """Remove the oldest children so the widget count stays within bounds.
 
-    Counts visible children; if count exceeds *high_mark*, removes oldest
-    until *low_mark* widgets remain.
+    Counts all children (including collapsed); if count exceeds *high_mark*,
+    removes oldest until *low_mark* widgets remain.
 
     Returns the list of widgets removed (empty if nothing was pruned).
     """
@@ -334,16 +334,15 @@ async def prune_oldest_children(
     if not children:
         return []
 
-    visible = [c for c in children if c.display]
-    if len(visible) <= high_mark:
+    if len(children) <= high_mark:
         return []
 
-    # Keep the newest `low_mark` visible widgets, remove the rest
-    keep = visible[-low_mark:]
+    # Keep the newest `low_mark` widgets, remove the rest
+    keep = children[-low_mark:]
     keep_ids = {id(w) for w in keep}
     protected_ids = {id(w) for w in protected_widgets} if protected_widgets else set()
     to_remove = [
-        c for c in visible if id(c) not in keep_ids and id(c) not in protected_ids
+        c for c in children if id(c) not in keep_ids and id(c) not in protected_ids
     ]
 
     if not to_remove:
