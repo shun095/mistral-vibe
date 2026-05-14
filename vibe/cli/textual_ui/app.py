@@ -312,44 +312,45 @@ class ChatScroll(VerticalScroll):
         pass
 
 
-PRUNE_LOW_MARK = 20
-PRUNE_HIGH_MARK = 30
+PRUNE_LOW_MARK = 1000
+PRUNE_HIGH_MARK = 1500
 DOUBLE_ESC_DELAY = 0.2
 
 
 async def prune_oldest_children(
-    messages_area: Widget,
-    low_mark: int,
-    high_mark: int,
-    protected_widgets: set[Widget] | None = None,
-) -> list[Widget]:
-    """Remove the oldest children so the widget count stays within bounds.
+    messages_area: Widget, low_mark: int, high_mark: int
+) -> bool:
+    """Remove the oldest children so the virtual height stays within bounds.
 
-    Counts all children (including collapsed); if count exceeds *high_mark*,
-    removes oldest until *low_mark* widgets remain.
-
-    Returns the list of widgets removed (empty if nothing was pruned).
+    Walks children back-to-front to find how much to keep (up to *low_mark*
+    of visible height), then removes everything before that point.
     """
-    children = list(messages_area.children)
+    total_height = messages_area.virtual_size.height
+    if total_height <= high_mark:
+        return False
+
+    children = messages_area.children
     if not children:
-        return []
+        return False
 
-    if len(children) <= high_mark:
-        return []
+    accumulated = 0
+    cut = len(children)
 
-    # Keep the newest `low_mark` widgets, remove the rest
-    keep = children[-low_mark:]
-    keep_ids = {id(w) for w in keep}
-    protected_ids = {id(w) for w in protected_widgets} if protected_widgets else set()
-    to_remove = [
-        c for c in children if id(c) not in keep_ids and id(c) not in protected_ids
-    ]
+    for child in reversed(children):
+        if not child.display:
+            cut -= 1
+            continue
+        accumulated += child.outer_size.height
+        cut -= 1
+        if accumulated >= low_mark:
+            break
 
+    to_remove = list(children[:cut])
     if not to_remove:
-        return []
+        return False
 
     await messages_area.remove_children(to_remove)
-    return to_remove
+    return True
 
 
 @dataclass(frozen=True, slots=True)
@@ -1835,7 +1836,6 @@ class VibeApp(App):  # noqa: PLR0904
             self._loading_widget = None
             if self.event_handler:
                 self.event_handler.finalize_streaming()
-            await self._try_prune()
             await self._refresh_windowing_from_history()
             self._terminal_notifier.notify(NotificationContext.COMPLETE)
             self._web_broadcast_manager._broadcast_web_notification(
@@ -2924,7 +2924,6 @@ class VibeApp(App):  # noqa: PLR0904
             self._loading_widget = None
             if self.event_handler:
                 self.event_handler.finalize_streaming()
-            await self._try_prune()
             await self._refresh_windowing_from_history()
 
     async def _loop_command(self, cmd_args: str = "", **kwargs: Any) -> None:
@@ -3873,30 +3872,19 @@ class VibeApp(App):  # noqa: PLR0904
 
     async def _try_prune(self) -> None:
         messages_area = self._cached_messages_area or self.query_one("#messages")
-        # Always protect the "Load more" widget from pruning.
-        # It's a UI control, not a message widget, and should never be removed.
-        protected_widgets: set[Widget] | None = None
-        if self._load_more.widget:
-            protected_widgets = {self._load_more.widget}
-        pruned_widgets = await prune_oldest_children(
-            messages_area, PRUNE_LOW_MARK, PRUNE_HIGH_MARK, protected_widgets
+        pruned = await prune_oldest_children(
+            messages_area, PRUNE_LOW_MARK, PRUNE_HIGH_MARK
         )
-        # Only clear the widget reference if there's no backfill remaining.
-        # If there's still backfill, the widget will be shown again by
-        # _refresh_windowing_from_history.
-        if (
-            self._load_more.widget
-            and not self._load_more.widget.parent
-            and not self._windowing.has_backfill
-        ):
+        if self._load_more.widget and not self._load_more.widget.parent:
             self._load_more.widget = None
-        if pruned_widgets:
+        if pruned:
             chat = self._cached_chat or self.query_one("#chat", ChatScroll)
             if chat.is_at_bottom:
                 self.call_later(chat.anchor)
-            await self._refresh_windowing_from_history()
 
     async def _refresh_windowing_from_history(self) -> None:
+        if self._load_more.widget is None:
+            return
         messages_area = self._cached_messages_area or self.query_one("#messages")
         has_backfill, tool_call_map = sync_backfill_state(
             history_messages=non_system_history_messages(self.agent_loop.messages),
