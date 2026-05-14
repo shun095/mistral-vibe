@@ -129,19 +129,6 @@ You behave adhering this guidelines strictly to work on `custom-fix-*` branch. T
   4. Only then run `git commit`
   Never skip steps 1-3. A passing pre-commit hook does not replace user approval.
 
-## Timeout Strategy
-
-For commands exceeding 30s, always set explicit `timeout`:
-- Pre-commit: `timeout=600`
-- Full test suite: `timeout=300`
-- Individual tests: `timeout=120`
-
-**Never bypass safety checks** due to timeouts. Retry with higher timeout before escalating.
-
-**When asked to "analyze" or "review" code changes:**
-- This is NOT a read-only task - run full test suite and report results
-- Claiming "all tests pass" without running them is a critical failure
-
 ## Debugging Methodology
 
 **Always gather facts before assumptions.** Never guess at root causes.
@@ -160,6 +147,19 @@ When debugging async code or UI widget state, **prove claims with timestamped ev
 - **Enumerate the widget tree** — When explaining widget count discrepancies, list every widget in the container with its class name, history index (if mapped), and child count. Count manually to verify formulas rather than assuming counts match.
 - **Trace the formula** — When a computed value (e.g., `remaining = total - visible`) seems wrong, log every input variable at the point of computation. Show the arithmetic: `32 - 5 = 27`, not just the result.
 - **Include widget transitions proactively** — When investigating UI bugs, always show: (1) widgets created, (2) widgets pruned, (3) widgets remaining, (4) the computed count. Don't wait for the user to ask for this detail.
+
+## Timeout Strategy
+
+For commands exceeding 30s, always set explicit `timeout`:
+- Pre-commit: `timeout=600`
+- Full test suite: `timeout=300`
+- Individual tests: `timeout=120`
+
+**Never bypass safety checks** due to timeouts. Retry with higher timeout before escalating.
+
+**When asked to "analyze" or "review" code changes:**
+- This is NOT a read-only task - run full test suite and report results
+- Claiming "all tests pass" without running them is a critical failure
 
 ## Git Operations
 
@@ -279,6 +279,13 @@ uv run pytest tests/snapshots/test_xxx.py --snapshot-report=snapshot_report.html
 # Then use read_image to review
 # If correct: uv run pytest tests/snapshots/test_xxx.py --snapshot-update
 ```
+
+**Reading raw snapshot SVGs:** Snapshot SVGs live in `tests/snapshots/__snapshots__/<test_module>/`. To visually inspect them:
+1. Copy SVGs to scratchpad, create an HTML file embedding them via `<object data="file.svg" type="image/svg+xml">`
+2. Serve via `nohup python3 -m http.server 8765 --directory <scratchpad>` (file:// protocol is blocked by Chromium)
+3. Use `playwright-cli open --browser=chromium http://localhost:8765/page.html` + `screenshot`
+4. Use `read_image` on the screenshot
+5. **ALWAYS kill the HTTP server after use** — `kill <pid>` or `lsof -ti :8765 | xargs kill`. Never leave ports open. Avoid ports 9091-9093 (production).
 
 ### Testing Commands
 

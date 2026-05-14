@@ -19,7 +19,6 @@ import time
 from unittest.mock import patch
 
 import pytest
-from textual.widgets import Button
 
 from tests.cli.plan_offer.adapters.fake_whoami_gateway import FakeWhoAmIGateway
 from tests.conftest import build_test_agent_loop, build_test_vibe_app
@@ -68,7 +67,8 @@ def _has_load_more(app: VibeApp) -> bool:
 
 
 def _load_more_remaining(app: VibeApp) -> int:
-    label = app.query_one(HistoryLoadMoreMessage).query_one(Button).label
+    widget = app.query_one(HistoryLoadMoreMessage)
+    label = widget._label_widget.label if widget._label_widget else ""
     text = str(label)
     _, _, remainder = text.rpartition("(")
     return int(remainder.rstrip(")"))

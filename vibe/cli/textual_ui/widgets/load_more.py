@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal
+from textual.content import Content
 from textual.message import Message
 from textual.widgets import Button, Static
 
@@ -18,10 +19,9 @@ class HistoryLoadMoreMessage(Static):
         self._remaining: int | None = None
 
     def compose(self) -> ComposeResult:
+        label = self._label_text()
         with Horizontal(classes="history-load-more-container"):
-            self._label_widget = Button(
-                self._label_text(), classes="history-load-more-button"
-            )
+            self._label_widget = Button(label, classes="history-load-more-button")
             yield self._label_widget
 
     def _label_text(self) -> str:
@@ -36,7 +36,7 @@ class HistoryLoadMoreMessage(Static):
     def set_remaining(self, remaining: int | None) -> None:
         self._remaining = remaining
         if self._label_widget:
-            self._label_widget.label = self._label_text()
+            self._label_widget.label = Content.from_text(self._label_text())
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         event.stop()

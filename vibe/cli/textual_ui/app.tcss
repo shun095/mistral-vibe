@@ -709,6 +709,7 @@ StatusMessage {
     text-style: bold;
     pointer: pointer;
     padding: 1;
+    text-wrap: nowrap;
 }
 
 .history-load-more-button:hover {
