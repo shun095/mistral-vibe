@@ -142,6 +142,25 @@ For commands exceeding 30s, always set explicit `timeout`:
 - This is NOT a read-only task - run full test suite and report results
 - Claiming "all tests pass" without running them is a critical failure
 
+## Debugging Methodology
+
+**Always gather facts before assumptions.** Never guess at root causes.
+
+1. **Add debug logging thoroughly** — Insert `logger.debug()` at every decision point in the suspected code path. Log variable values, branch taken, and state transitions. Use `%s` positional args, not f-strings.
+2. **Plan controlled experiments** — Isolate variables by testing minimal cases first (e.g., single tool type), then incrementally add complexity. Compare behavior between known-good and broken scenarios. Use the same debug instrumentation across all experiments.
+3. **Capture stack traces** — When a function is called unexpectedly, log `"".join(traceback.format_stack(limit=8)).strip()` to identify the caller chain. This reveals execution paths that differ between scenarios.
+4. **Verify at render boundaries** — For UI bugs, log both Python state (properties, reactive values) AND rendered output (button labels, widget text). Python state being correct does NOT guarantee the render buffer reflects it.
+
+### Debugging Async/UI Bugs: Trace State Transitions
+
+When debugging async code or UI widget state, **prove claims with timestamped evidence**:
+
+- **Log at mount/prune/refresh boundaries** — For widget-related bugs, log the widget class name and child count at every `mount`, `prune`, and `refresh` call. Use `time.monotonic()` for timestamps to establish call order. Write to a temp file (`/tmp/debug.txt`) with `flush()` to avoid buffer loss.
+- **Never claim "timing issue" without evidence** — If you suspect race conditions or stale state, prove it by logging the exact state at each async boundary. Show the timestamps and values that demonstrate the discrepancy.
+- **Enumerate the widget tree** — When explaining widget count discrepancies, list every widget in the container with its class name, history index (if mapped), and child count. Count manually to verify formulas rather than assuming counts match.
+- **Trace the formula** — When a computed value (e.g., `remaining = total - visible`) seems wrong, log every input variable at the point of computation. Show the arithmetic: `32 - 5 = 27`, not just the result.
+- **Include widget transitions proactively** — When investigating UI bugs, always show: (1) widgets created, (2) widgets pruned, (3) widgets remaining, (4) the computed count. Don't wait for the user to ask for this detail.
+
 ## Git Operations
 
 **Commit Message Format:**
