@@ -13,6 +13,10 @@ class MockToolManager:
 
     _available: ClassVar[dict[str, type]] = {}
 
+    @property
+    def available_tools(self) -> dict[str, type]:
+        return self._available
+
     def get(self, tool_name: str) -> None:
         return None
 
@@ -171,10 +175,10 @@ def test_messages_to_events_parses_text_format_tool_results() -> None:
     assert len(tool_result_events) == 1
     event = tool_result_events[0]
     assert event.result is not None
-    # Text format stores values as strings
+    # Text format values are coerced to proper types via WriteFileResult.model_validate
     assert event.result.path == "/test/file.py"  # type: ignore
-    assert event.result.bytes_written == "24"  # type: ignore
-    assert event.result.file_existed == "false"  # type: ignore
+    assert event.result.bytes_written == 24  # type: ignore
+    assert event.result.file_existed is False  # type: ignore
 
 
 def test_messages_to_events_parses_json_format_tool_results() -> None:

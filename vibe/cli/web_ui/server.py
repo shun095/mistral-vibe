@@ -26,6 +26,10 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from vibe.cli.history_manager import HistoryManager
+from vibe.core.session.reconstruction import (
+    create_pydantic_model_from_dict,
+    reconstruct_tool_result_event,
+)
 from vibe.core.utils.mime import get_mime_type
 
 if TYPE_CHECKING:
@@ -36,7 +40,6 @@ if TYPE_CHECKING:
 from vibe.cli.web_ui.config import AUTH_COOKIE_NAME
 from vibe.core.paths import HISTORY_FILE
 from vibe.core.session.session_loader import SessionLoader
-from vibe.core.utils.tags import TOOL_ERROR_TAG
 
 
 def get_token_from_env_or_arg(token: str | None) -> str:
@@ -123,116 +126,7 @@ async def broadcast_to_clients(app: FastAPI, message: str) -> None:
             clients.discard(websocket)
 
 
-def _create_pydantic_model_from_dict(data: dict, tool_name: str | None = None) -> Any:
-    """Create a Pydantic model from a dictionary with extra fields allowed.
-
-    For known tools with proper result models, use the actual model class.
-    Otherwise, fall back to a dynamic model.
-
-    Args:
-        data: Dictionary to convert to a Pydantic model.
-        tool_name: Optional tool name to use the proper result model.
-
-    Returns:
-        A Pydantic model instance with the data.
-    """
-    from pydantic import BaseModel
-
-    # Try to use the proper result model for known tools
-    if tool_name == "ask_user_question":
-        from vibe.core.tools.builtins.ask_user_question import AskUserQuestionResult
-
-        return AskUserQuestionResult.model_validate(data)
-
-    # Fall back to dynamic model for unknown tools
-    class DynamicModel(BaseModel):
-        model_config = {"extra": "allow"}
-
-    return DynamicModel(**data)
-
-
-# Multi-line fields: text blobs that span multiple lines
-# All other fields are treated as single-line by default
-def _parse_tool_output(
-    content: str, tool_name: str | None = None, tool_manager: Any = None
-) -> dict:
-    """Parse tool output text into a dictionary, handling multi-line values.
-
-    Tool output format is typically:
-        key1: value1
-        key2: value2 (may span multiple lines)
-
-    Only keys that exist in the tool's Result model are recognized as field
-    delimiters. All other lines are treated as value continuations. This
-    prevents false positives when field values contain lines like "file: ...".
-
-    Args:
-        content: The tool output text to parse.
-        tool_name: Optional tool name to look up Result model fields.
-        tool_manager: Optional ToolManager to look up the tool class.
-
-    Returns:
-        Dictionary with parsed key-value pairs.
-    """
-    result: dict = {}
-
-    # Get known field names from tool's Result model if available
-    known_fields: set[str] | None = None
-    if tool_name and tool_manager:
-        try:
-            tool_instance = tool_manager.get(tool_name)
-            tool_class = type(tool_instance)
-            _, result_class = tool_class._get_tool_args_results()
-            if hasattr(result_class, "model_fields"):
-                known_fields = set(result_class.model_fields.keys())
-        except Exception:
-            pass
-
-    lines = content.strip().split("\n")
-    current_key: str | None = None
-    current_value_lines: list[str] = []
-
-    for line in lines:
-        # Check if this line starts a new key-value pair
-        # A new key must:
-        # 1. Not start with whitespace
-        # 2. Contain ": "
-        # 3. Have a known field name before the ": "
-        if (
-            line
-            and not line.startswith(" ")
-            and not line.startswith("\t")
-            and ": " in line
-        ):
-            # Extract potential key
-            colon_idx = line.index(": ")
-            potential_key = line[:colon_idx].strip()
-
-            # Only treat as new key if it's a known field from Result model
-            if known_fields is not None and potential_key in known_fields:
-                # Save previous key-value pair if exists
-                if current_key is not None:
-                    result[current_key] = "\n".join(current_value_lines).strip()
-
-                # Start new key-value pair
-                current_key = potential_key
-                value_start = line[colon_idx + 2 :]
-                current_value_lines = [value_start] if value_start else []
-            elif current_key is not None:
-                # Not a known key, append to current value (multi-line continuation)
-                current_value_lines.append(line)
-        elif current_key is not None:
-            # Continuation line (starts with whitespace or no ": ")
-            current_value_lines.append(line)
-
-    # Save last key-value pair
-    if current_key is not None:
-        result[current_key] = "\n".join(current_value_lines).strip()
-
-    return result
-
-
-def messages_to_events(  # noqa: PLR0912, PLR0914, PLR0915
+def messages_to_events(  # noqa: PLR0912, PLR0915
     messages: list[LLMMessage], tool_manager: Any
 ) -> list[BaseEvent]:
     """Convert a list of LLMMessage objects to equivalent BaseEvent objects.
@@ -253,7 +147,6 @@ def messages_to_events(  # noqa: PLR0912, PLR0914, PLR0915
         ReasoningEvent,
         Role,
         ToolCallEvent,
-        ToolResultEvent,
         UserMessageEvent,
     )
 
@@ -335,13 +228,15 @@ def messages_to_events(  # noqa: PLR0912, PLR0914, PLR0915
                     if isinstance(args, str):
                         try:
                             args_dict = json.loads(args)
-                            args_model = _create_pydantic_model_from_dict(
-                                args_dict, tool_name
+                            args_model = create_pydantic_model_from_dict(
+                                args_dict, tool_name, tool_manager, model_kind="args"
                             )
                         except (json.JSONDecodeError, ValueError):
                             pass
                     elif isinstance(args, dict):
-                        args_model = _create_pydantic_model_from_dict(args, tool_name)
+                        args_model = create_pydantic_model_from_dict(
+                            args, tool_name, tool_manager, model_kind="args"
+                        )
 
                     # Send tool call event with args if available
                     if tool_class is None:
@@ -373,50 +268,13 @@ def messages_to_events(  # noqa: PLR0912, PLR0914, PLR0915
             # Get the tool name from the map
             tool_name = tool_call_to_name.get(msg.tool_call_id, "")
 
-            # Convert content to string
             content_str = msg.content if isinstance(msg.content, str) else ""
 
-            # Check if this is an error message by looking for tool_error tags
-            error_msg: str | None = None
-            if f"<{TOOL_ERROR_TAG}>" in content_str:
-                # Extract error message from tags
-                match = re.search(
-                    f"<{TOOL_ERROR_TAG}>(.*?)</{TOOL_ERROR_TAG}>",
-                    content_str,
-                    re.DOTALL,
+            events.append(
+                reconstruct_tool_result_event(
+                    tool_name, content_str, msg.tool_call_id, tool_manager
                 )
-                if match:
-                    error_msg = match.group(1).strip()
-
-            # Parse the result content (only if not an error)
-            result_obj: dict | None = None
-            if error_msg is None:
-                try:
-                    # Try JSON first (new format)
-                    result_obj = json.loads(content_str)
-                except (json.JSONDecodeError, ValueError):
-                    # Fall back to text format parsing with multi-line value support (legacy format)
-                    # Pass tool_name and tool_manager for dynamic field detection
-                    result_obj = _parse_tool_output(
-                        content_str, tool_name=tool_name, tool_manager=tool_manager
-                    )
-
-            # Create a result model if we have result data
-            result_model: Any = None
-            if result_obj:
-                result_model = _create_pydantic_model_from_dict(result_obj, tool_name)
-
-            if msg.tool_call_id:
-                events.append(
-                    ToolResultEvent(
-                        tool_name=tool_name,
-                        tool_class=None,
-                        result=result_model,
-                        error=error_msg,
-                        skipped=False,
-                        tool_call_id=msg.tool_call_id,
-                    )
-                )
+            )
 
     return events
 

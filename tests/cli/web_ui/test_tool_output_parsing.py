@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from tests.cli.web_ui.conftest import MockToolManager
-from vibe.cli.web_ui.server import _parse_tool_output
+from vibe.core.session.reconstruction import parse_tool_output
 
 
 class TestParseToolOutput:
-    """Test _parse_tool_output function."""
+    """Test parse_tool_output function."""
 
     def test_parse_edit_file_output(self) -> None:
         """Test parsing edit_file tool output with multi-line content."""
@@ -38,9 +38,7 @@ class TestParseToolOutput:
             'lsp_diagnostics: {"source":"LSP in /project/vibe/cli/web_ui/static/js/app.js","max_displayed":10,"original_count":236,"diagnostics":[{"severity":"error","location":"line 5","message":"Test error"}]}'
         )
 
-        result = _parse_tool_output(
-            content, tool_name="edit_file", tool_manager=mock_tm
-        )
+        result = parse_tool_output(content, tool_name="edit_file", tool_manager=mock_tm)
 
         assert result["file"] == "/project/vibe/cli/web_ui/static/js/app.js"
         assert result["blocks_applied"] == "1"
@@ -86,7 +84,7 @@ class TestParseToolOutput:
             'lsp_diagnostics: {"source":"LSP in /project/tests/cli/web_ui/test_popup_events.py","max_displayed":10,"original_count":5,"diagnostics":[]}'
         )
 
-        result = _parse_tool_output(
+        result = parse_tool_output(
             content, tool_name="write_file", tool_manager=mock_tm
         )
 
@@ -120,7 +118,7 @@ class TestParseToolOutput:
             "returncode: 0"
         )
 
-        result = _parse_tool_output(content, tool_name="bash", tool_manager=mock_tm)
+        result = parse_tool_output(content, tool_name="bash", tool_manager=mock_tm)
 
         assert (
             result["command"]
@@ -136,7 +134,7 @@ class TestParseToolOutput:
         """Test parsing without tool_manager returns empty dict (no known fields)."""
         content = "key1: value1\nkey2: value2\nkey3: value3"
 
-        result = _parse_tool_output(content)
+        result = parse_tool_output(content)
 
         # Without tool_manager, no known fields, so nothing is parsed
         assert result == {}
@@ -145,7 +143,7 @@ class TestParseToolOutput:
         """Test parsing empty content."""
         content = ""
 
-        result = _parse_tool_output(content)
+        result = parse_tool_output(content)
 
         assert result == {}
 
@@ -153,7 +151,7 @@ class TestParseToolOutput:
         """Test parsing without tool_manager returns empty dict."""
         content = "file: test.py\nbytes_written: 100\nreturncode: 0"
 
-        result = _parse_tool_output(content)
+        result = parse_tool_output(content)
 
         # Without tool_manager, no known fields, so nothing is parsed
         assert result == {}
@@ -177,7 +175,7 @@ class TestParseToolOutput:
             "file: test.py\n"
             "returncode: 0"
         )
-        result = _parse_tool_output(bash_output, tool_name="bash", tool_manager=mock_tm)
+        result = parse_tool_output(bash_output, tool_name="bash", tool_manager=mock_tm)
         assert result["command"] == "ls -la"
         assert "total 12" in result["stdout"]
         assert "drwxr-xr-x" in result["stdout"]
@@ -191,7 +189,7 @@ class TestParseToolOutput:
             "match_count: 2\n"
             "was_truncated: false"
         )
-        result = _parse_tool_output(grep_output, tool_name="grep", tool_manager=mock_tm)
+        result = parse_tool_output(grep_output, tool_name="grep", tool_manager=mock_tm)
         assert "found pattern" in result["matches"]
         assert "also found" in result["matches"]  # Multi-line value captured
         assert result["match_count"] == "2"
@@ -216,7 +214,7 @@ class TestParseToolOutput:
             "returncode: 0"
         )
 
-        result = _parse_tool_output(content, tool_name="bash", tool_manager=mock_tm)
+        result = parse_tool_output(content, tool_name="bash", tool_manager=mock_tm)
 
         assert result["command"] == "ls -la"
         assert "total 12" in result["stdout"]

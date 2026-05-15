@@ -26,6 +26,10 @@ class MockToolManager:
 
     """Mock tool manager for testing."""
 
+    @property
+    def available_tools(self) -> dict[str, type]:
+        return self._available
+
     def get(self, tool_name: str) -> MockTool:
         return MockTool()
 

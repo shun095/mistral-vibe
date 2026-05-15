@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Any
 from weakref import WeakKeyDictionary
 
 from textual.widget import Widget
@@ -11,6 +12,7 @@ from vibe.cli.textual_ui.widgets.messages import (
     UserMessage,
 )
 from vibe.cli.textual_ui.widgets.tools import ToolCallMessage, ToolResultMessage
+from vibe.core.session.reconstruction import reconstruct_tool_result_event
 from vibe.core.types import Content, LLMMessage, Role
 
 
@@ -60,6 +62,7 @@ def build_history_widgets(
     start_index: int,
     tools_collapsed: bool,
     history_widget_indices: WeakKeyDictionary[Widget, int],
+    tool_manager: Any = None,
 ) -> list[Widget]:
     widgets: list[Widget] = []
     last_tool_call_widget: ToolCallMessage | None = None
@@ -105,7 +108,15 @@ def build_history_widgets(
                     msg.tool_call_id or "", "tool"
                 )
                 content_str = _content_to_str(msg.content)
+
+                event = None
+                if tool_manager is not None and msg.tool_call_id:
+                    event = reconstruct_tool_result_event(
+                        tool_name, content_str or "", msg.tool_call_id, tool_manager
+                    )
+
                 widget = ToolResultMessage(
+                    event=event,
                     call_widget=last_tool_call_widget,
                     tool_name=tool_name,
                     content=content_str,

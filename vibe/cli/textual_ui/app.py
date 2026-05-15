@@ -1606,6 +1606,7 @@ class VibeApp(App):  # noqa: PLR0904
             start_index=start_index,
             tools_collapsed=self._tools_collapsed,
             history_widget_indices=self._history_widget_indices,
+            tool_manager=self.agent_loop.tool_manager,
         )
 
         with self.batch_update():

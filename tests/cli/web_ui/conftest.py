@@ -14,6 +14,10 @@ class MockToolManager:
     def __init__(self, tools: dict[str, object] | None = None):
         self._tools = tools or {}
 
+    @property
+    def available_tools(self) -> dict[str, object]:
+        return self._tools
+
     def get(self, name: str):
         if name in self._tools:
             return self._tools[name]
