@@ -109,19 +109,19 @@ You behave adhering this guidelines strictly to work on `custom-fix-*` branch. T
 ## 🛡️ Safety Rules
 
 - ❌ **NEVER change code/git unless explicitly instructed** - Ask before significant changes
-- ❌ **NEVER use `git reset --hard` or `git checkout <filename>` lightly**
+- ❌ **NEVER use `git reset --hard`, `git checkout <filename>` or `git stash drop` lightly**
 - ❌ **NEVER create commits unless explicitly requested**
-- ❌ **NEVER skip pre-commit hooks by `--no-verify`**
-- ❌ **NEVER modify/delete files in `~/.vibe`** or write logs to `~/.vibe/vibe.log`
-- ❌ **NEVER create task files in root** - Use `./tmp/` for artifacts
+- ❌ **NEVER skip pre-commit hooks and avoid `--no-verify`**
+- ❌ **NEVER modify/delete files in `~/.vibe`** or write logs to `~/.vibe/logs/vibe.log`
+- ❌ **NEVER create task files in project root** - Use `./tmp/` for artifacts
 - ❌ **NEVER use filename versioning** (`*_v2`, `*_final`)
 - ❌ **NEVER kill processes on ports 9091-9093** - these are production ports in use
 - ❌ **NEVER use `pkill -f "vibe"`** - this kills production processes. Use specific PID or port-based killing instead.
-- ✅ Backup before destructive operations; prefer `git stash --all`
-- ✅ **All commits MUST pass pre-commit hooks** - use `timeout=600` for pre-commit commands
+- ✅ **Backup before destructive operations** - prefer `git stash -u` instead of `git reset --hard`
+- ✅ **All commits MUST pass pre-commit hooks** - use 600s timeout for pre-commit commands
 - ✅ **Always stage changes first and wait for user approval before committing**
 - ✅ **Proactive Verification** - After any code change, automatically run relevant tests before responding. Testing is part of the fix, not a separate task.
-- ✅ **Follow the Rules You're Reading** - The guidelines in AGENTS.md apply to you. Don't write rules you won't follow. Before any action, verify compliance with existing rules.
+- ✅ **Follow the Rules You're Reading** - The guidelines in AGENTS.md apply to you. You MUST follow all rules. Before any action, verify compliance with existing rules.
 - ✅ **Commit Approval Checkpoint** - Before running `git commit`, you MUST:
   1. Run `git diff --cached --stat` and show the output to the user
   2. Explicitly ask the user to approve the staged changes
@@ -184,7 +184,7 @@ EOF
 
 ## Change Impact Analysis
 
-**Before planning changes:**
+**Before changing codes:**
 - Identify all call sites using `grep` or `lsp`
 - Check for imports of affected symbols
 - Review dependent tests that may fail
@@ -230,9 +230,9 @@ npm run test:e2e        # WebUI E2E tests (timeout=300)
 
 **You are NOT done until all 3 pass.** Report actual counts:
 ```
-Python tests:     X passed, Y skipped
-JavaScript tests: X passed
-E2E tests:        X passed, Y skipped
+Python tests:     X passed, Y skipped, Z failed
+JavaScript tests: X passed, Y skipped, Z failed
+E2E tests:        X passed, Y skipped, Z failed
 ```
 
 **Critical failures:**

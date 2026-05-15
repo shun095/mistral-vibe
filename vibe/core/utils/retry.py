@@ -21,6 +21,10 @@ def _is_retryable_http_error(e: Exception) -> bool:  # noqa: PLR0911
 
     # Network/transport errors (retry on transient network issues)
     if isinstance(e, httpx.RequestError):
+        # ReadError (e.g., connection dropped mid-read) is always retryable
+        # even when the message is empty — string matching alone won't catch it.
+        if isinstance(e, httpx.ReadError):
+            return True
         error_str = str(e).lower()
         if "readtimeout" in error_str:
             return True
