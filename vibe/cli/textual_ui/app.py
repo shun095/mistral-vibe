@@ -143,7 +143,7 @@ from vibe.cli.textual_ui.widgets.rewind_app import RewindApp
 from vibe.cli.textual_ui.widgets.session_picker import SessionPickerApp
 from vibe.cli.textual_ui.widgets.teleport_message import TeleportMessage
 from vibe.cli.textual_ui.widgets.thinking_picker import ThinkingPickerApp
-from vibe.cli.textual_ui.widgets.tools import ToolResultMessage
+from vibe.cli.textual_ui.widgets.tools import ToolCallMessage, ToolResultMessage
 from vibe.cli.textual_ui.widgets.voice_app import VoiceApp
 from vibe.cli.textual_ui.windowing import (
     HISTORY_RESUME_TAIL_MESSAGES,
@@ -3855,6 +3855,32 @@ class VibeApp(App):  # noqa: PLR0904
         messages_area = self._cached_messages_area or self.query_one("#messages")
         chat = self._cached_chat or self.query_one("#chat", ChatScroll)
 
+        # Record history index for indexable widgets
+        history = non_system_history_messages(self.agent_loop.messages)
+        if history:
+            match widget:
+                case UserMessage():
+                    self._history_widget_indices[widget] = (
+                        widget.message_index
+                        if widget.message_index is not None
+                        else len(history) - 1
+                    )
+                case AssistantMessage():
+                    self._history_widget_indices[widget] = len(history) - 1
+                case ToolCallMessage():
+                    for w in reversed(list(messages_area.children)):
+                        if isinstance(w, AssistantMessage):
+                            idx = self._history_widget_indices.get(w)
+                            if idx is not None:
+                                self._history_widget_indices[widget] = idx
+                                break
+                    else:
+                        self._history_widget_indices[widget] = len(history) - 1
+                case ToolResultMessage():
+                    self._history_widget_indices[widget] = len(history) - 1
+                case _:
+                    pass
+
         is_user_initiated = isinstance(widget, (UserMessage, UserCommandMessage))
         should_anchor = is_user_initiated or chat.is_at_bottom
 
@@ -3871,6 +3897,9 @@ class VibeApp(App):  # noqa: PLR0904
             chat.anchor()
 
     async def _try_prune(self) -> None:
+        chat = self._cached_chat or self.query_one("#chat", ChatScroll)
+        if not chat.is_at_bottom:
+            return  # User is reading — don't remove widgets
         messages_area = self._cached_messages_area or self.query_one("#messages")
         pruned = await prune_oldest_children(
             messages_area, PRUNE_LOW_MARK, PRUNE_HIGH_MARK
@@ -3878,6 +3907,17 @@ class VibeApp(App):  # noqa: PLR0904
         if self._load_more.widget and not self._load_more.widget.parent:
             self._load_more.widget = None
         if pruned:
+            # Refresh backfill after prune (bypass widget guard — indices are reliable)
+            has_bf, tc_map = sync_backfill_state(
+                history_messages=non_system_history_messages(self.agent_loop.messages),
+                messages_children=list(messages_area.children),
+                history_widget_indices=self._history_widget_indices,
+                windowing=self._windowing,
+            )
+            self._tool_call_map = tc_map
+            await self._load_more.set_visible(
+                messages_area, visible=has_bf, remaining=self._windowing.remaining
+            )
             chat = self._cached_chat or self.query_one("#chat", ChatScroll)
             if chat.is_at_bottom:
                 self.call_later(chat.anchor)
