@@ -86,7 +86,7 @@ class RewindManager:
     def get_rewindable_messages(self) -> list[tuple[int, str]]:
         """Return (message_index, content) for each user message."""
         return [
-            (i, msg.content or "")
+            (i, str(msg.content) if not isinstance(msg.content, str) else msg.content)
             for i, msg in enumerate(self._messages)
             if msg.role == Role.user and msg.content and not msg.injected
         ]
@@ -112,7 +112,13 @@ class RewindManager:
         if user_msg.role != Role.user:
             raise RewindError(f"Message at index {message_index} is not a user message")
 
-        message_content = user_msg.content or ""
+        message_content = (
+            user_msg.content
+            if isinstance(user_msg.content, str)
+            else str(user_msg.content)
+            if user_msg.content
+            else ""
+        )
         restore_errors: list[str] = []
 
         if restore_files:

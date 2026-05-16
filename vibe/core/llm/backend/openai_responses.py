@@ -4,7 +4,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 import json
 import logging
-from typing import TYPE_CHECKING, Any, ClassVar, TypedDict, cast
+from typing import TYPE_CHECKING, Any, ClassVar, TypedDict, cast, override
 
 from pydantic import TypeAdapter
 
@@ -480,7 +480,7 @@ class OpenAIResponsesAdapter(APIAdapter):
         *,
         model_name: str,
         input_items: list[dict[str, Any]],
-        temperature: float,
+        temperature: float | None,
         tools: list[AvailableTool] | None,
         max_tokens: int | None,
         tool_choice: StrToolChoice | AvailableTool | None,
@@ -525,12 +525,13 @@ class OpenAIResponsesAdapter(APIAdapter):
             headers["Authorization"] = f"Bearer {api_key}"
         return headers
 
+    @override
     def prepare_request(
         self,
         *,
         model_name: str,
         messages: Sequence[LLMMessage],
-        temperature: float,
+        temperature: float | None,
         tools: list[AvailableTool] | None,
         max_tokens: int | None,
         tool_choice: StrToolChoice | AvailableTool | None,

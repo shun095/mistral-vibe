@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 import json
-from typing import Any, ClassVar
+from typing import Any, ClassVar, override
 
 from vibe.core.config import ProviderConfig
 from vibe.core.llm.backend.base import APIAdapter, PreparedRequest
@@ -107,6 +107,7 @@ class ReasoningAdapter(APIAdapter):
 
         return payload
 
+    @override
     def prepare_request(
         self,
         *,

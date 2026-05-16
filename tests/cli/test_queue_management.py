@@ -281,7 +281,9 @@ async def test_clear_queued_message_after_compaction_failure():
     app._mount_and_scroll = mock_mount_and_scroll
 
     # Mock _run_compact to simulate failure
-    async def mock_run_compact(compact_msg, old_tokens):
+    async def mock_run_compact(
+        compact_msg, old_tokens, old_session_id, extra_instructions=""
+    ):
         app._agent_running = True
         # Give the task a chance to be awaited
         await asyncio.sleep(0.01)

@@ -19,7 +19,7 @@ class PreparedRequest(NamedTuple):
 class APIAdapter(Protocol):
     endpoint: ClassVar[str]
 
-    def prepare_request(
+    def prepare_request(  # noqa: PLR0913
         self,
         *,
         model_name: str,

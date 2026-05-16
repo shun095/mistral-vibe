@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 import pytest
+from textual.binding import Binding
 
 from vibe.cli.textual_ui.widgets.approval_app import ApprovalApp
 
@@ -82,16 +83,17 @@ async def test_approval_app_bindings_include_key_3():
     bindings = ApprovalApp.BINDINGS
 
     # Find the binding for key "3"
-    key_3_bindings = [b for b in bindings if b.key == "3"]
+    key_3_bindings = [b for b in bindings if isinstance(b, Binding) and b.key == "3"]
 
     # Should have exactly one binding for key "3"
     assert len(key_3_bindings) == 1
 
+    binding = key_3_bindings[0]
     # The action should be "select_3"
-    assert key_3_bindings[0].action == "select_3"
+    assert binding.action == "select_3"
 
     # The description should mention auto-approve
-    assert "auto-approve" in key_3_bindings[0].description.lower()
+    assert "auto-approve" in binding.description.lower()
 
 
 @pytest.mark.asyncio
@@ -100,33 +102,12 @@ async def test_approval_app_bindings_include_key_5():
     bindings = ApprovalApp.BINDINGS
 
     # Find the binding for key "5"
-    # BindingType can be Binding object or tuple[str, str] or tuple[str, str, str]
-    key_5_bindings = []
-    for b in bindings:
-        if hasattr(b, "key"):
-            # It's a Binding object
-            if b.key == "5":
-                key_5_bindings.append(b)
-        elif isinstance(b, tuple):
-            # It's a tuple
-            if b[0] == "5":
-                key_5_bindings.append(b)
+    key_5_bindings = [b for b in bindings if isinstance(b, Binding) and b.key == "5"]
 
     # Should have exactly one binding for key "5"
     assert len(key_5_bindings) == 1
 
     # The action should be "select_5"
     binding = key_5_bindings[0]
-    if hasattr(binding, "action"):
-        assert binding.action == "select_5"
-    else:
-        assert binding[1] == "select_5"
-
-    # The description should mention "No"
-    if hasattr(binding, "description"):
-        assert "no" in binding.description.lower()
-    else:
-        # For 2-tuple, description is empty
-        # For 3-tuple, description is at index 2
-        if len(binding) == 3:
-            assert "no" in binding[2].lower()
+    assert binding.action == "select_5"
+    assert "no" in binding.description.lower()

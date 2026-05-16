@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 import json
 import threading
-from typing import Any, ClassVar
+from typing import Any, ClassVar, override
 
 import google.auth
 import google.auth.credentials
@@ -64,6 +64,7 @@ class VertexAnthropicAdapter(AnthropicAdapter):
         super().__init__()
         self.credentials = VertexCredentials()
 
+    @override
     def prepare_request(
         self,
         *,
