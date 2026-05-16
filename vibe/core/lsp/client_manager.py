@@ -23,7 +23,6 @@ class LSPClientManager:
     _clients: ClassVar[dict[str, LSPClient]] = {}
     _handles: ClassVar[dict[str, LSPServerHandle]] = {}
     _config: ClassVar[dict[str, LSPServerConfig]] = {}
-    _lock: ClassVar[asyncio.Lock] = asyncio.Lock()
     _diagnostics_state: ClassVar[LSPDiagnosticsState] = LSPDiagnosticsState()
 
     def __init__(self, config: list[LSPServerConfig] | None = None) -> None:

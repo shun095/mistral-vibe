@@ -12,11 +12,10 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 import inspect
-import logging
+from typing import Any
 
+from vibe.core.logger import logger
 from vibe.core.types import BaseEvent
-
-logger = logging.getLogger(__name__)
 
 
 class EventBus:
@@ -31,12 +30,7 @@ class EventBus:
         await bus.dispatch(event)
     """
 
-    def __init__(self, logger_override: logging.Logger | None = None) -> None:
-        """Initialize the event bus.
-
-        Args:
-            logger_override: Optional logger for debugging. Defaults to module logger.
-        """
+    def __init__(self, logger_override: Any = None) -> None:
         self._listeners: list[Callable[[BaseEvent], None]] = []
         self._logger = logger_override or logger
 

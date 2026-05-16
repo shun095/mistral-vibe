@@ -340,7 +340,10 @@ class EventHandler:
 
         async def _chained() -> None:
             if previous is not None and not previous.done():
-                await previous
+                try:
+                    await previous
+                except asyncio.CancelledError:
+                    pass
             await coro
 
         self._latest_command_task = asyncio.create_task(_chained())
