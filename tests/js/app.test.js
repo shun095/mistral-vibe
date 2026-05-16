@@ -826,6 +826,15 @@ describe('VibeClient', () => {
 
             expect(client.elements.messages.children).toHaveLength(0);
         });
+
+        test('renders SystemPromptRegeneratedEvent as system message', () => {
+            client.handleEvent({ __type: 'SystemPromptRegeneratedEvent' });
+
+            const messages = client.elements.messages.children;
+            expect(messages).toHaveLength(1);
+            expect(messages[0].className).toBe('message system');
+            expect(messages[0].textContent).toContain('System prompt regenerated');
+        });
     });
 
     describe('requestInterrupt', () => {

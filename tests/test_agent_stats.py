@@ -661,6 +661,43 @@ class TestClearHistoryObserverBugfix:
         assert Role.user in roles
         assert Role.assistant in roles
 
+    @pytest.mark.asyncio
+    async def test_clear_history_resets_resume_system_prompt(self) -> None:
+        """After clear, _resume_system_prompt is cleared so mode cycles
+        recalculate the system prompt.
+        """
+        agent = build_test_agent_loop(backend=FakeBackend())
+        agent._resume_system_prompt = "saved prompt"
+
+        await agent.clear_history()
+
+        assert agent._resume_system_prompt is None
+
+    @pytest.mark.asyncio
+    async def test_clear_history_recalculates_system_prompt(self) -> None:
+        """After clear, the system prompt is freshly calculated."""
+        agent = build_test_agent_loop(backend=FakeBackend())
+        agent._resume_system_prompt = "saved prompt"
+
+        await agent.clear_history()
+
+        assert agent.messages[0].role == Role.system
+        assert agent.messages[0].content is not None
+        assert len(agent.messages) == 1
+
+    @pytest.mark.asyncio
+    async def test_clear_history_emits_system_prompt_regenerated_event(self) -> None:
+        """clear_history emits SystemPromptRegeneratedEvent."""
+        from vibe.core.ui_events import SystemPromptRegeneratedEvent
+
+        agent = build_test_agent_loop(backend=FakeBackend())
+        events_received: list[object] = []
+        agent.add_event_listener(events_received.append)
+
+        await agent.clear_history()
+
+        assert any(isinstance(e, SystemPromptRegeneratedEvent) for e in events_received)
+
 
 class TestStatsEdgeCases:
     @pytest.mark.asyncio

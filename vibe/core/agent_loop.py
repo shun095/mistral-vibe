@@ -127,7 +127,7 @@ from vibe.core.types import (
     UserInputCallback,
     UserMessageEvent,
 )
-from vibe.core.ui_events import MessageResetEvent
+from vibe.core.ui_events import MessageResetEvent, SystemPromptRegeneratedEvent
 from vibe.core.utils import (
     CANCELLATION_TAG,
     TOOL_ERROR_TAG,
@@ -266,6 +266,7 @@ class AgentLoop:
         self._init_error: Exception | None = None
         self._init_start_time = time.monotonic()
         self._init_duration_ms: int | None = None
+        self._resume_system_prompt: str | None = None
 
         self.mcp_registry = mcp_registry or MCPRegistry()
         self.connector_registry = self._create_connector_registry()
@@ -423,15 +424,18 @@ class AgentLoop:
         """
         try:
             self.tool_manager.integrate_all(raise_on_mcp_failure=True)
-            system_prompt = get_universal_system_prompt(
-                self.tool_manager,
-                self.config,
-                self.skill_manager,
-                self.agent_manager,
-                scratchpad_dir=self.scratchpad_dir,
-                headless=self._headless,
-            )
-            self.messages.update_system_prompt(system_prompt)
+            if self._resume_system_prompt is not None:
+                self.messages.update_system_prompt(self._resume_system_prompt)
+            else:
+                system_prompt = get_universal_system_prompt(
+                    self.tool_manager,
+                    self.config,
+                    self.skill_manager,
+                    self.agent_manager,
+                    scratchpad_dir=self.scratchpad_dir,
+                    headless=self._headless,
+                )
+                self.messages.update_system_prompt(system_prompt)
             self._init_duration_ms = int(
                 (time.monotonic() - self._init_start_time) * 1000
             )
@@ -596,6 +600,7 @@ class AgentLoop:
             headless=self._headless,
         )
         self.messages.update_system_prompt(system_prompt)
+        self._notify_event_listeners(SystemPromptRegeneratedEvent())
 
     def _select_backend(self) -> BackendLike:
         # Use mock backend for E2E tests
@@ -1877,7 +1882,17 @@ class AgentLoop:
             self.tool_manager,
             self.agent_profile,
         )
-        self.messages.reset(self.messages[:1])
+        self._resume_system_prompt = None
+        new_system_prompt = get_universal_system_prompt(
+            self.tool_manager,
+            self.config,
+            self.skill_manager,
+            self.agent_manager,
+            scratchpad_dir=self.scratchpad_dir,
+            headless=self._headless,
+        )
+        self.messages.reset([LLMMessage(role=Role.system, content=new_system_prompt)])
+        self._notify_event_listeners(SystemPromptRegeneratedEvent())
 
         self.stats = AgentStats.create_fresh(self.stats)
         self.stats.trigger_listeners()
@@ -1993,9 +2008,19 @@ class AgentLoop:
                         "Usage data missing in compaction summary response"
                     )
 
-            system_message = self.messages[0]
             summary_message = LLMMessage(role=Role.user, content=summary_content)
-            self.messages.reset([system_message, summary_message])
+            self._resume_system_prompt = None
+            new_system_prompt = get_universal_system_prompt(
+                self.tool_manager,
+                self.config,
+                self.skill_manager,
+                self.agent_manager,
+                scratchpad_dir=self.scratchpad_dir,
+                headless=self._headless,
+            )
+            new_system_message = LLMMessage(role=Role.system, content=new_system_prompt)
+            self.messages.reset([new_system_message, summary_message])
+            self._notify_event_listeners(SystemPromptRegeneratedEvent())
 
             active_model = self.config.get_active_model()
             self._reset_session()
@@ -2086,16 +2111,18 @@ class AgentLoop:
         )
         self.skill_manager = SkillManager(lambda: self.config)
 
-        new_system_prompt = get_universal_system_prompt(
-            self.tool_manager,
-            self.config,
-            self.skill_manager,
-            self.agent_manager,
-            scratchpad_dir=self.scratchpad_dir,
-            headless=self._headless,
-        )
-
-        self.messages.update_system_prompt(new_system_prompt)
+        if self._resume_system_prompt is not None:
+            self.messages.update_system_prompt(self._resume_system_prompt)
+        else:
+            new_system_prompt = get_universal_system_prompt(
+                self.tool_manager,
+                self.config,
+                self.skill_manager,
+                self.agent_manager,
+                scratchpad_dir=self.scratchpad_dir,
+                headless=self._headless,
+            )
+            self.messages.update_system_prompt(new_system_prompt)
 
         if len(self.messages) == 1:
             self.stats.reset_context_state()

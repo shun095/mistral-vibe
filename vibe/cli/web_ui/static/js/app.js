@@ -320,6 +320,12 @@ class VibeClient {
             case 'MessageResetEvent':
                 this.handleMessageReset(event.reason);
                 break;
+            case 'SystemPromptRegeneratedEvent':
+                this.addMessage(
+                    'system',
+                    'System prompt regenerated. Tools or config may differ from the original session.',
+                );
+                break;
             case 'BashCommandEvent':
                 this._renderBashCommandEvent(event);
                 const pending = this._pendingInputContent;

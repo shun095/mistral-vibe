@@ -4,6 +4,14 @@ Conventions for AI agents and humans contributing to **Mistral Vibe** — a Pyth
 
 Layout: `vibe/core` is the engine (agent loop, tools, LLM backends, config); `vibe/cli` is the Textual TUI; `vibe/acp` bridges to the Agent Client Protocol; `vibe/setup` runs first-run wizards. Tests live in `tests/` with autouse fixtures in `conftest.py` and test doubles in `tests/stubs/`.
 
+## Core Principles
+
+**Exhaustive scope before first change.** Never edit a file until you have enumerated every location that must change. The default assumption is that any touchpoint related to the task needs attention. If you modify X, ask: what else depends on X? What calls X? What does X call? What shares X's invariant? Answer each question before touching code. Partial fixes are failures.
+
+**Close the loop.** Every change introduces artifacts (debug logs, temporary flags, test stubs, unused imports). Before declaring completion, re-read every file you touched and verify nothing was left behind. The diff should contain only what the task requires.
+
+**Verify breadth, not just depth.** Passing tests on the obvious path is insufficient. Identify every entry point that reaches the changed code (direct calls, callbacks, event handlers, background threads, CLI flags, web endpoints, slash commands). Each path must be considered. If a path exists, either fix it or document why it's excluded.
+
 ## Commands
 
 Always go through `uv` — never invoke bare `python` or `pip`.
@@ -12,7 +20,7 @@ Always go through `uv` — never invoke bare `python` or `pip`.
 - `uv run pytest` — full suite (parallel via `pytest-xdist`).
 - `uv run pyright` — strict type check.
 - `uv run ruff check --fix .` and `uv run ruff format .` — run both after every code change and report the files modified.
-- `uv run pre-commit run --all-files` — full lint pass. Install once with `uv tool install pre-commit && uv run pre-commit install`.
+- `uv run pre-commit run --files <files>` — lint only changed files (default). Use `--all-files` only for full audit. Install once with `uv tool install pre-commit && uv run pre-commit install`.
 - Useful uv basics: `uv sync --all-extras`, `uv add <pkg>`, `uv remove <pkg>`.
 
 ## Project layout & module conventions
@@ -133,15 +141,34 @@ You behave adhering this guidelines strictly to work on `custom-fix-*` branch. T
 
 **Always gather facts before assumptions.** Never guess at root causes.
 
+### Evidence Over Assertions
+
+When making a claim about code behavior (e.g., "this error is pre-existing", "all tests pass"), **prove it with unfiltered output**. The user must be able to independently verify your conclusion.
+
+- **Never filter diagnostic output** — Do not pipe linter, test, or diff output through `grep`, `tail`, or `head`. Show the full output. Filtering hides context the user needs to trust your conclusion.
+- **Stash-and-compare properly** — When comparing two states (e.g., pre-existing vs introduced), run `git stash`, show the full diagnostic output, then `git stash pop`, show the full output again. Both outputs must be visible.
+- **One claim, one proof** — If you claim "X is pre-existing", show the tool output that demonstrates X existed before your changes. Without the output, the claim is noise.
+
 1. **Add debug logging thoroughly** — Insert `logger.debug()` at every decision point in the suspected code path. Log variable values, branch taken, and state transitions. Use `%s` positional args, not f-strings.
 2. **Plan controlled experiments** — Isolate variables by testing minimal cases first (e.g., single tool type), then incrementally add complexity. Compare behavior between known-good and broken scenarios. Use the same debug instrumentation across all experiments.
 3. **Capture stack traces** — When a function is called unexpectedly, log `"".join(traceback.format_stack(limit=8)).strip()` to identify the caller chain. This reveals execution paths that differ between scenarios.
 4. **Verify at render boundaries** — For UI bugs, log both Python state (properties, reactive values) AND rendered output (button labels, widget text). Python state being correct does NOT guarantee the render buffer reflects it.
 
+### Systematic Caller Chain Analysis
+
+When a fix targets a function (e.g., "prevent X from being called"), **enumerate every call site before writing code**:
+
+1. `grep` all callers of the target function
+2. For each caller, trace **who invokes it** (direct calls, callbacks, tool results, event handlers, async workers)
+3. Classify each path: must skip, must always execute, or conditional
+4. Apply the fix to every classified path — never assume only the obvious caller matters
+5. Verify no caller was missed by re-grep after changes
+
 ### Debugging Async/UI Bugs: Trace State Transitions
 
 When debugging async code or UI widget state, **prove claims with timestamped evidence**:
 
+- **Trace UI elements to code paths** — When a visual diff shows unexpected UI elements (extra notifications, missing widgets, duplicate toasts), trace the code path that produces them. Count how many times the producing function (e.g., `self.notify()`, `mount()`) is called along that path. A double notification almost always means the same function is called twice through different call chains.
 - **Log at mount/prune/refresh boundaries** — For widget-related bugs, log the widget class name and child count at every `mount`, `prune`, and `refresh` call. Use `time.monotonic()` for timestamps to establish call order. Write to a temp file (`/tmp/debug.txt`) with `flush()` to avoid buffer loss.
 - **Never claim "timing issue" without evidence** — If you suspect race conditions or stale state, prove it by logging the exact state at each async boundary. Show the timestamps and values that demonstrate the discrepancy.
 - **Enumerate the widget tree** — When explaining widget count discrepancies, list every widget in the container with its class name, history index (if mapped), and child count. Count manually to verify formulas rather than assuming counts match.
@@ -186,9 +213,14 @@ EOF
 
 **Before changing codes:**
 - Identify all call sites using `grep` or `lsp`
+- **Caller chain audit**: For each call site found, trace upward to discover who calls it (direct callers, indirect callers via callbacks, tool results, event handlers). Classify each path: does it need the change or must it behave differently? Apply the fix to every path that needs it. Never assume only one caller matters.
 - Check for imports of affected symbols
 - Review dependent tests that may fail
 - Trace data flow and verify no unintended breaking changes
+
+**After test failures:**
+- **Map failures to your diff first** — Before assuming a test failure is pre-existing or flaky, check whether your changed files touch the code path exercised by the failing test. If your changes add/remove/modify UI elements, notifications, or output format, the test diff is expected — update the snapshot or fix the code.
+- **Re-grep after changes** — After modifying code, re-run the same `grep` search to verify no new call sites were introduced that could trigger the same bug through a different path. After every change, re-grep every symbol you touched — new callers may have been added by other changes, or you may have missed indirect paths. The second pass catches what the first missed.
 
 ## Coding Requirements
 

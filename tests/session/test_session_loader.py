@@ -730,6 +730,49 @@ class TestSessionLoaderEdgeCases:
         assert messages[1].role == Role.assistant
         assert messages[1].content == "Hi there!"
 
+    def test_load_session_preserves_system_prompt_in_metadata(
+        self, session_config: SessionLoggingConfig
+    ) -> None:
+        """Test that system_prompt in meta.json is preserved for resume reuse."""
+        session_dir = Path(session_config.save_dir)
+        session_folder = session_dir / "test_20230101_120000_test123"
+        session_folder.mkdir()
+
+        messages = [
+            LLMMessage(role=Role.user, content="Hello"),
+            LLMMessage(role=Role.assistant, content="Hi there!"),
+        ]
+
+        messages_file = session_folder / "messages.jsonl"
+        with messages_file.open("w", encoding="utf-8") as f:
+            for message in messages:
+                f.write(
+                    json.dumps(
+                        message.model_dump(exclude_none=True), ensure_ascii=False
+                    )
+                    + "\n"
+                )
+
+        saved_system_prompt = "Custom system prompt from previous session"
+        metadata_file = session_folder / "meta.json"
+        metadata_file.write_text(
+            json.dumps({
+                "session_id": "test-session",
+                "total_messages": 2,
+                "system_prompt": {"role": "system", "content": saved_system_prompt},
+            })
+        )
+
+        messages, metadata = SessionLoader.load_session(session_folder)
+
+        # Verify messages exclude system role
+        assert len(messages) == 2
+        assert all(msg.role != Role.system for msg in messages)
+
+        # Verify system_prompt is preserved in metadata for resume reuse
+        assert metadata["system_prompt"]["role"] == "system"
+        assert metadata["system_prompt"]["content"] == saved_system_prompt
+
 
 @pytest.fixture
 def create_test_session_with_cwd():

@@ -525,6 +525,10 @@ class MessageList(Sequence[LLMMessage]):
     def insert(self, i: int, msg: LLMMessage) -> None:
         self._data.insert(i, msg)
 
+    def __setitem__(self, index: int, msg: LLMMessage) -> None:
+        self._data[index] = msg
+        self._notify(msg)
+
     def extend(self, msgs: list[LLMMessage]) -> None:
         for msg in msgs:
             self.append(msg)

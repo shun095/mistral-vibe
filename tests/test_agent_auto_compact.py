@@ -361,3 +361,59 @@ async def test_compact_without_extra_instructions_has_no_additional_section() ->
     compaction_prompt = backend.requests_messages[0][-1].content
     assert compaction_prompt is not None
     assert "## Additional Instructions" not in compaction_prompt
+
+
+@pytest.mark.asyncio
+async def test_compact_resets_resume_system_prompt() -> None:
+    """After compact, _resume_system_prompt is cleared so mode cycles
+    recalculate the system prompt instead of using the stale saved one.
+    """
+    backend = FakeBackend([[mock_llm_chunk(content="<summary>")]])
+    cfg = build_test_vibe_config(models=make_test_models(auto_compact_threshold=999))
+    agent = build_test_agent_loop(config=cfg, backend=backend)
+    agent._resume_system_prompt = "saved prompt"
+    agent.messages.append(LLMMessage(role=Role.user, content="Hello"))
+    agent.stats.context_tokens = 100
+
+    await agent.compact()
+
+    assert agent._resume_system_prompt is None
+
+
+@pytest.mark.asyncio
+async def test_compact_recalculates_system_prompt() -> None:
+    """After compact, the system prompt is freshly calculated, not reused."""
+    backend = FakeBackend([[mock_llm_chunk(content="<summary>")]])
+    cfg = build_test_vibe_config(models=make_test_models(auto_compact_threshold=999))
+    agent = build_test_agent_loop(config=cfg, backend=backend)
+    old_content = cast(str, agent.messages[0].content)
+    agent._resume_system_prompt = old_content  # Simulate resume state
+    agent.messages.append(LLMMessage(role=Role.user, content="Hello"))
+    agent.stats.context_tokens = 100
+
+    await agent.compact()
+
+    assert agent._resume_system_prompt is None
+    assert agent.messages[0].role == Role.system
+    assert agent.messages[0].content is not None
+    # Content was recalculated (not the resumed value)
+    assert agent.messages[0].content != agent._resume_system_prompt
+
+
+@pytest.mark.asyncio
+async def test_compact_emits_system_prompt_regenerated_event() -> None:
+    """compact emits SystemPromptRegeneratedEvent."""
+    from vibe.core.ui_events import SystemPromptRegeneratedEvent
+
+    backend = FakeBackend([[mock_llm_chunk(content="<summary>")]])
+    cfg = build_test_vibe_config(models=make_test_models(auto_compact_threshold=999))
+    agent = build_test_agent_loop(config=cfg, backend=backend)
+    agent.messages.append(LLMMessage(role=Role.user, content="Hello"))
+    agent.stats.context_tokens = 100
+
+    events_received: list[object] = []
+    agent.add_event_listener(events_received.append)
+
+    await agent.compact()
+
+    assert any(isinstance(e, SystemPromptRegeneratedEvent) for e in events_received)

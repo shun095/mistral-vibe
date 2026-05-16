@@ -57,9 +57,14 @@ class MessageResetEvent(BaseEvent):
     )
 
 
+class SystemPromptRegeneratedEvent(BaseEvent):
+    """Event broadcast when the system prompt is recalculated."""
+
+
 __all__ = [
     "ApprovalPopupEvent",
     "MessageResetEvent",
     "PopupResponseEvent",
     "QuestionPopupEvent",
+    "SystemPromptRegeneratedEvent",
 ]

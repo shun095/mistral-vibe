@@ -25,8 +25,8 @@ from vibe.core.types import (
     Role,
     StrToolChoice,
 )
-from vibe.core.utils.retry import apply_retry_decorator
 from vibe.core.utils.http import build_ssl_context
+from vibe.core.utils.retry import apply_retry_decorator
 
 if TYPE_CHECKING:
     from vibe.core.config import ModelConfig, ProviderConfig
@@ -84,7 +84,7 @@ class OpenAIAdapter(APIAdapter):
             msg_dict["reasoning_content"] = msg_dict.pop(field_name)
         return msg_dict
 
-    def prepare_request(
+    def prepare_request(  # noqa: PLR0913
         self,
         *,
         model_name: str,

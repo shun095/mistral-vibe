@@ -28,7 +28,7 @@ from vibe.core.telemetry.build_metadata import build_entrypoint_metadata
 from vibe.core.telemetry.types import EntrypointMetadata
 from vibe.core.tracing import setup_tracing
 from vibe.core.trusted_folders import find_trustable_files, trusted_folders_manager
-from vibe.core.types import LLMMessage, OutputFormat, Role
+from vibe.core.types import LLMMessage, OutputFormat
 from vibe.core.utils import ConversationLimitException
 from vibe.setup.onboarding import run_onboarding
 
@@ -172,19 +172,43 @@ def load_session(
 
 def _resume_previous_session(
     agent_loop: AgentLoop, loaded_messages: list[LLMMessage], session_path: Path
-) -> None:
-    non_system_messages = [msg for msg in loaded_messages if msg.role != Role.system]
-    agent_loop.messages.extend(non_system_messages)
+) -> bool:
+    """Resume a previous session.
 
+    Returns True if the saved system prompt was not found in metadata
+    (i.e., the calculated prompt was used instead).
+    """
     _, metadata = SessionLoader.load_session(session_path)
+
+    # Reuse system prompt from saved session metadata (fallback to calculated)
+    saved_system_prompt = metadata.get("system_prompt")
+    use_saved = saved_system_prompt is not None
+    if use_saved:
+        try:
+            saved_msg = LLMMessage.model_validate(saved_system_prompt)
+            content = saved_msg.content
+            if not isinstance(content, str) or not content:
+                raise ValueError("empty or invalid system prompt content")
+            agent_loop.messages[0] = saved_msg
+            agent_loop._resume_system_prompt = content
+        except (TypeError, ValueError, KeyError):
+            use_saved = False
+    if not use_saved:
+        logger.warning(
+            "Session %s has no saved system_prompt in meta.json; "
+            "using calculated prompt instead",
+            agent_loop.session_id,
+        )
+
+    agent_loop.messages.extend(loaded_messages)
+
     session_id = metadata.get("session_id", agent_loop.session_id)
     agent_loop.session_id = session_id
     agent_loop.parent_session_id = metadata.get("parent_session_id")
     agent_loop.session_logger.resume_existing_session(session_id, session_path)
 
-    logger.info(
-        "Resumed session %s with %d messages", session_id, len(non_system_messages)
-    )
+    logger.info("Resumed session %s with %d messages", session_id, len(loaded_messages))
+    return not use_saved
 
 
 def _run_interactive_mode_with_web(
@@ -231,7 +255,7 @@ def _run_interactive_mode_with_web(
     web_server_thread.join(timeout=2)
 
 
-def run_cli(args: argparse.Namespace) -> None:
+def run_cli(args: argparse.Namespace) -> None:  # noqa: PLR0915
     load_dotenv_values()
     bootstrap_config_files()
 
@@ -309,7 +333,11 @@ def run_cli(args: argparse.Namespace) -> None:
                 sys.exit(1)
 
             if loaded_session:
-                _resume_previous_session(agent_loop, *loaded_session)
+                prompt_recalculated = _resume_previous_session(
+                    agent_loop, *loaded_session
+                )
+            else:
+                prompt_recalculated = False
 
             if args.web:
                 _run_interactive_mode_with_web(args, agent_loop, stdin_prompt)
@@ -322,6 +350,7 @@ def run_cli(args: argparse.Namespace) -> None:
                     teleport_on_start=args.teleport,
                     show_resume_picker=args.resume is True,
                     is_resuming_session=loaded_session is not None,
+                    system_prompt_recalculated=prompt_recalculated,
                 ),
             )
 

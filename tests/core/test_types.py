@@ -133,3 +133,32 @@ class TestWebNotificationEvent:
                 title="Test",
             )
         assert "context" in str(exc_info.value)
+
+
+class TestMessageList:
+    """Test MessageList indexed assignment and observer notification."""
+
+    def test_setitem_replaces_message(self) -> None:
+        from vibe.core.types import LLMMessage, MessageList, Role
+
+        msg1 = LLMMessage(role=Role.system, content="old prompt")
+        msg2 = LLMMessage(role=Role.system, content="new prompt")
+        list_ = MessageList([msg1])
+
+        list_[0] = msg2
+        assert list_[0].content == "new prompt"
+
+    def test_setitem_notifies_observer(self) -> None:
+        from vibe.core.types import LLMMessage, MessageList, Role
+
+        observed: list[LLMMessage] = []
+        msg = LLMMessage(role=Role.system, content="replaced")
+        list_ = MessageList(
+            [LLMMessage(role=Role.system, content="original")], observer=observed.append
+        )
+        # Observer fires during __init__ for initial messages
+        initial_count = len(observed)
+
+        list_[0] = msg
+        assert len(observed) == initial_count + 1
+        assert observed[-1].content == "replaced"

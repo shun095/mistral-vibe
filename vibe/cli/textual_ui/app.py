@@ -13,6 +13,14 @@ from pathlib import Path
 import signal
 import time
 from typing import Any, ClassVar, Literal, assert_never, cast
+
+SYSTEM_PROMPT_RECALCULATED_MSG = (
+    "System prompt was recalculated (not found in session metadata). "
+    "Tools or config may differ from the original session."
+)
+SYSTEM_PROMPT_REGENERATED_MSG = (
+    "System prompt regenerated. Tools or config may differ from the original session."
+)
 from uuid import uuid4
 from weakref import WeakKeyDictionary
 import webbrowser
@@ -232,7 +240,7 @@ from vibe.core.types import (
     UserMessageEvent,
     WaitingForInputEvent,
 )
-from vibe.core.ui_events import MessageResetEvent
+from vibe.core.ui_events import MessageResetEvent, SystemPromptRegeneratedEvent
 from vibe.core.utils import (
     CancellationReason,
     get_user_cancellation_message,
@@ -361,6 +369,7 @@ class StartupOptions:
     teleport_on_start: bool = False
     show_resume_picker: bool = False
     is_resuming_session: bool = False
+    system_prompt_recalculated: bool = False
 
 
 class VibeApp(App):  # noqa: PLR0904
@@ -518,6 +527,7 @@ class VibeApp(App):  # noqa: PLR0904
         )
         self._show_resume_picker = opts.show_resume_picker
         self._is_resuming_session = opts.is_resuming_session
+        self._system_prompt_recalculated = opts.system_prompt_recalculated
 
     @property
     def config(self) -> VibeConfig:
@@ -617,6 +627,7 @@ class VibeApp(App):  # noqa: PLR0904
         self.agent_loop.add_event_listener(
             self._web_broadcast_manager._handle_retry_event
         )
+        self.agent_loop.add_event_listener(self._on_system_prompt_event)
         self._refresh_profile_widgets()
 
         chat_input_container = self.query_one(ChatInputContainer)
@@ -641,6 +652,9 @@ class VibeApp(App):  # noqa: PLR0904
         elif self._initial_prompt or self._teleport_on_start:
             self.call_after_refresh(self._process_initial_prompt)
 
+        if self._system_prompt_recalculated:
+            self.notify(SYSTEM_PROMPT_RECALCULATED_MSG, severity="warning", timeout=10)
+
         gc.collect()
         gc.freeze()
 
@@ -652,6 +666,11 @@ class VibeApp(App):  # noqa: PLR0904
                 markup=False,
                 timeout=10,
             )
+
+    def _on_system_prompt_event(self, event: object) -> None:
+        if not isinstance(event, SystemPromptRegeneratedEvent):
+            return
+        self.notify(SYSTEM_PROMPT_REGENERATED_MSG, severity="warning", timeout=10)
 
     async def _watch_init_completion(self) -> None:
         """Show 'Initializing' loading indicator until background init finishes."""
@@ -2506,19 +2525,37 @@ class VibeApp(App):  # noqa: PLR0904
         if self._chat_input_container:
             self._chat_input_container.set_custom_border(None)
 
-        current_system_messages = [
-            msg for msg in self.agent_loop.messages if msg.role == Role.system
-        ]
-        non_system_messages = [
-            msg for msg in loaded_messages if msg.role != Role.system
-        ]
+        # Reuse system prompt from saved session metadata (fallback to calculated)
+        saved_system_prompt = metadata.get("system_prompt")
+        use_saved = saved_system_prompt is not None
+        saved_msg: LLMMessage | None = None
+        if use_saved:
+            try:
+                saved_msg = LLMMessage.model_validate(saved_system_prompt)
+                content = saved_msg.content
+                if not isinstance(content, str) or not content:
+                    raise ValueError("empty or invalid system prompt content")
+            except (TypeError, ValueError, KeyError):
+                use_saved = False
+        if use_saved:
+            assert saved_msg is not None
+            system_messages = [saved_msg]
+        else:
+            system_messages = [
+                msg for msg in self.agent_loop.messages if msg.role == Role.system
+            ]
 
         self.agent_loop.session_id = session.session_id
         self.agent_loop.parent_session_id = metadata.get("parent_session_id")
         self.agent_loop.session_logger.resume_existing_session(
             session.session_id, session_path
         )
-        self.agent_loop.messages.reset(current_system_messages + non_system_messages)
+        self.agent_loop.messages.reset(system_messages + loaded_messages)
+        if use_saved:
+            self.agent_loop._resume_system_prompt = cast(
+                str, system_messages[0].content
+            )
+
         self._refresh_profile_widgets()
 
         self._reset_ui_state()
@@ -2538,6 +2575,8 @@ class VibeApp(App):  # noqa: PLR0904
                 f"Resumed session `{short_session_id(session.session_id)}`"
             )
         )
+        if not use_saved:
+            self.notify(SYSTEM_PROMPT_RECALCULATED_MSG, severity="warning", timeout=10)
 
     async def _resume_remote_session(self, session: ResumeSessionInfo) -> None:
         await self._remote_manager.attach(
