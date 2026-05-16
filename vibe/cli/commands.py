@@ -96,6 +96,11 @@ class CommandRegistry:
                 description="Show path to current interaction log file",
                 handler="_show_log_path",
             ),
+            "log-edit": Command(
+                aliases=frozenset(["/log-edit"]),
+                description="Open session log file in external editor",
+                handler="_log_edit",
+            ),
             "debug": Command(
                 aliases=frozenset(["/debug"]),
                 description="Toggle debug console",

@@ -52,6 +52,7 @@ NON_INTERRUPT_COMMANDS = (
     "/history",
     "/help",
     "/log",
+    "/log-edit",
     "/debug",
     "/status",
     "/mcp",
@@ -91,6 +92,7 @@ from vibe.cli.plan_offer.decide_plan_offer import (
 )
 from vibe.cli.plan_offer.ports.whoami_gateway import WhoAmIGateway, WhoAmIPlanType
 from vibe.cli.queue_manager import QueueManager
+from vibe.cli.textual_ui.external_editor import ExternalEditor
 from vibe.cli.textual_ui.handlers.event_handler import EventHandler
 from vibe.cli.textual_ui.notifications import (
     NotificationContext,
@@ -2740,6 +2742,34 @@ class VibeApp(App):  # noqa: PLR0904
             await self._mount_and_scroll(
                 ErrorMessage(
                     f"Failed to get log path: {e}", collapsed=self._tools_collapsed
+                )
+            )
+
+    async def _log_edit(self, **kwargs: Any) -> None:
+        if not self.agent_loop.session_logger.enabled:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    "Session logging is disabled in configuration.",
+                    collapsed=self._tools_collapsed,
+                )
+            )
+            return
+
+        messages_file = self.agent_loop.session_logger.messages_filepath
+        if not messages_file or not messages_file.exists():
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    "Session log file not found.", collapsed=self._tools_collapsed
+                )
+            )
+            return
+
+        with self.app.suspend():
+            ok = ExternalEditor().open_file(messages_file)
+        if not ok:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    "Failed to open external editor.", collapsed=self._tools_collapsed
                 )
             )
 

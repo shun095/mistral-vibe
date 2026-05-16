@@ -10,7 +10,7 @@ from vibe.core.utils.io import read_safe
 
 
 class ExternalEditor:
-    """Handles opening an external editor to edit prompt content."""
+    """Handles opening an external editor for prompt editing or file inspection."""
 
     @staticmethod
     def get_editor() -> str:
@@ -32,3 +32,12 @@ class ExternalEditor:
             return
         finally:
             Path(filepath).unlink(missing_ok=True)
+
+    def open_file(self, filepath: Path) -> bool:
+        editor = self.get_editor()
+        try:
+            parts = shlex.split(editor)
+            subprocess.run([*parts, str(filepath)], check=True)
+            return True
+        except (OSError, subprocess.CalledProcessError):
+            return False

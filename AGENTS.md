@@ -239,6 +239,7 @@ E2E tests:        X passed, Y skipped, Z failed
 - Running partial tests (`pytest tests/specific/path/`)
 - Skipping E2E tests
 - Claiming "tests pass" without running all 3
+- Filtering pre-commit output with `tail` or `grep` — always show full output so failures are visible
 
 ### Test Reporting
 

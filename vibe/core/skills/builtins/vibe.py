@@ -376,6 +376,7 @@ Custom agents are TOML files in `~/.vibe/agents/NAME.toml`.
 - `/reload` - Reload configuration, agent instructions, and skills from disk
 - `/clear` - Clear conversation history
 - `/log` - Show path to current interaction log file
+- `/log-edit` - Open session log file (messages.jsonl) in external editor
 - `/debug` - Toggle debug console
 - `/compact` - Compact conversation history by summarizing
 - `/status` - Display agent statistics
