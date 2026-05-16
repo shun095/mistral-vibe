@@ -7,13 +7,6 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from vibe.core.lsp import LSPClientManager
-
-# LSP diagnostic severity levels
-LSP_SEVERITY_ERROR = 1
-LSP_SEVERITY_WARNING = 2
-
-# Max diagnostics to display
-MAX_DIAGNOSTICS_DISPLAY = 10
 from vibe.core.lsp.formatter import LSPDiagnosticFormatter
 from vibe.core.lsp.server import LSPServerRegistry
 from vibe.core.tools.base import (
@@ -25,6 +18,13 @@ from vibe.core.tools.base import (
 )
 from vibe.core.tools.ui import ToolCallDisplay, ToolResultDisplay, ToolUIData
 from vibe.core.types import ToolCallEvent, ToolResultEvent
+
+# LSP diagnostic severity levels
+LSP_SEVERITY_ERROR = 1
+LSP_SEVERITY_WARNING = 2
+
+# Max diagnostics to display
+MAX_DIAGNOSTICS_DISPLAY = 10
 
 
 class LSPToolArgs(BaseModel):
@@ -190,7 +190,7 @@ class LSP(
         return "Analyzing code with LSP"
 
     def __init__(self, config: LSPToolConfig, state: LSPToolState) -> None:
-        super().__init__(config, state)
+        super().__init__(lambda: config, state)
         self._lsp_client_manager: LSPClientManager | None = None
         self.client_manager: LSPClientManager | None = None
 

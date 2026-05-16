@@ -604,8 +604,6 @@ class AgentLoop:
 
     def _select_backend(self) -> BackendLike:
         # Use mock backend for E2E tests
-        import os
-
         if os.environ.get("VIBE_E2E_TEST") == "true":
             from vibe.core.llm.backend.mock import MockBackend
 

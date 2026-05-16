@@ -431,10 +431,13 @@ async def _wait_for_agent(app, pilot: Pilot) -> None:
     children = list(messages_area.children)
     children_count = len(children)
     hwi = vibe_app._history_widget_indices
-    print(
-        f"  DEBUG: history_msgs={len(ns_msgs)} backfill_cursor={windowing._backfill_cursor} messages_area_children={children_count}"
+    logger.debug(
+        "history_msgs=%s backfill_cursor=%s messages_area_children=%s",
+        len(ns_msgs),
+        windowing._backfill_cursor,
+        children_count,
     )
-    print(f"  DEBUG: hwi entries={len(hwi)}")
+    logger.debug("hwi entries=%s", len(hwi))
     for i, child in enumerate(children):
         cls = child.__class__.__name__
         hidx = hwi.get(child)
@@ -444,11 +447,13 @@ async def _wait_for_agent(app, pilot: Pilot) -> None:
         collapsed = ""
         if hasattr(child, "collapsed"):
             collapsed = f" collapsed={child.collapsed}"
-        print(f"    child[{i}]={cls}{tool_info}{collapsed}")
-    # Also print visible_indices calculation
+        logger.debug("child[%s]=%s%s%s", i, cls, tool_info, collapsed)
+    # Also log visible_indices calculation
     visible_indices = [idx for child in children if (idx := hwi.get(child)) is not None]
-    print(
-        f"  DEBUG: visible_indices={visible_indices} oldest={min(visible_indices) if visible_indices else 'N/A'}"
+    logger.debug(
+        "visible_indices=%s oldest=%s",
+        visible_indices,
+        min(visible_indices) if visible_indices else "N/A",
     )
 
 
@@ -499,7 +504,7 @@ def _export_svg(
 
     matches = re.findall(r"Load[^<]*", svg)
     loadmore_lines = [m for m in matches if "more" in m.lower()]
-    print(f"  [{label}] LoadMore text in SVG: {loadmore_lines}")
+    logger.debug("[%s] LoadMore text in SVG: %s", label, loadmore_lines)
 
 
 def test_export_svg_scenarios() -> None:

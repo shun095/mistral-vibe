@@ -561,7 +561,7 @@ class Bash(
 
         from vibe.core.logger import logger
 
-        logger.debug(f"Config: {self.config}")
+        logger.debug("Config: %s", self.config)
 
         proc = None
         try:

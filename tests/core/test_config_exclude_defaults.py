@@ -15,7 +15,6 @@ from vibe.core.config.harness_files import (
 
 
 def unlock_config_paths() -> None:
-    """Helper to enable config persistence for tests."""
     reset_harness_files_manager()
     init_harness_files_manager("user")
 
@@ -23,12 +22,10 @@ def unlock_config_paths() -> None:
 def setup_config_file_for_test(
     tmp_path: Path, config_file_name: str = "config.toml"
 ) -> Path:
-    """Helper to create a config file path for tests."""
     return tmp_path / config_file_name
 
 
 def mock_harness_manager_for_config_file(config_file: Path) -> HarnessFilesManager:
-    """Create a mock HarnessFilesManager that returns the specified config file."""
     mock_manager = MagicMock(spec=HarnessFilesManager)
     mock_manager.config_file = config_file
     mock_manager.user_config_file = config_file
@@ -38,10 +35,7 @@ def mock_harness_manager_for_config_file(config_file: Path) -> HarnessFilesManag
 
 
 class TestExcludeDefaults:
-    """Tests for VibeConfig._exclude_defaults method."""
-
     def test_excludes_top_level_default_values(self) -> None:
-        """Test that top-level fields with default values are excluded."""
         config_dict = {
             "active_model": "mistral-medium-3.5",  # default value
             "vim_keybindings": False,  # default value
@@ -56,7 +50,6 @@ class TestExcludeDefaults:
         assert result["auto_approve"] is True
 
     def test_excludes_none_values(self) -> None:
-        """Test that None values are excluded (not TOML serializable)."""
         config_dict = {"active_model": "custom-model", "vim_keybindings": None}
 
         result = VibeConfig._exclude_defaults(config_dict)
@@ -65,7 +58,6 @@ class TestExcludeDefaults:
         assert "vim_keybindings" not in result
 
     def test_excludes_default_factory_lists(self) -> None:
-        """Test that empty lists (default_factory) are excluded."""
         config_dict = {
             "mcp_servers": [],  # default is empty list
             "lsp_servers": [],  # default is empty list
@@ -77,7 +69,6 @@ class TestExcludeDefaults:
         assert "lsp_servers" not in result
 
     def test_keeps_non_empty_lists(self) -> None:
-        """Test that non-empty lists are kept."""
         config_dict = {
             "mcp_servers": [
                 {"name": "test_server", "transport": "stdio", "command": "test"}
@@ -90,7 +81,6 @@ class TestExcludeDefaults:
         assert len(result["mcp_servers"]) == 1
 
     def test_excludes_nested_default_values(self) -> None:
-        """Test that nested dict default values are excluded."""
         config_dict = {
             "project_context": {
                 "default_commit_count": 5,  # default value
@@ -106,7 +96,6 @@ class TestExcludeDefaults:
         assert result["project_context"]["timeout_seconds"] == 5.0
 
     def test_excludes_empty_nested_dicts(self) -> None:
-        """Test that nested dicts that become empty after exclusion are removed."""
         config_dict = {
             "project_context": {
                 "default_commit_count": 5,  # default value
@@ -120,7 +109,6 @@ class TestExcludeDefaults:
         assert "project_context" not in result
 
     def test_excludes_none_from_nested_lists(self) -> None:
-        """Test that None values in nested lists are filtered out."""
         config_dict = {"tool_paths": [None, "/path/to/tools"]}
 
         result = VibeConfig._exclude_defaults(config_dict)
@@ -130,7 +118,6 @@ class TestExcludeDefaults:
         assert "/path/to/tools" in result["tool_paths"]
 
     def test_excludes_empty_string_default(self) -> None:
-        """Test that empty string default values are excluded."""
         config_dict = {
             "displayed_workdir": "",  # default is empty string
             "active_model": "custom-model",  # non-default value
@@ -143,7 +130,6 @@ class TestExcludeDefaults:
         assert result["active_model"] == "custom-model"
 
     def test_keeps_non_empty_string(self) -> None:
-        """Test that non-empty strings are kept."""
         config_dict = {"displayed_workdir": "/custom/path"}
 
         result = VibeConfig._exclude_defaults(config_dict)
@@ -152,7 +138,6 @@ class TestExcludeDefaults:
         assert result["displayed_workdir"] == "/custom/path"
 
     def test_excludes_empty_string_in_nested_section(self) -> None:
-        """Test that empty string defaults in nested sections are excluded."""
         # The resolved default for save_dir is the path from the validator
         resolved_default = SessionLoggingConfig().save_dir
         config_dict = {
@@ -184,7 +169,6 @@ class TestExcludeDefaults:
         assert "session_logging" not in result
 
     def test_get_resolved_default_returns_none_for_required_fields(self) -> None:
-        """Test that _get_resolved_default returns None when model has required fields."""
         from pydantic import BaseModel, Field
 
         class ModelWithRequired(BaseModel):
@@ -195,7 +179,6 @@ class TestExcludeDefaults:
         assert resolved is None
 
     def test_get_resolved_default_returns_none_on_factory_exception(self) -> None:
-        """Test that _get_resolved_default returns None when default_factory raises."""
         import unittest.mock as mock
 
         from pydantic import BaseModel
@@ -228,7 +211,6 @@ class TestExcludeDefaults:
             assert resolved is None
 
     def test_get_resolved_default_returns_none_on_instantiation_failure(self) -> None:
-        """Test that _get_resolved_default returns None when model instantiation fails."""
         from pydantic import BaseModel
 
         class ModelFailingInit(BaseModel):
@@ -242,12 +224,9 @@ class TestExcludeDefaults:
 
 
 class TestConfigCommentPreservation:
-    """Tests for preserving comment-out lines in config.toml."""
-
     def test_preserves_comment_out_lines(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Test that comment-out lines in config.toml are preserved after save."""
         # Create a temporary config file with comment-out lines
         config_content = """# This is a comment
 active_model = "some-other-model"
@@ -285,7 +264,6 @@ auto_approve = true
     def test_preserves_comment_out_nested_values(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Test that comment-out lines in nested sections are preserved."""
         config_content = """[project_context]
 # default_commit_count = 5
 
@@ -316,7 +294,6 @@ default_commit_count = 10
     def test_preserves_comments_on_new_file(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Test that new config files work correctly."""
         config_file = tmp_path / "config.toml"
         # Don't create the file - test new file creation
 
@@ -337,7 +314,6 @@ default_commit_count = 10
     def test_removes_default_values_from_existing_config(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Test that default values are removed while preserving comments."""
         config_content = """# My config file
 active_model = "some-other-model"
 vim_keybindings = true
@@ -374,7 +350,6 @@ auto_approve = true
     def test_removes_nested_default_values_preserves_comments(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Test that nested section default values are removed while preserving comments."""
         config_content = """# Project context settings
 [project_context]
 # Default commit count is 5
@@ -416,7 +391,6 @@ timeout_seconds = 5.0
     def test_removes_session_logging_default_values_preserves_comments(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Test that session_logging section default values are removed while preserving comments."""
         config_content = """# Session logging settings
 [session_logging]
 # Save directory for logs
@@ -456,7 +430,6 @@ session_prefix = "session"
     def test_creates_nested_section_with_non_default_values(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Test that nested sections are created with only non-default values."""
         config_file = tmp_path / "config.toml"
         # Don't create the file - test new file creation
 
@@ -480,7 +453,6 @@ session_prefix = "session"
     def test_preserves_all_comments_in_nested_sections(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Test that all comments in nested sections are preserved after multiple saves."""
         config_content = """# Main config
 auto_approve = true
 
@@ -548,7 +520,6 @@ save_dir = "/custom/logs"
     def test_removes_empty_string_from_config_file(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Test that empty string values are removed from config file."""
         config_content = """# Config with empty string
 displayed_workdir = "/some/path"
 auto_approve = true
@@ -576,7 +547,6 @@ auto_approve = true
     def test_removes_session_prefix_default_from_session_logging(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Test that session_prefix default value is removed from session_logging section."""
         config_content = """[session_logging]
 session_prefix = "custom_prefix"
 enabled = false
@@ -603,7 +573,6 @@ enabled = false
     def test_removes_all_defaults_not_just_updated(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Test that ALL default values are removed, not just the ones being updated."""
         # Create a config with multiple default values
         config_content = """active_model = "custom-model"
 tool_paths = []
@@ -634,7 +603,6 @@ enabled_tools = []
     def test_removes_empty_nested_section(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Test that empty nested sections are removed entirely."""
         config_content = """[[models]]
 name = "local_mock"
 provider = "local_mock"
@@ -667,7 +635,6 @@ save_dir = "/custom/logs"
     def test_preserves_comments_in_models_array(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Test that comments inside [[models]] array are preserved."""
         config_content = """# Comment before models
 [[models]]
 # This is model 1
@@ -699,7 +666,6 @@ save_dir = "/custom/logs"
     def test_removes_default_values_from_models_array(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Test that default values are removed from [[models]] array items."""
         config_content = """[[models]]
 name = "test_model"
 provider = "test_provider"
@@ -736,7 +702,6 @@ auto_compact_threshold = 200000
     def test_removes_default_values_from_providers_array(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Test that default values are removed from [[providers]] array items."""
         config_content = """[[providers]]
 name = "custom_provider"
 api_base = "https://custom.api/v1"
@@ -774,10 +739,7 @@ region = ""
 
 
 class TestMCPServersEnvRemoval:
-    """Tests for removing empty [mcp_servers.env] sections."""
-
     def test_removes_empty_mcp_servers_env(self, tmp_path):
-        """Test that empty [mcp_servers.env] sections are removed."""
         import tomlkit
 
         config_content = """
@@ -803,7 +765,6 @@ args = ["duckduckgo-mcp-server"]
         assert 'name = "web_search"' in output
 
     def test_keeps_non_empty_mcp_servers_env(self, tmp_path):
-        """Test that non-empty [mcp_servers.env] sections are preserved."""
         import tomlkit
 
         config_content = """

@@ -20,11 +20,8 @@ from vibe.core.lsp.types import LSPServerHandle
 
 @pytest.mark.asyncio
 class TestDiagnosticStorageAndRetrieval:
-    """Consolidated tests for diagnostic storage and retrieval mechanism."""
-
     @pytest.mark.parametrize("diagnostic_count", [1, 5, 10])
     async def test_diagnostic_storage_for_multiple_files(self, diagnostic_count: int):
-        """Test that diagnostics are stored correctly for multiple files."""
         mock_process = MagicMock()
         mock_process.stdin = MagicMock()
         mock_process.stdout = MagicMock()
@@ -62,7 +59,6 @@ class TestDiagnosticStorageAndRetrieval:
             assert client.diagnostics[uri][0]["message"] == f"Error in file {file_num}"
 
     async def test_diagnostic_updates_on_subsequent_notifications(self):
-        """Test that diagnostics are updated when receiving multiple notifications for the same file."""
         mock_process = MagicMock()
         mock_process.stdin = MagicMock()
         mock_process.stdout = MagicMock()
@@ -102,7 +98,6 @@ class TestDiagnosticStorageAndRetrieval:
         assert client.diagnostics[uri][1]["message"] == "Warning"
 
     async def test_diagnostic_retrieval_via_document_diagnostics(self):
-        """Test retrieving diagnostics through the document_diagnostics method."""
         mock_process = MagicMock()
         mock_process.stdin = AsyncMock()
         mock_process.stdout = MagicMock()
@@ -140,7 +135,6 @@ class TestDiagnosticStorageAndRetrieval:
             assert diagnostics[1]["message"] == "Warning"
 
     async def test_diagnostic_limiting_for_llm_formatting(self):
-        """Test that diagnostics are limited when formatting for LLM."""
         # Create 30 diagnostics
         diagnostics = [
             {
@@ -170,10 +164,7 @@ class TestDiagnosticStorageAndRetrieval:
 
 @pytest.mark.asyncio
 class TestPublishDiagnosticsNotificationHandling:
-    """Consolidated tests for publishDiagnostics notification handling."""
-
     async def test_publish_diagnostics_notification_structure(self):
-        """Test that publishDiagnostics notifications are properly parsed."""
         mock_process = MagicMock()
         mock_process.stdin = MagicMock()
         mock_process.stdout = MagicMock()
@@ -208,7 +199,6 @@ class TestPublishDiagnosticsNotificationHandling:
             assert len(client.diagnostics[uri]) == test_case["expected_count"]
 
     async def test_non_publish_diagnostics_notifications_ignored(self):
-        """Test that non-publishDiagnostics notifications are ignored."""
         mock_process = MagicMock()
         mock_process.stdin = MagicMock()
         mock_process.stdout = MagicMock()
@@ -242,7 +232,6 @@ class TestPublishDiagnosticsNotificationHandling:
         assert len(client.diagnostics) == 0
 
     async def test_diagnostics_refreshed_timestamp_updated(self):
-        """Test that diagnostics_refreshed timestamp is updated on publishDiagnostics."""
         mock_process = MagicMock()
         mock_process.stdin = MagicMock()
         mock_process.stdout = MagicMock()
@@ -273,10 +262,7 @@ class TestPublishDiagnosticsNotificationHandling:
 
 @pytest.mark.asyncio
 class TestDocumentDiagnosticFallback:
-    """Consolidated tests for documentDiagnostic fallback mechanism."""
-
     async def test_fallback_to_publish_diagnostics_when_document_diagnostic_fails(self):
-        """Test fallback from documentDiagnostic to publishDiagnostics."""
         mock_process = MagicMock()
         mock_process.stdin = AsyncMock()
         mock_process.stdout = MagicMock()
@@ -315,7 +301,6 @@ class TestDocumentDiagnosticFallback:
             assert diagnostics[0]["message"] == "Error"
 
     async def test_empty_diagnostics_when_publish_diagnostics_times_out(self):
-        """Test that empty list is returned when publishDiagnostics times out."""
         mock_process = MagicMock()
         mock_process.stdin = AsyncMock()
         mock_process.stdout = MagicMock()
@@ -343,7 +328,6 @@ class TestDocumentDiagnosticFallback:
             assert diagnostics == []
 
     async def test_existing_diagnostics_returned_when_not_expecting_fresh(self):
-        """Test that existing diagnostics are returned when not expecting fresh ones."""
         mock_process = MagicMock()
         mock_process.stdin = MagicMock()
         mock_process.stdout = MagicMock()
@@ -379,10 +363,7 @@ class TestDocumentDiagnosticFallback:
 
 @pytest.mark.asyncio
 class TestTextDocumentSynchronization:
-    """Consolidated tests for text document synchronization."""
-
     async def test_all_three_mandatory_notifications_exist(self):
-        """Test that all three mandatory text document notifications are implemented."""
         mock_process = MagicMock()
         mock_process.stdin = AsyncMock()
         mock_process.stdout = AsyncMock()
@@ -401,7 +382,6 @@ class TestTextDocumentSynchronization:
         assert callable(client.text_document_did_close)
 
     async def test_did_open_notification_structure(self):
-        """Test that textDocument/didOpen notification has correct structure."""
         mock_process = MagicMock()
         mock_process.stdin = AsyncMock()
         mock_process.stdout = AsyncMock()
@@ -429,7 +409,6 @@ class TestTextDocumentSynchronization:
         assert params["textDocument"]["version"] == 1
 
     async def test_did_change_notification_structure(self):
-        """Test that textDocument/didChange notification has correct structure."""
         mock_process = MagicMock()
         mock_process.stdin = AsyncMock()
         mock_process.stdout = AsyncMock()
@@ -459,7 +438,6 @@ class TestTextDocumentSynchronization:
         assert params["contentChanges"][0]["text"] == "print('world')"
 
     async def test_did_close_notification_structure(self):
-        """Test that textDocument/didClose notification has correct structure."""
         mock_process = MagicMock()
         mock_process.stdin = AsyncMock()
         mock_process.stdout = AsyncMock()
@@ -482,7 +460,6 @@ class TestTextDocumentSynchronization:
         assert params["textDocument"]["uri"] == "file:///test.py"
 
     async def test_incremental_synchronization_supported(self):
-        """Test that incremental synchronization is supported in didChange notification."""
         mock_process = MagicMock()
         mock_process.stdin = AsyncMock()
         mock_process.stdout = AsyncMock()
@@ -510,7 +487,6 @@ class TestTextDocumentSynchronization:
             assert "text" in change
 
     async def test_diagnostics_refreshed_set_to_none_on_did_change_and_did_save(self):
-        """Test that diagnostics_refreshed is set to None on didChange and didSave."""
         mock_process = MagicMock()
         mock_process.stdin = AsyncMock()
         mock_process.stdout = AsyncMock()
@@ -532,10 +508,7 @@ class TestTextDocumentSynchronization:
 
 @pytest.mark.asyncio
 class TestErrorHandling:
-    """Tests for error handling in LSP client message processing."""
-
     async def test_malformed_message_without_content_length_header(self):
-        """Test handling of messages without Content-Length header."""
         mock_process = MagicMock()
         mock_process.stdin = AsyncMock()
         mock_process.stdout = AsyncMock()
@@ -555,7 +528,6 @@ class TestErrorHandling:
             assert callable(client._read_messages)
 
     async def test_json_decode_error_in_message_parsing(self):
-        """Test handling of JSON decode errors in message parsing."""
         mock_process = MagicMock()
         mock_process.stdin = AsyncMock()
         mock_process.stdout = AsyncMock()
@@ -585,7 +557,6 @@ class TestErrorHandling:
         )
 
     async def test_content_length_parsing_with_invalid_header(self):
-        """Test handling of invalid Content-Length headers."""
         mock_process = MagicMock()
         mock_process.stdin = AsyncMock()
         mock_process.stdout = AsyncMock()
@@ -612,7 +583,6 @@ class TestErrorHandling:
         assert match is None  # Pattern should not match non-numeric values
 
     async def test_empty_diagnostics_array_handling(self):
-        """Test handling of empty diagnostics arrays."""
         mock_process = MagicMock()
         mock_process.stdin = MagicMock()
         mock_process.stdout = MagicMock()
@@ -634,7 +604,6 @@ class TestErrorHandling:
         assert client.diagnostics[uri] == []
 
     async def test_missing_uri_in_publish_diagnostics(self):
-        """Test handling of publishDiagnostics without URI."""
         mock_process = MagicMock()
         mock_process.stdin = MagicMock()
         mock_process.stdout = MagicMock()
@@ -656,10 +625,7 @@ class TestErrorHandling:
 
 @pytest.mark.asyncio
 class TestIntegration:
-    """Comprehensive integration tests for LSP functionality."""
-
     async def test_complete_document_lifecycle_with_diagnostics(self):
-        """Test the complete document lifecycle with diagnostic updates."""
         mock_process = MagicMock()
         mock_process.stdin = AsyncMock()
         mock_process.stdout = AsyncMock()
@@ -711,7 +677,6 @@ class TestIntegration:
             assert calls[3][0][0] == "textDocument/didClose"
 
     async def test_client_manager_integration_with_diagnostics(self):
-        """Test LSPClientManager integration with diagnostic retrieval."""
         import tempfile
 
         # Enable LSP diagnostics for this test

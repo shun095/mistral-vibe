@@ -11,13 +11,6 @@ from typing import Annotated, Any, Literal, cast, get_args
 from urllib.parse import urljoin
 
 from dotenv import dotenv_values
-
-from vibe.core.llm._mistralai_stub import (
-    SpeechOutputFormat,  # pyright: ignore[reportAttributeAccessIssue]
-)
-
-# Magic values for type annotation processing
-DICT_ARGS_MIN_LENGTH = 2
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
     DEFAULT_TRACES_EXPORT_PATH,
 )
@@ -34,6 +27,9 @@ from tomlkit.exceptions import TOMLKitError
 
 from vibe.core.agents.models import BuiltinAgentName
 from vibe.core.config.harness_files import get_harness_files_manager
+from vibe.core.llm._mistralai_stub import (
+    SpeechOutputFormat,  # pyright: ignore[reportAttributeAccessIssue]
+)
 from vibe.core.logger import logger
 from vibe.core.lsp.config import LSPConfig, LSPServerConfig
 from vibe.core.paths import GLOBAL_ENV_FILE, SESSION_LOG_DIR
@@ -41,6 +37,9 @@ from vibe.core.prompts import SystemPrompt
 from vibe.core.types import Backend
 from vibe.core.utils import get_server_url_from_api_base
 from vibe.core.utils.io import read_safe
+
+# Magic values for type annotation processing
+DICT_ARGS_MIN_LENGTH = 2
 
 
 def _strip_bash_pattern_wildcard(pattern: str) -> str:
