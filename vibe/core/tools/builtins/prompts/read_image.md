@@ -10,12 +10,8 @@ Use `read_image` to read an image file or fetch an image from a URL. Returns the
 
 - JPEG (`image/jpeg`)
 - PNG (`image/png`)
-- GIF (`image/gif`)
-- WebP (`image/webp`)
-- BMP (`image/bmp`)
-- TIFF (`image/tiff`)
-- SVG (`image/svg+xml`)
-- AVIF (`image/avif`)
+- WebP (`image/webp`) — converted to PNG before LLM embedding
+- SVG (`image/svg+xml`) — converted to PNG before LLM embedding
 
 ## Arguments
 

@@ -149,6 +149,15 @@ When making a claim about code behavior (e.g., "this error is pre-existing", "al
 - **Stash-and-compare properly** — When comparing two states (e.g., pre-existing vs introduced), run `git stash`, show the full diagnostic output, then `git stash pop`, show the full output again. Both outputs must be visible.
 - **One claim, one proof** — If you claim "X is pre-existing", show the tool output that demonstrates X existed before your changes. Without the output, the claim is noise.
 
+### Diagnosing Test/Snapshot Failures
+
+When test output changes (failures, new warnings, snapshot mismatches), **check git history before theorizing about the cause**.
+
+- **Always run `git diff HEAD~3` first** — the simplest explanation is that code changed and the test reflects that. Rule out code changes before blaming environment, dependencies, or timing.
+- **Never name a bug cause without evidence** — do not label a failure as "race condition", "timing issue", "flaky", or "import order" without proving it. Deterministic structural differences are code changes, not races. A race produces random, inconsistent output across runs.
+- **Correlation is not causation** — adding a dependency and seeing a test change does not mean the dependency caused it. The branch may have uncommitted changes from a prior session. Check `git log --oneline -5` and `git status` before drawing conclusions.
+- **Admit ignorance over inventing explanations** — if you cannot explain why a test changed after checking the diff, say so. Do not fabricate a plausible-sounding technical term to cover the gap.
+
 1. **Add debug logging thoroughly** — Insert `logger.debug()` at every decision point in the suspected code path. Log variable values, branch taken, and state transitions. Use `%s` positional args, not f-strings.
 2. **Plan controlled experiments** — Isolate variables by testing minimal cases first (e.g., single tool type), then incrementally add complexity. Compare behavior between known-good and broken scenarios. Use the same debug instrumentation across all experiments.
 3. **Capture stack traces** — When a function is called unexpectedly, log `"".join(traceback.format_stack(limit=8)).strip()` to identify the caller chain. This reveals execution paths that differ between scenarios.

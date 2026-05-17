@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 from collections.abc import AsyncGenerator
+import io
 import mimetypes
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, cast, final
@@ -13,16 +14,15 @@ import anyio
 import httpx
 from pydantic import BaseModel, Field
 
+# MIME types that require conversion to PNG before LLM embedding
+CONVERTIBLE_TYPES = frozenset({"image/svg+xml", "image/webp"})
+
 # Valid image MIME types that can be sent to LLM
 VALID_IMAGE_TYPES = frozenset({
     "image/jpeg",
     "image/png",
-    "image/gif",
     "image/webp",
-    "image/bmp",
-    "image/tiff",
     "image/svg+xml",
-    "image/avif",
 })
 
 from vibe.core.tools.base import (
@@ -161,6 +161,27 @@ class ReadImage(
         return content_type
 
     @staticmethod
+    def _convert_to_png(image_data: bytes, content_type: str) -> tuple[bytes, str]:
+        """Convert SVG or WebP image data to PNG bytes.
+
+        Returns (png_bytes, "image/png") if conversion is needed,
+        otherwise returns the original (image_data, content_type).
+        """
+        if content_type == "image/svg+xml":
+            import cairosvg
+
+            buf = io.BytesIO()
+            cairosvg.svg2png(bytestring=image_data, write_to=buf)
+            return buf.getvalue(), "image/png"
+        if content_type == "image/webp":
+            from PIL import Image
+
+            buf = io.BytesIO()
+            Image.open(io.BytesIO(image_data)).save(buf, format="PNG")
+            return buf.getvalue(), "image/png"
+        return image_data, content_type
+
+    @staticmethod
     def _read_and_encode_image(file_path: Path) -> tuple[str, str]:
         """Read image file, validate, and return (data_url, content_type)."""
         with Path(file_path).open(mode="rb") as f:
@@ -174,6 +195,8 @@ class ReadImage(
                 f"Supported types: {', '.join(sorted(VALID_IMAGE_TYPES))}"
             )
 
+        image_data, content_type = ReadImage._convert_to_png(image_data, content_type)
+
         encoded_data = base64.b64encode(image_data).decode("utf-8")
         return f"data:{content_type};base64,{encoded_data}", content_type
 
@@ -185,7 +208,7 @@ class ReadImage(
         when both _construct_events and _construct_llm_message are called.
 
         Returns:
-            Tuple of (image_bytes, content_type)
+            Tuple of (image_bytes, content_type) — SVG/WebP are converted to PNG.
         """
         # Check cache first
         if url in ReadImage._fetch_cache:
@@ -204,8 +227,16 @@ class ReadImage(
                 if not content_type:
                     content_type = "application/octet-stream"
 
+            # Strip charset for content-type matching
+            content_type = content_type.split(";")[0].strip().lower()
+
             # Validate content type is an image
             ReadImage._validate_http_content_type_static(content_type, url)
+
+            # Convert SVG/WebP to PNG
+            image_data, content_type = ReadImage._convert_to_png(
+                image_data, content_type
+            )
 
             # Cache the result
             ReadImage._fetch_cache[url] = (image_data, content_type)

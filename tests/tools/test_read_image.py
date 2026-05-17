@@ -220,15 +220,35 @@ async def test_unknown_extension_rejected(read_image_tool, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_unsupported_image_types_rejected(read_image_tool, tmp_path):
+    """Test that removed image types (GIF, BMP, TIFF, AVIF) are rejected."""
+    unsupported = [
+        ("image.gif", "image/gif"),
+        ("image.bmp", "image/bmp"),
+        ("image.tiff", "image/tiff"),
+        ("image.avif", "image/avif"),
+    ]
+
+    for filename, mime in unsupported:
+        filepath = tmp_path / filename
+        filepath.write_bytes(b"fake image data")
+
+        with pytest.raises(ToolError) as err:
+            await collect_result(
+                read_image_tool.run(ReadImageArgs(image_url=f"file://{filepath}"))
+            )
+
+        assert "not a supported image type" in str(err.value)
+        assert mime in str(err.value)
+
+
+@pytest.mark.asyncio
 async def test_valid_image_types_accepted(read_image_tool, tmp_path):
     """Test that valid image file types are accepted."""
     valid_types = [
         ("image.jpg", "image/jpeg"),
         ("image.png", "image/png"),
-        ("image.gif", "image/gif"),
         ("image.webp", "image/webp"),
-        ("image.bmp", "image/bmp"),
-        ("image.tiff", "image/tiff"),
         ("image.svg", "image/svg+xml"),
     ]
 
@@ -560,7 +580,7 @@ async def test_http_content_type_with_charset_accepted():
     # Mock response with content-type including charset
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
-    mock_response.content = b"<svg></svg>"
+    mock_response.content = b'<svg xmlns="http://www.w3.org/2000/svg" width="50" height="50"><rect width="50" height="50" fill="red"/></svg>'
     mock_response.headers = {"content-type": "image/svg+xml; charset=utf-8"}
 
     with patch("httpx.get", return_value=mock_response):
@@ -568,5 +588,114 @@ async def test_http_content_type_with_charset_accepted():
             "https://example.com/image.svg"
         )
 
-    assert data == b"<svg></svg>"
-    assert content_type == "image/svg+xml; charset=utf-8"
+    # SVG is converted to PNG
+    assert content_type == "image/png"
+    assert data != b"<svg></svg>"
+    # Verify valid PNG header
+    assert data[:4] == b"\x89PNG"
+
+
+@pytest.mark.asyncio
+async def test_svg_file_converted_to_png(read_image_tool, tmp_path):
+    """Test that SVG files are converted to PNG before encoding."""
+    svg_content = b"""<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+  <rect width="100" height="100" fill="blue"/>
+</svg>"""
+    svg_file = tmp_path / "test.svg"
+    svg_file.write_bytes(svg_content)
+
+    data_url, content_type = ReadImage._read_and_encode_image(svg_file)
+
+    assert content_type == "image/png"
+    assert data_url.startswith("data:image/png;base64,")
+    decoded = base64.b64decode(data_url.split(";base64,")[1])
+    assert decoded[:4] == b"\x89PNG"
+    assert decoded != svg_content
+
+
+@pytest.mark.asyncio
+async def test_webp_file_converted_to_png(read_image_tool, tmp_path):
+    """Test that WebP files are converted to PNG before encoding."""
+    from PIL import Image
+
+    # Create a minimal valid WebP file using Pillow
+    img = Image.new("RGB", (10, 10), color="red")
+    webp_file = tmp_path / "test.webp"
+    img.save(webp_file, format="WEBP")
+
+    data_url, content_type = ReadImage._read_and_encode_image(webp_file)
+
+    assert content_type == "image/png"
+    assert data_url.startswith("data:image/png;base64,")
+    decoded = base64.b64decode(data_url.split(";base64,")[1])
+    assert decoded[:4] == b"\x89PNG"
+
+
+@pytest.mark.asyncio
+async def test_png_file_not_converted(read_image_tool, tmp_path):
+    """Test that PNG files pass through without conversion."""
+    from PIL import Image
+
+    # Create a PNG file
+    img = Image.new("RGB", (10, 10), color="green")
+    png_file = tmp_path / "test.png"
+    img.save(png_file, format="PNG")
+    original_data = png_file.read_bytes()
+
+    data_url, content_type = ReadImage._read_and_encode_image(png_file)
+
+    assert content_type == "image/png"
+    decoded = base64.b64decode(data_url.split(";base64,")[1])
+    assert decoded == original_data
+
+
+@pytest.mark.asyncio
+async def test_http_svg_converted_to_png():
+    """Test that HTTP-fetched SVG images are converted to PNG."""
+    from unittest.mock import MagicMock
+
+    ReadImage._fetch_cache.clear()
+
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.content = b'<svg xmlns="http://www.w3.org/2000/svg" width="50" height="50"><rect width="50" height="50" fill="red"/></svg>'
+    mock_response.headers = {"content-type": "image/svg+xml"}
+
+    with patch("httpx.get", return_value=mock_response):
+        data, content_type = ReadImage._fetch_http_image_sync(
+            "https://example.com/image.svg"
+        )
+
+    assert content_type == "image/png"
+    assert data[:4] == b"\x89PNG"
+
+
+@pytest.mark.asyncio
+async def test_http_webp_converted_to_png():
+    """Test that HTTP-fetched WebP images are converted to PNG."""
+    import io
+    from unittest.mock import MagicMock
+
+    from PIL import Image
+
+    ReadImage._fetch_cache.clear()
+
+    # Create minimal WebP bytes
+    buf = io.BytesIO()
+    img = Image.new("RGB", (10, 10), color="blue")
+    img.save(buf, format="WEBP")
+    webp_bytes = buf.getvalue()
+
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.content = webp_bytes
+    mock_response.headers = {"content-type": "image/webp"}
+
+    with patch("httpx.get", return_value=mock_response):
+        data, content_type = ReadImage._fetch_http_image_sync(
+            "https://example.com/image.webp"
+        )
+
+    assert content_type == "image/png"
+    assert data[:4] == b"\x89PNG"
+    assert data != webp_bytes
