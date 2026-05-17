@@ -5,6 +5,8 @@ from pathlib import Path
 import platform
 import subprocess
 
+from vibe.core.lsp import LSPClientManager, LSPDiagnosticFormatter
+
 
 def get_python_path() -> str | None:
     """Get the path to the Python executable.
@@ -43,4 +45,23 @@ def get_python_path() -> str | None:
     except FileNotFoundError:
         pass
 
+    return None
+
+
+async def get_lsp_diagnostics(file_path: str | Path) -> str | None:
+    """Fetch and format LSP diagnostics for a file.
+
+    Returns formatted diagnostics string if any diagnostics exist, else None.
+    Silently catches all exceptions so LSP failures never break tool operations.
+    """
+    path = file_path if isinstance(file_path, Path) else Path(file_path)
+    try:
+        client_manager = LSPClientManager()
+        diagnostics_list = await client_manager.get_diagnostics_from_all_servers(path)
+        if diagnostics_list:
+            return LSPDiagnosticFormatter.format_diagnostics_for_llm(
+                diagnostics_list, path
+            )
+    except Exception:
+        pass
     return None

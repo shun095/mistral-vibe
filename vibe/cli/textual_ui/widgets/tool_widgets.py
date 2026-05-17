@@ -124,6 +124,18 @@ class ToolResultWidget[TResult: BaseModel](Static):
         if extra:
             yield NoMarkupStatic(extra, classes="tool-result-hint")
 
+    def _lsp_diagnostics_widgets(self) -> ComposeResult:
+        """Yield LSP diagnostics widgets if available on the result."""
+        lsp_diagnostics = (
+            getattr(self.result, "lsp_diagnostics", None) if self.result else None
+        )
+        if lsp_diagnostics:
+            yield NoMarkupStatic("")
+            markdown_content = LSPDiagnosticFormatter.format_json_to_markdown(
+                lsp_diagnostics
+            )
+            yield Markdown(markdown_content)
+
     def compose(self) -> ComposeResult:
         """Default: show result fields."""
         if not self.collapsed and self.result:
@@ -202,15 +214,7 @@ class WriteFileResultWidget(ToolResultWidget[WriteFileResult]):
         yield NoMarkupStatic(
             f"Bytes: {self.result.bytes_written}", classes="tool-result-detail"
         )
-
-        # Display LSP diagnostics if available
-        if self.result and self.result.lsp_diagnostics:
-            yield NoMarkupStatic("")
-            # Convert JSON to Markdown for UI display
-            markdown_content = LSPDiagnosticFormatter.format_json_to_markdown(
-                self.result.lsp_diagnostics
-            )
-            yield Markdown(markdown_content)
+        yield from self._lsp_diagnostics_widgets()
 
         if self.result.content:
             yield NoMarkupStatic("")
@@ -251,13 +255,7 @@ class EditFileResultWidget(ToolResultWidget[EditFileResult]):
             yield NoMarkupStatic(
                 f"Path: {self.result.file}", classes="tool-result-detail"
             )
-            # Display LSP diagnostics if available
-            if self.result.lsp_diagnostics:
-                yield NoMarkupStatic("")
-                markdown_content = LSPDiagnosticFormatter.format_json_to_markdown(
-                    self.result.lsp_diagnostics
-                )
-                yield Markdown(markdown_content)
+            yield from self._lsp_diagnostics_widgets()
 
         if self.result.content:
             # Parse and render the unified diff
@@ -290,13 +288,7 @@ class SearchReplaceResultWidget(ToolResultWidget[SearchReplaceResult]):
             yield NoMarkupStatic(
                 f"Path: {self.result.file}", classes="tool-result-detail"
             )
-            # Display LSP diagnostics if available
-            if self.result.lsp_diagnostics:
-                yield NoMarkupStatic("")
-                markdown_content = LSPDiagnosticFormatter.format_json_to_markdown(
-                    self.result.lsp_diagnostics
-                )
-                yield Markdown(markdown_content)
+            yield from self._lsp_diagnostics_widgets()
 
         if self.result.content:
             for line in parse_search_replace_to_diff(self.result.content):
@@ -370,14 +362,7 @@ class ReadFileResultWidget(ToolResultWidget[ReadFileResult]):
             )
         for warning in self.warnings:
             yield NoMarkupStatic(f"⚠ {warning}", classes="tool-result-warning")
-        # Display LSP diagnostics if available
-        if self.result and self.result.lsp_diagnostics:
-            yield NoMarkupStatic("")
-            # Convert JSON to Markdown for UI display
-            markdown_content = LSPDiagnosticFormatter.format_json_to_markdown(
-                self.result.lsp_diagnostics
-            )
-            yield Markdown(markdown_content)
+        yield from self._lsp_diagnostics_widgets()
 
         if self.result and self.result.content:
             yield NoMarkupStatic("")

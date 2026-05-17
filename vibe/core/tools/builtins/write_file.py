@@ -7,7 +7,7 @@ from typing import ClassVar, final
 import anyio
 from pydantic import BaseModel, Field
 
-from vibe.core.lsp import LSPClientManager, LSPDiagnosticFormatter
+from vibe.core.lsp.utils import get_lsp_diagnostics
 from vibe.core.rewind.manager import FileSnapshot
 from vibe.core.scratchpad import is_scratchpad_path
 from vibe.core.tools.base import (
@@ -105,22 +105,7 @@ class WriteFile(
 
         await self._write_file(args, file_path)
 
-        # Automatically check for LSP diagnostics
-        diagnostics = None
-        try:
-            client_manager = LSPClientManager()
-            diagnostics_list = await client_manager.get_diagnostics_from_all_servers(
-                file_path
-            )
-
-            # Format diagnostics for LLM consumption if available
-            if diagnostics_list:
-                diagnostics = LSPDiagnosticFormatter.format_diagnostics_for_llm(
-                    diagnostics_list, file_path
-                )
-        except Exception:
-            # Don't fail the write operation if LSP fails
-            pass
+        diagnostics = await get_lsp_diagnostics(str(file_path))
 
         yield WriteFileResult(
             path=str(file_path),

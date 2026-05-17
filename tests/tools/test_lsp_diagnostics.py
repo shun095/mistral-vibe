@@ -18,16 +18,23 @@ from vibe.core.lsp.formatter import LSPDiagnosticFormatter
 from vibe.core.lsp.types import LSPServerHandle
 
 
+@pytest.fixture
+def mock_lsp_process():
+    """Create a mock subprocess for LSPClient testing."""
+    process = MagicMock()
+    process.stdin = MagicMock()
+    process.stdout = MagicMock()
+    process.stderr = MagicMock()
+    return process
+
+
 @pytest.mark.asyncio
 class TestDiagnosticStorageAndRetrieval:
     @pytest.mark.parametrize("diagnostic_count", [1, 5, 10])
-    async def test_diagnostic_storage_for_multiple_files(self, diagnostic_count: int):
-        mock_process = MagicMock()
-        mock_process.stdin = MagicMock()
-        mock_process.stdout = MagicMock()
-        mock_process.stderr = MagicMock()
-
-        client = LSPClient(mock_process)
+    async def test_diagnostic_storage_for_multiple_files(
+        self, diagnostic_count: int, mock_lsp_process
+    ):
+        client = LSPClient(mock_lsp_process)
 
         # Simulate diagnostics for multiple files
         for file_num in range(diagnostic_count):
@@ -58,13 +65,10 @@ class TestDiagnosticStorageAndRetrieval:
             assert len(client.diagnostics[uri]) == 1
             assert client.diagnostics[uri][0]["message"] == f"Error in file {file_num}"
 
-    async def test_diagnostic_updates_on_subsequent_notifications(self):
-        mock_process = MagicMock()
-        mock_process.stdin = MagicMock()
-        mock_process.stdout = MagicMock()
-        mock_process.stderr = MagicMock()
-
-        client = LSPClient(mock_process)
+    async def test_diagnostic_updates_on_subsequent_notifications(
+        self, mock_lsp_process
+    ):
+        client = LSPClient(mock_lsp_process)
         uri = "file:///tmp/test.py"
 
         # First notification with 1 diagnostic
@@ -97,13 +101,11 @@ class TestDiagnosticStorageAndRetrieval:
         assert client.diagnostics[uri][0]["message"] == "Second error"
         assert client.diagnostics[uri][1]["message"] == "Warning"
 
-    async def test_diagnostic_retrieval_via_document_diagnostics(self):
-        mock_process = MagicMock()
-        mock_process.stdin = AsyncMock()
-        mock_process.stdout = MagicMock()
-        mock_process.stderr = MagicMock()
-
-        client = LSPClient(mock_process)
+    async def test_diagnostic_retrieval_via_document_diagnostics(
+        self, mock_lsp_process
+    ):
+        mock_lsp_process.stdin = AsyncMock()
+        client = LSPClient(mock_lsp_process)
         uri = "file:///tmp/test.py"
 
         # Store diagnostics via notification
@@ -164,13 +166,8 @@ class TestDiagnosticStorageAndRetrieval:
 
 @pytest.mark.asyncio
 class TestPublishDiagnosticsNotificationHandling:
-    async def test_publish_diagnostics_notification_structure(self):
-        mock_process = MagicMock()
-        mock_process.stdin = MagicMock()
-        mock_process.stdout = MagicMock()
-        mock_process.stderr = MagicMock()
-
-        client = LSPClient(mock_process)
+    async def test_publish_diagnostics_notification_structure(self, mock_lsp_process):
+        client = LSPClient(mock_lsp_process)
 
         # Test with various diagnostic structures
         test_cases = [
@@ -198,13 +195,10 @@ class TestPublishDiagnosticsNotificationHandling:
             assert uri in client.diagnostics
             assert len(client.diagnostics[uri]) == test_case["expected_count"]
 
-    async def test_non_publish_diagnostics_notifications_ignored(self):
-        mock_process = MagicMock()
-        mock_process.stdin = MagicMock()
-        mock_process.stdout = MagicMock()
-        mock_process.stderr = MagicMock()
-
-        client = LSPClient(mock_process)
+    async def test_non_publish_diagnostics_notifications_ignored(
+        self, mock_lsp_process
+    ):
+        client = LSPClient(mock_lsp_process)
 
         # Send various non-publishDiagnostics notifications
         other_notifications = [
@@ -231,13 +225,8 @@ class TestPublishDiagnosticsNotificationHandling:
         # Verify no diagnostics were stored
         assert len(client.diagnostics) == 0
 
-    async def test_diagnostics_refreshed_timestamp_updated(self):
-        mock_process = MagicMock()
-        mock_process.stdin = MagicMock()
-        mock_process.stdout = MagicMock()
-        mock_process.stderr = MagicMock()
-
-        client = LSPClient(mock_process)
+    async def test_diagnostics_refreshed_timestamp_updated(self, mock_lsp_process):
+        client = LSPClient(mock_lsp_process)
         uri = "file:///tmp/test.py"
 
         # Set diagnostics_refreshed to None (as done by didChange)
@@ -262,13 +251,11 @@ class TestPublishDiagnosticsNotificationHandling:
 
 @pytest.mark.asyncio
 class TestDocumentDiagnosticFallback:
-    async def test_fallback_to_publish_diagnostics_when_document_diagnostic_fails(self):
-        mock_process = MagicMock()
-        mock_process.stdin = AsyncMock()
-        mock_process.stdout = MagicMock()
-        mock_process.stderr = MagicMock()
-
-        client = LSPClient(mock_process)
+    async def test_fallback_to_publish_diagnostics_when_document_diagnostic_fails(
+        self, mock_lsp_process
+    ):
+        mock_lsp_process.stdin = AsyncMock()
+        client = LSPClient(mock_lsp_process)
         uri = "file:///tmp/test.py"
 
         # Mock send_request and send_notification to avoid stdin.drain() issues
@@ -300,13 +287,11 @@ class TestDocumentDiagnosticFallback:
             assert len(diagnostics) == 1
             assert diagnostics[0]["message"] == "Error"
 
-    async def test_empty_diagnostics_when_publish_diagnostics_times_out(self):
-        mock_process = MagicMock()
-        mock_process.stdin = AsyncMock()
-        mock_process.stdout = MagicMock()
-        mock_process.stderr = MagicMock()
-
-        client = LSPClient(mock_process)
+    async def test_empty_diagnostics_when_publish_diagnostics_times_out(
+        self, mock_lsp_process
+    ):
+        mock_lsp_process.stdin = AsyncMock()
+        client = LSPClient(mock_lsp_process)
         uri = "file:///tmp/test.py"
 
         # Mock send_request and send_notification to avoid stdin.drain() issues
@@ -327,13 +312,10 @@ class TestDocumentDiagnosticFallback:
 
             assert diagnostics == []
 
-    async def test_existing_diagnostics_returned_when_not_expecting_fresh(self):
-        mock_process = MagicMock()
-        mock_process.stdin = MagicMock()
-        mock_process.stdout = MagicMock()
-        mock_process.stderr = MagicMock()
-
-        client = LSPClient(mock_process)
+    async def test_existing_diagnostics_returned_when_not_expecting_fresh(
+        self, mock_lsp_process
+    ):
+        client = LSPClient(mock_lsp_process)
         uri = "file:///tmp/test.py"
 
         # Store diagnostics without triggering didChange/didSave
@@ -363,13 +345,11 @@ class TestDocumentDiagnosticFallback:
 
 @pytest.mark.asyncio
 class TestTextDocumentSynchronization:
-    async def test_all_three_mandatory_notifications_exist(self):
-        mock_process = MagicMock()
-        mock_process.stdin = AsyncMock()
-        mock_process.stdout = AsyncMock()
-        mock_process.stderr = AsyncMock()
-
-        client = LSPClient(mock_process)
+    async def test_all_three_mandatory_notifications_exist(self, mock_lsp_process):
+        mock_lsp_process.stdin = AsyncMock()
+        mock_lsp_process.stdout = AsyncMock()
+        mock_lsp_process.stderr = AsyncMock()
+        client = LSPClient(mock_lsp_process)
 
         # Verify that all three mandatory methods exist
         assert hasattr(client, "text_document_did_open")
@@ -381,13 +361,11 @@ class TestTextDocumentSynchronization:
         assert callable(client.text_document_did_change)
         assert callable(client.text_document_did_close)
 
-    async def test_did_open_notification_structure(self):
-        mock_process = MagicMock()
-        mock_process.stdin = AsyncMock()
-        mock_process.stdout = AsyncMock()
-        mock_process.stderr = AsyncMock()
-
-        client = LSPClient(mock_process)
+    async def test_did_open_notification_structure(self, mock_lsp_process):
+        mock_lsp_process.stdin = AsyncMock()
+        mock_lsp_process.stdout = AsyncMock()
+        mock_lsp_process.stderr = AsyncMock()
+        client = LSPClient(mock_lsp_process)
 
         # Mock the send_notification method to capture the call
         with patch.object(client, "send_notification") as mock_send:
@@ -408,13 +386,11 @@ class TestTextDocumentSynchronization:
         assert params["textDocument"]["text"] == "print('hello')"
         assert params["textDocument"]["version"] == 1
 
-    async def test_did_change_notification_structure(self):
-        mock_process = MagicMock()
-        mock_process.stdin = AsyncMock()
-        mock_process.stdout = AsyncMock()
-        mock_process.stderr = AsyncMock()
-
-        client = LSPClient(mock_process)
+    async def test_did_change_notification_structure(self, mock_lsp_process):
+        mock_lsp_process.stdin = AsyncMock()
+        mock_lsp_process.stdout = AsyncMock()
+        mock_lsp_process.stderr = AsyncMock()
+        client = LSPClient(mock_lsp_process)
 
         # Mock the send_notification method to capture the call
         with patch.object(client, "send_notification") as mock_send:
@@ -437,13 +413,11 @@ class TestTextDocumentSynchronization:
         assert len(params["contentChanges"]) == 1
         assert params["contentChanges"][0]["text"] == "print('world')"
 
-    async def test_did_close_notification_structure(self):
-        mock_process = MagicMock()
-        mock_process.stdin = AsyncMock()
-        mock_process.stdout = AsyncMock()
-        mock_process.stderr = AsyncMock()
-
-        client = LSPClient(mock_process)
+    async def test_did_close_notification_structure(self, mock_lsp_process):
+        mock_lsp_process.stdin = AsyncMock()
+        mock_lsp_process.stdout = AsyncMock()
+        mock_lsp_process.stderr = AsyncMock()
+        client = LSPClient(mock_lsp_process)
 
         # Mock the send_notification method to capture the call
         with patch.object(client, "send_notification") as mock_send:
@@ -459,13 +433,11 @@ class TestTextDocumentSynchronization:
         assert "textDocument" in params
         assert params["textDocument"]["uri"] == "file:///test.py"
 
-    async def test_incremental_synchronization_supported(self):
-        mock_process = MagicMock()
-        mock_process.stdin = AsyncMock()
-        mock_process.stdout = AsyncMock()
-        mock_process.stderr = AsyncMock()
-
-        client = LSPClient(mock_process)
+    async def test_incremental_synchronization_supported(self, mock_lsp_process):
+        mock_lsp_process.stdin = AsyncMock()
+        mock_lsp_process.stdout = AsyncMock()
+        mock_lsp_process.stderr = AsyncMock()
+        client = LSPClient(mock_lsp_process)
 
         # Mock the send_notification method to capture the call
         with patch.object(client, "send_notification") as mock_send:
@@ -486,13 +458,13 @@ class TestTextDocumentSynchronization:
         for change in params["contentChanges"]:
             assert "text" in change
 
-    async def test_diagnostics_refreshed_set_to_none_on_did_change_and_did_save(self):
-        mock_process = MagicMock()
-        mock_process.stdin = AsyncMock()
-        mock_process.stdout = AsyncMock()
-        mock_process.stderr = AsyncMock()
-
-        client = LSPClient(mock_process)
+    async def test_diagnostics_refreshed_set_to_none_on_did_change_and_did_save(
+        self, mock_lsp_process
+    ):
+        mock_lsp_process.stdin = AsyncMock()
+        mock_lsp_process.stdout = AsyncMock()
+        mock_lsp_process.stderr = AsyncMock()
+        client = LSPClient(mock_lsp_process)
         uri = "file:///test.py"
 
         # Test didChange
@@ -508,13 +480,13 @@ class TestTextDocumentSynchronization:
 
 @pytest.mark.asyncio
 class TestErrorHandling:
-    async def test_malformed_message_without_content_length_header(self):
-        mock_process = MagicMock()
-        mock_process.stdin = AsyncMock()
-        mock_process.stdout = AsyncMock()
-        mock_process.stderr = AsyncMock()
-
-        client = LSPClient(mock_process)
+    async def test_malformed_message_without_content_length_header(
+        self, mock_lsp_process
+    ):
+        mock_lsp_process.stdin = AsyncMock()
+        mock_lsp_process.stdout = AsyncMock()
+        mock_lsp_process.stderr = AsyncMock()
+        client = LSPClient(mock_lsp_process)
 
         # Simulate reading a message without Content-Length header
         # This should be handled gracefully
@@ -527,13 +499,11 @@ class TestErrorHandling:
             assert hasattr(client, "_read_messages")
             assert callable(client._read_messages)
 
-    async def test_json_decode_error_in_message_parsing(self):
-        mock_process = MagicMock()
-        mock_process.stdin = AsyncMock()
-        mock_process.stdout = AsyncMock()
-        mock_process.stderr = AsyncMock()
-
-        client = LSPClient(mock_process)
+    async def test_json_decode_error_in_message_parsing(self, mock_lsp_process):
+        mock_lsp_process.stdin = AsyncMock()
+        mock_lsp_process.stdout = AsyncMock()
+        mock_lsp_process.stderr = AsyncMock()
+        client = LSPClient(mock_lsp_process)
 
         # Test that _handle_response can handle malformed JSON
         # We'll test with a response that has invalid JSON structure
@@ -556,13 +526,11 @@ class TestErrorHandling:
             client.diagnostics["file:///test.py"] == "invalid_string_instead_of_array"
         )
 
-    async def test_content_length_parsing_with_invalid_header(self):
-        mock_process = MagicMock()
-        mock_process.stdin = AsyncMock()
-        mock_process.stdout = AsyncMock()
-        mock_process.stderr = AsyncMock()
-
-        LSPClient(mock_process)
+    async def test_content_length_parsing_with_invalid_header(self, mock_lsp_process):
+        mock_lsp_process.stdin = AsyncMock()
+        mock_lsp_process.stdout = AsyncMock()
+        mock_lsp_process.stderr = AsyncMock()
+        LSPClient(mock_lsp_process)
 
         # Test with invalid Content-Length header
         # This would be handled in _read_messages, which we can't easily test
@@ -582,13 +550,8 @@ class TestErrorHandling:
         match = re.search(pattern, invalid_header)
         assert match is None  # Pattern should not match non-numeric values
 
-    async def test_empty_diagnostics_array_handling(self):
-        mock_process = MagicMock()
-        mock_process.stdin = MagicMock()
-        mock_process.stdout = MagicMock()
-        mock_process.stderr = MagicMock()
-
-        client = LSPClient(mock_process)
+    async def test_empty_diagnostics_array_handling(self, mock_lsp_process):
+        client = LSPClient(mock_lsp_process)
         uri = "file:///tmp/test.py"
 
         # Send notification with empty diagnostics array
@@ -603,13 +566,8 @@ class TestErrorHandling:
         assert uri in client.diagnostics
         assert client.diagnostics[uri] == []
 
-    async def test_missing_uri_in_publish_diagnostics(self):
-        mock_process = MagicMock()
-        mock_process.stdin = MagicMock()
-        mock_process.stdout = MagicMock()
-        mock_process.stderr = MagicMock()
-
-        client = LSPClient(mock_process)
+    async def test_missing_uri_in_publish_diagnostics(self, mock_lsp_process):
+        client = LSPClient(mock_lsp_process)
 
         # Send notification without URI
         notification = {
@@ -625,13 +583,11 @@ class TestErrorHandling:
 
 @pytest.mark.asyncio
 class TestIntegration:
-    async def test_complete_document_lifecycle_with_diagnostics(self):
-        mock_process = MagicMock()
-        mock_process.stdin = AsyncMock()
-        mock_process.stdout = AsyncMock()
-        mock_process.stderr = AsyncMock()
-
-        client = LSPClient(mock_process)
+    async def test_complete_document_lifecycle_with_diagnostics(self, mock_lsp_process):
+        mock_lsp_process.stdin = AsyncMock()
+        mock_lsp_process.stdout = AsyncMock()
+        mock_lsp_process.stderr = AsyncMock()
+        client = LSPClient(mock_lsp_process)
         uri = "file:///tmp/test.py"
         text = "print('hello')"
 

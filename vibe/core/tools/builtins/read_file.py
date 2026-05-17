@@ -8,7 +8,7 @@ import anyio
 from pydantic import BaseModel, Field
 
 from vibe.core.config.harness_files import get_harness_files_manager
-from vibe.core.lsp import LSPClientManager, LSPDiagnosticFormatter
+from vibe.core.lsp.utils import get_lsp_diagnostics
 from vibe.core.scratchpad import is_scratchpad_path
 from vibe.core.tools.base import (
     BaseTool,
@@ -91,22 +91,7 @@ class ReadFile(
 
         read_result = await self._read_file(args, file_path)
 
-        # Get LSP diagnostics for the file
-        lsp_diagnostics = None
-        try:
-            client_manager = LSPClientManager()
-            diagnostics = await client_manager.get_diagnostics_from_all_servers(
-                file_path
-            )
-
-            # Format diagnostics for LLM consumption if available
-            if diagnostics:
-                lsp_diagnostics = LSPDiagnosticFormatter.format_diagnostics_for_llm(
-                    diagnostics, file_path
-                )
-        except Exception:
-            # Don't fail the read operation if LSP fails
-            pass
+        lsp_diagnostics = await get_lsp_diagnostics(str(file_path))
 
         yield ReadFileResult(
             path=str(file_path),

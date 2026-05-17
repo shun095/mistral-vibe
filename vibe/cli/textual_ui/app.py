@@ -1059,20 +1059,14 @@ class VibeApp(App):  # noqa: PLR0904
             return
 
         if compact_index == 0:
-            # Process queued message after compaction ends
-            if self._queued_message:
-                await self._handle_user_message(self._queued_message)
-                self._queued_message = None
+            await self._flush_queued_message()
             return
 
         with self.batch_update():
             for widget in children[:compact_index]:
                 await widget.remove()
 
-        # Process queued message after compaction ends
-        if self._queued_message:
-            await self._handle_user_message(self._queued_message)
-            self._queued_message = None
+        await self._flush_queued_message()
 
     async def _handle_command(self, user_input: str) -> bool:
         if resolved := self.commands.parse_command(user_input):
@@ -1322,6 +1316,12 @@ class VibeApp(App):  # noqa: PLR0904
             sections.append("Output:\n```text\n(no output)\n```")
 
         return "\n\n".join(sections)
+
+    async def _flush_queued_message(self) -> None:
+        """Process and clear any queued user message."""
+        if self._queued_message:
+            await self._handle_user_message(self._queued_message)
+            self._queued_message = None
 
     async def _handle_user_message(self, message: str) -> None:
         if self._remote_manager.is_active:

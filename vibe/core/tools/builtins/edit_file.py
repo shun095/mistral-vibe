@@ -9,7 +9,7 @@ from typing import ClassVar, NamedTuple, final
 import anyio
 from pydantic import BaseModel, Field
 
-from vibe.core.lsp import LSPClientManager, LSPDiagnosticFormatter
+from vibe.core.lsp.utils import get_lsp_diagnostics
 from vibe.core.rewind.manager import FileSnapshot
 from vibe.core.tools.base import (
     BaseTool,
@@ -204,22 +204,7 @@ class EditFile(
 
         await self._write_file(file_path, modified_content, decoded.encoding)
 
-        # Automatically check for LSP diagnostics after modification
-        lsp_diagnostics = None
-        try:
-            client_manager = LSPClientManager()
-            diagnostics_list = await client_manager.get_diagnostics_from_all_servers(
-                file_path
-            )
-
-            # Format diagnostics for LLM consumption if available
-            if diagnostics_list:
-                lsp_diagnostics = LSPDiagnosticFormatter.format_diagnostics_for_llm(
-                    diagnostics_list, file_path
-                )
-        except Exception:
-            # Don't fail the edit_file operation if LSP fails
-            pass
+        lsp_diagnostics = await get_lsp_diagnostics(file_path)
 
         # Generate unified diff between old and new content
         diff = EditFile._create_unified_diff(

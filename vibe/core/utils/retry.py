@@ -10,6 +10,43 @@ import httpx
 from vibe.core.types import LLMRetryEvent
 
 
+def _extract_retry_config(
+    config: dict[str, Any],
+) -> tuple[int, float, float, Callable[[Exception], bool], Any, Any, Any]:
+    """Extract and return retry configuration values from config dict."""
+    return (
+        config.get("tries", 3),
+        config.get("delay_seconds", 0.5),
+        config.get("backoff_factor", 2.0),
+        config.get("is_retryable", _is_retryable_http_error),
+        config.get("on_retry"),
+        config.get("provider"),
+        config.get("model"),
+    )
+
+
+def _emit_retry_event(
+    on_retry: Any,
+    attempt: int,
+    tries: int,
+    last_exc: Exception,
+    current_delay: float,
+    provider: Any,
+    model: Any,
+) -> None:
+    """Create and invoke an LLMRetryEvent via the on_retry callback."""
+    if on_retry is not None:
+        retry_event = LLMRetryEvent(
+            attempt=attempt + 1,
+            max_attempts=tries,
+            error_message=str(last_exc),
+            delay_seconds=current_delay,
+            provider=provider,
+            model=model,
+        )
+        on_retry(retry_event)
+
+
 def _is_retryable_http_error(e: Exception) -> bool:  # noqa: PLR0911
     """Check if an exception is retryable for LLM backend operations.
 
@@ -70,13 +107,15 @@ def async_retry[T, **P](
         @functools.wraps(func)
         async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             last_exc = None
-            tries = config.get("tries", 3)
-            delay_seconds = config.get("delay_seconds", 0.5)
-            backoff_factor = config.get("backoff_factor", 2.0)
-            is_retryable = config.get("is_retryable", _is_retryable_http_error)
-            on_retry = config.get("on_retry")
-            provider = config.get("provider")
-            model = config.get("model")
+            (
+                tries,
+                delay_seconds,
+                backoff_factor,
+                is_retryable,
+                on_retry,
+                provider,
+                model,
+            ) = _extract_retry_config(config)
 
             for attempt in range(tries):
                 try:
@@ -87,19 +126,15 @@ def async_retry[T, **P](
                         current_delay = (delay_seconds * (backoff_factor**attempt)) + (
                             0.05 * attempt
                         )
-
-                        # Invoke on_retry callback if provided
-                        if on_retry is not None:
-                            retry_event = LLMRetryEvent(
-                                attempt=attempt + 1,
-                                max_attempts=tries,
-                                error_message=str(last_exc),
-                                delay_seconds=current_delay,
-                                provider=provider,
-                                model=model,
-                            )
-                            on_retry(retry_event)
-
+                        _emit_retry_event(
+                            on_retry,
+                            attempt,
+                            tries,
+                            last_exc,
+                            current_delay,
+                            provider,
+                            model,
+                        )
                         await asyncio.sleep(current_delay)
                         continue
                     raise e
@@ -166,13 +201,15 @@ def async_generator_retry[T, **P](
         @functools.wraps(func)
         async def wrapper(*args: P.args, **kwargs: P.kwargs) -> AsyncGenerator[T]:
             last_exc = None
-            tries = config.get("tries", 3)
-            delay_seconds = config.get("delay_seconds", 0.5)
-            backoff_factor = config.get("backoff_factor", 2.0)
-            is_retryable = config.get("is_retryable", _is_retryable_http_error)
-            on_retry = config.get("on_retry")
-            provider = config.get("provider")
-            model = config.get("model")
+            (
+                tries,
+                delay_seconds,
+                backoff_factor,
+                is_retryable,
+                on_retry,
+                provider,
+                model,
+            ) = _extract_retry_config(config)
 
             for attempt in range(tries):
                 try:
@@ -185,19 +222,15 @@ def async_generator_retry[T, **P](
                         current_delay = (delay_seconds * (backoff_factor**attempt)) + (
                             0.05 * attempt
                         )
-
-                        # Invoke on_retry callback if provided
-                        if on_retry is not None:
-                            retry_event = LLMRetryEvent(
-                                attempt=attempt + 1,
-                                max_attempts=tries,
-                                error_message=str(last_exc),
-                                delay_seconds=current_delay,
-                                provider=provider,
-                                model=model,
-                            )
-                            on_retry(retry_event)
-
+                        _emit_retry_event(
+                            on_retry,
+                            attempt,
+                            tries,
+                            last_exc,
+                            current_delay,
+                            provider,
+                            model,
+                        )
                         await asyncio.sleep(current_delay)
                         continue
                     raise e
