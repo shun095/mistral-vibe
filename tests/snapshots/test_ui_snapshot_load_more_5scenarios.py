@@ -53,7 +53,12 @@ def _make_tool_call_mixed(idx: int) -> list[ToolCall]:
                 index=idx,
                 function=FunctionCall(
                     name="read_file",
-                    arguments=json.dumps({"path": _SAMPLE_FILE, "offset": idx * 3}),
+                    arguments=json.dumps(
+                        {
+                            "path": f"sample_turn_{idx}.md",
+                            "offset": 0,
+                        }
+                    ),
                 ),
             )
         ]
@@ -394,7 +399,13 @@ class _LoadMoreApp(BaseSnapshotTestApp):
         )
 
 
-async def _wait_for_agent(app, pilot: Pilot) -> None:
+async def _wait_for_agent(
+    app,
+    pilot: Pilot,
+    expand_load_more_once: bool = False,
+    expand_tool_calls_after: bool = False,
+    scroll_to_bottom: bool = False,
+) -> None:
     vibe_app = cast(_VibeAppProtocol, app)
     for _ in range(750):
         if not vibe_app._agent_running:
@@ -418,8 +429,29 @@ async def _wait_for_agent(app, pilot: Pilot) -> None:
             if current != last_remaining:
                 last_remaining = current
 
+    # Expand load more widget once by single click
+    if expand_load_more_once:
+        load_more_widgets = list(app.query(HistoryLoadMoreMessage))
+        if load_more_widgets:
+            load_more_btn = load_more_widgets[0]._label_widget
+            if load_more_btn:
+                await pilot.click(load_more_btn)
+                for _ in range(300):
+                    await pilot.pause(0.02)
+                    updated_widgets = list(app.query(HistoryLoadMoreMessage))
+                    if not updated_widgets or (updated_widgets and updated_widgets[0]._remaining is None):
+                        break
+
+    # Expand tool calls by ctrl+o after load more
+    if expand_tool_calls_after:
+        await pilot.press("ctrl+o")
+        await pilot.pause(0.5)
+
     cast(_LoadMoreApp, app).freeze_spinners()
-    await pilot.press("home")
+    if scroll_to_bottom:
+        await pilot.press("end")
+    else:
+        await pilot.press("home")
     await pilot.pause(1.0)
 
     # Debug: print message counts and widget tree with history indices
@@ -458,7 +490,14 @@ async def _wait_for_agent(app, pilot: Pilot) -> None:
 
 
 def _export_svg(
-    label: str, tool_call_fn, tool_call_name: str, fold_state: str, expand_before: bool
+    label: str,
+    tool_call_fn,
+    tool_call_name: str,
+    fold_state: str,
+    expand_before: bool,
+    expand_load_more_once: bool = False,
+    expand_tool_calls_after: bool = False,
+    scroll_to_bottom: bool = False,
 ) -> None:
     import time as _time
 
@@ -467,6 +506,10 @@ def _export_svg(
     async def _run(pilot: Pilot) -> None:
         app = pilot.app
         Path(_SAMPLE_FILE).write_text(_SAMPLE_CONTENT)
+        for turn_idx in range(0, 20, 2):
+            Path(f"sample_turn_{turn_idx}.md").write_text(
+                f"# Config (Turn {turn_idx})\n" + f"- item: value_{turn_idx}\n" * 100
+            )
         if expand_before:
             await pilot.press("ctrl+o")
             await pilot.pause(0.1)
@@ -474,7 +517,9 @@ def _export_svg(
             with patch("vibe.cli.textual_ui.app.PRUNE_HIGH_MARK", 10):
                 await pilot.press(*"run a task")
                 await pilot.press("enter")
-                await _wait_for_agent(app, pilot)
+                await _wait_for_agent(
+                    app, pilot, expand_load_more_once, expand_tool_calls_after, scroll_to_bottom
+                )
 
     # DEBUG: Monkey-patch export_screenshot to log capture timing — preserved for future debugging
     if False:  # DEBUG BLOCK START
@@ -518,4 +563,55 @@ def test_export_svg_bash() -> None:
     """Generate bash-only SVG files."""
     _export_svg(
         "bash_folded", _make_tool_call_bash_only, "bash", "folded", expand_before=False
+    )
+
+
+def test_export_svg_load_more_expanded() -> None:
+    """Generate SVG with load more widget expanded once by single click."""
+    _export_svg(
+        "mixed_load_more_expanded",
+        _make_tool_call_mixed,
+        "mixed",
+        "folded",
+        expand_before=False,
+        expand_load_more_once=True,
+    )
+
+
+def test_export_svg_load_more_and_tool_calls_expanded() -> None:
+    """Generate SVG with load more clicked once, then tool calls expanded by ctrl+o."""
+    _export_svg(
+        "mixed_load_more_and_tool_calls_expanded",
+        _make_tool_call_mixed,
+        "mixed",
+        "folded",
+        expand_before=False,
+        expand_load_more_once=True,
+        expand_tool_calls_after=True,
+    )
+
+
+def test_export_svg_bash_load_more_scrolled() -> None:
+    """Bash-only, folded, one load more click, scroll to bottom, no expand tool calls."""
+    _export_svg(
+        "bash_load_more_scrolled",
+        _make_tool_call_bash_only,
+        "bash",
+        "folded",
+        expand_before=False,
+        expand_load_more_once=True,
+        scroll_to_bottom=True,
+    )
+
+
+def test_export_svg_mixed_load_more_scrolled() -> None:
+    """Mixed, folded, one load more click, scroll to bottom, no expand tool calls."""
+    _export_svg(
+        "mixed_load_more_scrolled",
+        _make_tool_call_mixed,
+        "mixed",
+        "folded",
+        expand_before=False,
+        expand_load_more_once=True,
+        scroll_to_bottom=True,
     )
