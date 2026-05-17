@@ -2950,4 +2950,3 @@ document.addEventListener('DOMContentLoaded', () => {
 
 export { VibeClient };
 export { formatDuration } from './format-utils.js';
-// test
