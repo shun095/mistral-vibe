@@ -344,3 +344,4 @@ def fuzzy_match_batch(str query, list candidates) -> list:
     if q_promoted:
         PyMem_Free(q_promoted)
     return result
+# test

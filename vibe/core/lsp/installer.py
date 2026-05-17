@@ -9,7 +9,6 @@ from vibe.core.paths._vibe_home import VIBE_HOME
 class LSPServerInstaller(ABC):
     def __init__(self, server_name: str) -> None:
         self.server_name = server_name
-        # FIXME: must be defined in global_paths.
         self.install_dir = VIBE_HOME.path / "lsp" / server_name
 
     def get_executable_path_from_mason(self) -> Path | None:

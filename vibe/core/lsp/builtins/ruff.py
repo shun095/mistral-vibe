@@ -39,7 +39,6 @@ class RuffLSP(LSPServer):
 
     def _find_python_project_root(self) -> str:
         # Find Python project root by walking up from current directory
-        # FIXME: root_mark should be configurable by config file.
         root_markers = [
             "pyproject.toml",
             "ruff.toml",

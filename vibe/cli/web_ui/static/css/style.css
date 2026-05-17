@@ -408,7 +408,7 @@ body {
 }
 
 .message.tool-call .tool-error {
-    background-color: #f5d5dc;
+    background-color: var(--error-bg);
     padding: 12px;
     margin: 0;
     border-radius: 6px;
@@ -418,7 +418,7 @@ body {
 }
 
 .message.tool-call .tool-skip {
-    background-color: #d5f5e3;
+    background-color: var(--success-bg);
     padding: 12px;
     margin: 0;
     border-radius: 6px;
@@ -540,12 +540,12 @@ body {
 }
 
 .bash-output-section.stdout .output-label {
-    background-color: #d5f5e3;
+    background-color: var(--success-bg);
     color: var(--green-dark);
 }
 
 .bash-output-section.stderr .output-label {
-    background-color: #f5d5dc;
+    background-color: var(--error-bg);
     color: var(--red-dark);
 }
 
@@ -573,12 +573,12 @@ body {
 }
 
 .bash-returncode.success {
-    background-color: #d5f5e3;
+    background-color: var(--success-bg);
     color: var(--green-dark);
 }
 
 .bash-returncode.failure {
-    background-color: #f5d5dc;
+    background-color: var(--error-bg);
     color: var(--red-dark);
 }
 
@@ -673,7 +673,7 @@ body {
 }
 
 .todo-item .todo-priority.high {
-    background-color: #f5d5dc;
+    background-color: var(--error-bg);
     color: var(--red-dark);
 }
 
@@ -683,7 +683,7 @@ body {
 }
 
 .todo-item .todo-priority.low {
-    background-color: #d5f5e3;
+    background-color: var(--success-bg);
     color: var(--green-dark);
 }
 
@@ -699,7 +699,7 @@ body {
 }
 
 .lsp-diagnostic.error {
-    background-color: #f5d5dc;
+    background-color: var(--error-bg);
 }
 
 .lsp-diagnostic.warning {
@@ -722,7 +722,7 @@ body {
 }
 
 .lsp-diagnostic .diagnostic-severity.error {
-    background-color: #f5d5dc;
+    background-color: var(--error-bg);
     color: var(--red-dark);
 }
 

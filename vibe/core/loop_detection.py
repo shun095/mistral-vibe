@@ -165,13 +165,13 @@ class ToolCallLoopHandler:
             self._detector.reset()
 
     def check_first_call(
-        self, tool_call: Any, TOOL_ERROR_TAG: str
+        self, tool_call: Any, tool_error_tag: str
     ) -> tuple[bool, str | None]:
         """Check if the first call of a turn indicates a loop.
 
         Args:
             tool_call: The tool call object with tool_name, args_dict, and call_id attributes
-            TOOL_ERROR_TAG: The error tag string for formatting error messages
+            tool_error_tag: The error tag string for formatting error messages
 
         Returns:
             A tuple of (is_loop_detected, error_message_or_none)
@@ -189,7 +189,7 @@ class ToolCallLoopHandler:
 
         if self._detector.check_first_call_of_turn(signature):
             self._detector.reset()
-            error_msg = f"<{TOOL_ERROR_TAG}>Tool '{tool_call.tool_name}' is being called repeatedly with the same arguments. This appears to be an infinite loop. Please try a different approach.</{TOOL_ERROR_TAG}>"
+            error_msg = f"<{tool_error_tag}>Tool '{tool_call.tool_name}' is being called repeatedly with the same arguments. This appears to be an infinite loop. Please try a different approach.</{tool_error_tag}>"
             return True, error_msg
 
         return False, None

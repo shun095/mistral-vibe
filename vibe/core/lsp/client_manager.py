@@ -69,28 +69,13 @@ class LSPClientManager:
         # Get command from config if available, otherwise use server class default
         if self.config and server_name in self.config:
             server_config = self.config[server_name]
-
-            # FIXME: What is the case of "get_command is unavailable"? All server should inherit LSPServer. Should be removed unnecessary if branch.
-            # Use get_command if available, otherwise use the static command
-            if hasattr(server_class, "get_command") and callable(
-                server_class.get_command
-            ):
-                server_instance = server_class()
-                command = await server_instance.get_command()
-            else:
-                command = server_config.command
+            server_instance = server_class()
+            command = await server_instance.get_command()
             env = server_config.env
             cwd = server_config.cwd
         else:
-            # FIXME: What is the case of "get_command is unavailable"? All server should inherit LSPServer. Should be removed unnecessary if branch.
-            # Use get_command if available, otherwise use the static command
-            if hasattr(server_class, "get_command") and callable(
-                server_class.get_command
-            ):
-                server_instance = server_class()
-                command = await server_instance.get_command()
-            else:
-                command = server_class.command
+            server_instance = server_class()
+            command = await server_instance.get_command()
             env = None
             cwd = None
 

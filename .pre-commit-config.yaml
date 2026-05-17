@@ -49,7 +49,7 @@ repos:
         entry: uv run pytest tests/
         language: system
         pass_filenames: false
-        always_run: true
+        files: ^(vibe|tests)/.*\.(py|pyx)$
 
       - id: import-linter
         name: Check architecture with import-linter
@@ -63,4 +63,4 @@ repos:
         entry: npm test
         language: system
         pass_filenames: false
-        always_run: true
+        files: \.(js|ts|tsx)$

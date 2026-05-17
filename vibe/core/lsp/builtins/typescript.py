@@ -50,7 +50,6 @@ class TypeScriptLSP(LSPServer):
 
     def _find_typescript_project_root(self) -> str:
         # Find TypeScript/JavaScript project root by walking up from current directory
-        # FIXME: root_mark should be configurable by config file.
         root_markers = [
             "tsconfig.json",
             "jsconfig.json",

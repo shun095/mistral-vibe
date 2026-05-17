@@ -47,7 +47,6 @@ class PyrightLSP(LSPServer):
 
     def _find_python_project_root(self) -> str:
         # Find Python project root by walking up from current directory
-        # FIXME: root_mark should be configuarable by config file.
         root_markers = [
             "pyrightconfig.json",
             "pyproject.toml",
