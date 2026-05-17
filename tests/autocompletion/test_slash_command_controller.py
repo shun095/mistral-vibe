@@ -105,6 +105,31 @@ def test_on_text_change_clears_suggestions_when_no_matches() -> None:
     assert view.reset_count >= 1
 
 
+def test_on_text_change_closes_popup_on_exact_match() -> None:
+    controller, view = make_controller(prefix="/c")
+
+    controller.on_text_changed("/compact", cursor_index=8)
+
+    assert view.reset_count >= 1
+
+
+def test_on_text_change_closes_popup_on_exact_match_with_args() -> None:
+    controller, view = make_controller(prefix="/c")
+
+    controller.on_text_changed("/compact foo", cursor_index=12)
+
+    assert view.reset_count >= 1
+
+
+def test_on_text_change_keeps_popup_when_cursor_in_head() -> None:
+    controller, view = make_controller(prefix="/c")
+
+    controller.on_text_changed("/compact", cursor_index=4)
+
+    suggestions, _ = view.suggestion_events[-1]
+    assert [s.alias for s in suggestions] == ["/compact"]
+
+
 def test_on_text_change_limits_the_number_of_results_and_preserves_insertion_order() -> (
     None
 ):
@@ -206,8 +231,8 @@ def test_tab_on_slash_command_with_args_replaces_only_head() -> None:
 
     result = controller.on_key(key_event("tab"), text=text, cursor_index=len(text))
 
-    assert result is CompletionResult.HANDLED
-    assert view.replacements == [Replacement(0, 8, "/compact")]
+    assert result is CompletionResult.IGNORED
+    assert view.replacements == []
 
 
 def test_enter_on_slash_command_with_args_submits_with_head_only_replacement() -> None:
@@ -217,8 +242,8 @@ def test_enter_on_slash_command_with_args_submits_with_head_only_replacement() -
 
     result = controller.on_key(key_event("enter"), text=text, cursor_index=len(text))
 
-    assert result is CompletionResult.SUBMIT
-    assert view.replacements == [Replacement(0, 8, "/compact")]
+    assert result is CompletionResult.IGNORED
+    assert view.replacements == []
 
 
 def test_callable_entries_reflects_enabled_disabled_skills() -> None:
