@@ -89,10 +89,17 @@ allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 include = ["vibe/"]
+ignore-vcs = true
+exclude = [
+    "**/.gitignore",
+    "**/__pycache__/",
+    "**/*.pyc",
+    "**/*.pyo",
+    "**/build/",
+]
 
 [[tool.hatch.build.hooks.build-scripts.scripts]]
 commands = ["python scripts/build_cython.py"]
-artifacts = ["vibe/core/fuzzy/*.so", "vibe/core/fuzzy/*.c"]
 
 [project.scripts]
 vibe = "vibe.cli.entrypoint:main"
