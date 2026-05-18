@@ -42,7 +42,7 @@ async def _empty_audio_stream() -> AsyncIterator[bytes]:
 
 
 def _make_sdk_session_created(request_id: str = "test-request-id") -> MagicMock:
-    from mistralai.client.models import (
+    from mistralai.client.models import (  # pyright: ignore[reportMissingImports]
         RealtimeTranscriptionSession,
         RealtimeTranscriptionSessionCreated,
     )
@@ -55,7 +55,9 @@ def _make_sdk_session_created(request_id: str = "test-request-id") -> MagicMock:
 
 
 def _make_sdk_text_delta(text: str) -> MagicMock:
-    from mistralai.client.models import TranscriptionStreamTextDelta
+    from mistralai.client.models import (  # pyright: ignore[reportMissingImports]
+        TranscriptionStreamTextDelta,
+    )
 
     m = MagicMock(spec=TranscriptionStreamTextDelta)
     m.text = text
@@ -63,7 +65,9 @@ def _make_sdk_text_delta(text: str) -> MagicMock:
 
 
 def _make_sdk_done(text: str) -> MagicMock:
-    from mistralai.client.models import TranscriptionStreamDone
+    from mistralai.client.models import (  # pyright: ignore[reportMissingImports]
+        TranscriptionStreamDone,
+    )
 
     m = MagicMock(spec=TranscriptionStreamDone)
     m.text = text
@@ -71,7 +75,9 @@ def _make_sdk_done(text: str) -> MagicMock:
 
 
 def _make_sdk_error(message: str) -> MagicMock:
-    from mistralai.client.models import RealtimeTranscriptionError
+    from mistralai.client.models import (  # pyright: ignore[reportMissingImports]
+        RealtimeTranscriptionError,
+    )
 
     m = MagicMock(spec=RealtimeTranscriptionError)
     m.error = MagicMock()
@@ -80,7 +86,9 @@ def _make_sdk_error(message: str) -> MagicMock:
 
 
 def _make_sdk_unknown() -> MagicMock:
-    from mistralai.extra.realtime import UnknownRealtimeEvent
+    from mistralai.extra.realtime import (  # pyright: ignore[reportMissingImports]
+        UnknownRealtimeEvent,
+    )
 
     return MagicMock(spec=UnknownRealtimeEvent)
 

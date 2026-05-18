@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, ClassVar, final
 import httpx
 from pydantic import BaseModel, Field
 
-from vibe.core.llm._mistralai_stub import (  # pyright: ignore[reportAttributeAccessIssue]
+from vibe.core.llm._mistralai_stub import (
     ConversationResponse,
     MessageOutputEntry,
     Mistral,

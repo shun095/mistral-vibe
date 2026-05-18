@@ -23,8 +23,8 @@ import pytest
 pytest.importorskip("mistralai")
 
 from mistralai.client.errors import SDKError  # pyright: ignore[reportMissingImports]
-from mistralai.client.models import (
-    AssistantMessage,  # pyright: ignore[reportMissingImports]
+from mistralai.client.models import (  # pyright: ignore[reportMissingImports]
+    AssistantMessage,
 )
 from mistralai.client.utils.retries import (  # pyright: ignore[reportMissingImports]
     BackoffStrategy,

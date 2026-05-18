@@ -88,7 +88,9 @@ class TestMistralTTSClient:
     ) -> None:
         monkeypatch.setenv("MISTRAL_API_KEY", "test-key")
         import httpx
-        from mistralai.client.errors import SDKError
+        from mistralai.client.errors import (  # pyright: ignore[reportMissingImports]
+            SDKError,
+        )
 
         fake_response = httpx.Response(
             status_code=500,

@@ -27,9 +27,7 @@ from tomlkit.exceptions import TOMLKitError
 
 from vibe.core.agents.models import BuiltinAgentName
 from vibe.core.config.harness_files import get_harness_files_manager
-from vibe.core.llm._mistralai_stub import (
-    SpeechOutputFormat,  # pyright: ignore[reportAttributeAccessIssue]
-)
+from vibe.core.llm._mistralai_stub import SpeechOutputFormat
 from vibe.core.logger import logger
 from vibe.core.lsp.config import LSPConfig, LSPServerConfig
 from vibe.core.paths import GLOBAL_ENV_FILE, SESSION_LOG_DIR
@@ -412,7 +410,7 @@ class TTSModelConfig(BaseModel):
     provider: str
     alias: str
     voice: str = "gb_jane_neutral"
-    response_format: SpeechOutputFormat = "wav"
+    response_format: SpeechOutputFormat = SpeechOutputFormat.WAV
 
     _default_alias_to_name = model_validator(mode="before")(_default_alias_to_name)
 

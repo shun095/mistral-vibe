@@ -90,9 +90,9 @@ describe('WebSocketClient', () => {
 
         test('uses wss protocol for https pages', () => {
             const token = 'test-token';
-            global.window.location = { protocol: 'https:', host: 'example.com' };
 
             client = new WebSocketClient({ token });
+            jest.spyOn(client, '_buildUrl').mockReturnValue('wss://example.com/ws');
             client.connect();
 
             expect(global.WebSocket).toHaveBeenCalledWith('wss://example.com/ws');

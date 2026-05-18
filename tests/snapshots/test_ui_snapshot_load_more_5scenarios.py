@@ -53,12 +53,10 @@ def _make_tool_call_mixed(idx: int) -> list[ToolCall]:
                 index=idx,
                 function=FunctionCall(
                     name="read_file",
-                    arguments=json.dumps(
-                        {
-                            "path": f"sample_turn_{idx}.md",
-                            "offset": 0,
-                        }
-                    ),
+                    arguments=json.dumps({
+                        "path": f"sample_turn_{idx}.md",
+                        "offset": 0,
+                    }),
                 ),
             )
         ]
@@ -439,7 +437,9 @@ async def _wait_for_agent(
                 for _ in range(300):
                     await pilot.pause(0.02)
                     updated_widgets = list(app.query(HistoryLoadMoreMessage))
-                    if not updated_widgets or (updated_widgets and updated_widgets[0]._remaining is None):
+                    if not updated_widgets or (
+                        updated_widgets and updated_widgets[0]._remaining is None
+                    ):
                         break
 
     # Expand tool calls by ctrl+o after load more
@@ -518,7 +518,11 @@ def _export_svg(
                 await pilot.press(*"run a task")
                 await pilot.press("enter")
                 await _wait_for_agent(
-                    app, pilot, expand_load_more_once, expand_tool_calls_after, scroll_to_bottom
+                    app,
+                    pilot,
+                    expand_load_more_once,
+                    expand_tool_calls_after,
+                    scroll_to_bottom,
                 )
 
     # DEBUG: Monkey-patch export_screenshot to log capture timing — preserved for future debugging

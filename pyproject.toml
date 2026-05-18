@@ -166,7 +166,7 @@ reportMissingTypeStubs = false
 reportPrivateImportUsage = false
 
 include = ["vibe/**/*.py", "tests/**/*.py"]
-exclude = ["pyinstaller/", "vibe/core/llm/_mistralai_stub.py"]
+exclude = ["pyinstaller/"]
 venvPath = "."
 venv = ".venv"
 

@@ -6,7 +6,7 @@ import os
 import httpx
 
 from vibe.core.config import TranscribeModelConfig, TranscribeProviderConfig
-from vibe.core.llm._mistralai_stub import (  # pyright: ignore[reportAttributeAccessIssue]
+from vibe.core.llm._mistralai_stub import (
     AudioFormat,
     Mistral,
     RealtimeTranscriptionError,

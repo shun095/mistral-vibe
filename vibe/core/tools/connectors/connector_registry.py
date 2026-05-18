@@ -7,9 +7,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import httpx
 
-from vibe.core.llm._mistralai_stub import (
-    Mistral,  # pyright: ignore[reportAttributeAccessIssue]
-)
+from vibe.core.llm._mistralai_stub import Mistral
 from vibe.core.logger import logger
 from vibe.core.tools.base import (
     BaseTool,

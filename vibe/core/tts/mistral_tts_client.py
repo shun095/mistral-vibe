@@ -6,10 +6,7 @@ import os
 import httpx
 
 from vibe.core.config import TTSModelConfig, TTSProviderConfig
-from vibe.core.llm._mistralai_stub import (  # pyright: ignore[reportAttributeAccessIssue]
-    Mistral,
-    SpeechOutputFormat,
-)
+from vibe.core.llm._mistralai_stub import Mistral, SpeechOutputFormat
 from vibe.core.tts.tts_client_port import TTSResult
 from vibe.core.utils.http import build_ssl_context
 
