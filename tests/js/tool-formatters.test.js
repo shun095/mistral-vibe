@@ -398,6 +398,10 @@ describe('tool-formatters', () => {
     });
 
     describe('triggerDownload', () => {
+        afterEach(() => {
+            delete globalThis.__VIBE_BASE_PATH__;
+        });
+
         test('triggers download via fetch', async () => {
             const mockBlob = { type: 'text/plain' };
             const mockUrl = 'mock-url';
@@ -432,6 +436,26 @@ describe('tool-formatters', () => {
             window.URL.revokeObjectURL = origRevokeObjectURL;
             document.body.appendChild = origAppendChild;
             document.body.removeChild = origRemoveChild;
+        });
+
+        test('uses base path prefix when __VIBE_BASE_PATH__ is set', async () => {
+            globalThis.__VIBE_BASE_PATH__ = '/vibe/';
+
+            const mockBlob = { type: 'text/plain' };
+            window.URL.createObjectURL = jest.fn(() => 'mock-url');
+            window.URL.revokeObjectURL = jest.fn();
+
+            global.fetch = jest.fn().mockResolvedValue({
+                ok: true,
+                blob: jest.fn().mockResolvedValue(mockBlob),
+            });
+
+            document.body.appendChild = jest.fn();
+            document.body.removeChild = jest.fn();
+
+            await triggerDownload('/path/to/file.txt');
+
+            expect(global.fetch).toHaveBeenCalledWith('/vibe/api/download?file_path=%2Fpath%2Fto%2Ffile.txt');
         });
 
         test('handles fetch error gracefully', async () => {

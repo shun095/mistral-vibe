@@ -1,9 +1,4 @@
-/**
- * Tool Result Formatters Module
- *
- * Handles formatting of tool results for display in the WebUI.
- * Extracted from app.js for testability and single responsibility.
- */
+import { buildUrl } from './utils.js';
 
 const MIME_ICONS = {
     image: 'image',
@@ -39,7 +34,7 @@ export function getIconForMimeType(mimeType) {
  * Trigger file download via API
  */
 export async function triggerDownload(filePath) {
-    const url = `/api/download?file_path=${encodeURIComponent(filePath)}`;
+    const url = buildUrl(`api/download?file_path=${encodeURIComponent(filePath)}`);
     try {
         const response = await fetch(url);
         if (response.ok) {

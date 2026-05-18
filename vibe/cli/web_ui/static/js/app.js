@@ -952,8 +952,7 @@ class VibeClient {
     }
 
     async _triggerDownload(filePath) {
-        // Trigger download via API using fetch
-        const url = `/api/download?file_path=${encodeURIComponent(filePath)}`;
+        const url = buildUrl(`api/download?file_path=${encodeURIComponent(filePath)}`);
         try {
             const response = await fetch(url);
             if (response.ok) {
