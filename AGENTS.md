@@ -148,6 +148,9 @@ When making a claim about code behavior (e.g., "this error is pre-existing", "al
 - **Never filter diagnostic output** — Do not pipe linter, test, or diff output through `grep`, `tail`, or `head`. Show the full output. Filtering hides context the user needs to trust your conclusion.
 - **Stash-and-compare properly** — When comparing two states (e.g., pre-existing vs introduced), run `git stash`, show the full diagnostic output, then `git stash pop`, show the full output again. Both outputs must be visible.
 - **One claim, one proof** — If you claim "X is pre-existing", show the tool output that demonstrates X existed before your changes. Without the output, the claim is noise.
+- **Investigation is read-only** — When asked to investigate, diagnose, or review, do not edit files, commit changes, or modify configuration. Report findings and stop. The user decides what action to take. Do not convert an investigation task into a change task.
+- **Report facts, not judgments** — When presenting findings, describe what you observe without classifying whether it matters. Say "snapshot shows `pytest-913` vs `pytest-825`" rather than "temp path noise, not a real change." The user makes the judgment call.
+- **Do not suggest rule changes without being asked** — The Autoimprovement section permits suggesting rules; it does not authorize editing AGENTS.md. Propose the change and wait for approval before writing.
 
 ### Diagnosing Test/Snapshot Failures
 
@@ -157,6 +160,8 @@ When test output changes (failures, new warnings, snapshot mismatches), **check 
 - **Never name a bug cause without evidence** — do not label a failure as "race condition", "timing issue", "flaky", or "import order" without proving it. Deterministic structural differences are code changes, not races. A race produces random, inconsistent output across runs.
 - **Correlation is not causation** — adding a dependency and seeing a test change does not mean the dependency caused it. The branch may have uncommitted changes from a prior session. Check `git log --oneline -5` and `git status` before drawing conclusions.
 - **Admit ignorance over inventing explanations** — if you cannot explain why a test changed after checking the diff, say so. Do not fabricate a plausible-sounding technical term to cover the gap.
+- **Snapshot regression is a regression** — if `git stash` produces 0 mismatches and your working state produces N > 0, your changes caused it. Identify the specific test, inspect the diff report, and fix the root cause. A varying N across runs does not invalidate the finding — it indicates a race condition introduced by your change. Never dismiss a stash-proven regression as "flaky" or "pre-existing".
+- **Report regressions in final summary** — if any test suite shows a regression attributable to your changes (even if individual tests pass), state it explicitly in the final report. Do not claim "all green" when mismatches exist.
 
 1. **Add debug logging thoroughly** — Insert `logger.debug()` at every decision point in the suspected code path. Log variable values, branch taken, and state transitions. Use `%s` positional args, not f-strings.
 2. **Plan controlled experiments** — Isolate variables by testing minimal cases first (e.g., single tool type), then incrementally add complexity. Compare behavior between known-good and broken scenarios. Use the same debug instrumentation across all experiments.
@@ -313,6 +318,8 @@ When a snapshot test fails, **never update the reference snapshot blindly**. Alw
 3. Use `read_image` to inspect the screenshot and verify the change is intentional
 4. Only update the snapshot with `--snapshot-update` if the visual change is correct and expected
 5. If the change is unwanted, fix the code instead of updating the snapshot
+
+**Mandatory visual inspection before any statistical analysis.** Do not run stash-and-compare loops, bisect experiments, or flakiness tests until you have opened the diff report and inspected it with `read_image`. Statistics answer "did my change cause this?" but only the visual diff answers "what broke?" — and the visual answer may invalidate your hypothesis entirely. Forming a hypothesis ("it's flaky", "it's pre-existing") before looking at the diff is a violation of the evidence-first principle.
 
 Example:
 ```bash

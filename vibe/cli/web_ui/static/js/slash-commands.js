@@ -2,6 +2,8 @@
  * Slash Command Registry and Handler
  */
 
+import { buildUrl } from './utils.js';
+
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 export class SlashCommandRegistry {
@@ -16,7 +18,7 @@ export class SlashCommandRegistry {
         }
 
         try {
-            const response = await fetch('/api/commands');
+            const response = await fetch(buildUrl('api/commands'));
             const data = await response.json();
 
             data.commands.forEach(cmd => {
@@ -50,7 +52,7 @@ export class SlashCommandRegistry {
 
     async execute(commandName, args = '') {
         try {
-            const response = await fetch('/api/command/execute', {
+            const response = await fetch(buildUrl('api/command/execute'), {
                 method: 'POST',
                 headers: JSON_HEADERS,
                 body: JSON.stringify({

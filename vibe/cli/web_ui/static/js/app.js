@@ -12,6 +12,7 @@ import { APIClient } from './api-client.js';
 import { MessageStreamer } from './message-streamer.js';
 import { showBrowserNotification } from './notification.js';
 import { formatDuration } from './format-utils.js';
+import { buildUrl } from './utils.js';
 import * as toolFormatters from './tool-formatters.js';
 
 class VibeClient {
@@ -130,12 +131,13 @@ class VibeClient {
     }
 
     async logout() {
+        const base = globalThis.__VIBE_BASE_PATH__ || '/';
         try {
-            await fetch('/api/logout', { method: 'POST' });
-            window.location.href = '/login';
+            await fetch(base + 'api/logout', { method: 'POST' });
+            window.location.href = base + 'login';
         } catch (error) {
             console.error('Logout error:', error);
-            window.location.href = '/login';
+            window.location.href = base + 'login';
         }
     }
 
@@ -2553,7 +2555,7 @@ class VibeClient {
             this.elements.sendBtn.disabled = true;
             this.elements.sendBtn.textContent = '⏳';
 
-            const response = await fetch('/api/translate', {
+            const response = await fetch(buildUrl('api/translate'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ text: textToTranslate })

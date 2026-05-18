@@ -242,12 +242,24 @@ def _run_interactive_mode_with_web(
         plan_offer_gateway=plan_offer_gateway,
     )
 
-    rprint(f"\n[green]Starting Web UI on port {args.web_port}...[/]\n")
+    base_path = args.web_base_path
+    if not base_path.startswith("/"):
+        base_path = "/" + base_path
+    if len(base_path) > 1 and not base_path.endswith("/"):
+        base_path += "/"
+
+    rprint(
+        f"\n[green]Starting Web UI on port {args.web_port} (base path: {base_path})...[/]\n"
+    )
     web_server_thread = run_web_server_in_background(
-        port=args.web_port, token=token, agent_loop=agent_loop, tui_app=tui_app
+        port=args.web_port,
+        token=token,
+        base_path=base_path,
+        agent_loop=agent_loop,
+        tui_app=tui_app,
     )
     rprint(
-        f"[green]Web UI started at http://localhost:{args.web_port}/?token={token}[/]\n"
+        f"[green]Web UI started at http://localhost:{args.web_port}{base_path}?token={token}[/]\n"
     )
 
     session_id = tui_app.run()

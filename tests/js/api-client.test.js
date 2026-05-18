@@ -358,4 +358,138 @@ describe('APIClient', () => {
             expect(result).toEqual({ entries: [] });
         });
     });
+
+    describe('Base Path Support', () => {
+        beforeEach(() => {
+            jest.clearAllMocks();
+        });
+
+        afterEach(() => {
+            delete globalThis.__VIBE_BASE_PATH__;
+        });
+
+        test('uses base path prefix for status when __VIBE_BASE_PATH__ is set', async () => {
+            globalThis.__VIBE_BASE_PATH__ = '/vibe/';
+
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ running: true })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            await apiClient.getStatus();
+
+            expect(global.fetch).toHaveBeenCalledWith('/vibe/api/status');
+        });
+
+        test('uses base path prefix for interrupt when __VIBE_BASE_PATH__ is set', async () => {
+            globalThis.__VIBE_BASE_PATH__ = '/vibe/';
+
+            const mockResponse = { ok: true };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            await apiClient.requestInterrupt();
+
+            expect(global.fetch).toHaveBeenCalledWith('/vibe/api/interrupt', expect.any(Object));
+        });
+
+        test('uses base path prefix for messages when __VIBE_BASE_PATH__ is set', async () => {
+            globalThis.__VIBE_BASE_PATH__ = '/app/';
+
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ events: [] })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            await apiClient.getMessages();
+
+            expect(global.fetch).toHaveBeenCalledWith('/app/api/messages');
+        });
+
+        test('uses base path prefix for commands when __VIBE_BASE_PATH__ is set', async () => {
+            globalThis.__VIBE_BASE_PATH__ = '/app/';
+
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ commands: [] })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            await apiClient.getCommands();
+
+            expect(global.fetch).toHaveBeenCalledWith('/app/api/commands');
+        });
+
+        test('uses base path prefix for command execution when __VIBE_BASE_PATH__ is set', async () => {
+            globalThis.__VIBE_BASE_PATH__ = '/vibe/';
+
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ success: true })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            await apiClient.executeCommand('help');
+
+            expect(global.fetch).toHaveBeenCalledWith('/vibe/api/command/execute', expect.any(Object));
+        });
+
+        test('uses base path prefix for sessions when __VIBE_BASE_PATH__ is set', async () => {
+            globalThis.__VIBE_BASE_PATH__ = '/vibe/';
+
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ sessions: [] })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            await apiClient.listSessions();
+
+            expect(global.fetch).toHaveBeenCalledWith('/vibe/api/sessions');
+        });
+
+        test('uses base path prefix for session resume when __VIBE_BASE_PATH__ is set', async () => {
+            globalThis.__VIBE_BASE_PATH__ = '/vibe/';
+
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ success: true })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            await apiClient.resumeSession('test-session-id');
+
+            expect(global.fetch).toHaveBeenCalledWith(
+                '/vibe/api/sessions/test-session-id/resume',
+                expect.any(Object)
+            );
+        });
+
+        test('uses base path prefix for prompt history when __VIBE_BASE_PATH__ is set', async () => {
+            globalThis.__VIBE_BASE_PATH__ = '/vibe/';
+
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ entries: [] })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            await apiClient.getPromptHistory();
+
+            expect(global.fetch).toHaveBeenCalledWith('/vibe/api/prompt-history');
+        });
+
+        test('falls back to root path when __VIBE_BASE_PATH__ is not set', async () => {
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ running: true })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            await apiClient.getStatus();
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/status');
+        });
+    });
 });

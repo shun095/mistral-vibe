@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mistral Vibe - Login</title>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0" />
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="{{ base_path }}static/css/style.css">
     <style>
         .login-container {
             display: flex;
@@ -151,6 +151,7 @@
     </div>
 
     <script>
+        const BASE_PATH = "{{ base_path }}";
         const loginForm = document.getElementById('login-form');
         const errorMessage = document.getElementById('error-message');
         const loginBtn = document.getElementById('login-btn');
@@ -171,7 +172,7 @@
 
             try {
                 // Call the login endpoint
-                const response = await fetch('/api/login', {
+                const response = await fetch(BASE_PATH + 'api/login', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -184,7 +185,7 @@
                 if (response.ok && result.success) {
                     // Token is valid, cookie is set by server
                     // No localStorage storage - authentication is cookie-based only
-                    window.location.href = '/';
+                    window.location.href = BASE_PATH;
                 } else {
                     showError(result.error || 'Invalid authentication token. Please try again.');
                     loginBtn.disabled = false;

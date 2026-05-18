@@ -5,6 +5,8 @@
  * Separated from VibeClient for testability and single responsibility.
  */
 
+import { getBasePath } from './utils.js';
+
 export class WebSocketClient {
     constructor(options = {}) {
         this.maxReconnectAttempts = options.maxReconnectAttempts || 5;
@@ -33,7 +35,7 @@ export class WebSocketClient {
     _buildUrl() {
         const protocol = window.location?.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = window.location?.host || 'localhost';
-        return `${protocol}//${host}/ws`;
+        return `${protocol}//${host}${getBasePath()}ws`;
     }
 
     /**
@@ -45,8 +47,8 @@ export class WebSocketClient {
             return;
         }
 
-        if (this.ws?.readyState === WebSocket.OPEN) {
-            console.log('[WebSocketClient] Already connected');
+        if (this.ws?.readyState === WebSocket.OPEN || this.ws?.readyState === WebSocket.CONNECTING) {
+            console.log('[WebSocketClient] Already connected or connecting');
             return;
         }
 

@@ -6,6 +6,8 @@
  * Separated from VibeClient for testability and single responsibility.
  */
 
+import { buildUrl } from './utils.js';
+
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 export class APIClient {
@@ -19,7 +21,7 @@ export class APIClient {
      */
     async getStatus() {
         try {
-            const response = await fetch('/api/status');
+            const response = await fetch(buildUrl('api/status'));
 
             if (!response.ok) {
                 return null;
@@ -38,7 +40,7 @@ export class APIClient {
      */
     async requestInterrupt() {
         try {
-            const response = await fetch('/api/interrupt', {
+            const response = await fetch(buildUrl('api/interrupt'), {
                 method: 'POST',
                 headers: JSON_HEADERS
             });
@@ -56,7 +58,7 @@ export class APIClient {
      */
     async getMessages() {
         try {
-            const response = await fetch('/api/messages');
+            const response = await fetch(buildUrl('api/messages'));
 
             if (!response.ok) {
                 return null;
@@ -75,7 +77,7 @@ export class APIClient {
      */
     async getCommands() {
         try {
-            const response = await fetch('/api/commands');
+            const response = await fetch(buildUrl('api/commands'));
 
             if (!response.ok) {
                 return null;
@@ -96,7 +98,7 @@ export class APIClient {
      */
     async executeCommand(command, args = '') {
         try {
-            const response = await fetch('/api/command/execute', {
+            const response = await fetch(buildUrl('api/command/execute'), {
                 method: 'POST',
                 headers: JSON_HEADERS,
                 body: JSON.stringify({
@@ -122,7 +124,7 @@ export class APIClient {
      */
     async listSessions() {
         try {
-            const response = await fetch('/api/sessions');
+            const response = await fetch(buildUrl('api/sessions'));
 
             if (!response.ok) {
                 return [];
@@ -143,7 +145,7 @@ export class APIClient {
      */
     async resumeSession(sessionId) {
         try {
-            const response = await fetch(`/api/sessions/${sessionId}/resume`, {
+            const response = await fetch(buildUrl(`api/sessions/${sessionId}/resume`), {
                 method: 'POST',
                 headers: JSON_HEADERS
             });
@@ -165,7 +167,7 @@ export class APIClient {
      */
     async getPromptHistory() {
         try {
-            const response = await fetch('/api/prompt-history');
+            const response = await fetch(buildUrl('api/prompt-history'));
 
             if (!response.ok) {
                 return { entries: [] };

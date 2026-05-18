@@ -45,8 +45,10 @@ def register_routes(  # noqa: PLR0915
     auth_token: str,
     templates: Jinja2Templates,
     agent_loop: Any | None = None,
+    base_path: str = "/",
 ) -> None:
     """Register all WebUI routes on the FastAPI app."""
+    prefix = base_path.rstrip("/") if base_path != "/" else ""
 
     def event_listener(event: BaseEvent) -> None:
         """Broadcast events to all connected WebSocket clients."""
@@ -76,14 +78,16 @@ def register_routes(  # noqa: PLR0915
             )
 
     # Auth routes
-    @app.get("/login", response_class=HTMLResponse)
+    @app.get(f"{prefix}/login", response_class=HTMLResponse)
     def login_page(request: Request) -> HTMLResponse:
         auth_cookie = request.cookies.get(AUTH_COOKIE_NAME)
         if auth_cookie == auth_token:
-            raise HTTPException(status_code=307, headers={"Location": "/"})
-        return templates.TemplateResponse(request, "login.html")
+            raise HTTPException(status_code=307, headers={"Location": prefix or "/"})
+        return templates.TemplateResponse(
+            request, "login.html", {"base_path": base_path}
+        )
 
-    @app.post("/api/login")
+    @app.post(f"{prefix}/api/login")
     def login(request: Request, token_data: dict) -> JSONResponse:
         token = token_data.get("token", "")
         if token != auth_token:
@@ -101,30 +105,32 @@ def register_routes(  # noqa: PLR0915
         )
         return response
 
-    @app.post("/api/logout")
+    @app.post(f"{prefix}/api/logout")
     def logout() -> JSONResponse:
         response = JSONResponse({"success": True})
         response.delete_cookie(key=AUTH_COOKIE_NAME)
         return response
 
     # Static routes
-    @app.get("/", response_class=HTMLResponse, response_model=None)
+    @app.get(f"{prefix}/", response_class=HTMLResponse, response_model=None)
     def index(request: Request) -> HTMLResponse | RedirectResponse:
         auth_cookie = request.cookies.get(AUTH_COOKIE_NAME)
         if auth_cookie != auth_token:
-            return RedirectResponse(url="/login", status_code=307)
-        return templates.TemplateResponse(request, "index.html")
+            return RedirectResponse(url=f"{prefix}/login", status_code=307)
+        return templates.TemplateResponse(
+            request, "index.html", {"base_path": base_path}
+        )
 
-    @app.get("/health")
+    @app.get(f"{prefix}/health")
     def health() -> JSONResponse:
         return JSONResponse({"status": "healthy"})
 
-    @app.get("/api/stats")
+    @app.get(f"{prefix}/api/stats")
     def get_stats(_request: Request = Depends(verify_request_auth)) -> JSONResponse:  # noqa: B008
         return JSONResponse({"stats": {}})
 
     # Agent status routes
-    @app.get("/api/status")
+    @app.get(f"{prefix}/api/status")
     def get_status(_request: Request = Depends(verify_request_auth)) -> JSONResponse:  # noqa: B008
         tui_app = getattr(app.state, "tui_app", None)
         if tui_app is not None:
@@ -153,7 +159,7 @@ def register_routes(  # noqa: PLR0915
 
         return JSONResponse({"running": False, "context_tokens": 0, "max_tokens": 0})
 
-    @app.post("/api/interrupt")
+    @app.post(f"{prefix}/api/interrupt")
     def interrupt_agent(
         _request: Request = Depends(verify_request_auth),  # noqa: B008
     ) -> JSONResponse:
@@ -164,7 +170,7 @@ def register_routes(  # noqa: PLR0915
         return JSONResponse({"success": True})
 
     # Command routes
-    @app.get("/api/commands")
+    @app.get(f"{prefix}/api/commands")
     def list_commands(_request: Request = Depends(verify_request_auth)) -> JSONResponse:  # noqa: B008
         tui_app = getattr(app.state, "tui_app", None)
         if tui_app is None:
@@ -179,7 +185,7 @@ def register_routes(  # noqa: PLR0915
             })
         return JSONResponse({"commands": commands})
 
-    @app.post("/api/command/execute")
+    @app.post(f"{prefix}/api/command/execute")
     async def execute_command(
         command_data: dict,
         _request: Request = Depends(verify_request_auth),  # noqa: B008
@@ -195,7 +201,7 @@ def register_routes(  # noqa: PLR0915
         tui_app.submit_message_from_web(command_text)
         return JSONResponse({"success": True})
 
-    @app.post("/api/translate")
+    @app.post(f"{prefix}/api/translate")
     async def translate_text(
         text_data: dict,
         _request: Request = Depends(verify_request_auth),  # noqa: B008
@@ -222,7 +228,7 @@ def register_routes(  # noqa: PLR0915
             return JSONResponse({"success": False, "error": str(e)})
 
     # File download route
-    @app.get("/api/download")
+    @app.get(f"{prefix}/api/download")
     async def download_file(
         file_path: str,
         _request: Request = Depends(verify_request_auth),  # noqa: B008
@@ -270,7 +276,7 @@ def register_routes(  # noqa: PLR0915
             raise HTTPException(status_code=500, detail=str(e))
 
     # Session routes
-    @app.get("/api/sessions")
+    @app.get(f"{prefix}/api/sessions")
     def list_sessions(_request: Request = Depends(verify_request_auth)) -> JSONResponse:  # noqa: B008
         tui_app = getattr(app.state, "tui_app", None)
         if tui_app is None:
@@ -304,7 +310,7 @@ def register_routes(  # noqa: PLR0915
             logging.warning("Error listing sessions: %s", e)
             return JSONResponse({"sessions": []})
 
-    @app.post("/api/sessions/{session_id}/resume")
+    @app.post(f"{prefix}/api/sessions/{{session_id}}/resume")
     async def resume_session(
         session_id: str,
         _request: Request = Depends(verify_request_auth),  # noqa: B008
@@ -328,7 +334,7 @@ def register_routes(  # noqa: PLR0915
             return JSONResponse({"success": False, "error": str(e)})
 
     # History routes
-    @app.get("/api/messages")
+    @app.get(f"{prefix}/api/messages")
     def get_messages(_request: Request = Depends(verify_request_auth)) -> JSONResponse:  # noqa: B008
         agent_loop_ref = getattr(app.state, "agent_loop", None)
         if agent_loop_ref is None:
@@ -343,7 +349,7 @@ def register_routes(  # noqa: PLR0915
             logging.warning("Error converting messages to events: %s", e)
             return JSONResponse({"events": []})
 
-    @app.get("/api/prompt-history")
+    @app.get(f"{prefix}/api/prompt-history")
     def get_prompt_history(
         _request: Request = Depends(verify_request_auth),  # noqa: B008
     ) -> JSONResponse:
@@ -352,11 +358,10 @@ def register_routes(  # noqa: PLR0915
         return JSONResponse({"entries": limited_history})
 
     # WebSocket
-    @app.websocket("/ws")
+    @app.websocket(f"{prefix}/ws")
     async def websocket_endpoint(websocket: WebSocket) -> None:  # noqa: PLR0914, PLR0912, PLR0915
         await verify_websocket_auth(websocket)
         await websocket.accept()
-        app.state.websocket_clients.add(websocket)
 
         agent_loop_ref = getattr(app.state, "agent_loop", None)
         if agent_loop_ref is not None:
@@ -374,6 +379,9 @@ def register_routes(  # noqa: PLR0915
                 logging.warning("Unexpected error streaming history: %s", e)
 
         await websocket.send_json({"type": "connected"})
+
+        # Add to broadcast set only after history is sent to avoid duplicates
+        app.state.websocket_clients.add(websocket)
 
         tui_app = getattr(app.state, "tui_app", None)
         if tui_app:
@@ -462,13 +470,13 @@ def register_routes(  # noqa: PLR0915
 
     # E2E test mode endpoints
     if os.environ.get("VIBE_E2E_TEST") == "true":
-        _register_e2e_routes(app, verify_request_auth)
+        _register_e2e_routes(app, verify_request_auth, prefix)
 
 
-def _register_e2e_routes(app: FastAPI, verify_request_auth: Any) -> None:
+def _register_e2e_routes(app: FastAPI, verify_request_auth: Any, prefix: str) -> None:
     """Register E2E test mode endpoints."""
 
-    @app.post("/api/test/mock-data")
+    @app.post(f"{prefix}/api/test/mock-data")
     def register_mock_data(
         mock_data: dict,
         _request: Request = Depends(verify_request_auth),  # noqa: B008
@@ -491,7 +499,7 @@ def _register_e2e_routes(app: FastAPI, verify_request_auth: Any) -> None:
         )
         return JSONResponse({"success": True, "message": "Mock data registered"})
 
-    @app.post("/api/test/mock-data/reset")
+    @app.post(f"{prefix}/api/test/mock-data/reset")
     def reset_mock_data(
         _request: Request = Depends(verify_request_auth),  # noqa: B008
     ) -> JSONResponse:
@@ -500,7 +508,7 @@ def _register_e2e_routes(app: FastAPI, verify_request_auth: Any) -> None:
         reset_mock_store()
         return JSONResponse({"success": True, "message": "Mock data reset"})
 
-    @app.get("/api/test/mock-data/usage")
+    @app.get(f"{prefix}/api/test/mock-data/usage")
     def get_mock_data_usage(
         _request: Request = Depends(verify_request_auth),  # noqa: B008
     ) -> JSONResponse:
@@ -510,7 +518,7 @@ def _register_e2e_routes(app: FastAPI, verify_request_auth: Any) -> None:
         usage = store.get_usage()
         return JSONResponse({"usage": usage})
 
-    @app.post("/api/test/mock-events")
+    @app.post(f"{prefix}/api/test/mock-events")
     async def broadcast_mock_event(
         event_data: dict,
         _request: Request = Depends(verify_request_auth),  # noqa: B008

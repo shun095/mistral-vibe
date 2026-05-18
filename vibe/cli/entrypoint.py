@@ -118,6 +118,13 @@ def parse_arguments() -> argparse.Namespace:
         metavar="PORT",
         help="Port for web UI server (default: 9092)",
     )
+    parser.add_argument(
+        "--web-base-path",
+        type=str,
+        default="/",
+        metavar="PATH",
+        help="Base URL path for web UI (default: /). Use /vibe/ to serve under a subpath.",
+    )
 
     continuation_group = parser.add_mutually_exclusive_group()
     continuation_group.add_argument(

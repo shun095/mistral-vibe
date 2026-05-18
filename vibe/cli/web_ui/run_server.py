@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 def run_web_server_in_background(
     port: int = 9092,
     token: str | None = None,
+    base_path: str = "/",
     agent_loop: AgentLoop | None = None,
     tui_app: VibeApp | None = None,
 ) -> threading.Thread:
@@ -25,6 +26,7 @@ def run_web_server_in_background(
     Args:
         port: Port to run the server on.
         token: Authentication token for the server.
+        base_path: Base URL path (e.g., "/" or "/vibe/").
         agent_loop: Optional AgentLoop instance for event synchronization.
         tui_app: Optional TUI app instance for message submission.
 
@@ -33,7 +35,13 @@ def run_web_server_in_background(
     """
     import uvicorn
 
-    app = create_app(port=port, token=token, agent_loop=agent_loop, tui_app=tui_app)
+    app = create_app(
+        port=port,
+        token=token,
+        base_path=base_path,
+        agent_loop=agent_loop,
+        tui_app=tui_app,
+    )
     config = Config(app, host="0.0.0.0", port=port, log_level="warning")
     server = uvicorn.Server(config)
 

@@ -33,6 +33,7 @@ def get_token_from_env_or_arg(token: str | None) -> str:
 def create_app(
     port: int = 9092,
     token: str | None = None,
+    base_path: str = "/",
     agent_loop: AgentLoop | None = None,
     tui_app: Any | None = None,
 ) -> FastAPI:
@@ -41,6 +42,7 @@ def create_app(
     Args:
         port: Port to run the server on (default: 9092).
         token: Authentication token, or None to use VIBE_WEB_TOKEN env var.
+        base_path: Base URL path (e.g., "/" or "/vibe/").
         agent_loop: The AgentLoop instance to sync with (required for standalone mode).
         tui_app: Optional TUI app instance for integrated mode. If None, WebUI runs
             in standalone mode and interacts directly with agent_loop.
@@ -55,11 +57,17 @@ def create_app(
 
     app = FastAPI(title="Mistral Vibe Web UI", version="1.0.0")
     app.state.port = port
+    app.state.base_path = base_path
 
     # Setup templates and static files
     base_dir = Path(__file__).parent
     templates = Jinja2Templates(directory=base_dir / "templates")
-    app.mount("/static", StaticFiles(directory=base_dir / "static"), name="static")
+    static_mount_path = (
+        base_path.rstrip("/") + "/static" if base_path != "/" else "/static"
+    )
+    app.mount(
+        static_mount_path, StaticFiles(directory=base_dir / "static"), name="static"
+    )
 
     # Get token for authentication - mandatory for security
     try:
@@ -80,6 +88,6 @@ def create_app(
     app.state.tui_app = tui_app
 
     # Register all routes
-    register_routes(app, auth_token, templates, agent_loop)
+    register_routes(app, auth_token, templates, agent_loop, base_path)
 
     return app

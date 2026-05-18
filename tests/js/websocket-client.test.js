@@ -88,6 +88,30 @@ describe('WebSocketClient', () => {
             expect(global.WebSocket).toHaveBeenCalledWith('ws://localhost/ws');
         });
 
+        test('skips connect when WebSocket is already OPEN', () => {
+            const token = 'test-token';
+            client = new WebSocketClient({ token });
+            client.connect();
+            getMockWs().open();
+
+            const callCount = global.WebSocket.mock.calls.length;
+            client.connect();
+
+            expect(global.WebSocket.mock.calls.length).toBe(callCount);
+        });
+
+        test('skips connect when WebSocket is CONNECTING', () => {
+            const token = 'test-token';
+            client = new WebSocketClient({ token });
+            client.connect();
+            // Mock ws stays in CONNECTING state (readyState: 0)
+
+            const callCount = global.WebSocket.mock.calls.length;
+            client.connect();
+
+            expect(global.WebSocket.mock.calls.length).toBe(callCount);
+        });
+
         test('uses wss protocol for https pages', () => {
             const token = 'test-token';
 
@@ -246,6 +270,37 @@ describe('WebSocketClient', () => {
 
             expect(client.reconnectTimer).toBeNull();
             expect(client.isConnected()).toBe(false);
+        });
+    });
+
+    describe('Base Path Support', () => {
+        afterEach(() => {
+            delete globalThis.__VIBE_BASE_PATH__;
+        });
+
+        test('uses base path in WebSocket URL when __VIBE_BASE_PATH__ is set', () => {
+            globalThis.__VIBE_BASE_PATH__ = '/vibe/';
+
+            client = new WebSocketClient();
+            client.connect();
+
+            expect(global.WebSocket).toHaveBeenCalledWith('ws://localhost/vibe/ws');
+        });
+
+        test('uses custom base path in WebSocket URL', () => {
+            globalThis.__VIBE_BASE_PATH__ = '/app/';
+
+            client = new WebSocketClient();
+            client.connect();
+
+            expect(global.WebSocket).toHaveBeenCalledWith('ws://localhost/app/ws');
+        });
+
+        test('falls back to root path when __VIBE_BASE_PATH__ is not set', () => {
+            client = new WebSocketClient();
+            client.connect();
+
+            expect(global.WebSocket).toHaveBeenCalledWith('ws://localhost/ws');
         });
     });
 });
