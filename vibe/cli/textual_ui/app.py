@@ -188,6 +188,7 @@ from vibe.core.autocompletion.path_prompt import build_path_prompt_payload
 from vibe.core.autocompletion.path_prompt_adapter import render_path_prompt
 from vibe.core.config import VibeConfig
 from vibe.core.data_retention import DATA_RETENTION_MESSAGE
+from vibe.core.fuzzy import using_cython
 from vibe.core.hooks.models import HookStartEvent
 from vibe.core.log_reader import LogReader
 from vibe.core.logger import logger
@@ -2238,6 +2239,14 @@ class VibeApp(App):  # noqa: PLR0904
                 UserCommandMessage("No history entries found.")
             )
             return
+
+        if not using_cython:
+            self.notify(
+                "History search using pure Python fallback (Cython not compiled). "
+                "Search may be slower for large histories.",
+                severity="warning",
+                timeout=8,
+            )
 
         await self._mount_and_scroll(UserCommandMessage("History picker opened..."))
         await self._switch_from_input(HistoryPickerApp(entries=entries))

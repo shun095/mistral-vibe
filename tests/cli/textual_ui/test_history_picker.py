@@ -190,6 +190,31 @@ class TestVibeAppHistoryPickerHandlers:
                     assert passed_entries[0] == "entry-5999"
                     assert passed_entries[-1] == "entry-1000"
 
+    @pytest.mark.asyncio
+    async def test_show_history_picker_warns_on_python_fallback(self, vibe_app) -> None:
+        entries = ["entry-0", "entry-1"]
+        history_content = "\n".join(json.dumps(e) for e in entries)
+
+        mock_read = MagicMock()
+        mock_read.text = history_content
+
+        mock_notify = MagicMock()
+
+        with patch("vibe.cli.textual_ui.app.read_safe", return_value=mock_read):
+            with patch("pathlib.Path.exists", return_value=True):
+                with patch("vibe.cli.textual_ui.app.using_cython", False):
+                    async with vibe_app.run_test() as pilot:
+                        vibe_app._switch_from_input = AsyncMock()
+                        vibe_app._mount_and_scroll = AsyncMock()
+                        vibe_app.notify = mock_notify
+                        await vibe_app._show_history_picker()
+                        await pilot.pause()
+
+                        mock_notify.assert_called_once()
+                        call_kwargs = mock_notify.call_args[1]
+                        assert call_kwargs["severity"] == "warning"
+                        assert "Python fallback" in mock_notify.call_args[0][0]
+
 
 class TestFuzzyMatchPair:
     def test_exact_match_returns_max_score(self) -> None:

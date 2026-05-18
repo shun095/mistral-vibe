@@ -9,9 +9,12 @@ where penalty is the number of non-matching characters between matched query cha
 
 from __future__ import annotations
 
+using_cython = True
 try:
     from vibe.core.fuzzy.history_fuzzy import fuzzy_match, fuzzy_match_batch
 except ImportError:
+    using_cython = False
+
     # Fallback to pure Python if Cython extension not available
     def fuzzy_match(query: str, candidate: str) -> tuple[float, list[int] | None]:
         """Pure Python fallback for fuzzy matching."""
@@ -72,4 +75,4 @@ except ImportError:
         return [fuzzy_match(query, c) for c in candidates]
 
 
-__all__ = ["fuzzy_match", "fuzzy_match_batch"]
+__all__ = ["fuzzy_match", "fuzzy_match_batch", "using_cython"]
