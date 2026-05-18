@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
 from pathlib import Path
+import queue
 import re
 import time
 from typing import TYPE_CHECKING, Any
@@ -28,7 +28,6 @@ from vibe.cli.web_ui.config import AUTH_COOKIE_NAME
 from vibe.cli.web_ui.serializers import (
     MAX_HISTORY_ENTRIES,
     _load_prompt_history,
-    broadcast_to_clients,
     messages_to_events,
     serialize_event,
 )
@@ -51,11 +50,13 @@ def register_routes(  # noqa: PLR0915
     prefix = base_path.rstrip("/") if base_path != "/" else ""
 
     def event_listener(event: BaseEvent) -> None:
-        """Broadcast events to all connected WebSocket clients."""
+        """Enqueue event for broadcast on Uvicorn's event loop."""
         try:
             serialized = serialize_event(event)
             message = json.dumps({"type": "event", "event": serialized})
-            asyncio.create_task(broadcast_to_clients(app, message))
+            app.state._broadcast_queue.put_nowait(message)
+        except queue.Full:
+            pass
         except Exception:
             pass
 
