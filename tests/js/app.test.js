@@ -1108,8 +1108,10 @@ describe('VibeClient', () => {
             client._onToolCallStart({ id: 'call-1', name: 'bash', arguments: { command: 'sleep 5' } });
             client._onToolCallStart({ id: 'call-1', name: 'bash', arguments: { command: 'sleep 5', timeout: 10 } });
 
-            const argsPre = client.elements.messages.querySelector('.tool-args');
-            expect(argsPre.textContent).toContain('"timeout": 10');
+            const argsDiv = client.elements.messages.querySelector('.structured-args');
+            expect(argsDiv).not.toBeNull();
+            expect(argsDiv.textContent).toContain('timeout');
+            expect(argsDiv.textContent).toContain('10');
         });
 
         test('handles interleaved parallel tool calls without duplicates', () => {
@@ -1161,7 +1163,8 @@ describe('VibeClient', () => {
 
             const cards = client.elements.messages.querySelectorAll('.message.tool-call');
             expect(cards).toHaveLength(1);
-            expect(cards[0].querySelector('.tool-args').textContent).toContain('"timeout": 10');
+            expect(cards[0].querySelector('.structured-args')).not.toBeNull();
+            expect(cards[0].querySelector('.structured-args').textContent).toContain('timeout');
         });
 
         test('onToolCallUpdate with unknown id is a no-op', () => {

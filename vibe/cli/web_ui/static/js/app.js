@@ -14,6 +14,7 @@ import { showBrowserNotification } from './notification.js';
 import { formatDuration } from './format-utils.js';
 import { buildUrl } from './utils.js';
 import * as toolFormatters from './tool-formatters.js';
+import { createStructuredArgs, createStructuredResult } from './structured-renderer.js';
 
 class VibeClient {
     static _severityMap = {
@@ -1092,9 +1093,9 @@ class VibeClient {
 
         if (data.arguments) {
             const previousScrollHeight = this.elements.messages.scrollHeight;
-            const existingArgs = contentDiv.querySelector('.tool-args');
+            const existingArgs = contentDiv.querySelector('.structured-args');
             if (existingArgs) {
-                existingArgs.textContent = this._formatToolArgs(data.arguments);
+                existingArgs.replaceWith(createStructuredArgs(data.arguments));
             } else {
                 this._appendToolArgs(contentDiv, data.arguments);
             }
@@ -1102,19 +1103,8 @@ class VibeClient {
         }
     }
 
-    _formatToolArgs(args) {
-        try {
-            return JSON.stringify(args, null, 2);
-        } catch (e) {
-            return String(args);
-        }
-    }
-
     _appendToolArgs(contentDiv, args) {
-        const argsPre = document.createElement('pre');
-        argsPre.className = 'tool-args';
-        argsPre.textContent = this._formatToolArgs(args);
-        contentDiv.appendChild(argsPre);
+        contentDiv.appendChild(createStructuredArgs(args));
     }
 
     _handleToolResultUpdate(data) {
@@ -1193,7 +1183,7 @@ class VibeClient {
                 <span class="popup-title">${this.escapeHtml(`${event.tool_name} command`)}</span>
             </div>
             <div class="popup-content">
-                <pre>${this.escapeHtml(JSON.stringify(event.tool_args, null, 2))}</pre>
+                <div class="popup-args-placeholder"></div>
             </div>
             <div class="popup-options">
                 <button class="popup-btn yes" data-option="0">Yes</button>
@@ -1202,6 +1192,13 @@ class VibeClient {
                 <button class="popup-btn no" data-option="3">No</button>
             </div>
         `;
+
+        const placeholder = popupDiv.querySelector('.popup-args-placeholder');
+        if (placeholder && event.tool_args) {
+            const structured = createStructuredArgs(event.tool_args);
+            structured.className = 'structured-args popup-structured-args';
+            placeholder.replaceWith(structured);
+        }
 
         popupDiv.querySelectorAll('.popup-btn').forEach(btn => {
             btn.onclick = () => this.handleApprovalOption(parseInt(btn.dataset.option));
@@ -1679,10 +1676,7 @@ class VibeClient {
 
         if (args) {
             try {
-                const argsPre = document.createElement('pre');
-                argsPre.className = 'tool-args';
-                argsPre.textContent = JSON.stringify(args, null, 2);
-                contentDiv.appendChild(argsPre);
+                contentDiv.appendChild(createStructuredArgs(args));
             } catch (e) {
                 const argsPre = document.createElement('pre');
                 argsPre.className = 'tool-args';
@@ -1993,9 +1987,21 @@ class VibeClient {
     }
 
     formatGenericResult(card, result) {
+        const keys = result && typeof result === 'object' ? Object.keys(result) : [];
+        const summary = Array.isArray(result)
+            ? `${result.length} items`
+            : keys.length > 0
+                ? `${keys.length} fields`
+                : 'empty';
+
         this.createCardHeader(card, 'Result',
             '<span class="material-symbols-rounded">analytics</span>',
-            JSON.stringify(result, null, 2));
+            summary);
+
+        const content = card.querySelector('.card-content');
+        if (content && result !== null && result !== undefined) {
+            content.appendChild(createStructuredResult(result));
+        }
         return card;
     }
 

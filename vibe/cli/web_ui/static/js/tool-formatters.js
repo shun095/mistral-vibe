@@ -1,5 +1,7 @@
 import { buildUrl } from './utils.js';
 
+import { createStructuredResult } from './structured-renderer.js';
+
 const MIME_ICONS = {
     image: 'image',
     text: 'description',
@@ -183,8 +185,8 @@ export function formatToolResult(toolName, result, helpers) {
 
     switch (toolName) {
         case 'bash': return formatBashResult(card, result, helpers);
-        case 'websearch': return formatWebSearchResult(card, result, helpers);
-        case 'webfetch': return formatWebFetchResult(card, result, helpers);
+        case 'web_search': return formatWebSearchResult(card, result, helpers);
+        case 'web_fetch': return formatWebFetchResult(card, result, helpers);
         case 'grep': return formatGrepResult(card, result, helpers);
         case 'read_file': return formatReadFileResult(card, result, helpers);
         case 'edit_file': return formatEditFileResult(card, result, helpers);
@@ -510,10 +512,22 @@ function formatRegisterDownloadResult(card, result, helpers = {}) {
 }
 
 function formatGenericResult(card, result, helpers = {}) {
+    const keys = result && typeof result === 'object' ? Object.keys(result) : [];
+    const summary = Array.isArray(result)
+        ? `${result.length} items`
+        : keys.length > 0
+            ? `${keys.length} fields`
+            : 'empty';
+
     const ch = helpers.createCardHeader || createCardHeader;
     ch(card, 'Result',
         '<span class="material-symbols-rounded">analytics</span>',
-        JSON.stringify(result, null, 2));
+        summary);
+
+    const content = card.querySelector('.card-content');
+    if (content && result !== null && result !== undefined) {
+        content.appendChild(createStructuredResult(result));
+    }
     return card;
 }
 

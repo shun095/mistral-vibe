@@ -163,15 +163,15 @@ describe('tool-formatters', () => {
             expect(result.querySelector('.card-content > pre').textContent).toContain('Return code: 0');
         });
 
-        test('delegates to websearch formatter', () => {
-            const result = formatToolResult('websearch', { answer: 'Test answer', sources: [] }, helpers);
+        test('delegates to web_search formatter', () => {
+            const result = formatToolResult('web_search', { answer: 'Test answer', sources: [] }, helpers);
             expect(result.className).toBe('tool-result-card');
             expect(result.querySelector('.card-header')).not.toBeNull();
             expect(result.querySelector('.card-content > pre').textContent).toContain('0 sources found');
         });
 
-        test('delegates to webfetch formatter', () => {
-            const result = formatToolResult('webfetch', { url: 'http://example.com', content: 'body', lines_read: 10, total_lines: 10 }, helpers);
+        test('delegates to web_fetch formatter', () => {
+            const result = formatToolResult('web_fetch', { url: 'http://example.com', content: 'body', lines_read: 10, total_lines: 10 }, helpers);
             expect(result.className).toBe('tool-result-card');
             expect(result.querySelector('.card-header')).not.toBeNull();
             expect(result.querySelector('.card-content > pre').textContent).toContain('Fetched 10/10 lines');
@@ -237,7 +237,8 @@ describe('tool-formatters', () => {
             const result = formatToolResult('unknown_tool', { data: 'value' }, helpers);
             expect(result.className).toBe('tool-result-card');
             expect(result.querySelector('.card-header')).not.toBeNull();
-            expect(result.querySelector('.card-content > pre').textContent).toContain('"data"');
+            expect(result.querySelector('.card-content > pre').textContent).toContain('1 fields');
+            expect(result.querySelector('.structured-result')).not.toBeNull();
         });
 
         test('handles lsp with errors and warnings', () => {
@@ -304,9 +305,9 @@ describe('tool-formatters', () => {
             expect(result.querySelector('.card-content > pre').textContent).toContain('Read 5 lines');
         });
 
-        test('handles webfetch with truncated content', () => {
+        test('handles web_fetch with truncated content', () => {
             const lines = Array(150).fill('line').join('\n');
-            const result = formatToolResult('webfetch', {
+            const result = formatToolResult('web_fetch', {
                 url: 'http://example.com',
                 content: lines,
                 lines_read: 150,
@@ -486,14 +487,14 @@ describe('tool-formatters', () => {
             const card = document.createElement('div');
             card.innerHTML = '<div class="card-content"></div>';
             const result = {
-                name: 'websearch',
+                name: 'web_search',
                 answer: 'search answer',
                 sources: [
                     { title: 'Source 1', url: 'https://example.com' },
                 ],
             };
 
-            const formatted = formatToolResult('websearch', result, { escapeHtml: (t) => t });
+            const formatted = formatToolResult('web_search', result, { escapeHtml: (t) => t });
             expect(formatted.className).toBe('tool-result-card');
             expect(formatted.querySelectorAll('.search-source-item')).toHaveLength(1);
             expect(formatted.querySelector('.search-source-item .source-title').textContent).toBe('Source 1');
