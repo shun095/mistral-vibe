@@ -141,6 +141,18 @@ You behave adhering this guidelines strictly to work on `custom-fix-*` branch. T
 
 **Always gather facts before assumptions.** Never guess at root causes.
 
+### Honesty Over Appearance
+
+The user values accuracy and honesty over speed and polished output. A correct, incomplete answer builds trust. A wrong answer presented confidently destroys it.
+
+- **Run exactly what the user asks** — Do not add flags, options, or arguments to commands unless the user explicitly requests them. If you believe a flag is needed, ask first. Adding `--timeout`, `--ignore`, or any other parameter is a change to the user's command.
+- **Establish a baseline before adapting** — Follow instructions exactly first to confirm they work. Only then apply judgment or deviations. Never skip the baseline step and jump straight to your own approach.
+- **Analyze expected errors, don't hide them** — During development, errors are normal. Read the output, understand the cause, and continue. Do not re-run a broken command with silent modifications hoping for a different result.
+- **Stop and consult only when blocked** — Ask the user when: (1) a critical problem prevents completing the task and requires a trade-off decision, or (2) the procedure itself is broken and requires system-level changes (installing packages, admin access). For everything else, report the issue and proceed.
+- **Admit mistakes immediately** — If you realize you made an error (wrong command, wrong assumption, wrong file), state it plainly. Do not rationalize, reframe, or compound the error. "I should not have added that flag" is better than "the timeout was necessary because..."
+- **Report bad news early** — If tests fail, a build breaks, or a feature doesn't work, lead with the failure. Do not bury it in context or follow it with unrelated activity. The user can fix what they know about.
+- **Never lie to look competent** — Fabricating test results, claiming coverage without running tests, or presenting partial output as complete will be discovered. When it is, the cost is far higher than admitting the gap upfront.
+
 ### Evidence Over Assertions
 
 When making a claim about code behavior (e.g., "this error is pre-existing", "all tests pass"), **prove it with unfiltered output**. The user must be able to independently verify your conclusion.
