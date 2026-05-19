@@ -4,6 +4,12 @@ Conventions for AI agents and humans contributing to **Mistral Vibe** — a Pyth
 
 Layout: `vibe/core` is the engine (agent loop, tools, LLM backends, config); `vibe/cli` is the Textual TUI; `vibe/acp` bridges to the Agent Client Protocol; `vibe/setup` runs first-run wizards. Tests live in `tests/` with autouse fixtures in `conftest.py` and test doubles in `tests/stubs/`.
 
+## Table of Contents
+
+**Project Rules:** [Core Principles](#core-principles) · [Commands](#commands) · [Layout](#project-layout--module-conventions) · [Style](#python-style) · [Typing](#typing--imports) · [Pydantic](#pydantic) · [Async](#async) · [Tools](#tools) · [Logging](#logging--errors) · [I/O](#file-io) · [Tests](#tests) · [Git](#git) · [Autoimprovement](#autoimprovement)
+
+**`custom-fix-*` Overrides:** [Scope](#override-scope) · [Safety](#-safety-rules) · [Debugging](#debugging-methodology) · [Timeouts](#timeout-strategy) · [Git Ops](#git-operations) · [Impact](#change-impact-analysis) · [Coding](#coding-requirements) · [Testing](#-testing-requirements) · [Tools](#tool-usage-guidelines)
+
 ## Core Principles
 
 **Exhaustive scope before first change.** Never edit a file until you have enumerated every location that must change. The default assumption is that any touchpoint related to the task needs attention. If you modify X, ask: what else depends on X? What calls X? What does X call? What shares X's invariant? Answer each question before touching code. Partial fixes are failures.
@@ -114,6 +120,27 @@ In Cursor / Pyright, the "Add import" quick fix is missing — use the workspace
 
 You behave adhering this guidelines strictly to work on `custom-fix-*` branch. These user customization instructions should take precedence over the AGENTS.md file mentioned above.
 
+## Override Scope
+
+Rules in this section modify the project-level rules above. Use this table to determine which rule applies:
+
+| Project Rule | Status in `custom-fix-*` |
+|---|---|
+| Core Principles | ADDITIVE — still applies |
+| Commands | UNCHANGED |
+| Project layout & module conventions | UNCHANGED |
+| Python style | UNCHANGED |
+| Typing & imports | UNCHANGED |
+| Pydantic | UNCHANGED |
+| Async | UNCHANGED |
+| Tools | UNCHANGED |
+| Logging & errors | UNCHANGED |
+| File I/O | UNCHANGED |
+| Tests | OVERRIDDEN — see [Testing Requirements](#-testing-requirements) |
+| Git | OVERRIDDEN — see [Git Operations](#git-operations) |
+| Editor tip | UNCHANGED |
+| Autoimprovement | OVERRIDDEN — see [Evidence Over Assertions](#evidence-over-assertions) |
+
 ## 🛡️ Safety Rules
 
 - ❌ **NEVER change code/git unless explicitly instructed** - Ask before significant changes
@@ -130,12 +157,17 @@ You behave adhering this guidelines strictly to work on `custom-fix-*` branch. T
 - ✅ **Always stage changes first and wait for user approval before committing**
 - ✅ **Proactive Verification** - After any code change, automatically run relevant tests before responding. Testing is part of the fix, not a separate task.
 - ✅ **Follow the Rules You're Reading** - The guidelines in AGENTS.md apply to you. You MUST follow all rules. Before any action, verify compliance with existing rules.
-- ✅ **Commit Approval Checkpoint** - Before running `git commit`, you MUST:
-  1. Run `git diff --cached --stat` and show the output to the user
-  2. Explicitly ask the user to approve the staged changes
-  3. Wait for the user's explicit "yes" or "go ahead" before proceeding
-  4. Only then run `git commit`
-  Never skip steps 1-3. A passing pre-commit hook does not replace user approval.
+
+### Commit Approval Checkpoint
+
+Before running `git commit`, you MUST:
+
+1. Run `git diff --cached --stat` and show the output to the user
+2. Explicitly ask the user to approve the staged changes
+3. Wait for the user's explicit "yes" or "go ahead" before proceeding
+4. Only then run `git commit`
+
+Never skip steps 1-3. A passing pre-commit hook does not replace user approval.
 
 ## Debugging Methodology
 
@@ -175,6 +207,10 @@ When test output changes (failures, new warnings, snapshot mismatches), **check 
 - **Admit ignorance over inventing explanations** — if you cannot explain why a test changed after checking the diff, say so. Do not fabricate a plausible-sounding technical term to cover the gap.
 - **Snapshot regression is a regression** — if `git stash` produces 0 mismatches and your working state produces N > 0, your changes caused it. Identify the specific test, inspect the diff report, and fix the root cause. A varying N across runs does not invalidate the finding — it indicates a race condition introduced by your change. Never dismiss a stash-proven regression as "flaky" or "pre-existing".
 - **Report regressions in final summary** — if any test suite shows a regression attributable to your changes (even if individual tests pass), state it explicitly in the final report. Do not claim "all green" when mismatches exist.
+
+### Debug Procedure
+
+Follow these 4 steps when diagnosing any bug:
 
 1. **Add debug logging thoroughly** — Insert `logger.debug()` at every decision point in the suspected code path. Log variable values, branch taken, and state transitions. Use `%s` positional args, not f-strings.
 2. **Plan controlled experiments** — Isolate variables by testing minimal cases first (e.g., single tool type), then incrementally add complexity. Compare behavior between known-good and broken scenarios. Use the same debug instrumentation across all experiments.
