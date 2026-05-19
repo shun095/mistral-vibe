@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Callable
 import threading
 from typing import TYPE_CHECKING
 
@@ -20,7 +22,7 @@ def run_web_server_in_background(
     base_path: str = "/",
     agent_loop: AgentLoop | None = None,
     tui_app: VibeApp | None = None,
-) -> threading.Thread:
+) -> tuple[threading.Thread, Callable[[], None]]:
     """Start the web UI server in a background thread.
 
     Args:
@@ -31,7 +33,8 @@ def run_web_server_in_background(
         tui_app: Optional TUI app instance for message submission.
 
     Returns:
-        The background thread running the server.
+        A tuple of (background thread, shutdown callable). Call the shutdown
+        function before joining the thread for a graceful stop.
     """
     import uvicorn
 
@@ -47,8 +50,22 @@ def run_web_server_in_background(
 
     def run_server() -> None:
         """Run the server in this thread."""
-        server.run()
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(server.serve())
+        finally:
+            bq = getattr(app.state, "_broadcast_queue", None)
+            if bq is not None:
+                bq.signal_shutdown()
+            loop.run_until_complete(loop.shutdown_asyncgens())
+            loop.run_until_complete(loop.shutdown_default_executor())
+            loop.close()
+
+    def shutdown_server() -> None:
+        """Signal the server to stop gracefully."""
+        server.should_exit = True
 
     thread = threading.Thread(target=run_server, daemon=True)
     thread.start()
-    return thread
+    return thread, shutdown_server

@@ -56,6 +56,10 @@ class BroadcastQueue:
                 await asyncio.get_event_loop().run_in_executor(None, self._signal.wait)
                 self._signal.clear()
 
+    def signal_shutdown(self) -> None:
+        """Wake the blocking get() loop so the drainer task can exit."""
+        self._signal.set()
+
 
 async def _broadcast_queue_drainer(app: FastAPI) -> None:
     """Drain the broadcast queue on Uvicorn's event loop.

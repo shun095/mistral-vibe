@@ -228,6 +228,8 @@ def _run_interactive_mode_with_web(
 
     token = os.environ.get("VIBE_WEB_TOKEN", "")
 
+    # Mirror of run_textual_ui() VibeApp construction — kept inline to minimize
+    # diff against origin/main. Update both sites if VibeApp gains new params.
     update_notifier = PyPIUpdateGateway(project_name="mistral-vibe")
     update_cache_repository = FileSystemUpdateCacheRepository()
     plan_offer_gateway = HttpWhoAmIGateway()
@@ -251,7 +253,7 @@ def _run_interactive_mode_with_web(
     rprint(
         f"\n[green]Starting Web UI on port {args.web_port} (base path: {base_path})...[/]\n"
     )
-    web_server_thread = run_web_server_in_background(
+    web_server_thread, stop_web_server = run_web_server_in_background(
         port=args.web_port,
         token=token,
         base_path=base_path,
@@ -264,7 +266,8 @@ def _run_interactive_mode_with_web(
 
     session_id = tui_app.run()
     print_session_resume_message(session_id, agent_loop.stats)
-    web_server_thread.join(timeout=2)
+    stop_web_server()
+    web_server_thread.join(timeout=5)
 
 
 def run_cli(args: argparse.Namespace) -> None:  # noqa: PLR0915

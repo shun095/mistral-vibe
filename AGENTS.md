@@ -217,6 +217,11 @@ Co-Authored-By: Mistral Vibe <vibe@mistral.ai>
 EOF
 ```
 
+**Commit Command Rules:**
+- **ALWAYS use `<<'EOF'` heredoc** (or `printf ... | git commit -F -`) for commit messages. Never use `git commit -m` with multi-line messages — single-quote placement errors will silently drop the `Co-Authored-By` footer.
+- **After committing, verify with `git log -1 --format="%B"`** to confirm the full message including `Co-Authored-By` is present. Do not trust `git log --oneline` alone.
+- **Treat non-zero return codes and stderr as hard failures.** A commit that produces stderr output (e.g., `Generated: not found`) has failed — do not declare completion until you verify the message body.
+
 **Pre-commit Hook Failures:**
 1. Fix the issue (formatting, lint, etc.)
 2. Re-run pre-commit to verify fix
