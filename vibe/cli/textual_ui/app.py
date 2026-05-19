@@ -223,7 +223,7 @@ from vibe.core.tools.builtins.ask_user_question import (
     Choice,
     Question,
 )
-from vibe.core.tools.connectors import ConnectorRegistry, connectors_enabled
+from vibe.core.tools.connectors import ConnectorRegistry
 from vibe.core.tools.mcp_settings import persist_mcp_toggle
 from vibe.core.tools.permissions import RequiredPermission
 from vibe.core.transcribe import make_transcribe_client
@@ -327,6 +327,19 @@ PRUNE_LOW_MARK = 1000
 PRUNE_HIGH_MARK = 1500
 DOUBLE_ESC_DELAY = 0.2
 
+_DEFAULT_TYPING_DEBOUNCE_MS = 1000
+_TYPING_DEBOUNCE_ENV_VAR = "VIBE_TYPING_GRACE_PERIOD_MS"
+
+
+def _resolve_typing_debounce_s() -> float:
+    try:
+        ms = int(os.environ[_TYPING_DEBOUNCE_ENV_VAR])
+        if ms < 0:
+            raise ValueError
+    except (KeyError, ValueError):
+        ms = _DEFAULT_TYPING_DEBOUNCE_MS
+    return ms / 1000
+
 
 async def prune_oldest_children(
     messages_area: Widget, low_mark: int, high_mark: int
@@ -394,6 +407,9 @@ class VibeApp(App):  # noqa: PLR0904
         Binding("home", "scroll_chat_home", "Scroll to Top", show=False, priority=True),
         Binding(
             "end", "scroll_chat_end", "Scroll to Bottom", show=False, priority=True
+        ),
+        Binding(
+            "ctrl+g", "open_plan_in_editor", "Edit Plan", show=False, priority=False
         ),
         Binding("ctrl+backslash", "toggle_debug_console", "Debug Console", show=False),
         Binding("alt+up", "rewind_prev", "Rewind Previous", show=False, priority=True),
@@ -536,7 +552,7 @@ class VibeApp(App):  # noqa: PLR0904
 
     @property
     def _connectors_enabled(self) -> bool:
-        return connectors_enabled() and self.agent_loop.connector_registry is not None
+        return self.agent_loop.connector_registry is not None
 
     def _get_command_availability_context(self) -> CommandAvailabilityContext:
         return CommandAvailabilityContext(
@@ -640,8 +656,10 @@ class VibeApp(App):  # noqa: PLR0904
         self._loop_runner.start()
         await self._check_and_show_whats_new()
         self._schedule_update_notification()
-        if not self._is_resuming_session:
-            self.agent_loop.emit_new_session_telemetry()
+        if self._is_resuming_session:
+            await self.agent_loop.hydrate_experiments_from_session()
+        else:
+            self.agent_loop.start_initialize_experiments()
 
         self.call_after_refresh(self._refresh_banner)
         self._show_hook_config_issues_once()
@@ -1648,6 +1666,29 @@ class VibeApp(App):  # noqa: PLR0904
     def _is_tool_enabled_in_main_agent(self, tool: str) -> bool:
         return tool in self.agent_loop.tool_manager.available_tools
 
+    async def _wait_for_typing_pause(self) -> None:
+        try:
+            text_area = self.query_one(ChatTextArea)
+        except Exception:
+            return
+
+        debounce_s = _resolve_typing_debounce_s()
+        if text_area.time_since_last_keystroke() >= debounce_s:
+            return
+
+        if self._loading_widget:
+            self._loading_widget.show_debounce_hint()
+
+        try:
+            while True:
+                elapsed = text_area.time_since_last_keystroke()
+                if elapsed >= debounce_s:
+                    return
+                await asyncio.sleep(debounce_s - elapsed)
+        finally:
+            if self._loading_widget:
+                self._loading_widget.hide_debounce_hint()
+
     async def _approval_callback(
         self,
         tool: str,
@@ -1668,6 +1709,7 @@ class VibeApp(App):  # noqa: PLR0904
             # Broadcast approval popup event to web UI
             self._web_broadcast_manager._broadcast_approval_popup(popup_id, tool, args)
 
+            await self._wait_for_typing_pause()
             self._pending_approval = asyncio.Future()
             self._pending_approval_meta = PopupMetadata(
                 future=self._pending_approval,
@@ -1712,6 +1754,7 @@ class VibeApp(App):  # noqa: PLR0904
                 popup_id, question_args
             )
 
+            await self._wait_for_typing_pause()
             self._pending_question = asyncio.Future()
             self._pending_question_meta = PopupMetadata(
                 future=self._pending_question,
@@ -2302,12 +2345,9 @@ class VibeApp(App):  # noqa: PLR0904
             connector_registry is not None and connector_registry.connector_count > 0
         )
         if not mcp_servers and not has_connectors:
-            msg = (
-                "No MCP servers or connectors configured."
-                if self._connectors_enabled
-                else "No MCP servers configured."
+            await self._mount_and_scroll(
+                UserCommandMessage("No MCP servers or connectors configured.")
             )
-            await self._mount_and_scroll(UserCommandMessage(msg))
             return
 
         if self._current_bottom_app == BottomApp.MCP:
@@ -2534,7 +2574,7 @@ class VibeApp(App):  # noqa: PLR0904
         if self._chat_input_container:
             self._chat_input_container.set_custom_border(None)
 
-        # Reuse system prompt from saved session metadata (fallback to calculated)
+         # Reuse system prompt from saved session metadata (fallback to calculated)
         saved_system_prompt = metadata.get("system_prompt")
         use_saved = saved_system_prompt is not None
         saved_msg: LLMMessage | None = None
@@ -2553,18 +2593,21 @@ class VibeApp(App):  # noqa: PLR0904
             system_messages = [
                 msg for msg in self.agent_loop.messages if msg.role == Role.system
             ]
+        non_system_messages = [
+            msg for msg in loaded_messages if msg.role != Role.system
+        ]
 
         self.agent_loop.session_id = session.session_id
         self.agent_loop.parent_session_id = metadata.get("parent_session_id")
         self.agent_loop.session_logger.resume_existing_session(
             session.session_id, session_path
         )
+        await self.agent_loop.hydrate_experiments_from_session()
         self.agent_loop.messages.reset(system_messages + loaded_messages)
         if use_saved:
             self.agent_loop._resume_system_prompt = cast(
                 str, system_messages[0].content
             )
-
         self._refresh_profile_widgets()
 
         self._reset_ui_state()
@@ -3300,19 +3343,25 @@ class VibeApp(App):  # noqa: PLR0904
     def _handle_approval_app_escape(self) -> None:
         try:
             approval_app = self.query_one(ApprovalApp)
-            approval_app.action_reject()
+            if not approval_app.is_within_grace_period():
+                approval_app.action_reject()
+                self.agent_loop.telemetry_client.send_user_cancelled_action(
+                    "reject_approval"
+                )
         except Exception:
             pass
-        self.agent_loop.telemetry_client.send_user_cancelled_action("reject_approval")
         self._last_escape_time = None
 
     def _handle_question_app_escape(self) -> None:
         try:
             question_app = self.query_one(QuestionApp)
-            question_app.action_cancel()
+            if not question_app.is_within_grace_period():
+                question_app.action_cancel()
+                self.agent_loop.telemetry_client.send_user_cancelled_action(
+                    "cancel_question"
+                )
         except Exception:
             pass
-        self.agent_loop.telemetry_client.send_user_cancelled_action("cancel_question")
         self._last_escape_time = None
 
     def _handle_model_picker_app_escape(self) -> None:
@@ -3892,7 +3941,9 @@ class VibeApp(App):  # noqa: PLR0904
         content = load_whats_new_content()
         if content is not None:
             whats_new_message = WhatsNewMessage(content)
-            plan_offer = plan_offer_cta(self._plan_info)
+            plan_offer = plan_offer_cta(
+                self._plan_info, console_base_url=self.config.console_base_url
+            )
             if plan_offer is not None:
                 whats_new_message = WhatsNewMessage(f"{content}\n\n{plan_offer}")
             if self._history_widget_indices:
@@ -4087,6 +4138,13 @@ class VibeApp(App):  # noqa: PLR0904
         if self._chat_input_container and self._chat_input_container.input_widget:
             self._chat_input_container.input_widget.set_app_focus(True)
 
+    def action_open_plan_in_editor(self) -> None:
+        if self.event_handler is None:
+            return
+
+        if plan_file_message := self.event_handler.plan_file_message:
+            plan_file_message.open_in_editor()
+
     def action_suspend_with_message(self) -> None:
         if WINDOWS or self._driver is None or not self._driver.can_suspend:
             return
@@ -4116,7 +4174,7 @@ def run_textual_ui(
 
     update_notifier = PyPIUpdateGateway(project_name="mistral-vibe")
     update_cache_repository = FileSystemUpdateCacheRepository()
-    plan_offer_gateway = HttpWhoAmIGateway()
+    plan_offer_gateway = HttpWhoAmIGateway(base_url=agent_loop.config.console_base_url)
 
     with stderr_guard():
         app = VibeApp(
@@ -4128,4 +4186,6 @@ def run_textual_ui(
         )
         session_id = app.run()
 
-    print_session_resume_message(session_id, agent_loop.stats)
+    print_session_resume_message(
+        session_id, agent_loop.stats, agent_loop.config.session_logging
+    )

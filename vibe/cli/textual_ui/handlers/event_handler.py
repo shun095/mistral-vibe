@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Coroutine
+from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from vibe.cli.textual_ui.widgets.compact import CompactMessage
@@ -12,6 +13,7 @@ from vibe.cli.textual_ui.widgets.messages import (
     HookRunContainer,
     HookSystemMessageLine,
     ImageMessage,
+    PlanFileMessage,
     ReasoningMessage,
     UserMessage,
 )
@@ -32,6 +34,8 @@ from vibe.core.types import (
     CompactEndEvent,
     CompactStartEvent,
     ContinueableUserMessageEvent,
+    PlanReviewEndedEvent,
+    PlanReviewRequestedEvent,
     PromptProgressEvent,
     ReasoningEvent,
     TaskCompletedEvent,
@@ -64,6 +68,7 @@ class EventHandler:
         self.current_streaming_message: AssistantMessage | None = None
         self.current_streaming_reasoning: ReasoningMessage | None = None
         self._latest_command_task: asyncio.Task[None] | None = None
+        self.plan_file_message: PlanFileMessage | None = None
         self._hook_run_container: HookRunContainer | None = None
 
     async def _handle_hook_event(
@@ -107,7 +112,7 @@ class EventHandler:
         event: BaseEvent,
         loading_active: bool = False,
         loading_widget: LoadingWidget | None = None,
-    ) -> None:
+    ) -> ToolCallMessage | None:
         match event:
             case PromptProgressEvent():
                 await self._handle_prompt_progress(event, loading_widget)
@@ -142,6 +147,10 @@ class EventHandler:
                 await self._handle_continueable_user_message(event)
             case HookEvent():
                 await self._handle_hook_event(event, loading_widget)
+            case PlanReviewRequestedEvent():
+                await self._handle_start_plan_review(file_path=event.file_path)
+            case PlanReviewEndedEvent():
+                self._handle_stop_plan_review()
             case WaitingForInputEvent():
                 await self._finalize_streaming_internal()
             case TaskCompletedEvent():
@@ -347,3 +356,16 @@ class EventHandler:
             await coro
 
         self._latest_command_task = asyncio.create_task(_chained())
+
+    async def _handle_start_plan_review(self, file_path: Path) -> None:
+        file_path.touch()
+        msg = PlanFileMessage(file_path=file_path)
+        self.plan_file_message = msg
+        await self.mount_callback(msg)
+
+    def _handle_stop_plan_review(self) -> None:
+        if self.plan_file_message is None:
+            return
+
+        self.plan_file_message.stop_watching()
+        self.plan_file_message = None

@@ -170,9 +170,7 @@ def create_connector_proxy_tool_class(
                     "Connectors are disabled for security reasons. "
                     "External connector services have been hardcoded disabled."
                 )
-            url = (
-                f"{self._base_url}/v1/experimental/connectors/{self._connector_id}/mcp"
-            )
+            url = f"{self._base_url}/v1/connectors-gateway/{self._connector_id}/mcp"
             headers = {"Authorization": f"Bearer {self._api_key}"}
             payload = args.model_dump(exclude_none=True)
             try:

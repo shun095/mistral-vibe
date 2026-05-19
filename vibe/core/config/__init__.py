@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from vibe.core.config._settings import (
+    DEFAULT_CONSOLE_BASE_URL,
     DEFAULT_MISTRAL_API_ENV_KEY,
     DEFAULT_MODELS,
     DEFAULT_PROVIDERS,
@@ -11,6 +12,7 @@ from vibe.core.config._settings import (
     THINKING_LEVELS,
     Backend,
     ConnectorConfig,
+    ExperimentsConfig,
     LSPConfig,
     LSPServerConfig,
     MCPHttp,
@@ -18,7 +20,6 @@ from vibe.core.config._settings import (
     MCPStdio,
     MCPStreamableHttp,
     MissingAPIKeyError,
-    MissingPromptFileError,
     ModelConfig,
     OtelSpanExporterConfig,
     ProjectContextConfig,
@@ -63,8 +64,10 @@ from vibe.core.config.schema import (
     WithShallowMerge,
     WithUnionMerge,
 )
+from vibe.core.prompts import MissingPromptFileError
 
 __all__ = [
+    "DEFAULT_CONSOLE_BASE_URL",
     "DEFAULT_MISTRAL_API_ENV_KEY",
     "DEFAULT_MODELS",
     "DEFAULT_PROVIDERS",
@@ -84,6 +87,7 @@ __all__ = [
     "DeleteField",
     "DuplicateMergeMetadataError",
     "EmptyLayerError",
+    "ExperimentsConfig",
     "LSPConfig",
     "LSPServerConfig",
     "LayerImplementationError",

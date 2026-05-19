@@ -12,7 +12,6 @@ from vibe.cli.plan_offer.ports.whoami_gateway import (
 )
 from vibe.core.utils.http import build_ssl_context
 
-BASE_URL = "https://console.mistral.ai"
 WHOAMI_PATH = "/api/vibe/whoami"
 
 # SECURITY: Hardcoded disable - Plan Offer whoami is permanently disabled
@@ -21,7 +20,7 @@ _PLAN_OFFER_DISABLED = True
 
 
 class HttpWhoAmIGateway:
-    def __init__(self, base_url: str = BASE_URL) -> None:
+    def __init__(self, base_url: str) -> None:
         self._base_url = base_url.rstrip("/")
 
     async def whoami(self, api_key: str) -> WhoAmIResponse:

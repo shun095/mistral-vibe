@@ -1,6 +1,6 @@
 [project]
 name = "mistral-vibe"
-version = "2.9.6"
+version = "2.10.0"
 description = "Minimal CLI coding agent by Mistral"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -28,50 +28,50 @@ classifiers = [
 ]
 dependencies = [
     "agent-client-protocol==0.9.0",
-    "anyio>=4.12.0",
-    "cachetools>=5.5.0",
+    "anyio==4.13.0",
+    "cachetools==7.0.6",
     "cairosvg>=2.7.0",
-    "certifi>=2026.4.22",
-    "charset-normalizer>=3.4.4",
+    "certifi==2026.4.22",
+    "charset-normalizer==3.4.7",
     "Pillow>=10.0.0",
-    "cryptography>=44.0.0",
+    "cryptography==47.0.0",
     "fastapi>=0.115.0",
-    "gitpython>=3.1.46",
-    "giturlparse>=0.14.0",
-    "google-auth>=2.0.0",
-    "httpx>=0.28.1",
+    "gitpython==3.1.47",
+    "giturlparse==0.14.0",
+    "google-auth==2.49.2",
+    "httpx==0.28.1",
     "jinja2>=3.1.6",
     "json-repair>=0.30.0",
-    "jsonpatch>=1.33",
-    "keyring>=25.6.0",
-    "markdownify>=1.2.2",
+    "jsonpatch==1.33",
+    "keyring==25.7.0",
+    "markdownify==1.2.2",
     "markitdown[pdf]>=0.1.0",
-    "mcp>=1.14.0",
+    "mcp==1.27.0",
     # "mistralai==2.4.4",  # quarantined on PyPI - commented out; restore when unquarantined
-    "opentelemetry-api>=1.39.1",
-    "opentelemetry-exporter-otlp-proto-http>=1.39.1",
-    "opentelemetry-sdk>=1.39.1",
-    "opentelemetry-semantic-conventions>=0.60b1",
-    "packaging>=24.1",
-    "pexpect>=4.9.0",
-    "pydantic>=2.12.4",
-    "pydantic-settings>=2.12.0",
-    "pyperclip>=1.11.0",
-    "python-dotenv>=1.0.0",
-    "pyyaml>=6.0.0",
-    "requests>=2.20.0",
-    "rich>=14.0.0",
-    "sounddevice>=0.5.1",
+    "opentelemetry-api==1.39.1",
+    "opentelemetry-exporter-otlp-proto-http==1.39.1",
+    "opentelemetry-sdk==1.39.1",
+    "opentelemetry-semantic-conventions==0.60b1",
+    "packaging==26.2",
+    "pexpect==4.9.0",
+    "pydantic==2.13.3",
+    "pydantic-settings==2.14.0",
+    "pyperclip==1.11.0",
+    "python-dotenv==1.2.2",
+    "pyyaml==6.0.3",
+    "requests==2.33.1",
+    "rich==15.0.0",
+    "sounddevice==0.5.5",
     "textual==8.2.4",
-    "textual-speedups>=0.2.1",
-    "tomli-w>=1.2.0",
+    "textual-speedups==0.2.1",
+    "tomli-w==1.2.0",
     "tomlkit>=0.14.0",
-    "tree-sitter>=0.25.2",
-    "tree-sitter-bash>=0.25.1",
+    "tree-sitter==0.25.2",
+    "tree-sitter-bash==0.25.1",
     "uvicorn>=0.41.0",
-    "watchfiles>=1.1.1",
-    "websockets>=16.0",
-    "zstandard>=0.25.0",
+    "watchfiles==1.1.1",
+    "websockets==16.0",
+    "zstandard==0.25.0",
 ]
 
 [project.urls]
@@ -128,6 +128,7 @@ dev = [
     "playwright>=1.40.0",
     "respx>=0.22.0",
     "ruff>=0.14.5",
+    "tomlkit>=0.13.0",
     "twine>=5.0.0",
     "typos>=1.34.0",
     "vulture>=2.14",
@@ -137,7 +138,17 @@ dev = [
     "import-linter>=2.11",
 ]
 
-build = ["pyinstaller>=6.17.0", "truststore>=0.10.4"]
+build = [
+    "altgraph==0.17.5",
+    "macholib==1.16.4 ; sys_platform == 'darwin'",
+    "packaging==26.2",
+    "pefile==2024.8.26 ; sys_platform == 'win32'",
+    "pyinstaller==6.20.0",
+    "pyinstaller-hooks-contrib==2026.4",
+    "pywin32-ctypes==0.2.3 ; sys_platform == 'win32'",
+    "setuptools==82.0.1",
+    "truststore==0.10.4",
+]
 
 [tool.importlinter]
 root_package = "vibe"
@@ -158,6 +169,7 @@ source_modules = ["vibe.core.*"]
 forbidden_modules = ["vibe.cli.*"]
 ignore_imports = [
     "vibe.core.agent_loop -> vibe.cli.terminal_detect",
+    "vibe.core.experiments.session -> vibe.cli.terminal_detect",
 ]
 
 # cli/acp は互いに依存してはいけない

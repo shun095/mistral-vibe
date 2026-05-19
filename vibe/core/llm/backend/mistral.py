@@ -33,7 +33,6 @@ from vibe.core.llm._mistralai_stub import (
     UserMessage,
 )
 from vibe.core.llm.exceptions import BackendErrorBuilder
-from vibe.core.llm.message_utils import merge_consecutive_user_messages
 from vibe.core.logger import logger
 from vibe.core.types import (
     AvailableTool,
@@ -312,7 +311,6 @@ class MistralBackend:
         metadata: dict[str, str] | None = None,
     ) -> LLMChunk:
         try:
-            merged_messages = merge_consecutive_user_messages(messages)
             reasoning_effort = _THINKING_TO_REASONING_EFFORT.get(model.thinking)
             if reasoning_effort is not None:
                 temperature = 1.0
@@ -320,18 +318,15 @@ class MistralBackend:
             logger.debug(
                 "Mistral Backend Request: model=%s messages=%d tools=%s max_tokens=%s",
                 model.name,
-                len(merged_messages),
+                len(messages),
                 bool(tools),
                 max_tokens,
             )
 
-            _temp: dict[str, Any] = (
-                {"temperature": temperature} if temperature is not None else {}
-            )
             response = await self._get_client().chat.complete_async(
                 model=model.name,
-                messages=[self._mapper.prepare_message(msg) for msg in merged_messages],
-                **_temp,
+                messages=[self._mapper.prepare_message(msg) for msg in messages],
+                temperature=temperature,
                 tools=[self._mapper.prepare_tool(tool) for tool in tools]
                 if tools
                 else None,
@@ -407,7 +402,6 @@ class MistralBackend:
         metadata: dict[str, str] | None = None,
     ) -> AsyncGenerator[LLMChunk, None]:
         try:
-            merged_messages = merge_consecutive_user_messages(messages)
             reasoning_effort = _THINKING_TO_REASONING_EFFORT.get(model.thinking)
             if reasoning_effort is not None:
                 temperature = 1.0
@@ -415,17 +409,14 @@ class MistralBackend:
             logger.debug(
                 "Mistral Backend Streaming Request: model=%s messages=%d tools=%s",
                 model.name,
-                len(merged_messages),
+                len(messages),
                 bool(tools),
             )
 
-            _temp: dict[str, Any] = (
-                {"temperature": temperature} if temperature is not None else {}
-            )
             stream = await self._get_client().chat.stream_async(
                 model=model.name,
-                messages=[self._mapper.prepare_message(msg) for msg in merged_messages],
-                **_temp,
+                messages=[self._mapper.prepare_message(msg) for msg in messages],
+                temperature=temperature,
                 tools=[self._mapper.prepare_tool(tool) for tool in tools]
                 if tools
                 else None,

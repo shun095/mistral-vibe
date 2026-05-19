@@ -13,7 +13,6 @@ from vibe.core.llm.backend.base import APIAdapter, PreparedRequest
 from vibe.core.llm.backend.openai_responses import OpenAIResponsesAdapter
 from vibe.core.llm.backend.reasoning_adapter import ReasoningAdapter
 from vibe.core.llm.exceptions import BackendErrorBuilder
-from vibe.core.llm.message_utils import merge_consecutive_user_messages
 from vibe.core.logger import logger
 from vibe.core.types import (
     AvailableTool,
@@ -99,7 +98,6 @@ class OpenAIAdapter(APIAdapter):
         thinking: str = "off",
         return_progress: bool = False,
     ) -> PreparedRequest:
-        merged_messages = merge_consecutive_user_messages(messages)
         field_name = provider.reasoning_field_name
         converted_messages = [
             self._reasoning_to_api(
@@ -114,7 +112,7 @@ class OpenAIAdapter(APIAdapter):
                 ),
                 field_name,
             )
-            for msg in merged_messages
+            for msg in messages
         ]
 
         # Enable return_progress for OpenAI-compatible providers (e.g., llama-server)
