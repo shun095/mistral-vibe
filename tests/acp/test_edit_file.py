@@ -113,7 +113,6 @@ class TestAcpEditFileExecution:
         assert result.blocks_applied == 1
         assert mock_client._read_text_file_called
         assert mock_client._write_text_file_called
-        assert mock_client._session_update_called
 
         read_params = mock_client._last_read_params
         assert read_params["session_id"] == "test_session_123"

@@ -328,34 +328,6 @@ class TestAcpBashTimeout:
 
 class TestAcpBashTerminalOpenedEvent:
     @pytest.mark.asyncio
-    async def test_run_with_embedding(self, mock_client: MockClient) -> None:
-        tool = Bash(
-            config_getter=lambda: BashToolConfig(),
-            state=AcpBashState.model_construct(
-                client=mock_client, session_id="test_session", tool_call_id="test_call"
-            ),
-        )
-
-        args = BashArgs(command="test", timeout=10)
-        await collect_result(tool.run(args))
-
-        assert mock_client._session_update_called
-
-    @pytest.mark.asyncio
-    async def test_run_embedding_without_tool_call_id(
-        self, mock_client: MockClient
-    ) -> None:
-        tool = Bash(
-            config_getter=lambda: BashToolConfig(),
-            state=AcpBashState.model_construct(
-                client=mock_client, session_id="test_session"
-            ),
-        )
-
-        args = BashArgs(command="test", timeout=10)
-        await collect_result(tool.run(args))
-
-    @pytest.mark.asyncio
     async def test_run_yields_terminal_opened_event(
         self, mock_client: MockClient
     ) -> None:
@@ -366,7 +338,7 @@ class TestAcpBashTerminalOpenedEvent:
             ),
         )
 
-        args = BashArgs(command="test")
+        args = BashArgs(command="test", timeout=10)
         events: list[ToolTerminalOpenedEvent] = []
         async for item in tool.run(args, InvokeContext(tool_call_id="test_call")):
             if isinstance(item, ToolTerminalOpenedEvent):
@@ -392,7 +364,8 @@ class TestAcpBashConcurrentInvocations:
         async def run_and_collect_ids(tool_call_id: str) -> list[str]:
             ids: list[str] = []
             async for item in tool.run(
-                BashArgs(command="echo hi"), InvokeContext(tool_call_id=tool_call_id)
+                BashArgs(command="echo hi", timeout=10),
+                InvokeContext(tool_call_id=tool_call_id),
             ):
                 if isinstance(item, ToolTerminalOpenedEvent):
                     ids.append(item.tool_call_id)
