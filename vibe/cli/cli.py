@@ -239,7 +239,7 @@ def _run_interactive_mode_with_web(
     # diff against origin/main. Update both sites if VibeApp gains new params.
     update_notifier = PyPIUpdateGateway(project_name="mistral-vibe")
     update_cache_repository = FileSystemUpdateCacheRepository()
-    plan_offer_gateway = HttpWhoAmIGateway()
+    plan_offer_gateway = HttpWhoAmIGateway(base_url=agent_loop.config.console_base_url)
     tui_app = VibeApp(
         agent_loop=agent_loop,
         startup=StartupOptions(
@@ -272,7 +272,9 @@ def _run_interactive_mode_with_web(
     )
 
     session_id = tui_app.run()
-    print_session_resume_message(session_id, agent_loop.stats)
+    print_session_resume_message(
+        session_id, agent_loop.stats, agent_loop.config.session_logging
+    )
     stop_web_server()
     web_server_thread.join(timeout=5)
 

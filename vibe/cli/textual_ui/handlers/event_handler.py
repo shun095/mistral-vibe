@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Coroutine
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from vibe.cli.textual_ui.widgets.compact import CompactMessage
 from vibe.cli.textual_ui.widgets.loading import DEFAULT_LOADING_STATUS
@@ -344,7 +344,7 @@ class EventHandler:
             self.current_compact.stop_spinning(success=False)
             self.current_compact = None
 
-    def _schedule_command(self, coro: Coroutine[None, None, None]) -> None:
+    def _schedule_command(self, coro: Coroutine[Any, Any, Any]) -> None:
         previous = self._latest_command_task
 
         async def _chained() -> None:

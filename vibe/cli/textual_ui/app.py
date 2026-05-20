@@ -2574,7 +2574,7 @@ class VibeApp(App):  # noqa: PLR0904
         if self._chat_input_container:
             self._chat_input_container.set_custom_border(None)
 
-         # Reuse system prompt from saved session metadata (fallback to calculated)
+        # Reuse system prompt from saved session metadata (fallback to calculated)
         saved_system_prompt = metadata.get("system_prompt")
         use_saved = saved_system_prompt is not None
         saved_msg: LLMMessage | None = None
@@ -2593,9 +2593,7 @@ class VibeApp(App):  # noqa: PLR0904
             system_messages = [
                 msg for msg in self.agent_loop.messages if msg.role == Role.system
             ]
-        non_system_messages = [
-            msg for msg in loaded_messages if msg.role != Role.system
-        ]
+        [msg for msg in loaded_messages if msg.role != Role.system]
 
         self.agent_loop.session_id = session.session_id
         self.agent_loop.parent_session_id = metadata.get("parent_session_id")

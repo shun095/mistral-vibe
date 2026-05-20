@@ -190,7 +190,9 @@ The user values accuracy and honesty over speed and polished output. A correct, 
 
 When making a claim about code behavior (e.g., "this error is pre-existing", "all tests pass"), **prove it with unfiltered output**. The user must be able to independently verify your conclusion.
 
-- **Never filter diagnostic output** — Do not pipe linter, test, or diff output through `grep`, `tail`, or `head`. Show the full output. Filtering hides context the user needs to trust your conclusion.
+- **Never filter raw diagnostic output** — Do not pipe linter, test, diff, or pre-commit output through `grep`, `tail`, or `head` in the command that runs the tool. Filtering hides failures before you can see them.
+- **Write full output to file first, then search** — For any diagnostic command, redirect all output to a file (`> /tmp/result.log 2>&1`). After the file is written, you may use `grep` or `tail` on the file to locate relevant sections. When using `tail`, use at least `-n 100` to capture enough context. The full file must always exist as the source of truth.
+- **Do not categorize verification commands differently** — Any command whose output you use to claim success (pre-commit, pyright, ruff, pytest, npm test, npm run test:e2e, git diff, etc.) is a diagnostic command. The same no-filtering rule applies to all of them. Never treat a gate command as "infrastructure" and exempt it from evidence-first principles.
 - **Stash-and-compare properly** — When comparing two states (e.g., pre-existing vs introduced), run `git stash`, show the full diagnostic output, then `git stash pop`, show the full output again. Both outputs must be visible.
 - **One claim, one proof** — If you claim "X is pre-existing", show the tool output that demonstrates X existed before your changes. Without the output, the claim is noise.
 - **Investigation is read-only** — When asked to investigate, diagnose, or review, do not edit files, commit changes, or modify configuration. Report findings and stop. The user decides what action to take. Do not convert an investigation task into a change task.
@@ -339,7 +341,7 @@ E2E tests:        X passed, Y skipped, Z failed
 - Running partial tests (`pytest tests/specific/path/`)
 - Skipping E2E tests
 - Claiming "tests pass" without running all 3
-- Filtering pre-commit output with `tail` or `grep` — always show full output so failures are visible
+- Piping pre-commit output through `tail` or `grep` without first writing full output to a file
 
 ### Test Reporting
 

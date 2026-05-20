@@ -199,6 +199,9 @@ async def test_return_unknown_plan_on_unsupported_plan_type(
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(
+    reason="Plan offer disabled for security - prevents external whoami calls"
+)
 async def test_gateway_calls_custom_console_base_url_from_config(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -224,6 +227,9 @@ async def test_gateway_calls_custom_console_base_url_from_config(
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(
+    reason="Plan offer disabled for security - prevents external whoami calls"
+)
 async def test_gateway_uses_default_console_url_when_not_configured(
     respx_mock: respx.MockRouter,
 ) -> None:

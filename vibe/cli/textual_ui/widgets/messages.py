@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-import time
 from pathlib import Path
+import time
 from typing import TYPE_CHECKING, Any, cast
 
 from vibe.core.hooks.models import HookMessageSeverity

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, ClassVar, final
 import httpx
 from pydantic import BaseModel, Field
 
+from vibe.core.config import DEFAULT_MISTRAL_API_ENV_KEY, VibeConfig
 from vibe.core.llm._mistralai_stub import (
     ConversationResponse,
     MessageOutputEntry,
@@ -15,9 +16,6 @@ from vibe.core.llm._mistralai_stub import (
     TextChunk,
     ToolReferenceChunk,
 )
-from pydantic import BaseModel, Field
-
-from vibe.core.config import DEFAULT_MISTRAL_API_ENV_KEY, VibeConfig
 from vibe.core.tools.base import (
     BaseTool,
     BaseToolConfig,

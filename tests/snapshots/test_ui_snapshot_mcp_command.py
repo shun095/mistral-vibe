@@ -14,6 +14,7 @@ from tests.stubs.fake_mcp_registry import (
     FakeMCPRegistryWithBrokenServer,
 )
 from vibe.core.config import MCPHttp, MCPStdio
+from vibe.core.tools.connectors import CONNECTORS_ENV_VAR
 from vibe.core.tools.mcp.tools import RemoteTool
 
 _FAKE_CONNECTORS = {
