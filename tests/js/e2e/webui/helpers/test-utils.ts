@@ -45,6 +45,27 @@ export const Selectors = {
   promptHistorySearch: "#prompt-history-search",
   promptHistoryItem: ".prompt-history-item",
 
+  // Model picker
+  modelPickerModal: "#model-picker-modal",
+  modelPickerContent: "#model-picker-content",
+  modelPickerClose: "#model-picker-close",
+  modelPickerItem: ".model-picker-item",
+
+  // Config modal
+  configModal: "#config-modal",
+  configModalContent: "#config-modal-content",
+  configModalClose: "#config-modal-close",
+
+  // MCP modal
+  mcpModal: "#mcp-modal",
+  mcpModalContent: "#mcp-modal-content",
+  mcpModalClose: "#mcp-modal-close",
+
+  // Rewind modal
+  rewindModal: "#rewind-modal",
+  rewindMessagesList: "#rewind-messages-list",
+  rewindModalClose: "#rewind-modal-close",
+
   // Toggle all cards
   toggleCardsBtn: "#toggle-cards-btn",
 
@@ -81,6 +102,26 @@ export async function waitForHidden(
 ): Promise<void> {
   const locator = page.locator(selector);
   await locator.waitFor({ state: "hidden", timeout });
+}
+
+/**
+ * Click the overlay of a visible modal.
+ * Uses page.evaluate to find the overlay within the visible modal,
+ * avoiding the issue where Playwright picks a hidden modal's overlay.
+ */
+export async function clickModalOverlay(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const modals = document.querySelectorAll('.modal');
+    for (const modal of modals) {
+      if (modal.style.display === 'flex') {
+        const overlay = modal.querySelector('.modal-overlay');
+        if (overlay) {
+          (overlay as HTMLElement).click();
+          return;
+        }
+      }
+    }
+  });
 }
 
 /**

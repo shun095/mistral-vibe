@@ -79,6 +79,24 @@ class VibeClient {
             promptHistorySearch: document.getElementById('prompt-history-search'),
             gitStatusBtn: document.getElementById('git-status-btn'),
             gitDiffBtn: document.getElementById('git-diff-btn'),
+            modelPickerModal: document.getElementById('model-picker-modal'),
+            modelPickerContent: document.getElementById('model-picker-content'),
+            modelPickerClose: document.getElementById('model-picker-close'),
+            thinkingPickerModal: document.getElementById('thinking-picker-modal'),
+            thinkingPickerContent: document.getElementById('thinking-picker-content'),
+            thinkingPickerClose: document.getElementById('thinking-picker-close'),
+            configModal: document.getElementById('config-modal'),
+            configModalContent: document.getElementById('config-modal-content'),
+            configModalClose: document.getElementById('config-modal-close'),
+            mcpModal: document.getElementById('mcp-modal'),
+            mcpModalContent: document.getElementById('mcp-modal-content'),
+            mcpModalClose: document.getElementById('mcp-modal-close'),
+            rewindModal: document.getElementById('rewind-modal'),
+            rewindMessagesList: document.getElementById('rewind-messages-list'),
+            rewindActions: document.getElementById('rewind-actions'),
+            rewindModalClose: document.getElementById('rewind-modal-close'),
+            rewindRestoreBtn: document.getElementById('rewind-restore-btn'),
+            rewindEditBtn: document.getElementById('rewind-edit-btn'),
         };
 
         // Initialize modules
@@ -180,6 +198,11 @@ class VibeClient {
 
         this.bindSessionPickerEvents();
         this.bindPromptHistoryEvents();
+        this.bindModelPickerEvents();
+        this.bindThinkingPickerEvents();
+        this.bindConfigModalEvents();
+        this.bindMcpModalEvents();
+        this.bindRewindModalEvents();
     }
 
     autoResizeTextarea() {
@@ -1584,15 +1607,6 @@ class VibeClient {
 
             const command = this.slashRegistry.getCommand(content);
             if (command) {
-                // Special handling for /resume command - show the session picker
-                if (command.name === 'resume') {
-                    this.elements.input.value = '';
-                    this.autoResizeTextarea();
-                    this.updateSendButtonState();
-                    this.showSessionPicker();
-                    return;
-                }
-
                 // Special handling for /translate - translate input text to English
                 if (command.name === 'translate') {
                     if (!command.args) {
@@ -1603,6 +1617,23 @@ class VibeClient {
                         return;
                     }
                     await this.handleTranslate(command.args);
+                    return;
+                }
+
+                // Modal commands: clear input and open the modal
+                const modalHandlers = {
+                    resume: () => this.showSessionPicker(),
+                    model: () => this.showModelPicker(),
+                    config: () => this.showConfigModal(),
+                    mcp: () => this.showMcpModal(),
+                    rewind: () => this.showRewindModal(),
+                };
+                const handler = modalHandlers[command.name];
+                if (handler) {
+                    this.elements.input.value = '';
+                    this.autoResizeTextarea();
+                    this.updateSendButtonState();
+                    handler();
                     return;
                 }
 
@@ -2783,6 +2814,38 @@ class VibeClient {
         this._on(document, 'keydown', phEscapeHandler);
     }
 
+    bindModelPickerEvents() {
+        this._bindModalClose(this.elements.modelPickerModal, this.elements.modelPickerClose, () => this.hideModelPicker());
+    }
+
+    bindThinkingPickerEvents() {
+        this._bindModalClose(this.elements.thinkingPickerModal, this.elements.thinkingPickerClose, () => this.hideThinkingPicker());
+    }
+
+    bindConfigModalEvents() {
+        this._bindModalClose(this.elements.configModal, this.elements.configModalClose, () => this.hideConfigModal());
+    }
+
+    bindMcpModalEvents() {
+        this._bindModalClose(this.elements.mcpModal, this.elements.mcpModalClose, () => this.hideMcpModal());
+    }
+
+    bindRewindModalEvents() {
+        this._bindModalClose(this.elements.rewindModal, this.elements.rewindModalClose, () => this.hideRewindModal());
+    }
+
+    _bindModalClose(modalEl, closeBtnEl, hideFn) {
+        this._on(closeBtnEl, 'click', hideFn);
+        const overlay = modalEl?.querySelector('.modal-overlay');
+        this._on(overlay, 'click', hideFn);
+        const escapeHandler = (e) => {
+            if (e.key === 'Escape' && modalEl?.style.display === 'flex') {
+                hideFn();
+            }
+        };
+        this._on(document, 'keydown', escapeHandler);
+    }
+
     /**
      * Register an event listener for cleanup
      * @param {HTMLElement|null} el - Element to attach listener to
@@ -2944,6 +3007,447 @@ class VibeClient {
         messageDiv.appendChild(outputDiv);
 
         this._scrollAfterUpdate(previousScrollHeight);
+    }
+
+    // =========================================================================
+    // Model Picker
+    // =========================================================================
+
+    async showModelPicker() {
+        this.elements.modelPickerModal.style.display = 'flex';
+        this.elements.modelPickerContent.innerHTML = '<div class="session-picker-loading">Loading models...</div>';
+
+        try {
+            const data = await this.apiClient.getModels();
+            const models = data.models || [];
+            const activeModel = data.active_model || '';
+
+            if (models.length === 0) {
+                this.elements.modelPickerContent.innerHTML = '<div class="session-picker-empty">No models configured.</div>';
+                return;
+            }
+
+            this.elements.modelPickerContent.innerHTML = '';
+            models.forEach(model => {
+                const div = document.createElement('div');
+                div.className = 'modal-list-item model-picker-item' + (model.alias === activeModel ? ' active' : '');
+                div.innerHTML = `
+                    <div>
+                        <div class="model-picker-alias">${this.escapeHtml(model.alias)}</div>
+                        <div class="model-picker-name">${this.escapeHtml(model.name)} (${this.escapeHtml(model.provider)})</div>
+                    </div>
+                    ${model.alias === activeModel ? '<div class="model-picker-active-badge"><span class="material-symbols-rounded">check</span> Active</div>' : ''}
+                `;
+                div.addEventListener('click', () => this.switchModel(model.alias));
+                this.elements.modelPickerContent.appendChild(div);
+            });
+        } catch (error) {
+            console.error('Failed to load models:', error);
+            this.elements.modelPickerContent.innerHTML = '<div class="session-picker-empty">Failed to load models.</div>';
+        }
+    }
+
+    hideModelPicker() {
+        this.elements.modelPickerModal.style.display = 'none';
+    }
+
+    async switchModel(alias) {
+        try {
+            const result = await this.apiClient.switchModel(alias);
+            if (result.success) {
+                this.hideModelPicker();
+                this.addMessage('system', `Model switched to ${this.escapeHtml(result.active_model)}`);
+            } else {
+                this.addMessage('system', `Failed to switch model: ${result.error}`);
+            }
+        } catch (error) {
+            console.error('Failed to switch model:', error);
+            this.addMessage('system', `Failed to switch model: ${error.message}`);
+        }
+    }
+
+    // =========================================================================
+    // Thinking Picker
+    // =========================================================================
+
+    async showThinkingPicker() {
+        this.elements.thinkingPickerModal.style.display = 'flex';
+        this.elements.thinkingPickerContent.innerHTML = '<div class="session-picker-loading">Loading levels...</div>';
+
+        try {
+            const config = await this.apiClient.getConfig();
+            const levels = ['off', 'low', 'medium', 'high', 'max'];
+            const current = config.thinking || 'off';
+
+            this.elements.thinkingPickerContent.innerHTML = '';
+            levels.forEach(level => {
+                const div = document.createElement('div');
+                div.className = 'modal-list-item thinking-picker-item' + (level === current ? ' active' : '');
+                div.innerHTML = `
+                    <div class="thinking-picker-level">${this.escapeHtml(level)}</div>
+                    ${level === current ? '<div class="thinking-picker-active-badge"><span class="material-symbols-rounded">check</span> Active</div>' : ''}
+                `;
+                div.addEventListener('click', () => this.switchThinking(level));
+                this.elements.thinkingPickerContent.appendChild(div);
+            });
+        } catch (error) {
+            console.error('Failed to load thinking levels:', error);
+            this.elements.thinkingPickerContent.innerHTML = '<div class="session-picker-empty">Failed to load levels.</div>';
+        }
+    }
+
+    hideThinkingPicker() {
+        this.elements.thinkingPickerModal.style.display = 'none';
+    }
+
+    async switchThinking(level) {
+        try {
+            const result = await this.apiClient.switchThinking(level);
+            if (result.success) {
+                this.hideThinkingPicker();
+                this.addMessage('system', `Thinking level set to ${this.escapeHtml(level)}`);
+            } else {
+                this.addMessage('system', `Failed to set thinking level: ${result.error}`);
+            }
+        } catch (error) {
+            console.error('Failed to switch thinking:', error);
+            this.addMessage('system', `Failed to set thinking level: ${error.message}`);
+        }
+    }
+
+    // =========================================================================
+    // Config Modal
+    // =========================================================================
+
+    async showConfigModal() {
+        this.elements.configModal.style.display = 'flex';
+        this.elements.configModalContent.innerHTML = '<div class="session-picker-loading">Loading settings...</div>';
+
+        try {
+            const config = await this.apiClient.getConfig();
+            this.elements.configModalContent.innerHTML = '';
+
+            // Model & Thinking section
+            const modelSection = document.createElement('div');
+            modelSection.className = 'config-section';
+            modelSection.innerHTML = '<div class="config-section-title">Model</div>';
+
+            const modelRow = document.createElement('div');
+            modelRow.className = 'config-row';
+            const modelActionBtn = document.createElement('div');
+            modelActionBtn.className = 'config-row-action';
+            modelActionBtn.textContent = 'Change';
+            modelRow.innerHTML = `
+                <div>
+                    <div class="config-row-label">Model</div>
+                    <div class="config-row-sublabel">${this.escapeHtml(config.active_model || '')}</div>
+                </div>
+            `;
+            modelRow.appendChild(modelActionBtn);
+            modelSection.appendChild(modelRow);
+
+            const thinkingRow = document.createElement('div');
+            thinkingRow.className = 'config-row';
+            const thinkingActionBtn = document.createElement('div');
+            thinkingActionBtn.className = 'config-row-action';
+            thinkingActionBtn.textContent = 'Change';
+            thinkingRow.innerHTML = `
+                <div>
+                    <div class="config-row-label">Thinking</div>
+                    <div class="config-row-sublabel">${this.escapeHtml(config.thinking || 'off')}</div>
+                </div>
+            `;
+            thinkingRow.appendChild(thinkingActionBtn);
+            modelSection.appendChild(thinkingRow);
+            this.elements.configModalContent.appendChild(modelSection);
+
+            // Toggles section
+            const togglesSection = document.createElement('div');
+            togglesSection.className = 'config-section';
+            togglesSection.innerHTML = '<div class="config-section-title">Preferences</div>';
+
+            const toggles = [
+                { key: 'autocopy_to_clipboard', label: 'Auto-copy to clipboard' },
+                { key: 'file_watcher_for_autocomplete', label: 'Autocomplete file watcher' },
+                { key: 'voice_mode_enabled', label: 'Voice mode' },
+                { key: 'narrator_enabled', label: 'Narrator' },
+                { key: 'auto_approve', label: 'Auto-approve tools' },
+                { key: 'enable_notifications', label: 'Desktop notifications' },
+                { key: 'enable_web_notifications', label: 'Web notifications' },
+                { key: 'loop_detection_enabled', label: 'Loop detection' },
+                { key: 'context_warnings', label: 'Context warnings' },
+            ];
+
+            toggles.forEach(t => {
+                const row = document.createElement('div');
+                row.className = 'config-row';
+                row.innerHTML = `
+                    <div class="config-row-label">${this.escapeHtml(t.label)}</div>
+                    <label class="config-toggle">
+                        <input type="checkbox" data-config-key="${this.escapeHtml(t.key)}" ${config[t.key] ? 'checked' : ''}>
+                        <span class="config-toggle-slider"></span>
+                    </label>
+                `;
+                togglesSection.appendChild(row);
+            });
+
+            this.elements.configModalContent.appendChild(togglesSection);
+
+            // Bind events using direct references
+            modelActionBtn.addEventListener('click', () => {
+                this.hideConfigModal();
+                this.showModelPicker();
+            });
+            thinkingActionBtn.addEventListener('click', () => {
+                this.hideConfigModal();
+                this.showThinkingPicker();
+            });
+
+            // Bind toggle changes
+            this.elements.configModalContent.querySelectorAll('.config-toggle input').forEach(input => {
+                input.addEventListener('change', (e) => {
+                    const key = e.target.dataset.configKey;
+                    const value = e.target.checked;
+                    this.saveConfigValue(key, value);
+                });
+            });
+
+        } catch (error) {
+            console.error('Failed to load config:', error);
+            this.elements.configModalContent.innerHTML = '<div class="session-picker-empty">Failed to load settings.</div>';
+        }
+    }
+
+    hideConfigModal() {
+        this.elements.configModal.style.display = 'none';
+    }
+
+    async saveConfigValue(key, value) {
+        try {
+            const result = await this.apiClient.saveConfig({ [key]: value });
+            if (!result.success) {
+                this.addMessage('system', `Failed to save config: ${result.error}`);
+            }
+        } catch (error) {
+            console.error('Failed to save config:', error);
+        }
+    }
+
+    // =========================================================================
+    // MCP Modal
+    // =========================================================================
+
+    async showMcpModal() {
+        this.elements.mcpModal.style.display = 'flex';
+        this.elements.mcpModalContent.innerHTML = '<div class="session-picker-loading">Loading MCP servers...</div>';
+
+        try {
+            const data = await this.apiClient.listMcp();
+            const servers = data.servers || [];
+            const connectors = data.connectors || [];
+
+            this.elements.mcpModalContent.innerHTML = '';
+
+            if (servers.length === 0 && connectors.length === 0) {
+                this.elements.mcpModalContent.innerHTML = '<div class="session-picker-empty">No MCP servers or connectors configured.</div>';
+                return;
+            }
+
+            if (servers.length > 0) {
+                this.elements.mcpModalContent.appendChild(this._renderMcpGroup('Local MCP Servers', servers, false, true));
+            }
+            if (connectors.length > 0) {
+                this.elements.mcpModalContent.appendChild(this._renderMcpGroup('Workspace Connectors', connectors, true, false));
+            }
+
+            // Bind toggle button events
+            this.elements.mcpModalContent.querySelectorAll('.mcp-toggle-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.toggleMcp(
+                        btn.dataset.name,
+                        btn.dataset.isConnector === 'true',
+                        btn.dataset.disabled === 'true',
+                        btn.dataset.tool || null
+                    );
+                });
+            });
+
+        } catch (error) {
+            console.error('Failed to load MCP data:', error);
+            this.elements.mcpModalContent.innerHTML = '<div class="session-picker-empty">Failed to load MCP servers.</div>';
+        }
+    }
+
+    _renderMcpGroup(header, items, isConnector, showTransport) {
+        const section = document.createElement('div');
+        section.className = 'mcp-section';
+        section.innerHTML = `<div class="mcp-section-header">${this.escapeHtml(header)}</div>`;
+
+        items.forEach(entry => {
+            const item = document.createElement('div');
+            item.className = 'mcp-server-item';
+            const transportBadge = showTransport ? `<span class="mcp-server-transport">${this.escapeHtml(entry.transport || 'stdio')}</span>` : '';
+            const statusLabel = isConnector
+                ? (entry.disabled ? 'Disconnected' : 'Connected')
+                : (entry.disabled ? 'Disabled' : '');
+            const toggleLabel = isConnector
+                ? (entry.disabled ? 'Connect' : 'Disconnect')
+                : (entry.disabled ? 'Enable' : 'Disable');
+            const statusBadge = statusLabel ? `<span class="mcp-toggle-btn ${entry.disabled ? 'disabled' : 'enabled'}">${statusLabel}</span>` : '';
+
+            item.innerHTML = `
+                <div class="mcp-server-header">
+                    <div>
+                        <span class="mcp-server-name">${this.escapeHtml(entry.name)}</span>
+                        ${transportBadge}
+                        <span class="mcp-server-tool-count">${entry.tool_count} tools</span>
+                        ${statusBadge}
+                    </div>
+                    <button class="mcp-toggle-btn ${entry.disabled ? 'disabled' : 'enabled'}" data-name="${this.escapeHtml(entry.name)}" data-is-connector="${isConnector}" data-disabled="${!entry.disabled}">
+                        ${toggleLabel}
+                    </button>
+                </div>
+                ${entry.tools && entry.tools.length > 0 ? `
+                    <ul class="mcp-tools-list">
+                        ${entry.tools.map(tool => `
+                            <li class="mcp-tool-item">
+                                <span class="mcp-tool-name ${tool.enabled ? '' : 'disabled'}">${this.escapeHtml(tool.name)}</span>
+                                <button class="mcp-toggle-btn tool-toggle ${tool.enabled ? 'enabled' : 'disabled'}" data-name="${this.escapeHtml(entry.name)}" data-is-connector="${isConnector}" data-tool="${this.escapeHtml(tool.name)}" data-disabled="${!tool.enabled}">
+                                    ${tool.enabled ? 'Disable' : 'Enable'}
+                                </button>
+                            </li>
+                        `).join('')}
+                    </ul>
+                ` : ''}
+            `;
+            section.appendChild(item);
+        });
+
+        return section;
+    }
+
+    hideMcpModal() {
+        this.elements.mcpModal.style.display = 'none';
+    }
+
+    async toggleMcp(name, isConnector, disabled, toolName) {
+        try {
+            const result = await this.apiClient.toggleMcp({ name, is_connector: isConnector, disabled, tool_name: toolName });
+            if (result.success) {
+                this.showMcpModal();
+            } else {
+                this.addMessage('system', `Failed to toggle MCP: ${result.error}`);
+            }
+        } catch (error) {
+            console.error('Failed to toggle MCP:', error);
+            this.addMessage('system', `Failed to toggle MCP: ${error.message}`);
+        }
+    }
+
+    // =========================================================================
+    // Rewind Modal
+    // =========================================================================
+
+    _rewindSelectedIndex = null;
+    _rewindMessages = [];
+
+    async showRewindModal() {
+        this.elements.rewindModal.style.display = 'flex';
+        this.elements.rewindMessagesList.innerHTML = '<li class="rewind-loading">Loading messages...</li>';
+        this.elements.rewindActions.style.display = 'none';
+        this._rewindSelectedIndex = null;
+        this._rewindMessages = [];
+
+        try {
+            const data = await this.apiClient.getRewindState();
+
+            if (!data.success) {
+                this.elements.rewindMessagesList.innerHTML = `<li class="rewind-empty">${this.escapeHtml(data.error || 'No messages to rewind to')}</li>`;
+                return;
+            }
+
+            const messages = data.messages || [];
+            if (messages.length === 0) {
+                this.elements.rewindMessagesList.innerHTML = '<li class="rewind-empty">No user messages to rewind to.</li>';
+                return;
+            }
+
+            this._rewindMessages = messages;
+            this.elements.rewindMessagesList.innerHTML = '';
+            this._rewindSelectedIndex = messages.length - 1;
+
+            messages.forEach((msg, idx) => {
+                const li = document.createElement('li');
+                li.className = 'rewind-message-item' + (idx === this._rewindSelectedIndex ? ' selected' : '');
+                li.innerHTML = `
+                    <div class="rewind-message-content">${this.escapeHtml(msg.content || '(empty message)')}</div>
+                    <div class="rewind-message-meta">
+                        <span>Message #${msg.message_index ?? '?'}</span>
+                        ${msg.has_file_changes ? '<span class="rewind-file-badge"><span class="material-symbols-rounded">description</span> Files changed</span>' : ''}
+                    </div>
+                `;
+                li.addEventListener('click', () => {
+                    this._rewindSelectedIndex = idx;
+                    this.elements.rewindMessagesList.querySelectorAll('.rewind-message-item').forEach((item, i) => {
+                        item.classList.toggle('selected', i === idx);
+                    });
+                    const hasFiles = messages[idx].has_file_changes;
+                    this.elements.rewindRestoreBtn.style.display = hasFiles ? 'flex' : 'none';
+                });
+                this.elements.rewindMessagesList.appendChild(li);
+            });
+
+            this.elements.rewindActions.style.display = 'flex';
+            const hasFiles = messages[this._rewindSelectedIndex].has_file_changes;
+            this.elements.rewindRestoreBtn.style.display = hasFiles ? 'flex' : 'none';
+
+            this.elements.rewindRestoreBtn.onclick = () => this.executeRewind(true);
+            this.elements.rewindEditBtn.onclick = () => this.executeRewind(false);
+
+        } catch (error) {
+            console.error('Failed to load rewind state:', error);
+            this.elements.rewindMessagesList.innerHTML = '<li class="rewind-empty">Failed to load rewind state.</li>';
+        }
+    }
+
+    hideRewindModal() {
+        this.elements.rewindModal.style.display = 'none';
+        this._rewindSelectedIndex = null;
+        this._rewindMessages = [];
+    }
+
+    async executeRewind(restoreFiles) {
+        if (this._rewindSelectedIndex === null || this._rewindMessages.length === 0) return;
+
+        const msg = this._rewindMessages[this._rewindSelectedIndex];
+        if (!msg || msg.message_index === undefined) {
+            this.addMessage('system', 'Invalid message selection.');
+            return;
+        }
+
+        try {
+            const result = await this.apiClient.executeRewind({
+                message_index: msg.message_index,
+                restore_files: restoreFiles
+            });
+
+            if (result.success) {
+                this.hideRewindModal();
+                this.addMessage('system', `Rewinding to message #${msg.message_index}${restoreFiles ? ' (restoring files)' : ''}`);
+                if (result.message_content) {
+                    this.elements.input.value = result.message_content;
+                    this.autoResizeTextarea();
+                    this.updateSendButtonState();
+                    this.elements.input.focus();
+                }
+            } else {
+                this.addMessage('system', `Rewind failed: ${result.error}`);
+            }
+        } catch (error) {
+            console.error('Failed to execute rewind:', error);
+            this.addMessage('system', `Rewind failed: ${error.message}`);
+        }
     }
 
     _scrollAfterUpdate(previousScrollHeight) {

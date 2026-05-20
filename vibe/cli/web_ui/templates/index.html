@@ -118,6 +118,108 @@
         </div>
     </div>
 
+    <!-- Model Picker Modal -->
+    <div id="model-picker-modal" class="modal" style="display: none;">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Select Model</h2>
+                <button id="model-picker-close" class="modal-close" title="Close">
+                    <span class="material-symbols-rounded">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div id="model-picker-content" class="model-picker-list">
+                    <div class="session-picker-loading">Loading models...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Thinking Picker Modal -->
+    <div id="thinking-picker-modal" class="modal" style="display: none;">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Select Thinking Level</h2>
+                <button id="thinking-picker-close" class="modal-close" title="Close">
+                    <span class="material-symbols-rounded">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div id="thinking-picker-content" class="thinking-picker-list">
+                    <div class="session-picker-loading">Loading levels...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Config Modal -->
+    <div id="config-modal" class="modal" style="display: none;">
+        <div class="modal-overlay"></div>
+        <div class="modal-content config-modal-content">
+            <div class="modal-header">
+                <h2>Settings</h2>
+                <button id="config-modal-close" class="modal-close" title="Close">
+                    <span class="material-symbols-rounded">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div id="config-modal-content">
+                    <div class="session-picker-loading">Loading settings...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MCP Modal -->
+    <div id="mcp-modal" class="modal" style="display: none;">
+        <div class="modal-overlay"></div>
+        <div class="modal-content mcp-modal-content">
+            <div class="modal-header">
+                <h2>MCP Servers & Connectors</h2>
+                <button id="mcp-modal-close" class="modal-close" title="Close">
+                    <span class="material-symbols-rounded">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div id="mcp-modal-content">
+                    <div class="session-picker-loading">Loading MCP servers...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rewind Modal -->
+    <div id="rewind-modal" class="modal" style="display: none;">
+        <div class="modal-overlay"></div>
+        <div class="modal-content rewind-modal-content">
+            <div class="modal-header">
+                <h2>Rewind</h2>
+                <button id="rewind-modal-close" class="modal-close" title="Close">
+                    <span class="material-symbols-rounded">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div id="rewind-modal-content">
+                    <ul id="rewind-messages-list" class="rewind-messages-list">
+                        <li class="rewind-loading">Loading messages...</li>
+                    </ul>
+                </div>
+                <div id="rewind-actions" class="rewind-actions" style="display: none;">
+                    <button id="rewind-restore-btn" class="rewind-action-btn primary">
+                        <span class="material-symbols-rounded">restore</span>
+                        Edit & Restore Files
+                    </button>
+                    <button id="rewind-edit-btn" class="rewind-action-btn secondary">
+                        <span class="material-symbols-rounded">edit</span>
+                        Edit Message
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/diff.min.js"></script>
@@ -128,6 +230,6 @@
         // Base path for API and static asset URLs
         window.__VIBE_BASE_PATH__ = "{{ base_path }}";
     </script>
-    <script type="module" src="{{ base_path }}static/js/app.js?v=20260321j"></script>
+    <script type="module" src="{{ base_path }}static/js/app.js?v=20260321k"></script>
 </body>
 </html>

@@ -179,6 +179,182 @@ export class APIClient {
             return { entries: [] };
         }
     }
+
+    /**
+     * Get available models
+     * @returns {Promise<Object>} Object with 'models' array and 'active_model' string
+     */
+    async getModels() {
+        try {
+            const response = await fetch(buildUrl('api/models'));
+
+            if (!response.ok) {
+                return { models: [], active_model: '' };
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error('[APIClient] Failed to fetch models:', error);
+            return { models: [], active_model: '' };
+        }
+    }
+
+    /**
+     * Switch active model
+     * @param {string} alias - Model alias to switch to
+     * @returns {Promise<Object>} Object with 'success' and 'active_model' fields
+     */
+    async switchModel(alias) {
+        try {
+            const response = await fetch(buildUrl('api/models/switch'), {
+                method: 'POST',
+                headers: JSON_HEADERS,
+                body: JSON.stringify({ alias })
+            });
+
+            return await response.json();
+        } catch (error) {
+            console.error('[APIClient] Failed to switch model:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
+     * Get current config state
+     * @returns {Promise<Object>} Config object with toggles and settings
+     */
+    async getConfig() {
+        try {
+            const response = await fetch(buildUrl('api/config'));
+
+            if (!response.ok) {
+                return {};
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error('[APIClient] Failed to fetch config:', error);
+            return {};
+        }
+    }
+
+    /**
+     * Save config updates
+     * @param {Object} updates - Config key-value pairs to update
+     * @returns {Promise<Object>} Object with 'success' and 'updated' fields
+     */
+    async saveConfig(updates) {
+        try {
+            const response = await fetch(buildUrl('api/config'), {
+                method: 'POST',
+                headers: JSON_HEADERS,
+                body: JSON.stringify(updates)
+            });
+
+            return await response.json();
+        } catch (error) {
+            console.error('[APIClient] Failed to save config:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
+     * Switch thinking level
+     * @param {string} level - Thinking level ('off', 'low', 'medium', 'high', 'max')
+     * @returns {Promise<Object>} Object with 'success' field
+     */
+    async switchThinking(level) {
+        try {
+            const response = await fetch(buildUrl('api/thinking/switch'), {
+                method: 'POST',
+                headers: JSON_HEADERS,
+                body: JSON.stringify({ level })
+            });
+
+            return await response.json();
+        } catch (error) {
+            console.error('[APIClient] Failed to switch thinking:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
+     * List MCP servers and connectors
+     * @returns {Promise<Object>} Object with 'servers' and 'connectors' arrays
+     */
+    async listMcp() {
+        try {
+            const response = await fetch(buildUrl('api/mcp'));
+
+            if (!response.ok) {
+                return { servers: [], connectors: [] };
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error('[APIClient] Failed to list MCP:', error);
+            return { servers: [], connectors: [] };
+        }
+    }
+
+    /**
+     * Toggle MCP server/connector/tool
+     * @param {Object} data - Toggle data with name, is_connector, disabled, tool_name
+     * @returns {Promise<Object>} Object with 'success' field
+     */
+    async toggleMcp(data) {
+        try {
+            const response = await fetch(buildUrl('api/mcp/toggle'), {
+                method: 'POST',
+                headers: JSON_HEADERS,
+                body: JSON.stringify(data)
+            });
+
+            return await response.json();
+        } catch (error) {
+            console.error('[APIClient] Failed to toggle MCP:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
+     * Get rewind state (available messages)
+     * @returns {Promise<Object>} Object with 'messages' array and 'current' message
+     */
+    async getRewindState() {
+        try {
+            const response = await fetch(buildUrl('api/rewind/state'));
+
+            if (!response.ok) {
+                return { success: false, error: 'Failed to get rewind state' };
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error('[APIClient] Failed to get rewind state:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
+     * Execute rewind to a message
+     * @param {Object} data - Rewind data with message_index and restore_files
+     * @returns {Promise<Object>} Object with 'success' field
+     */
+    async executeRewind(data) {
+        try {
+            const response = await fetch(buildUrl('api/rewind/execute'), {
+                method: 'POST',
+                headers: JSON_HEADERS,
+                body: JSON.stringify(data)
+            });
+
+            return await response.json();
+        } catch (error) {
+            console.error('[APIClient] Failed to execute rewind:', error);
+            return { success: false, error: error.message };
+        }
+    }
 }
 
 // CommonJS export for testing (Jest)

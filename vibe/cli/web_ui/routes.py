@@ -24,6 +24,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.templating import Jinja2Templates
 
 from vibe.cli.history_manager import HistoryManager
+from vibe.cli.textual_ui.widgets.mcp_app import collect_mcp_tool_index
 from vibe.cli.web_ui.config import AUTH_COOKIE_NAME
 from vibe.cli.web_ui.serializers import (
     MAX_HISTORY_ENTRIES,
@@ -31,8 +32,10 @@ from vibe.cli.web_ui.serializers import (
     messages_to_events,
     serialize_event,
 )
+from vibe.core.config import VibeConfig
 from vibe.core.paths import HISTORY_FILE
 from vibe.core.session.session_loader import SessionLoader
+from vibe.core.tools.mcp_settings import persist_mcp_toggle
 from vibe.core.utils.mime import get_mime_type
 
 if TYPE_CHECKING:
@@ -357,6 +360,263 @@ def register_routes(  # noqa: PLR0915
         history = _load_prompt_history(HISTORY_FILE.path)
         limited_history = history[-MAX_HISTORY_ENTRIES:][::-1]
         return JSONResponse({"entries": limited_history})
+
+    # Model routes
+    @app.get(f"{prefix}/api/models")
+    def list_models(_request: Request = Depends(verify_request_auth)) -> JSONResponse:  # noqa: B008
+        tui_app = getattr(app.state, "tui_app", None)
+        if tui_app is None:
+            return JSONResponse({"models": [], "active_model": ""})
+        config = tui_app.config
+        models = [
+            {"alias": m.alias, "name": m.name, "provider": m.provider}
+            for m in config.models
+        ]
+        return JSONResponse({"models": models, "active_model": config.active_model})
+
+    @app.post(f"{prefix}/api/models/switch")
+    def switch_model(
+        model_data: dict,
+        _request: Request = Depends(verify_request_auth),  # noqa: B008
+    ) -> JSONResponse:
+        tui_app = getattr(app.state, "tui_app", None)
+        if tui_app is None:
+            return JSONResponse({"success": False, "error": "No TUI app available"})
+        alias = model_data.get("alias", "")
+        if not alias:
+            return JSONResponse({"success": False, "error": "No model alias provided"})
+        try:
+            VibeConfig.save_updates({"active_model": alias})
+            tui_app.reload_config()
+            return JSONResponse({"success": True, "active_model": alias})
+        except Exception as e:
+            return JSONResponse({"success": False, "error": str(e)})
+
+    # Config routes
+    @app.get(f"{prefix}/api/config")
+    def get_config(_request: Request = Depends(verify_request_auth)) -> JSONResponse:  # noqa: B008
+        tui_app = getattr(app.state, "tui_app", None)
+        if tui_app is None:
+            return JSONResponse({"success": False, "error": "No TUI app available"})
+        config = tui_app.config
+        active_model = config.get_active_model()
+        return JSONResponse({
+            "active_model": config.active_model,
+            "thinking": active_model.thinking,
+            "autocopy_to_clipboard": config.autocopy_to_clipboard,
+            "file_watcher_for_autocomplete": config.file_watcher_for_autocomplete,
+            "voice_mode_enabled": config.voice_mode_enabled,
+            "narrator_enabled": config.narrator_enabled,
+            "auto_approve": config.auto_approve,
+            "enable_notifications": config.enable_notifications,
+            "enable_web_notifications": config.enable_web_notifications,
+            "loop_detection_enabled": config.loop_detection_enabled,
+            "context_warnings": config.context_warnings,
+        })
+
+    @app.post(f"{prefix}/api/config")
+    def save_config(
+        config_data: dict,
+        _request: Request = Depends(verify_request_auth),  # noqa: B008
+    ) -> JSONResponse:
+        tui_app = getattr(app.state, "tui_app", None)
+        if tui_app is None:
+            return JSONResponse({"success": False, "error": "No TUI app available"})
+        try:
+            updates: dict[str, Any] = {}
+            allowed_keys = {
+                "autocopy_to_clipboard",
+                "file_watcher_for_autocomplete",
+                "voice_mode_enabled",
+                "narrator_enabled",
+                "auto_approve",
+                "enable_notifications",
+                "enable_web_notifications",
+                "loop_detection_enabled",
+                "context_warnings",
+            }
+            for key in allowed_keys:
+                if key in config_data:
+                    updates[key] = config_data[key]
+            if not updates:
+                return JSONResponse({"success": False, "error": "No valid config keys"})
+            VibeConfig.save_updates(updates)
+            tui_app.reload_config()
+            return JSONResponse({"success": True, "updated": list(updates.keys())})
+        except Exception as e:
+            return JSONResponse({"success": False, "error": str(e)})
+
+    @app.post(f"{prefix}/api/thinking/switch")
+    def switch_thinking(
+        thinking_data: dict,
+        _request: Request = Depends(verify_request_auth),  # noqa: B008
+    ) -> JSONResponse:
+        tui_app = getattr(app.state, "tui_app", None)
+        if tui_app is None:
+            return JSONResponse({"success": False, "error": "No TUI app available"})
+        level = thinking_data.get("level", "")
+        if not level:
+            return JSONResponse({
+                "success": False,
+                "error": "No thinking level provided",
+            })
+        try:
+            tui_app.config.set_thinking(level)
+            tui_app.reload_config()
+            return JSONResponse({"success": True, "thinking": level})
+        except Exception as e:
+            return JSONResponse({"success": False, "error": str(e)})
+
+    # MCP routes
+    @app.get(f"{prefix}/api/mcp")
+    def list_mcp(_request: Request = Depends(verify_request_auth)) -> JSONResponse:  # noqa: B008
+        tui_app = getattr(app.state, "tui_app", None)
+        if tui_app is None:
+            return JSONResponse({"servers": [], "connectors": []})
+        try:
+            config = tui_app.config
+            agent_loop_ref = getattr(tui_app, "agent_loop", None)
+            tool_manager = (
+                getattr(agent_loop_ref, "tool_manager", None)
+                if agent_loop_ref
+                else None
+            )
+
+            connector_names = (
+                [c.name for c in config.connectors] if config.connectors else []
+            )
+
+            index = (
+                collect_mcp_tool_index(
+                    config.mcp_servers, tool_manager, connector_names
+                )
+                if tool_manager is not None
+                else None
+            )
+
+            servers = []
+            for server in config.mcp_servers:
+                tools = []
+                if index is not None:
+                    for tool_name, _tool_cls in index.server_tools.get(server.name, []):
+                        enabled = tool_name in index.enabled_tools
+                        tools.append({"name": tool_name, "enabled": enabled})
+                servers.append({
+                    "name": server.name,
+                    "transport": getattr(server, "transport", "stdio"),
+                    "disabled": server.disabled,
+                    "tools": tools,
+                    "tool_count": len(tools),
+                })
+
+            connectors = []
+            for connector in config.connectors:
+                tools = []
+                if index is not None:
+                    for tool_name, _tool_cls in index.connector_tools.get(
+                        connector.name, []
+                    ):
+                        enabled = tool_name in index.enabled_tools
+                        tools.append({"name": tool_name, "enabled": enabled})
+                connectors.append({
+                    "name": connector.name,
+                    "disabled": connector.disabled,
+                    "connected": not connector.disabled,
+                    "tools": tools,
+                    "tool_count": len(tools),
+                })
+
+            return JSONResponse({"servers": servers, "connectors": connectors})
+        except Exception as e:
+            logging.warning("Error listing MCP: %s", e)
+            return JSONResponse({"servers": [], "connectors": []})
+
+    @app.post(f"{prefix}/api/mcp/toggle")
+    def toggle_mcp(
+        toggle_data: dict,
+        _request: Request = Depends(verify_request_auth),  # noqa: B008
+    ) -> JSONResponse:
+        tui_app = getattr(app.state, "tui_app", None)
+        if tui_app is None:
+            return JSONResponse({"success": False, "error": "No TUI app available"})
+        try:
+            name = toggle_data.get("name", "")
+            is_connector = toggle_data.get("is_connector", False)
+            disabled = toggle_data.get("disabled", False)
+            tool_name = toggle_data.get("tool_name")
+
+            if not name:
+                return JSONResponse({"success": False, "error": "No name provided"})
+
+            persist_mcp_toggle(
+                tui_app.config,
+                name=name,
+                is_connector=is_connector,
+                disabled=disabled,
+                tool_name=tool_name,
+            )
+            agent_loop_ref = getattr(tui_app, "agent_loop", None)
+            if agent_loop_ref is not None:
+                agent_loop_ref.refresh_config()
+            return JSONResponse({"success": True})
+        except Exception as e:
+            return JSONResponse({"success": False, "error": str(e)})
+
+    # Rewind routes
+    @app.get(f"{prefix}/api/rewind/state")
+    async def get_rewind_state(
+        _request: Request = Depends(verify_request_auth),  # noqa: B008
+    ) -> JSONResponse:
+        tui_app = getattr(app.state, "tui_app", None)
+        if tui_app is None:
+            return JSONResponse({"success": False, "error": "No TUI app available"})
+        try:
+            result = await tui_app.get_rewind_state_info()
+            if result is None:
+                return JSONResponse({
+                    "success": False,
+                    "error": "No user messages to rewind to",
+                })
+            return JSONResponse(result)
+        except Exception as e:
+            logging.warning("Error getting rewind state: %s", e)
+            return JSONResponse({"success": False, "error": str(e)})
+
+    @app.post(f"{prefix}/api/rewind/execute")
+    async def execute_rewind(
+        rewind_data: dict,
+        _request: Request = Depends(verify_request_auth),  # noqa: B008
+    ) -> JSONResponse:
+        tui_app = getattr(app.state, "tui_app", None)
+        if tui_app is None:
+            return JSONResponse({"success": False, "error": "No TUI app available"})
+        try:
+            msg_index = rewind_data.get("message_index")
+            restore_files = rewind_data.get("restore_files", False)
+            if msg_index is None:
+                return JSONResponse({"success": False, "error": "No message index"})
+
+            agent_loop_ref = getattr(tui_app, "agent_loop", None)
+            rewind_mgr = (
+                getattr(agent_loop_ref, "rewind_manager", None)
+                if agent_loop_ref
+                else None
+            )
+            if rewind_mgr is None:
+                return JSONResponse({"success": False, "error": "No rewind manager"})
+
+            content, errors = await rewind_mgr.rewind_to_message(
+                msg_index, restore_files=restore_files
+            )
+
+            error_msgs = [str(e) for e in errors] if errors else []
+            return JSONResponse({
+                "success": True,
+                "message_content": content,
+                "restore_errors": error_msgs,
+            })
+        except Exception as e:
+            return JSONResponse({"success": False, "error": str(e)})
 
     # WebSocket
     @app.websocket(f"{prefix}/ws")

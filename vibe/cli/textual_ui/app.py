@@ -2757,6 +2757,54 @@ class VibeApp(App):  # noqa: PLR0904
                 )
             )
 
+    def reload_config(self) -> None:
+        """Reload config from file. Called from sync web UI routes on another thread."""
+        import asyncio
+
+        def _schedule() -> None:
+            asyncio.create_task(self._reload_config())
+
+        self.call_from_thread(_schedule)
+
+    async def get_rewind_state_info(self) -> dict | None:
+        """Gather rewind state for web UI. Returns None if no user messages."""
+        from vibe.cli.textual_ui.widgets.messages import UserMessage
+
+        try:
+            messages_area = self.query_one("#messages")
+            user_widgets = list(messages_area.query(UserMessage))
+        except Exception:
+            return None
+
+        if not user_widgets:
+            return None
+
+        agent_loop_ref = getattr(self, "agent_loop", None)
+        rewind_mgr = (
+            getattr(agent_loop_ref, "rewind_manager", None) if agent_loop_ref else None
+        )
+
+        widgets: list[dict[str, Any]] = []
+        for w in user_widgets:
+            msg_index = getattr(w, "message_index", None)
+            content = w.get_content() if isinstance(w, UserMessage) else ""
+            has_files = False
+            if msg_index is not None and rewind_mgr is not None:
+                has_files = rewind_mgr.has_file_changes_at(msg_index)
+            widgets.append({
+                "message_index": msg_index,
+                "content": content[:200] if content else "",
+                "has_file_changes": has_files,
+            })
+
+        current = widgets[-1] if widgets else None
+        return {
+            "success": True,
+            "messages": widgets,
+            "current": current,
+            "count": len(widgets),
+        }
+
     async def _install_lean(self, **kwargs: Any) -> None:
         current = list(self.agent_loop.base_config.installed_agents)
         if "lean" in current:

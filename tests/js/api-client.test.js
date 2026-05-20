@@ -492,4 +492,218 @@ describe('APIClient', () => {
             expect(global.fetch).toHaveBeenCalledWith('/api/status');
         });
     });
+
+    describe('Models', () => {
+        test('getModels fetches /api/models', async () => {
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({
+                    models: [{ alias: 'mistral-large', name: 'mistral-large-2411', provider: 'mistral' }],
+                    active_model: 'mistral-large'
+                })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.getModels();
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/models');
+            expect(result.models).toHaveLength(1);
+            expect(result.active_model).toBe('mistral-large');
+        });
+
+        test('getModels returns empty on error', async () => {
+            global.fetch.mockRejectedValue(new Error('Network error'));
+
+            const result = await apiClient.getModels();
+
+            expect(result.models).toEqual([]);
+            expect(result.active_model).toBe('');
+        });
+
+        test('getModels returns empty on HTTP 4xx', async () => {
+            global.fetch.mockResolvedValue({ ok: false, status: 401 });
+
+            const result = await apiClient.getModels();
+
+            expect(result.models).toEqual([]);
+        });
+
+        test('switchModel sends POST to /api/models/switch', async () => {
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ success: true, active_model: 'codestral' })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.switchModel('codestral');
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/models/switch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ alias: 'codestral' })
+            });
+            expect(result.success).toBe(true);
+        });
+
+        test('switchModel returns error on failure', async () => {
+            global.fetch.mockRejectedValue(new Error('Network error'));
+
+            const result = await apiClient.switchModel('codestral');
+
+            expect(result.success).toBe(false);
+        });
+    });
+
+    describe('Config', () => {
+        test('getConfig fetches /api/config', async () => {
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({
+                    active_model: 'mistral-large',
+                    thinking: 'off',
+                    autocopy_to_clipboard: true,
+                    voice_mode_enabled: false
+                })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.getConfig();
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/config');
+            expect(result.autocopy_to_clipboard).toBe(true);
+        });
+
+        test('saveConfig sends POST to /api/config', async () => {
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ success: true, updated: ['voice_mode_enabled'] })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.saveConfig({ voice_mode_enabled: true });
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ voice_mode_enabled: true })
+            });
+            expect(result.success).toBe(true);
+        });
+    });
+
+    describe('Thinking', () => {
+        test('switchThinking sends POST to /api/thinking/switch', async () => {
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ success: true, thinking: 'high' })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.switchThinking('high');
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/thinking/switch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ level: 'high' })
+            });
+            expect(result.success).toBe(true);
+        });
+    });
+
+    describe('MCP', () => {
+        test('listMcp fetches /api/mcp', async () => {
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({
+                    servers: [{ name: 'myserver', tool_count: 3 }],
+                    connectors: []
+                })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.listMcp();
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/mcp');
+            expect(result.servers).toHaveLength(1);
+        });
+
+        test('toggleMcp sends POST to /api/mcp/toggle', async () => {
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ success: true })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.toggleMcp({
+                name: 'myserver',
+                is_connector: false,
+                disabled: true,
+                tool_name: null
+            });
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/mcp/toggle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: 'myserver',
+                    is_connector: false,
+                    disabled: true,
+                    tool_name: null
+                })
+            });
+            expect(result.success).toBe(true);
+        });
+    });
+
+    describe('Rewind', () => {
+        test('getRewindState fetches /api/rewind/state', async () => {
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({
+                    success: true,
+                    messages: [{ message_index: 5, content: 'Hello', has_file_changes: false }],
+                    current: { message_index: 5, content: 'Hello', has_file_changes: false },
+                    count: 1
+                })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.getRewindState();
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/rewind/state');
+            expect(result.success).toBe(true);
+            expect(result.messages).toHaveLength(1);
+        });
+
+        test('executeRewind sends POST to /api/rewind/execute', async () => {
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ success: true, message_content: 'Hello' })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.executeRewind({
+                message_index: 5,
+                restore_files: true
+            });
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/rewind/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message_index: 5,
+                    restore_files: true
+                })
+            });
+            expect(result.success).toBe(true);
+        });
+
+        test('executeRewind returns error on failure', async () => {
+            global.fetch.mockRejectedValue(new Error('Network error'));
+
+            const result = await apiClient.executeRewind({ message_index: 0 });
+
+            expect(result.success).toBe(false);
+        });
+    });
 });

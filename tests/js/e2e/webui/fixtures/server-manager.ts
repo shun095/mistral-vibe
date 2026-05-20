@@ -14,6 +14,8 @@ const PROJECT_ROOT = path.resolve(__dirname, "../../../../..");
 
 // Minimal config.toml for E2E tests - matches actual defaults from vibe/core/config/_settings.py
 // Intentionally omits save_dir to allow VIBE_HOME env var to control session log location
+// Includes a dummy MCP server for MCP modal E2E tests (no tools, toggle-able)
+// Uses /bin/true which exits immediately — server shows with 0 tools, no blocking
 const E2E_CONFIG_TOML = `[session_logging]
 enabled = true
 session_prefix = "session"
@@ -23,6 +25,12 @@ max_read_bytes = 64000
 
 [tools.write_file]
 max_write_bytes = 64000
+
+[[mcp_servers]]
+name = "e2e_test_server"
+transport = "stdio"
+command = "/bin/true"
+args = []
 `;
 
 export interface ServerConfig {
