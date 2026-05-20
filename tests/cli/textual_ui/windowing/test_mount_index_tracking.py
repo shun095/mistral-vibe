@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
 from tests.conftest import build_test_vibe_app
@@ -201,7 +203,7 @@ async def test_loadmore_reappears_after_prune_when_exhausted() -> None:
     1. Seed 60 history messages (enough for backfill after tail split of 20).
     2. Resume history → LoadMore appears with remaining=40.
     3. Click LoadMore until exhausted → widget removed (widget is None).
-    4. Mount 40 new tall widgets → triggers prune (virtual_height > 1500).
+    4. Mount new tall widgets → triggers prune (virtual_height > high_mark).
     5. After prune: oldest widgets gone, but LoadMore widget is None.
     6. _refresh_windowing_from_history returns early (widget is None) → no backfill recalc.
     7. LoadMore never reappears despite pruned messages being offscreen.
@@ -235,21 +237,23 @@ async def test_loadmore_reappears_after_prune_when_exhausted() -> None:
         assert app._load_more.widget is None
         assert app._windowing.remaining == 0
 
-        # Step 4: mount new tall widgets through _mount_and_scroll (records indices)
-        # _mount_and_scroll triggers _try_prune after each mount, so prune may fire mid-loop
-        for i in range(100):
-            app.agent_loop.messages.append(_msg(Role.user, content="new"))
-            w = UserMessage(f"new {i}\n" + ("line\n" * 25))
-            await app._mount_and_scroll(w)
-            await pilot.pause()
+        # Step 4: mount tall widgets through _mount_and_scroll (records indices)
+        # Patch prune thresholds to trigger prune with fewer widgets
+        with patch("vibe.cli.textual_ui.app.PRUNE_LOW_MARK", 200):
+            with patch("vibe.cli.textual_ui.app.PRUNE_HIGH_MARK", 300):
+                for i in range(10):
+                    app.agent_loop.messages.append(_msg(Role.user, content="new"))
+                    w = UserMessage(f"new {i}\n" + ("line\n" * 25))
+                    await app._mount_and_scroll(w)
+                    await pilot.pause()
 
         # Step 5: ensure final prune runs
         await app._try_prune()
         await pilot.pause()
 
-        # Verify prune actually removed widgets (had 60 + LoadMore, now fewer)
+        # Verify prune actually removed widgets
         child_count_after = len(list(messages_area.children))
-        assert child_count_after < 140, (
+        assert child_count_after < len(history_msgs) + 10, (
             f"Prune should have removed widgets: {child_count_after}"
         )
 

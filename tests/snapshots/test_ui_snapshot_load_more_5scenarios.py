@@ -405,11 +405,14 @@ async def _wait_for_agent(
     scroll_to_bottom: bool = False,
 ) -> None:
     vibe_app = cast(_VibeAppProtocol, app)
+
+    # Wait for agent idle
     for _ in range(750):
         if not vibe_app._agent_running:
             break
         await pilot.pause(0.02)
 
+    # Wait for LoadMore widget
     for _ in range(750):
         widgets = list(app.query(HistoryLoadMoreMessage))
         if widgets:
@@ -418,14 +421,19 @@ async def _wait_for_agent(
                 break
         await pilot.pause(0.02)
 
+    # Stabilize remaining (break when _remaining stops changing)
     widgets = list(app.query(HistoryLoadMoreMessage))
     if widgets:
         last_remaining = widgets[0]._remaining
-        for _ in range(50):
+        stable_count = 0
+        while stable_count < 3:
             await pilot.pause(0.02)
             current = widgets[0]._remaining
             if current != last_remaining:
                 last_remaining = current
+                stable_count = 0
+            else:
+                stable_count += 1
 
     # Expand load more widget once by single click
     if expand_load_more_once:
@@ -434,19 +442,28 @@ async def _wait_for_agent(
             load_more_btn = load_more_widgets[0]._label_widget
             if load_more_btn:
                 await pilot.click(load_more_btn)
-                for _ in range(300):
+                prev_remaining: int | None = None
+                stable_count = 0
+                while stable_count < 3:
                     await pilot.pause(0.02)
                     updated_widgets = list(app.query(HistoryLoadMoreMessage))
                     if not updated_widgets or (
                         updated_widgets and updated_widgets[0]._remaining is None
                     ):
                         break
+                    current_remaining = updated_widgets[0]._remaining
+                    if current_remaining != prev_remaining:
+                        prev_remaining = current_remaining
+                        stable_count = 0
+                    else:
+                        stable_count += 1
 
     # Expand tool calls by ctrl+o after load more
     if expand_tool_calls_after:
         await pilot.press("ctrl+o")
         await pilot.pause(0.5)
 
+    # Freeze + scroll + final pause
     cast(_LoadMoreApp, app).freeze_spinners()
     if scroll_to_bottom:
         await pilot.press("end")
@@ -499,8 +516,6 @@ def _export_svg(
     expand_tool_calls_after: bool = False,
     scroll_to_bottom: bool = False,
 ) -> None:
-    import time as _time
-
     from textual._doc import take_svg_screenshot
 
     async def _run(pilot: Pilot) -> None:
@@ -525,35 +540,10 @@ def _export_svg(
                     scroll_to_bottom,
                 )
 
-    # DEBUG: Monkey-patch export_screenshot to log capture timing — preserved for future debugging
-    if False:  # DEBUG BLOCK START
-        from textual.app import App as _App
-
-        _orig_export = _App.export_screenshot
-
-        def _traced_export(self, *, title=None, simplify=False):
-            with open("/tmp/render_debug.txt", "a") as f:
-                f.write(f"{_time.monotonic():.3f} *** SVG CAPTURE START ***\n")
-                f.flush()
-            result = _orig_export(self, title=title, simplify=simplify)
-            with open("/tmp/render_debug.txt", "a") as f:
-                f.write(f"{_time.monotonic():.3f} *** SVG CAPTURE END ***\n")
-                f.flush()
-            return result
-
-        _App.export_screenshot = _traced_export
-        pass  # DEBUG BLOCK END
-
     app = _LoadMoreApp(tool_call_fn)
     svg = take_svg_screenshot(app=app, terminal_size=(120, 36), run_before=_run)
     out = Path(f"/tmp/loadmore_{label}.svg")
     out.write_text(svg)
-    # Extract LoadMore text from SVG
-    import re
-
-    matches = re.findall(r"Load[^<]*", svg)
-    loadmore_lines = [m for m in matches if "more" in m.lower()]
-    logger.debug("[%s] LoadMore text in SVG: %s", label, loadmore_lines)
 
 
 def test_export_svg_scenarios() -> None:
