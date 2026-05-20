@@ -184,7 +184,10 @@ from vibe.core.agent_loop import AgentLoop, TeleportError
 from vibe.core.agents import AgentProfile, BuiltinAgentName
 from vibe.core.audio_player.audio_player import AudioPlayer
 from vibe.core.audio_recorder import AudioRecorder
-from vibe.core.autocompletion.path_prompt import build_path_prompt_payload
+from vibe.core.autocompletion.path_prompt import (
+    build_path_prompt_payload,
+    build_title_segments,
+)
 from vibe.core.autocompletion.path_prompt_adapter import render_path_prompt
 from vibe.core.config import VibeConfig
 from vibe.core.data_retention import DATA_RETENTION_MESSAGE
@@ -202,6 +205,7 @@ from vibe.core.session.resume_sessions import (
 )
 from vibe.core.session.saved_sessions import update_saved_session_title_at_path
 from vibe.core.session.session_loader import SessionLoader
+from vibe.core.session.title_format import format_session_title
 from vibe.core.skills.manager import SkillManager
 from vibe.core.teleport.telemetry import send_teleport_early_failure_telemetry
 from vibe.core.teleport.types import (
@@ -1124,7 +1128,7 @@ class VibeApp(App):  # noqa: PLR0904
 
         self.agent_loop.telemetry_client.send_slash_command_used(skill.name, "skill")
         prompt = SkillManager.build_skill_prompt(user_input, skill)
-        await self._handle_user_message(prompt)
+        await self._handle_user_message(prompt, title_source=user_input)
         return True
 
     @staticmethod
@@ -1342,7 +1346,9 @@ class VibeApp(App):  # noqa: PLR0904
             await self._handle_user_message(self._queued_message)
             self._queued_message = None
 
-    async def _handle_user_message(self, message: str) -> None:
+    async def _handle_user_message(
+        self, message: str, *, title_source: str | None = None
+    ) -> None:
         if self._remote_manager.is_active:
             await self._handle_remote_user_message(message)
             return
@@ -1365,7 +1371,7 @@ class VibeApp(App):  # noqa: PLR0904
             await self._remote_manager.stop_stream()
             await self._remove_loading_widget()
             self._agent_task = asyncio.create_task(
-                self._handle_agent_loop_turn(message)
+                self._handle_agent_loop_turn(message, title_source=title_source)
             )
 
     async def _handle_user_message_with_image(
@@ -1816,7 +1822,9 @@ class VibeApp(App):  # noqa: PLR0904
                     event, loading_widget=self._loading_widget
                 )
 
-    async def _handle_agent_loop_turn(self, content: str | list[dict]) -> None:
+    async def _handle_agent_loop_turn(
+        self, content: str | list[dict], *, title_source: str | None = None
+    ) -> None:
         self._agent_running = True
 
         await self._remove_loading_widget()
@@ -1853,12 +1861,24 @@ class VibeApp(App):  # noqa: PLR0904
                     file_extensions=file_ext_counts or None,
                     message_id=message_id,
                 )
+            auto_title: str | None = None
+            if self.agent_loop.session_logger.needs_initial_auto_title():
+                auto_title = (
+                    format_session_title(
+                        build_title_segments(
+                            title_source or (content if is_text else ""), base_dir=Path.cwd()
+                        )
+                    )
+                    or None
+                )
             self._narrator_manager.cancel()
             self._narrator_manager.on_turn_start(
                 act_content if isinstance(act_content, str) else ""
             )
             async with aclosing(
-                self.agent_loop.act(act_content, client_message_id=message_id)
+                self.agent_loop.act(
+                    act_content, client_message_id=message_id, auto_title=auto_title
+                )
             ) as events:
                 await self._handle_agent_loop_events(events)
 

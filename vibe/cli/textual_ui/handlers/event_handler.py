@@ -38,6 +38,7 @@ from vibe.core.types import (
     PlanReviewRequestedEvent,
     PromptProgressEvent,
     ReasoningEvent,
+    SessionTitleUpdatedEvent,
     TaskCompletedEvent,
     ToolCallEvent,
     ToolResultEvent,
@@ -138,6 +139,8 @@ class EventHandler:
             case AgentProfileChangedEvent():
                 if self.on_profile_changed:
                     self.on_profile_changed()
+            case SessionTitleUpdatedEvent():
+                pass
             case UserMessageEvent():
                 await self._finalize_streaming_internal()
                 if self._is_remote:

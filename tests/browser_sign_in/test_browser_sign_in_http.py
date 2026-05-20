@@ -17,9 +17,9 @@ from vibe.setup.auth import (
     HttpBrowserSignInGateway,
 )
 
-AUTH_ORIGIN = "https://api.mistral.ai"
+AUTH_ORIGIN = "https://console.mistral.ai"
 AUTH_BROWSER_BASE_URL = "https://console.mistral.ai"
-AUTH_API_BASE_URL = AUTH_ORIGIN
+AUTH_API_BASE_URL = "https://console.mistral.ai/api"
 TEST_PROCESS_ID = "process-1"
 TEST_COMPLETE_TOKEN = "complete-token-1"
 TEST_STATE = "state-1"
@@ -48,7 +48,7 @@ def build_sign_in_url(
 def build_poll_url(
     *, poll_token: str = TEST_POLL_TOKEN, api_base_url: str = AUTH_API_BASE_URL
 ) -> str:
-    return f"{api_base_url}/api/vibe/sign-in/poll/{poll_token}"
+    return f"{api_base_url}/vibe/sign-in/poll/{poll_token}"
 
 
 @asynccontextmanager
@@ -74,7 +74,7 @@ async def test_http_api_creates_process_with_pkce_payload() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal captured_body
-        assert request.url.path == "/vibe/sign-in"
+        assert request.url.path == "/api/vibe/sign-in"
         captured_body = request.content.decode("utf-8")
         return httpx.Response(
             200,
@@ -131,7 +131,7 @@ async def test_http_api_exchanges_token_for_api_key() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal captured_body
-        assert request.url.path == "/vibe/sign-in/process-1/exchange"
+        assert request.url.path == "/api/vibe/sign-in/process-1/exchange"
         captured_body = request.content.decode("utf-8")
         return httpx.Response(200, json={"api_key": "sk-browser-key"})
 
@@ -142,6 +142,28 @@ async def test_http_api_exchanges_token_for_api_key() -> None:
     assert captured_body is not None
     assert '"exchange_token":"exchange-1"' in captured_body
     assert '"code_verifier":"verifier-1"' in captured_body
+
+
+@pytest.mark.asyncio
+async def test_http_api_logs_exchange_failure_status_and_detail_without_secrets(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    exchange_token = "exchange-token-secret"
+    code_verifier = "verifier-secret"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/vibe/sign-in/process-1/exchange"
+        return httpx.Response(400, json={"detail": "Invalid exchange token."})
+
+    async with build_gateway(handler) as gateway:
+        with caplog.at_level(logging.WARNING, logger="vibe"):
+            with pytest.raises(BrowserSignInError, match="exchange browser sign-in"):
+                await gateway.exchange("process-1", exchange_token, code_verifier)
+
+    assert "status_code=400" in caplog.text
+    assert "response_detail=Invalid exchange token." in caplog.text
+    assert exchange_token not in caplog.text
+    assert code_verifier not in caplog.text
 
 
 @pytest.mark.asyncio
@@ -234,31 +256,35 @@ async def test_http_api_accepts_poll_url_under_configured_api_base_url() -> None
 
 
 @pytest.mark.asyncio
-async def test_http_api_accepts_poll_url_under_configured_api_base_path() -> None:
+async def test_http_api_accepts_backend_poll_url_under_custom_configured_api_base_path() -> (
+    None
+):
     now = datetime(2026, 3, 16, tzinfo=UTC)
+    browser_base_url = "https://browser-auth.example/sign-in"
+    api_base_url = "https://browser-auth.example/custom/api"
+    poll_url = f"{api_base_url}/backend-owned-poll/{TEST_POLL_TOKEN}"
 
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/v1/vibe/sign-in"
+        assert request.url.path == "/custom/api/vibe/sign-in"
         return httpx.Response(
             200,
             json={
                 "process_id": TEST_PROCESS_ID,
-                "sign_in_url": build_sign_in_url(),
-                "poll_url": build_poll_url(
-                    poll_token=TEST_POLL_TOKEN, api_base_url="https://api.mistral.ai/v1"
-                ),
+                "sign_in_url": build_sign_in_url(base_url=browser_base_url),
+                "poll_url": poll_url,
                 "expires_at": _iso(now + timedelta(minutes=5)),
             },
         )
 
     async with build_gateway(
         handler,
-        origin="https://api.mistral.ai",
-        api_base_url="https://api.mistral.ai/v1",
+        origin="https://browser-auth.example",
+        browser_base_url=browser_base_url,
+        api_base_url=api_base_url,
     ) as gateway:
         process = await gateway.create_process("challenge-123")
 
-    assert process.poll_url == build_poll_url(api_base_url="https://api.mistral.ai/v1")
+    assert process.poll_url == poll_url
 
 
 @pytest.mark.asyncio
@@ -275,7 +301,9 @@ async def test_http_api_accepts_same_origin_urls_with_explicit_default_https_por
                 "sign_in_url": build_sign_in_url(
                     base_url="https://console.mistral.ai:443"
                 ),
-                "poll_url": build_poll_url(api_base_url="https://api.mistral.ai:443"),
+                "poll_url": build_poll_url(
+                    api_base_url="https://console.mistral.ai:443/api"
+                ),
                 "expires_at": _iso(now + timedelta(minutes=5)),
             },
         )
@@ -286,7 +314,9 @@ async def test_http_api_accepts_same_origin_urls_with_explicit_default_https_por
     assert process.sign_in_url == build_sign_in_url(
         base_url="https://console.mistral.ai:443"
     )
-    assert process.poll_url == build_poll_url(api_base_url="https://api.mistral.ai:443")
+    assert process.poll_url == build_poll_url(
+        api_base_url="https://console.mistral.ai:443/api"
+    )
 
 
 @pytest.mark.asyncio
@@ -301,8 +331,8 @@ async def test_http_api_accepts_poll_url_without_explicit_default_https_port_whe
 
     async with build_gateway(
         handler,
-        origin="https://api.mistral.ai:443",
-        api_base_url="https://api.mistral.ai:443",
+        origin="https://console.mistral.ai:443",
+        api_base_url="https://console.mistral.ai:443/api",
     ) as gateway:
         result = await gateway.poll(build_poll_url())
 
@@ -367,15 +397,13 @@ async def test_http_api_rejects_sign_in_url_outside_browser_base_path_after_norm
                 "sign_in_url": build_sign_in_url(
                     base_url="https://console.mistral.ai/v1/.."
                 ),
-                "poll_url": build_poll_url(api_base_url="https://api.mistral.ai/v1"),
+                "poll_url": build_poll_url(),
                 "expires_at": _iso(now + timedelta(minutes=5)),
             },
         )
 
     async with build_gateway(
-        handler,
-        browser_base_url="https://console.mistral.ai/v1",
-        api_base_url="https://api.mistral.ai/v1",
+        handler, browser_base_url="https://console.mistral.ai/v1"
     ) as gateway:
         with pytest.raises(BrowserSignInError, match="start browser sign-in") as err:
             await gateway.create_process("challenge-123")
@@ -397,15 +425,13 @@ async def test_http_api_rejects_sign_in_url_with_encoded_dot_segments_outside_br
                 "sign_in_url": build_sign_in_url(
                     base_url="https://console.mistral.ai/v1/%2e%2e"
                 ),
-                "poll_url": build_poll_url(api_base_url="https://api.mistral.ai/v1"),
+                "poll_url": build_poll_url(),
                 "expires_at": _iso(now + timedelta(minutes=5)),
             },
         )
 
     async with build_gateway(
-        handler,
-        browser_base_url="https://console.mistral.ai/v1",
-        api_base_url="https://api.mistral.ai/v1",
+        handler, browser_base_url="https://console.mistral.ai/v1"
     ) as gateway:
         with pytest.raises(BrowserSignInError, match="start browser sign-in") as err:
             await gateway.create_process("challenge-123")
@@ -451,7 +477,7 @@ async def test_http_api_rejects_returned_poll_url_outside_api_base_path_after_no
                 ),
                 "poll_url": build_poll_url(
                     poll_token=TEST_POLL_TOKEN,
-                    api_base_url="https://api.mistral.ai/v1/..",
+                    api_base_url="https://console.mistral.ai/api/..",
                 ),
                 "expires_at": _iso(now + timedelta(minutes=5)),
             },
@@ -459,8 +485,7 @@ async def test_http_api_rejects_returned_poll_url_outside_api_base_path_after_no
 
     async with build_gateway(
         handler,
-        origin="https://api.mistral.ai",
-        api_base_url="https://api.mistral.ai/v1",
+        origin="https://console.mistral.ai",
         browser_base_url="https://console.mistral.ai/v1",
     ) as gateway:
         with pytest.raises(BrowserSignInError, match="start browser sign-in") as err:
@@ -485,7 +510,7 @@ async def test_http_api_rejects_returned_poll_url_with_encoded_dot_segments_outs
                 ),
                 "poll_url": build_poll_url(
                     poll_token=TEST_POLL_TOKEN,
-                    api_base_url="https://api.mistral.ai/v1/%2e%2e",
+                    api_base_url="https://console.mistral.ai/api/%2e%2e",
                 ),
                 "expires_at": _iso(now + timedelta(minutes=5)),
             },
@@ -493,8 +518,7 @@ async def test_http_api_rejects_returned_poll_url_with_encoded_dot_segments_outs
 
     async with build_gateway(
         handler,
-        origin="https://api.mistral.ai",
-        api_base_url="https://api.mistral.ai/v1",
+        origin="https://console.mistral.ai",
         browser_base_url="https://console.mistral.ai/v1",
     ) as gateway:
         with pytest.raises(BrowserSignInError, match="start browser sign-in") as err:
@@ -506,15 +530,14 @@ async def test_http_api_rejects_returned_poll_url_with_encoded_dot_segments_outs
 @pytest.mark.asyncio
 async def test_http_api_rejects_poll_url_outside_api_base_path() -> None:
     async with build_gateway(
-        lambda _: httpx.Response(200),
-        origin="https://api.mistral.ai",
-        api_base_url="https://api.mistral.ai/v1",
+        lambda _: httpx.Response(200, json={"status": "completed"}),
+        origin="https://console.mistral.ai",
     ) as gateway:
         with pytest.raises(
             BrowserSignInError, match="status could not be retrieved"
         ) as err:
             await gateway.poll(
-                "https://api.mistral.ai/v1evil/api/vibe/sign-in/poll/poll-token-1"
+                "https://console.mistral.ai/apievil/vibe/sign-in/poll/poll-token-1"
             )
 
     assert err.value.code is BrowserSignInErrorCode.POLL_FAILED
@@ -525,15 +548,14 @@ async def test_http_api_rejects_poll_url_outside_api_base_path_after_normalizati
     None
 ):
     async with build_gateway(
-        lambda _: httpx.Response(200),
-        origin="https://api.mistral.ai",
-        api_base_url="https://api.mistral.ai/v1",
+        lambda _: httpx.Response(200, json={"status": "completed"}),
+        origin="https://console.mistral.ai",
     ) as gateway:
         with pytest.raises(
             BrowserSignInError, match="status could not be retrieved"
         ) as err:
             await gateway.poll(
-                "https://api.mistral.ai/v1/../api/vibe/sign-in/poll/poll-token-1"
+                "https://console.mistral.ai/api/../evil/sign-in/poll/poll-token-1"
             )
 
     assert err.value.code is BrowserSignInErrorCode.POLL_FAILED
@@ -549,7 +571,7 @@ async def test_http_api_translates_invalid_returned_poll_url_port() -> None:
             json={
                 "process_id": TEST_PROCESS_ID,
                 "sign_in_url": build_sign_in_url(),
-                "poll_url": "https://api.mistral.ai:99999/api/vibe/sign-in/poll/poll-token-1",
+                "poll_url": "https://console.mistral.ai:99999/api/vibe/sign-in/poll/poll-token-1",
                 "expires_at": _iso(now + timedelta(minutes=5)),
             },
         )
@@ -568,7 +590,7 @@ async def test_http_api_assigns_poll_failed_code_on_invalid_poll_url_port() -> N
             BrowserSignInError, match="status could not be retrieved"
         ) as err:
             await gateway.poll(
-                "https://api.mistral.ai:99999/api/vibe/sign-in/poll/poll-token-1"
+                "https://console.mistral.ai:99999/api/vibe/sign-in/poll/poll-token-1"
             )
 
     assert err.value.code is BrowserSignInErrorCode.POLL_FAILED
@@ -641,16 +663,15 @@ async def test_http_api_does_not_log_poll_secret_on_poll_url_validation_failure(
     poll_token = "poll-token-secret"
 
     async with build_gateway(
-        lambda _: httpx.Response(200),
-        origin="https://api.mistral.ai",
-        api_base_url="https://api.mistral.ai/v1",
+        lambda _: httpx.Response(200, json={"status": "completed"}),
+        origin="https://console.mistral.ai",
     ) as gateway:
         with caplog.at_level(logging.WARNING, logger="vibe"):
             with pytest.raises(
                 BrowserSignInError, match="status could not be retrieved"
             ):
                 await gateway.poll(
-                    f"https://api.mistral.ai/v1evil/api/vibe/sign-in/poll/{poll_token}"
+                    f"https://console.mistral.ai/apievil/sign-in/poll/{poll_token}"
                 )
 
     assert poll_token not in caplog.text

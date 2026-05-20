@@ -128,6 +128,7 @@ from vibe.core.types import (
     RateLimitError,
     ReasoningEvent,
     Role,
+    SessionTitleUpdatedEvent,
     ToolCall,
     ToolCallEvent,
     ToolResultEvent,
@@ -702,7 +703,11 @@ class AgentLoop:
 
     @requires_init
     async def act(
-        self, msg: Content | None = None, client_message_id: str | None = None
+        self,
+        msg: Content | None = None,
+        client_message_id: str | None = None,
+        *,
+        auto_title: str | None = None,
     ) -> AsyncGenerator[BaseEvent, None]:
         """Run a conversation turn.
 
@@ -720,7 +725,7 @@ class AgentLoop:
             model_name = None
         async with agent_span(model=model_name, session_id=self.session_id):
             async for event in self._conversation_loop(
-                msg, client_message_id=client_message_id
+                msg, client_message_id=client_message_id, auto_title=auto_title
             ):
                 yield event
 
@@ -943,7 +948,11 @@ class AgentLoop:
         return headers
 
     async def _conversation_loop(  # noqa: PLR0912
-        self, user_msg: Content | None = None, client_message_id: str | None = None
+        self,
+        user_msg: Content | None = None,
+        client_message_id: str | None = None,
+        *,
+        auto_title: str | None = None,
     ) -> AsyncGenerator[BaseEvent]:
         # Inline message preparation logic (replaces strategy pattern)
         if user_msg is not None:
@@ -981,6 +990,11 @@ class AgentLoop:
         user_msg_event = UserMessageEvent(content=content, message_id=message_id)
         self._notify_event_listeners(user_msg_event)
         yield user_msg_event
+
+        if auto_title is not None and self.session_logger.set_initial_auto_title(
+            auto_title
+        ):
+            yield SessionTitleUpdatedEvent(title=auto_title)
 
         if self._hooks_manager:
             self._hooks_manager.reset_retry_count()
