@@ -6,7 +6,7 @@ Layout: `vibe/core` is the engine (agent loop, tools, LLM backends, config); `vi
 
 ## Table of Contents
 
-**Project Rules:** [Core Principles](#core-principles) · [Commands](#commands) · [Layout](#project-layout--module-conventions) · [Style](#python-style) · [Typing](#typing--imports) · [Pydantic](#pydantic) · [Async](#async) · [Tools](#tools) · [Logging](#logging--errors) · [I/O](#file-io) · [Tests](#tests) · [Git](#git) · [Autoimprovement](#autoimprovement)
+**Project Rules:** [Core Principles](#core-principles) · [Pre-Change Discipline](#pre-change-discipline) · [Verification Discipline](#verification-discipline) · [Commands](#commands) · [Layout](#project-layout--module-conventions) · [Style](#python-style) · [Typing](#typing--imports) · [Pydantic](#pydantic) · [Async](#async) · [Tools](#tools) · [Logging](#logging--errors) · [I/O](#file-io) · [Tests](#tests) · [Git](#git) · [Autoimprovement](#autoimprovement)
 
 **`custom-fix-*` Overrides:** [Scope](#override-scope) · [Safety](#-safety-rules) · [Debugging](#debugging-methodology) · [Timeouts](#timeout-strategy) · [Git Ops](#git-operations) · [Impact](#change-impact-analysis) · [Coding](#coding-requirements) · [Testing](#-testing-requirements) · [Tools](#tool-usage-guidelines)
 
@@ -17,6 +17,26 @@ Layout: `vibe/core` is the engine (agent loop, tools, LLM backends, config); `vi
 **Close the loop.** Every change introduces artifacts (debug logs, temporary flags, test stubs, unused imports). Before declaring completion, re-read every file you touched and verify nothing was left behind. The diff should contain only what the task requires.
 
 **Verify breadth, not just depth.** Passing tests on the obvious path is insufficient. Identify every entry point that reaches the changed code (direct calls, callbacks, event handlers, background threads, CLI flags, web endpoints, slash commands). Each path must be considered. If a path exists, either fix it or document why it's excluded.
+
+## Pre-Change Discipline
+
+**Restate and constrain before touching code.** Before any edit, write one line restating the goal and list every file you intend to change with the specific change per file. If you cannot name the files, you are not ready to edit.
+
+**Explore the affected subsystem first.** Never edit a file you haven't read. Never read a file without first reading its callers and callees. For UI changes: read the widget's `can_focus`, `BINDINGS`, and parent/child relationships. For key bindings: read how existing bindings in the same scope resolve conflicts. If you cannot explain the existing pattern in one sentence, keep reading.
+
+**Ask on ambiguity, never guess.** If the request could mean two things (e.g., "change keybind" could mean entry keys vs navigation keys), ask before editing. One clarifying question saves three rounds of rollbacks.
+
+**Two failures = stop and rethink.** If your approach produces test failures twice in the same region, abandon it. Re-read the code, identify why it failed (not just what failed), and choose a fundamentally different strategy. Flip-flopping fixes (add X → remove X → add X) is a critical failure.
+
+## Verification Discipline
+
+**Inspect every snapshot visually before updating.** Never run `--snapshot-update` without first running `--snapshot-report`, opening the report with playwright-cli, and reading each diff with `read_image`. The header count ("N snapshots changed") is not proof of inspection. Scroll to each one. Name each one. If you cannot name the visual difference, you have not inspected it.
+
+**Report flaky tests, never dismiss them.** If a test fails in a full run but passes individually, report it. Write the full output to a file first, then search. Do not declare "flaky" without evidence: at least two runs showing different results on the same code.
+
+**Complete means verified, not submitted.** A task is not done until: (1) every changed file passes lint/type checks, (2) every affected test passes, (3) snapshots are visually inspected and updated if needed, (4) the diff is reviewed for leftover artifacts (unused imports, debug logs, stale references). Missing any step is incomplete.
+
+**AGENTS.md rules are guardrails, not suggestions.** Do not skip a rule because "the change is obvious." Obvious changes fail silently. The existence of a rule means someone observed its failure mode. Treat every rule as a circuit breaker: bypassing it removes protection you cannot see. When a rule conflicts with your intuition, follow the rule and note your concern. Never silently override a rule.
 
 ## Commands
 

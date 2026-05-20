@@ -3545,6 +3545,12 @@ class VibeApp(App):  # noqa: PLR0904
     ) -> None:
         await self._execute_rewind(restore_files=False)
 
+    def on_rewind_app_rewind_prev(self, message: RewindApp.RewindPrev) -> None:
+        self.action_rewind_prev()
+
+    def on_rewind_app_rewind_next(self, message: RewindApp.RewindNext) -> None:
+        self.action_rewind_next()
+
     async def _execute_rewind(self, *, restore_files: bool) -> None:
         """Fork the session at the selected user message."""
         if not self._rewind_mode or self._rewind_highlighted_widget is None:

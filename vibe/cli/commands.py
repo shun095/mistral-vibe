@@ -270,7 +270,7 @@ class CommandRegistry:
             "- `Ctrl+G` Edit input in external editor",
             "- `Ctrl+O` Toggle tool output view",
             "- `Shift+Tab` Cycle through agents (default, plan, ...)",
-            f"- `{ALT_KEY}+↑↓` / `Ctrl+P/N` Rewind to previous/next message",
+            f"- `{ALT_KEY}+↑↓` / `Ctrl+P/N` / `←→` Rewind to previous/next message",
             "",
             "### Special Features",
             "",
