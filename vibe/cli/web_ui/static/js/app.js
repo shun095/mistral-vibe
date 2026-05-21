@@ -283,6 +283,9 @@ class VibeClient {
 
     handleMessage(message) {
         switch (message.type) {
+            case 'reset':
+                this._clearMessagesDom();
+                break;
             case 'connected':
                 this.updateStatus('Connected', true);
                 this.historyLoaded = true;
@@ -514,6 +517,17 @@ class VibeClient {
         }
     }
 
+    _clearMessagesDom() {
+        const welcomeMessageDiv = Array.from(
+            this.elements.messages.querySelectorAll('.message.system')
+        ).find(div => div.textContent?.includes('Welcome to Mistral Vibe'));
+
+        this.elements.messages.innerHTML = '';
+        if (welcomeMessageDiv) {
+            this.elements.messages.appendChild(welcomeMessageDiv);
+        }
+    }
+
     async handleMessageReset(reason) {
         console.log(`Handling message reset (reason: ${reason})`);
         this.stopStreaming();
@@ -524,14 +538,7 @@ class VibeClient {
             return;
         }
 
-        const welcomeMessageDiv = Array.from(
-            this.elements.messages.querySelectorAll('.message.system')
-        ).find(div => div.textContent?.includes('Welcome to Mistral Vibe'));
-
-        this.elements.messages.innerHTML = '';
-        if (welcomeMessageDiv) {
-            this.elements.messages.appendChild(welcomeMessageDiv);
-        }
+        this._clearMessagesDom();
 
         for (const event of data.events) {
             this._replayEvent(event);

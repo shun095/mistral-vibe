@@ -1866,7 +1866,8 @@ class VibeApp(App):  # noqa: PLR0904
                 auto_title = (
                     format_session_title(
                         build_title_segments(
-                            title_source or (content if is_text else ""), base_dir=Path.cwd()
+                            title_source or (content if is_text else ""),
+                            base_dir=Path.cwd(),
                         )
                     )
                     or None
@@ -3654,6 +3655,9 @@ class VibeApp(App):  # noqa: PLR0904
         to_remove = children[target_idx:]
         if to_remove:
             await messages_area.remove_children(to_remove)
+
+        # Notify listeners that history was truncated (for WebUI sync)
+        self.agent_loop._notify_event_listeners(MessageResetEvent(reason="clear"))
 
         self._clear_rewind_state()
 

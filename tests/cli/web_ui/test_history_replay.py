@@ -291,6 +291,12 @@ def test_websocket_streams_history_before_connected() -> None:
     with client.websocket_connect(
         "/ws", headers={"Cookie": "vibe_auth=test-token"}
     ) as websocket:
+        # First message should be 'reset' to clear client DOM before history
+        first_msg = websocket.receive_json()
+        assert first_msg["type"] == "reset", (
+            f"Expected 'reset' first, got '{first_msg.get('type')}'"
+        )
+
         # Collect all messages until we receive 'connected'
         messages = []
         while True:

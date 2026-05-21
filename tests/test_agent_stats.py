@@ -687,8 +687,8 @@ class TestClearHistoryObserverBugfix:
 
     @pytest.mark.asyncio
     async def test_clear_history_emits_system_prompt_regenerated_event(self) -> None:
-        """clear_history emits SystemPromptRegeneratedEvent."""
-        from vibe.core.ui_events import SystemPromptRegeneratedEvent
+        """clear_history emits SystemPromptRegeneratedEvent and MessageResetEvent."""
+        from vibe.core.ui_events import MessageResetEvent, SystemPromptRegeneratedEvent
 
         agent = build_test_agent_loop(backend=FakeBackend())
         events_received: list[object] = []
@@ -697,6 +697,50 @@ class TestClearHistoryObserverBugfix:
         await agent.clear_history()
 
         assert any(isinstance(e, SystemPromptRegeneratedEvent) for e in events_received)
+        reset_events = [e for e in events_received if isinstance(e, MessageResetEvent)]
+        assert len(reset_events) == 1
+        assert reset_events[0].reason == "clear"
+
+
+class TestEditLastMessageEvents:
+    @pytest.mark.asyncio
+    async def test_edit_last_message_emits_message_reset_event(self) -> None:
+        """edit_last_message emits MessageResetEvent with reason='clear'."""
+        from vibe.core.ui_events import MessageResetEvent
+
+        agent = build_test_agent_loop(backend=FakeBackend())
+        events_received: list[object] = []
+        agent.add_event_listener(events_received.append)
+
+        # Add a user message first so there's something to edit
+        agent.messages.append(LLMMessage(role=Role.user, content="Original message"))
+
+        await agent.edit_last_message("Edited message")
+
+        reset_events = [e for e in events_received if isinstance(e, MessageResetEvent)]
+        assert len(reset_events) == 1
+        assert reset_events[0].reason == "clear"
+
+    @pytest.mark.asyncio
+    async def test_edit_last_message_truncates_history(self) -> None:
+        """edit_last_message truncates messages after the last user message."""
+        agent = build_test_agent_loop(backend=FakeBackend())
+
+        # Build: system + user + assistant + user + assistant
+        agent.messages.append(LLMMessage(role=Role.user, content="First user message"))
+        agent.messages.append(
+            LLMMessage(role=Role.assistant, content="First assistant response")
+        )
+        agent.messages.append(LLMMessage(role=Role.user, content="Second user message"))
+        agent.messages.append(
+            LLMMessage(role=Role.assistant, content="Second assistant response")
+        )
+
+        pre_count = len(agent.messages)
+        await agent.edit_last_message("Edited second message")
+
+        assert len(agent.messages) < pre_count
+        assert agent.messages[-1].content == "Edited second message"
 
 
 class TestStatsEdgeCases:

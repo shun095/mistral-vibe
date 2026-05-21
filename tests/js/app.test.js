@@ -478,6 +478,33 @@ describe('VibeClient', () => {
             expect(messages[0].className).toBe('message system');
             expect(messages[0].querySelector('.content').textContent).toBe('Error: Something went wrong');
         });
+
+        test('handles reset message by clearing messages DOM', () => {
+            // Add some messages first
+            client.addMessage('user', 'Test message');
+            expect(client.elements.messages.children).toHaveLength(1);
+
+            // Reset should clear messages
+            client.handleMessage({ type: 'reset' });
+            expect(client.elements.messages.children).toHaveLength(0);
+        });
+
+        test('handles reset message while preserving welcome message', () => {
+            // Add a welcome system message
+            const welcomeDiv = document.createElement('div');
+            welcomeDiv.className = 'message system';
+            welcomeDiv.textContent = 'Welcome to Mistral Vibe';
+            client.elements.messages.appendChild(welcomeDiv);
+
+            // Add a regular message
+            client.addMessage('user', 'Test message');
+            expect(client.elements.messages.children).toHaveLength(2);
+
+            // Reset should preserve the welcome message
+            client.handleMessage({ type: 'reset' });
+            expect(client.elements.messages.children).toHaveLength(1);
+            expect(client.elements.messages.children[0].textContent).toBe('Welcome to Mistral Vibe');
+        });
     });
 
     describe('handleEvent', () => {

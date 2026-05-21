@@ -627,6 +627,9 @@ def register_routes(  # noqa: PLR0915
         agent_loop_ref = getattr(app.state, "agent_loop", None)
         if agent_loop_ref is not None:
             try:
+                # Signal client to clear DOM before streaming history
+                await websocket.send_json({"type": "reset"})
+
                 historical_events = messages_to_events(
                     agent_loop_ref.messages, agent_loop_ref.tool_manager
                 )

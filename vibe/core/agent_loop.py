@@ -2069,6 +2069,9 @@ class AgentLoop:
             self.agent_profile,
         )
 
+        # Notify listeners that history was truncated
+        self._notify_event_listeners(MessageResetEvent(reason="clear"))
+
         # Update the current user message ID for tracking
         self._current_user_message_id = edited_message_id
 
