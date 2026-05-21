@@ -53,6 +53,17 @@ test.describe("Basic Chat Flow", () => {
     await expect(page.locator(Selectors.messageInput)).toBeEnabled();
   });
 
+  test("should toggle send button based on input content", async ({
+    page,
+  }) => {
+    await expect(page.locator(Selectors.sendButton)).toBeDisabled();
+
+    await page.locator(Selectors.messageInput).fill("Test message");
+    await expect(page.locator(Selectors.sendButton)).toBeEnabled({
+      timeout: 5000,
+    });
+  });
+
   test("should send a message and receive a response", async ({
     page,
     mockBackend,

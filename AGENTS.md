@@ -429,7 +429,8 @@ npm run test:e2e:headed           # Visible browser
 **E2E Test Notes:**
 - `bash` calls are stateless — `$!` vanishes between calls. Run these as **two separate** `bash` calls:
   ```bash
-  nohup npm run test:e2e > /tmp/e2e-test-output.log 2>&1 & echo $! > /tmp/e2e-pid
+  # Kill any existing E2E process before starting new run
+  if kill -0 $(cat /tmp/e2e-pid 2>/dev/null) 2>/dev/null; then kill $(cat /tmp/e2e-pid) 2>/dev/null; while kill -0 $(cat /tmp/e2e-pid) 2>/dev/null; do sleep 1; done; fi; lsof -ti :9100-9109 | xargs -r kill -9 2>/dev/null || true; nohup npm run test:e2e > /tmp/e2e-test-output.log 2>&1 & echo $! > /tmp/e2e-pid
   ```
   ```bash
   while kill -0 $(cat /tmp/e2e-pid) 2>/dev/null; do sleep 2; done; tail -20 /tmp/e2e-test-output.log

@@ -16,7 +16,10 @@ const PROJECT_ROOT = path.resolve(__dirname, "../../../../..");
 // Intentionally omits save_dir to allow VIBE_HOME env var to control session log location
 // Includes a dummy MCP server for MCP modal E2E tests (no tools, toggle-able)
 // Uses /bin/true which exits immediately — server shows with 0 tools, no blocking
-const E2E_CONFIG_TOML = `[session_logging]
+const E2E_CONFIG_TOML = `enable_update_checks = false
+enable_auto_update = false
+
+[session_logging]
 enabled = true
 session_prefix = "session"
 
