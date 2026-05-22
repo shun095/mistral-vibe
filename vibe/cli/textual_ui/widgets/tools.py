@@ -83,6 +83,8 @@ class ToolCallMessage(StatusMessage):
                 return f"{display.summary} {format_duration(elapsed)}"
             if self._display_text:
                 return self._display_text
+            adapter = ToolUIDataAdapter(self._event.tool_class)
+            return adapter.get_call_display(self._event).summary
         return self._ensure_triangle(self._tool_name)
 
     def update_event(self, event: ToolCallEvent) -> None:

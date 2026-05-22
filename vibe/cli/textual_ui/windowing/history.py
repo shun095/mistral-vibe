@@ -12,7 +12,10 @@ from vibe.cli.textual_ui.widgets.messages import (
     UserMessage,
 )
 from vibe.cli.textual_ui.widgets.tools import ToolCallMessage, ToolResultMessage
-from vibe.core.session.reconstruction import reconstruct_tool_result_event
+from vibe.core.session.reconstruction import (
+    reconstruct_tool_call_event,
+    reconstruct_tool_result_event,
+)
 from vibe.core.types import Content, LLMMessage, Role
 
 
@@ -98,7 +101,15 @@ def build_history_widgets(
                         tool_name = tool_call.function.name or "unknown"
                         if tool_call.id:
                             tool_call_map[tool_call.id] = tool_name
-                        widget = ToolCallMessage(tool_name=tool_name)
+                        event = None
+                        if tool_manager is not None and tool_call.id:
+                            event = reconstruct_tool_call_event(
+                                tool_name,
+                                tool_call.function.arguments,
+                                tool_call.id,
+                                tool_manager,
+                            )
+                        widget = ToolCallMessage(event, tool_name=tool_name)
                         last_tool_call_widget = widget
                         widgets.append(widget)
                         history_widget_indices[widget] = history_index

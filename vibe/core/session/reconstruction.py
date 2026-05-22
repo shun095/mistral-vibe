@@ -2,35 +2,26 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from pydantic import BaseModel
 
-from vibe.core.types import ToolResultEvent
+from vibe.core.types import ToolCallEvent, ToolResultEvent
 from vibe.core.utils.tags import TOOL_ERROR_TAG
+
+if TYPE_CHECKING:
+    from vibe.core.tools.base import BaseTool
+
+
+class _ToolManagerProto(Protocol):
+    available_tools: dict[str, type[BaseTool] | BaseTool]
 
 
 def parse_tool_output(
-    content: str, tool_name: str | None = None, tool_manager: Any = None
+    content: str,
+    tool_name: str | None = None,
+    tool_manager: _ToolManagerProto | None = None,
 ) -> dict:
-    """Parse tool output text into a dictionary, handling multi-line values.
-
-    Tool output format is typically:
-        key1: value1
-        key2: value2 (may span multiple lines)
-
-    Only keys that exist in the tool's Result model are recognized as field
-    delimiters. All other lines are treated as value continuations. This
-    prevents false positives when field values contain lines like "file: ...".
-
-    Args:
-        content: The tool output text to parse.
-        tool_name: Optional tool name to look up Result model fields.
-        tool_manager: Optional ToolManager to look up the tool class.
-
-    Returns:
-        Dictionary with parsed key-value pairs.
-    """
     result: dict = {}
 
     known_fields: set[str] | None = None
@@ -79,23 +70,9 @@ def parse_tool_output(
 def create_pydantic_model_from_dict(
     data: dict,
     tool_name: str | None = None,
-    tool_manager: Any = None,
+    tool_manager: _ToolManagerProto | None = None,
     model_kind: Literal["args", "result"] = "result",
 ) -> BaseModel:
-    """Create a Pydantic model from a dictionary with extra fields allowed.
-
-    When tool_name and tool_manager are provided, uses the actual tool's
-    args or result model class. Otherwise falls back to a dynamic model.
-
-    Args:
-        data: Dictionary to convert to a Pydantic model.
-        tool_name: Optional tool name to use the proper model.
-        tool_manager: Optional ToolManager to look up the tool class.
-        model_kind: Whether to create an args model or result model.
-
-    Returns:
-        A Pydantic model instance with the data.
-    """
     if tool_name and tool_manager:
         tool_class = tool_manager.available_tools.get(tool_name)
         if tool_class is not None:
@@ -113,23 +90,8 @@ def create_pydantic_model_from_dict(
 
 
 def reconstruct_tool_result_event(
-    tool_name: str, content: str, tool_call_id: str, tool_manager: Any
+    tool_name: str, content: str, tool_call_id: str, tool_manager: _ToolManagerProto
 ) -> ToolResultEvent:
-    """Reconstruct a ToolResultEvent from stored LLMMessage tool result data.
-
-    Parses the content (JSON or legacy text format), creates the proper
-    result model using the tool's actual result class, and builds a
-    ToolResultEvent with the correct tool_class.
-
-    Args:
-        tool_name: The name of the tool that produced the result.
-        content: The stored result content (JSON string or text format).
-        tool_call_id: The tool call identifier.
-        tool_manager: The ToolManager to look up the tool class.
-
-    Returns:
-        A ToolResultEvent with the reconstructed result, or None if parsing fails.
-    """
     error_msg: str | None = None
     if f"<{TOOL_ERROR_TAG}>" in content:
         match = re.search(
@@ -168,4 +130,39 @@ def reconstruct_tool_result_event(
         error=error_msg,
         skipped=False,
         tool_call_id=tool_call_id,
+    )
+
+
+def reconstruct_tool_call_event(
+    tool_name: str,
+    arguments_json: str | None,
+    tool_call_id: str,
+    tool_manager: _ToolManagerProto,
+) -> ToolCallEvent | None:
+    raw_tool = tool_manager.available_tools.get(tool_name)
+    if raw_tool is None:
+        return None
+    if isinstance(raw_tool, type):
+        tool_class = raw_tool
+    else:
+        tool_class = type(raw_tool)
+
+    args_model = None
+    if arguments_json:
+        try:
+            args_dict = json.loads(arguments_json)
+            args_model = create_pydantic_model_from_dict(
+                args_dict,
+                tool_name=tool_name,
+                tool_manager=tool_manager,
+                model_kind="args",
+            )
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    return ToolCallEvent(
+        tool_call_id=tool_call_id,
+        tool_name=tool_name,
+        tool_class=tool_class,
+        args=args_model,
     )
