@@ -1198,6 +1198,13 @@ body {
     gap: 8px;
     z-index: 100;
     pointer-events: none;
+    opacity: 1;
+    transition: opacity 0.3s ease;
+}
+
+.fab-container.hidden {
+    opacity: 0;
+    pointer-events: none;
 }
 
 .fab-container .fab-btn {

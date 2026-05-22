@@ -158,12 +158,34 @@ function createTestElements() {
     elements['session-picker-modal'].style.display = 'none';
     elements['prompt-history-modal'].style.display = 'none';
 
+    // FAB container (queried by class, not ID)
+    const fabContainer = document.createElement('div');
+    fabContainer.className = 'fab-container';
+    ['scroll-top-btn', 'scroll-prev-user-btn', 'scroll-next-user-btn', 'scroll-bottom-btn'].forEach(id => {
+        fabContainer.appendChild(elements[id]);
+    });
+
+    // Input area (queried by class for updateFabPosition)
+    const inputArea = document.createElement('div');
+    inputArea.className = 'input-area';
+    inputArea.id = 'input-area';
+
+    // Chat container (queried by class for updateFabPosition)
+    const chatContainer = document.createElement('div');
+    chatContainer.className = 'chat-container';
+
     // Add to DOM so getElementById works
     document.body.innerHTML = '';
     Object.entries(elements).forEach(([id, el]) => {
         el.id = id;
-        document.body.appendChild(el);
+        if (!fabContainer.contains(el)) {
+            document.body.appendChild(el);
+        }
     });
+    chatContainer.appendChild(elements['messages']);
+    document.body.appendChild(chatContainer);
+    document.body.appendChild(fabContainer);
+    document.body.appendChild(inputArea);
 
     return elements;
 }
@@ -1312,6 +1334,112 @@ describe('VibeClient', () => {
 
             expect(client.elements.input.disabled).toBe(false);
             expect(client.elements.sendBtn.disabled).toBe(false);
+        });
+    });
+
+    describe('FAB visibility', () => {
+        test('FABs are visible initially without hidden class', () => {
+            const fabContainer = document.querySelector('.fab-container');
+            expect(fabContainer.classList.contains('hidden')).toBe(false);
+        });
+
+        test('scroll event arms 3s hide timer', () => {
+            jest.useFakeTimers();
+            const fabContainer = document.querySelector('.fab-container');
+
+            client.elements.messages.dispatchEvent(new Event('scroll'));
+
+            expect(fabContainer.classList.contains('hidden')).toBe(false);
+            expect(client._fabHideTimer).not.toBeNull();
+
+            jest.advanceTimersByTime(2000);
+            expect(fabContainer.classList.contains('hidden')).toBe(false);
+
+            jest.advanceTimersByTime(1500);
+            expect(fabContainer.classList.contains('hidden')).toBe(true);
+
+            jest.useRealTimers();
+        });
+
+        test('scroll event resets the hide timer', () => {
+            jest.useFakeTimers();
+            const fabContainer = document.querySelector('.fab-container');
+
+            client.elements.messages.dispatchEvent(new Event('scroll'));
+            jest.advanceTimersByTime(2500);
+            expect(fabContainer.classList.contains('hidden')).toBe(false);
+
+            client.elements.messages.dispatchEvent(new Event('scroll'));
+            jest.advanceTimersByTime(2000);
+            expect(fabContainer.classList.contains('hidden')).toBe(false);
+
+            jest.advanceTimersByTime(1500);
+            expect(fabContainer.classList.contains('hidden')).toBe(true);
+
+            jest.useRealTimers();
+        });
+
+        test('FAB button click resets the hide timer', () => {
+            jest.useFakeTimers();
+            const fabContainer = document.querySelector('.fab-container');
+            const scrollBottomBtn = document.getElementById('scroll-bottom-btn');
+
+            client.elements.messages.dispatchEvent(new Event('scroll'));
+            jest.advanceTimersByTime(2500);
+            expect(fabContainer.classList.contains('hidden')).toBe(false);
+
+            scrollBottomBtn.click();
+            jest.advanceTimersByTime(2500);
+            expect(fabContainer.classList.contains('hidden')).toBe(false);
+
+            jest.advanceTimersByTime(1500);
+            expect(fabContainer.classList.contains('hidden')).toBe(true);
+
+            jest.useRealTimers();
+        });
+
+        test('destroy() clears _fabHideTimer', () => {
+            jest.useFakeTimers();
+            client.elements.messages.dispatchEvent(new Event('scroll'));
+            expect(client._fabHideTimer).not.toBeNull();
+
+            client.destroy();
+            expect(client._fabHideTimer).toBeNull();
+
+            jest.advanceTimersByTime(3000);
+            const fabContainer = document.querySelector('.fab-container');
+            expect(fabContainer.classList.contains('hidden')).toBe(false);
+
+            jest.useRealTimers();
+        });
+
+        test('programmatic scroll does not show FABs', () => {
+            jest.useFakeTimers();
+            const fabContainer = document.querySelector('.fab-container');
+            fabContainer.classList.add('hidden');
+
+            client.scrollToBottom();
+            jest.advanceTimersByTime(0);
+
+            expect(fabContainer.classList.contains('hidden')).toBe(true);
+            expect(client._suppressFabShow).toBe(false);
+
+            jest.useRealTimers();
+        });
+
+        test('FAB click after hide re-shows and arms timer', () => {
+            jest.useFakeTimers();
+            const fabContainer = document.querySelector('.fab-container');
+            const scrollBottomBtn = document.getElementById('scroll-bottom-btn');
+
+            fabContainer.classList.add('hidden');
+            scrollBottomBtn.click();
+            jest.advanceTimersByTime(0);
+
+            expect(fabContainer.classList.contains('hidden')).toBe(false);
+            expect(client._fabHideTimer).not.toBeNull();
+
+            jest.useRealTimers();
         });
     });
 });

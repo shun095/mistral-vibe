@@ -49,6 +49,9 @@ class VibeClient {
         // Pending input — cleared only after server acknowledges via event
         this._pendingInputContent = null;
 
+        // Suppress FAB show during programmatic scrolls
+        this._suppressFabShow = false;
+
         // Event listener registry for cleanup
         this._listeners = [];
 
@@ -584,7 +587,7 @@ class VibeClient {
         `;
 
         this.elements.messages.appendChild(errorDiv);
-        scrollUtils.scrollToBottom(this.elements.messages);
+        this.forceScrollToBottom();
     }
 
     /**
@@ -1518,27 +1521,51 @@ class VibeClient {
     }
 
     scrollToBottom() {
+        this._suppressFabShow = true;
         scrollUtils.scrollToBottomIfNeeded(this.elements.messages);
+        this._afterProgrammaticScroll();
     }
 
     scrollToBottomIfWasAtBottom(previousScrollHeight) {
+        this._suppressFabShow = true;
         scrollUtils.scrollToBottomIfWasAtBottom(this.elements.messages, previousScrollHeight);
+        this._afterProgrammaticScroll();
     }
 
     forceScrollToBottom() {
+        this._suppressFabShow = true;
         scrollUtils.scrollToBottom(this.elements.messages);
+        this._afterProgrammaticScroll();
     }
 
     scrollToTop() {
+        this._suppressFabShow = true;
         scrollUtils.scrollToTop(this.elements.messages);
+        this._afterProgrammaticScroll();
     }
 
     scrollToPreviousUserMessage() {
+        this._suppressFabShow = true;
         scrollUtils.scrollToPreviousUserMessage(this.elements.messages);
+        this._afterProgrammaticScroll();
     }
 
     scrollToNextUserMessage() {
+        this._suppressFabShow = true;
         scrollUtils.scrollToNextUserMessage(this.elements.messages);
+        this._afterProgrammaticScroll();
+    }
+
+    _afterProgrammaticScroll() {
+        setTimeout(() => { this._suppressFabShow = false; }, 0);
+    }
+
+    _restartFabTimer() {
+        const fabContainer = document.querySelector('.fab-container');
+        if (!fabContainer) return;
+        fabContainer.classList.remove('hidden');
+        clearTimeout(this._fabHideTimer);
+        this._fabHideTimer = setTimeout(() => fabContainer.classList.add('hidden'), 3000);
     }
 
     bindScrollNavigationEvents() {
@@ -1547,10 +1574,18 @@ class VibeClient {
         const scrollNextUserBtn = document.getElementById('scroll-next-user-btn');
         const scrollBottomBtn = document.getElementById('scroll-bottom-btn');
 
-        this._on(scrollTopBtn, 'click', () => this.scrollToTop());
-        this._on(scrollPrevUserBtn, 'click', () => this.scrollToPreviousUserMessage());
-        this._on(scrollNextUserBtn, 'click', () => this.scrollToNextUserMessage());
-        this._on(scrollBottomBtn, 'click', () => this.forceScrollToBottom());
+        this._on(scrollTopBtn, 'click', () => { this._restartFabTimer(); this.scrollToTop(); });
+        this._on(scrollPrevUserBtn, 'click', () => { this._restartFabTimer(); this.scrollToPreviousUserMessage(); });
+        this._on(scrollNextUserBtn, 'click', () => { this._restartFabTimer(); this.scrollToNextUserMessage(); });
+        this._on(scrollBottomBtn, 'click', () => { this._restartFabTimer(); this.forceScrollToBottom(); });
+
+        // Show FABs on user scroll only; hide 3s after scroll idle
+        this._fabHideTimer = null;
+        const showFabs = () => {
+            if (this._suppressFabShow) return;
+            this._restartFabTimer();
+        };
+        this._on(this.elements.messages, 'scroll', showFabs);
 
         this.updateFabPosition();
         this._resizeHandler = () => this.updateFabPosition();
@@ -2881,6 +2916,12 @@ class VibeClient {
             clearInterval(timer.intervalId);
         }
         this._toolCallTimers.clear();
+
+        // Clear FAB hide timer
+        if (this._fabHideTimer) {
+            clearTimeout(this._fabHideTimer);
+            this._fabHideTimer = null;
+        }
 
         // Remove all registered event listeners
         for (const { el, event, handler } of this._listeners) {
