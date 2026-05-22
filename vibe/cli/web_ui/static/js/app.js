@@ -1565,7 +1565,7 @@ class VibeClient {
         if (!fabContainer) return;
         fabContainer.classList.remove('hidden');
         clearTimeout(this._fabHideTimer);
-        this._fabHideTimer = setTimeout(() => fabContainer.classList.add('hidden'), 3000);
+        this._fabHideTimer = setTimeout(() => fabContainer.classList.add('hidden'), 2000);
     }
 
     bindScrollNavigationEvents() {
@@ -1579,7 +1579,7 @@ class VibeClient {
         this._on(scrollNextUserBtn, 'click', () => { this._restartFabTimer(); this.scrollToNextUserMessage(); });
         this._on(scrollBottomBtn, 'click', () => { this._restartFabTimer(); this.forceScrollToBottom(); });
 
-        // Show FABs on user scroll only; hide 3s after scroll idle
+        // Show FABs on user scroll only; hide 2s after scroll idle
         this._fabHideTimer = null;
         const showFabs = () => {
             if (this._suppressFabShow) return;
@@ -3509,3 +3509,4 @@ document.addEventListener('DOMContentLoaded', () => {
 
 export { VibeClient };
 export { formatDuration } from './format-utils.js';
+;

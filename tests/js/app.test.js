@@ -1343,7 +1343,7 @@ describe('VibeClient', () => {
             expect(fabContainer.classList.contains('hidden')).toBe(false);
         });
 
-        test('scroll event arms 3s hide timer', () => {
+        test('scroll event arms 2s hide timer', () => {
             jest.useFakeTimers();
             const fabContainer = document.querySelector('.fab-container');
 
@@ -1352,10 +1352,10 @@ describe('VibeClient', () => {
             expect(fabContainer.classList.contains('hidden')).toBe(false);
             expect(client._fabHideTimer).not.toBeNull();
 
-            jest.advanceTimersByTime(2000);
+            jest.advanceTimersByTime(1200);
             expect(fabContainer.classList.contains('hidden')).toBe(false);
 
-            jest.advanceTimersByTime(1500);
+            jest.advanceTimersByTime(800);
             expect(fabContainer.classList.contains('hidden')).toBe(true);
 
             jest.useRealTimers();
@@ -1366,14 +1366,14 @@ describe('VibeClient', () => {
             const fabContainer = document.querySelector('.fab-container');
 
             client.elements.messages.dispatchEvent(new Event('scroll'));
-            jest.advanceTimersByTime(2500);
+            jest.advanceTimersByTime(1500);
             expect(fabContainer.classList.contains('hidden')).toBe(false);
 
             client.elements.messages.dispatchEvent(new Event('scroll'));
-            jest.advanceTimersByTime(2000);
+            jest.advanceTimersByTime(1500);
             expect(fabContainer.classList.contains('hidden')).toBe(false);
 
-            jest.advanceTimersByTime(1500);
+            jest.advanceTimersByTime(500);
             expect(fabContainer.classList.contains('hidden')).toBe(true);
 
             jest.useRealTimers();
@@ -1385,14 +1385,14 @@ describe('VibeClient', () => {
             const scrollBottomBtn = document.getElementById('scroll-bottom-btn');
 
             client.elements.messages.dispatchEvent(new Event('scroll'));
-            jest.advanceTimersByTime(2500);
+            jest.advanceTimersByTime(1500);
             expect(fabContainer.classList.contains('hidden')).toBe(false);
 
             scrollBottomBtn.click();
-            jest.advanceTimersByTime(2500);
+            jest.advanceTimersByTime(1500);
             expect(fabContainer.classList.contains('hidden')).toBe(false);
 
-            jest.advanceTimersByTime(1500);
+            jest.advanceTimersByTime(500);
             expect(fabContainer.classList.contains('hidden')).toBe(true);
 
             jest.useRealTimers();
