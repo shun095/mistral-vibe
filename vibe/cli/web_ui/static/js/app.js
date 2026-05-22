@@ -122,6 +122,23 @@ class VibeClient {
 
         this.apiClient = new APIClient();
 
+        // Marked: wrap tables in scrollable container (CDN-only, guard for tests)
+        if (typeof marked !== 'undefined' && marked.Renderer) {
+            marked.use({
+                renderer: {
+                    table({ header, rows }) {
+                        const cell = (t) => {
+                            let attr = '';
+                            if (t.align) attr += ` align="${t.align}"`;
+                            if (t.colspan > 1) attr += ` colspan="${t.colspan}"`;
+                            return `<td${attr}>${this.parser.parseInline(t.tokens)}</td>`;
+                        };
+                        return `<div class="table-wrapper"><table><thead><tr>${header.map(cell).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map(cell).join('')}</tr>`).join('')}</tbody></table></div>`;
+                    }
+                }
+            });
+        }
+
         this.messageStreamer = new MessageStreamer({
             onReasoningStart: (data) => this._onReasoningStart(data),
             onReasoningUpdate: (data) => this._onReasoningUpdate(data),

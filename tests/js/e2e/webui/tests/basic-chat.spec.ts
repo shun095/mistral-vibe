@@ -120,4 +120,35 @@ test.describe("Basic Chat Flow", () => {
     const userMessage = page.locator(Selectors.userMessage).last();
     await expect(userMessage).toContainText("Test message from user");
   });
+
+  test("should render markdown tables in assistant messages with scrollable wrapper", async ({
+    page,
+    mockBackend,
+  }) => {
+    // Register mock response with a markdown table
+    await mockBackend.registerResponse({
+      response_text:
+        "| Column A | Column B | Column C |\n| --- | --- | --- |\n| value1 | value2 | value3 |\n| value4 | value5 | value6 |",
+    });
+
+    await sendMessage(page, "Show me a table");
+
+    // Wait for assistant message with table
+    const response = page.locator(Selectors.assistantMessage).last();
+    await expect(response).toBeVisible({ timeout: 15000 });
+
+    // Verify table-wrapper div exists with horizontal scroll
+    const tableWrapper = response.locator(".table-wrapper");
+    await expect(tableWrapper).toBeVisible();
+    await expect(tableWrapper).toHaveCSS("overflow-x", "auto");
+
+    // Verify table element exists inside wrapper
+    const table = tableWrapper.locator("table");
+    await expect(table).toBeVisible();
+
+    // Verify table content is rendered
+    await expect(response).toContainText("Column A");
+    await expect(response).toContainText("value1");
+    await expect(response).toContainText("value6");
+  });
 });

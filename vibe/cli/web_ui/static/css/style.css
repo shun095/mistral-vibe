@@ -1045,6 +1045,11 @@ body {
     margin: 1em 0;
 }
 
+.message.assistant .content .table-wrapper {
+    overflow-x: auto;
+    margin: 0.5em 0;
+}
+
 .message.assistant .content table {
     border-collapse: collapse;
     width: 100%;
