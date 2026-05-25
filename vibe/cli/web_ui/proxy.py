@@ -49,7 +49,7 @@ class CodeServerProxyMiddleware:
         self,
         app: Any,
         target_host: str = "127.0.0.1",
-        target_port: int = 18080,
+        target_port: int = 0,
         auth_checker: Callable[[Request], bool] | None = None,
         base_path: str = "/",
     ) -> None:

@@ -75,6 +75,7 @@ export class ServerManager {
   private config: ServerConfig;
   private started: boolean = false;
   private actualPort: number | null = null;
+  private actualCodeServerPort: number | null = null;
   e2eTestDir: string | null = null;
   private serverPidFile: string | null = null;
 
@@ -152,9 +153,14 @@ export class ServerManager {
     // Kill any existing process on the port
     await this.killProcessOnPort(port);
 
-    // Kill any existing process on the code-server port
+    // Reserve code-server port (same pattern as web port)
     if (this.config.codeServerEnabled) {
-      await this.killProcessOnPort(this.config.codeServerPort ?? 18080);
+      let csPort = this.config.codeServerPort ?? (19000 + Math.floor(Math.random() * 100));
+      if (!(await this.isPortAvailable(csPort))) {
+        csPort = await this.findAvailablePort(csPort);
+      }
+      this.actualCodeServerPort = csPort;
+      await this.killProcessOnPort(csPort);
     }
 
     // Set up E2E test directory with mock data
@@ -236,8 +242,8 @@ export class ServerManager {
       setTimeout(() => {
         this.process?.kill("SIGKILL");
         // Also kill any lingering code-server processes
-        if (this.config.codeServerEnabled) {
-          this.killProcessOnPort(this.config.codeServerPort ?? 18080).catch(() => {});
+        if (this.actualCodeServerPort) {
+          this.killProcessOnPort(this.actualCodeServerPort).catch(() => {});
         }
         resolve();
       }, 2000);
@@ -246,8 +252,8 @@ export class ServerManager {
         this.started = false;
         this.process = null;
         // Kill any lingering code-server processes on cleanup
-        if (this.config.codeServerEnabled) {
-          this.killProcessOnPort(this.config.codeServerPort ?? 18080).catch(() => {});
+        if (this.actualCodeServerPort) {
+          this.killProcessOnPort(this.actualCodeServerPort).catch(() => {});
         }
         this.cleanupE2eTestDir();
         resolve();
@@ -312,7 +318,7 @@ export class ServerManager {
    * Wait for code-server to become healthy on its port.
    */
   private waitForCodeServer(): Promise<void> {
-    const port = this.config.codeServerPort ?? 18080;
+    const port = this.actualCodeServerPort!;
     const maxAttempts = 60; // 60 seconds
     const interval = 1000;
 
@@ -366,7 +372,7 @@ export class ServerManager {
   }
 
   getCodeServerPort(): number {
-    return this.config.codeServerPort ?? 18080;
+    return this.actualCodeServerPort || 0;
   }
 
   getCodeServerUrl(): string {
@@ -412,9 +418,8 @@ export class ServerManager {
     // If save_dir is explicitly set, it overrides SESSION_LOG_DIR path resolution
     const configFile = path.join(testDir, "config.toml");
     let configContent: string;
-    if (this.config.codeServerEnabled) {
-      const csPort = this.config.codeServerPort ?? 18080;
-      configContent = E2E_CONFIG_WITH_CODE_SERVER_TEMPLATE.replace("{{CODE_SERVER_PORT}}", String(csPort));
+    if (this.config.codeServerEnabled && this.actualCodeServerPort) {
+      configContent = E2E_CONFIG_WITH_CODE_SERVER_TEMPLATE.replace("{{CODE_SERVER_PORT}}", String(this.actualCodeServerPort));
     } else {
       configContent = E2E_CONFIG_TOML;
     }

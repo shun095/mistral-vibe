@@ -501,7 +501,7 @@ class CodeServerConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     enabled: bool = False
-    port: int = Field(default=18080, ge=0, le=65535)
+    port: int = Field(default=0, ge=0, le=65535)
     binary_path: str = ""
     auto_install: bool = True
 

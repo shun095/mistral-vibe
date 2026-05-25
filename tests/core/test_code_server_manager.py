@@ -20,7 +20,7 @@ def tmp_data_dir(tmp_path: Path) -> Path:
 @pytest.fixture()
 def manager(tmp_data_dir: Path) -> CodeServerManager:
     return CodeServerManager(
-        port=18080, data_dir=tmp_data_dir, binary_path="/usr/bin/code-server"
+        port=0, data_dir=tmp_data_dir, binary_path="/usr/bin/code-server"
     )
 
 
@@ -31,9 +31,7 @@ class TestStateTransitions:
     def test_state_change_callback(self, tmp_data_dir: Path) -> None:
         states = []
         manager = CodeServerManager(
-            port=18080,
-            data_dir=tmp_data_dir,
-            on_state_change=lambda s: states.append(s),
+            port=0, data_dir=tmp_data_dir, on_state_change=lambda s: states.append(s)
         )
         manager._set_state(State.SPAWNING)
         assert states == [State.SPAWNING]
@@ -41,9 +39,7 @@ class TestStateTransitions:
     def test_same_state_no_callback(self, tmp_data_dir: Path) -> None:
         states = []
         manager = CodeServerManager(
-            port=18080,
-            data_dir=tmp_data_dir,
-            on_state_change=lambda s: states.append(s),
+            port=0, data_dir=tmp_data_dir, on_state_change=lambda s: states.append(s)
         )
         manager._set_state(State.IDLE)
         assert states == []
@@ -234,7 +230,7 @@ class TestSpawn:
         bin_path.parent.mkdir(parents=True)
         bin_path.touch()
 
-        manager = CodeServerManager(port=18080, data_dir=tmp_data_dir)
+        manager = CodeServerManager(port=0, data_dir=tmp_data_dir)
         with (
             patch("shutil.which", return_value=None),
             patch("pathlib.Path.home", return_value=tmp_data_dir),

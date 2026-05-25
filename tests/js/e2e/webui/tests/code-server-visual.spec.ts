@@ -20,15 +20,13 @@ interface CodeServerFixtures {
 
 const test = base.extend<CodeServerFixtures>({
   webServer: async ({}, use) => {
-    // Use dynamic ports to avoid collisions
+    // Use dynamic ports to avoid collisions — code-server port auto-reserved by ServerManager
     const webPort = 9097 + Math.floor(Math.random() * 100);
-    const csPort = 18080 + Math.floor(Math.random() * 100);
 
     const server = new ServerManager({
       port: webPort,
       token: "test-token-code-server",
       codeServerEnabled: true,
-      codeServerPort: csPort,
     });
     await server.start();
 
