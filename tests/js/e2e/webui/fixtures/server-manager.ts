@@ -36,9 +36,38 @@ command = "/bin/true"
 args = []
 `;
 
+// Config with code-server enabled — used by visual integration tests
+// Port is substituted dynamically via placeholder
+const E2E_CONFIG_WITH_CODE_SERVER_TEMPLATE = `enable_update_checks = false
+enable_auto_update = false
+
+[session_logging]
+enabled = true
+session_prefix = "session"
+
+[tools.read_file]
+max_read_bytes = 64000
+
+[tools.write_file]
+max_write_bytes = 64000
+
+[code_server]
+enabled = true
+port = {{CODE_SERVER_PORT}}
+auto_install = true
+
+[[mcp_servers]]
+name = "e2e_test_server"
+transport = "stdio"
+command = "/bin/true"
+args = []
+`;
+
 export interface ServerConfig {
   port: number;
   token: string;
+  codeServerEnabled?: boolean;
+  codeServerPort?: number;
 }
 
 export class ServerManager {
@@ -123,13 +152,17 @@ export class ServerManager {
     // Kill any existing process on the port
     await this.killProcessOnPort(port);
 
+    // Kill any existing process on the code-server port
+    if (this.config.codeServerEnabled) {
+      await this.killProcessOnPort(this.config.codeServerPort ?? 18080);
+    }
+
     // Set up E2E test directory with mock data
     this.e2eTestDir = this.setupE2eTestDir();
 
     const env = {
       ...process.env,
       VIBE_WEB_TOKEN: this.config.token,
-      VIBE_ALLOW_URL_TOKEN: "true", // Enable URL token auth for E2E tests
       VIBE_E2E_TEST: "true",
       VIBE_E2E_TEST_DIR: this.e2eTestDir,
       VIBE_HOME: this.e2eTestDir, // Override VIBE_HOME to use E2E test directory
@@ -168,18 +201,26 @@ export class ServerManager {
         stderr += data.toString();
       });
 
-      // Wait for server to be ready
-      this.waitForServer().then(() => {
-        this.started = true;
-        resolve();
-      }).catch((error) => {
-        if (this.process) {
-          this.process.kill();
-        }
-        console.error("Server stdout:", stdout);
-        console.error("Server stderr:", stderr);
-        reject(error);
-      });
+      // Wait for server to be ready, then optionally wait for code-server
+      this.waitForServer()
+        .then(() => {
+          if (this.config.codeServerEnabled) {
+            return this.waitForCodeServer();
+          }
+          return Promise.resolve();
+        })
+        .then(() => {
+          this.started = true;
+          resolve();
+        })
+        .catch((error) => {
+          if (this.process) {
+            this.process.kill();
+          }
+          console.error("Server stdout:", stdout);
+          console.error("Server stderr:", stderr);
+          reject(error);
+        });
     });
   }
 
@@ -194,13 +235,22 @@ export class ServerManager {
       // Force kill after timeout
       setTimeout(() => {
         this.process?.kill("SIGKILL");
+        // Also kill any lingering code-server processes
+        if (this.config.codeServerEnabled) {
+          this.killProcessOnPort(this.config.codeServerPort ?? 18080).catch(() => {});
+        }
         resolve();
       }, 2000);
 
       this.process?.on("exit", () => {
         this.started = false;
         this.process = null;
+        // Kill any lingering code-server processes on cleanup
+        if (this.config.codeServerEnabled) {
+          this.killProcessOnPort(this.config.codeServerPort ?? 18080).catch(() => {});
+        }
         this.cleanupE2eTestDir();
+        resolve();
       });
     });
   }
@@ -258,6 +308,51 @@ export class ServerManager {
     });
   }
 
+  /**
+   * Wait for code-server to become healthy on its port.
+   */
+  private waitForCodeServer(): Promise<void> {
+    const port = this.config.codeServerPort ?? 18080;
+    const maxAttempts = 60; // 60 seconds
+    const interval = 1000;
+
+    return new Promise((resolve, reject) => {
+      let attempts = 0;
+
+      const check = () => {
+        attempts++;
+        const sock = new net.Socket();
+        sock.setTimeout(3000);
+
+        sock.on("connect", () => {
+          sock.destroy();
+          resolve();
+        });
+
+        sock.on("error", () => {
+          if (attempts >= maxAttempts) {
+            reject(new Error(`code-server failed to start on port ${port} after ${maxAttempts}s`));
+          } else {
+            setTimeout(check, interval);
+          }
+        });
+
+        sock.on("timeout", () => {
+          sock.destroy();
+          if (attempts >= maxAttempts) {
+            reject(new Error(`code-server health check timeout on port ${port}`));
+          } else {
+            setTimeout(check, interval);
+          }
+        });
+
+        sock.connect(port, "127.0.0.1");
+      };
+
+      check();
+    });
+  }
+
   getUrl(): string {
     return `http://127.0.0.1:${this.actualPort}`;
   }
@@ -268,6 +363,14 @@ export class ServerManager {
 
   getPort(): number {
     return this.actualPort || this.config.port;
+  }
+
+  getCodeServerPort(): number {
+    return this.config.codeServerPort ?? 18080;
+  }
+
+  getCodeServerUrl(): string {
+    return `${this.getUrl()}/vscode/`;
   }
 
   /**
@@ -308,7 +411,14 @@ export class ServerManager {
     // Create minimal config.toml without explicit save_dir to allow VIBE_HOME to take effect
     // If save_dir is explicitly set, it overrides SESSION_LOG_DIR path resolution
     const configFile = path.join(testDir, "config.toml");
-    fs.writeFileSync(configFile, E2E_CONFIG_TOML, "utf-8");
+    let configContent: string;
+    if (this.config.codeServerEnabled) {
+      const csPort = this.config.codeServerPort ?? 18080;
+      configContent = E2E_CONFIG_WITH_CODE_SERVER_TEMPLATE.replace("{{CODE_SERVER_PORT}}", String(csPort));
+    } else {
+      configContent = E2E_CONFIG_TOML;
+    }
+    fs.writeFileSync(configFile, configContent, "utf-8");
 
     return testDir;
   }

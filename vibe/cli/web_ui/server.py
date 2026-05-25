@@ -92,6 +92,8 @@ def create_app(
     base_path: str = "/",
     agent_loop: AgentLoop | None = None,
     tui_app: Any | None = None,
+    code_server_port: int = 0,
+    code_server_workdir: str = "",
 ) -> FastAPI:
     """Create and configure the FastAPI application.
 
@@ -102,6 +104,8 @@ def create_app(
         agent_loop: The AgentLoop instance to sync with (required for standalone mode).
         tui_app: Optional TUI app instance for integrated mode. If None, WebUI runs
             in standalone mode and interacts directly with agent_loop.
+        code_server_port: Internal code-server port (0 = disabled).
+        code_server_workdir: Working directory code-server was spawned with.
 
     Returns:
         Configured FastAPI application instance.
@@ -115,6 +119,8 @@ def create_app(
     app.state.port = port
     app.state.base_path = base_path
     app.state._broadcast_queue = BroadcastQueue(maxsize=1024)  # type: ignore[attr-defined]
+    app.state.code_server_port = code_server_port  # type: ignore[attr-defined]
+    app.state.code_server_workdir = code_server_workdir  # type: ignore[attr-defined]
 
     # Setup templates and static files
     base_dir = Path(__file__).parent
@@ -146,5 +152,20 @@ def create_app(
 
     # Register all routes
     register_routes(app, auth_token, templates, agent_loop, base_path)
+
+    # Mount code-server reverse proxy if enabled
+    if code_server_port > 0:
+        from vibe.cli.web_ui.proxy import CodeServerProxyMiddleware
+
+        def _auth_checker(req: Any) -> bool:
+            return req.cookies.get("vibe_auth") == auth_token
+
+        app.add_middleware(
+            CodeServerProxyMiddleware,
+            target_host="127.0.0.1",
+            target_port=code_server_port,
+            auth_checker=_auth_checker,
+            base_path=base_path,
+        )
 
     return app

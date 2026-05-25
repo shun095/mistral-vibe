@@ -66,6 +66,7 @@ class VibeClient {
             contextProgress: document.getElementById('context-progress'),
             themeToggle: document.getElementById('theme-toggle'),
             toggleCardsBtn: document.getElementById('toggle-cards-btn'),
+            vscodeBtn: document.getElementById('vscode-btn'),
             logoutBtn: document.getElementById('logout-btn'),
             imagePreviewContainer: document.getElementById('image-preview-container'),
             imagePreviewImg: document.getElementById('image-preview-img'),
@@ -154,6 +155,7 @@ class VibeClient {
     }
 
     init() {
+        this._codeServerEnabled = false;
         this.bindEvents();
 
         if (this.elements.input && !this.slashAutocomplete) {
@@ -167,6 +169,21 @@ class VibeClient {
         this.loadTheme();
         this.wsClient.connect();
         this.startStatusPolling();
+        this._loadCodeServerConfig();
+    }
+
+    async _loadCodeServerConfig() {
+        try {
+            const config = await this.apiClient.getConfig();
+            this._codeServerEnabled = !!config.code_server_enabled;
+            this._codeServerWorkdir = config.code_server_workdir || '';
+        } catch {
+            this._codeServerEnabled = false;
+            this._codeServerWorkdir = '';
+        }
+        if (this.elements.vscodeBtn) {
+            this.elements.vscodeBtn.style.display = this._codeServerEnabled ? 'inline-flex' : 'none';
+        }
     }
 
     async logout() {
@@ -200,6 +217,7 @@ class VibeClient {
         this.bindScrollNavigationEvents();
         this._on(this.elements.themeToggle, 'click', () => this.toggleTheme());
         this._on(this.elements.toggleCardsBtn, 'click', () => this.toggleAllCards());
+        this._on(this.elements.vscodeBtn, 'click', () => this._openInCodeServer());
         this._on(this.elements.logoutBtn, 'click', () => this.logout());
 
         this.imageAttachment = new ImageAttachmentHandler({
@@ -1020,6 +1038,17 @@ class VibeClient {
         } catch (err) {
             console.error('Download failed:', err);
         }
+    }
+
+    _openInCodeServer() {
+        if (!this._codeServerEnabled) {
+            return;
+        }
+        let url = buildUrl('vscode/');
+        if (this._codeServerWorkdir) {
+            url += `?folder=${encodeURIComponent(this._codeServerWorkdir)}`;
+        }
+        window.open(url, '_blank');
     }
 
     _getIconForMimeType(mimeType) {

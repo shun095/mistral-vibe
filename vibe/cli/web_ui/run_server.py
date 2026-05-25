@@ -22,6 +22,8 @@ def run_web_server_in_background(
     base_path: str = "/",
     agent_loop: AgentLoop | None = None,
     tui_app: VibeApp | None = None,
+    code_server_port: int = 0,
+    code_server_workdir: str = "",
 ) -> tuple[threading.Thread, Callable[[], None]]:
     """Start the web UI server in a background thread.
 
@@ -31,6 +33,8 @@ def run_web_server_in_background(
         base_path: Base URL path (e.g., "/" or "/vibe/").
         agent_loop: Optional AgentLoop instance for event synchronization.
         tui_app: Optional TUI app instance for message submission.
+        code_server_port: Internal code-server port (0 = disabled).
+        code_server_workdir: Working directory code-server was spawned with.
 
     Returns:
         A tuple of (background thread, shutdown callable). Call the shutdown
@@ -44,6 +48,8 @@ def run_web_server_in_background(
         base_path=base_path,
         agent_loop=agent_loop,
         tui_app=tui_app,
+        code_server_port=code_server_port,
+        code_server_workdir=code_server_workdir,
     )
     config = Config(app, host="0.0.0.0", port=port, log_level="warning")
     server = uvicorn.Server(config)

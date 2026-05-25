@@ -3,8 +3,13 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 import sys
+import threading
+from typing import TYPE_CHECKING, Any
 
 from rich import print as rprint
+
+if TYPE_CHECKING:
+    from vibe.core.code_server import CodeServerManager
 from rich.console import Console
 import tomli_w
 
@@ -218,6 +223,64 @@ def _resume_previous_session(
     return not use_saved
 
 
+def _spawn_code_server(
+    config: Any,
+) -> tuple[CodeServerManager | None, int, threading.Thread | None]:
+    """Start code-server if enabled. Returns (manager, port, monitor_thread)."""
+    import asyncio
+
+    from vibe.core.code_server import CodeServerManager, State
+    from vibe.core.paths import VIBE_HOME
+
+    if not config.code_server.enabled:
+        return None, 0, None
+
+    cs_config = config.code_server
+    vibe_home = VIBE_HOME.path
+    manager = CodeServerManager(
+        port=cs_config.port,
+        data_dir=vibe_home / "code-server-data",
+        binary_path=cs_config.binary_path,
+        auto_install=cs_config.auto_install,
+    )
+
+    # Spawn uses a temporary loop (no monitor task)
+    asyncio.run(manager.spawn(Path.cwd()))
+
+    if manager.state == State.STOPPED:
+        rprint("[yellow]code-server failed to start — file browsing disabled[/]")
+        return None, 0, None
+
+    rprint(f"[green]code-server started on internal port {manager.port}[/]")
+
+    # Run monitor loop in a background thread
+    monitor_loop = asyncio.new_event_loop()
+
+    def _run_monitor() -> None:
+        asyncio.set_event_loop(monitor_loop)
+        try:
+            monitor_loop.run_until_complete(manager.run_monitor())
+        finally:
+            monitor_loop.close()
+
+    thread = threading.Thread(target=_run_monitor, daemon=True)
+    thread.start()
+    return manager, manager.port, thread
+
+
+def _shutdown_code_server(
+    manager: CodeServerManager | None, monitor_thread: threading.Thread | None
+) -> None:
+    """Stop code-server if it was started."""
+    import asyncio
+
+    if not manager:
+        return
+    asyncio.run(manager.shutdown())
+    if monitor_thread:
+        monitor_thread.join(timeout=5)
+
+
 def _run_interactive_mode_with_web(
     args: argparse.Namespace, agent_loop: AgentLoop, stdin_prompt: str | None
 ) -> None:
@@ -234,6 +297,9 @@ def _run_interactive_mode_with_web(
     from vibe.cli.web_ui.run_server import run_web_server_in_background
 
     token = os.environ.get("VIBE_WEB_TOKEN", "")
+    code_server_manager, code_server_port, monitor_thread = _spawn_code_server(
+        agent_loop.config
+    )
 
     # Mirror of run_textual_ui() VibeApp construction — kept inline to minimize
     # diff against origin/main. Update both sites if VibeApp gains new params.
@@ -260,15 +326,20 @@ def _run_interactive_mode_with_web(
     rprint(
         f"\n[green]Starting Web UI on port {args.web_port} (base path: {base_path})...[/]\n"
     )
+    cs_workdir = ""
+    if code_server_manager and code_server_manager.workdir:
+        cs_workdir = str(code_server_manager.workdir)
     web_server_thread, stop_web_server = run_web_server_in_background(
         port=args.web_port,
         token=token,
         base_path=base_path,
         agent_loop=agent_loop,
         tui_app=tui_app,
+        code_server_port=code_server_port,
+        code_server_workdir=cs_workdir,
     )
     rprint(
-        f"[green]Web UI started at http://localhost:{args.web_port}{base_path}?token={token}[/]\n"
+        f"[green]Web UI started at http://localhost:{args.web_port}{base_path.rstrip('/')}/login[/]\n"
     )
 
     session_id = tui_app.run()
@@ -277,6 +348,7 @@ def _run_interactive_mode_with_web(
     )
     stop_web_server()
     web_server_thread.join(timeout=5)
+    _shutdown_code_server(code_server_manager, monitor_thread)
 
 
 def run_cli(args: argparse.Namespace) -> None:  # noqa: PLR0915

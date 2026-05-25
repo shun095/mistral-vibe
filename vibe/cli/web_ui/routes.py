@@ -400,6 +400,8 @@ def register_routes(  # noqa: PLR0915
             return JSONResponse({"success": False, "error": "No TUI app available"})
         config = tui_app.config
         active_model = config.get_active_model()
+        cs_port = getattr(app.state, "code_server_port", 0) or 0
+        cs_workdir = getattr(app.state, "code_server_workdir", "") or ""
         return JSONResponse({
             "active_model": config.active_model,
             "thinking": active_model.thinking,
@@ -412,6 +414,8 @@ def register_routes(  # noqa: PLR0915
             "enable_web_notifications": config.enable_web_notifications,
             "loop_detection_enabled": config.loop_detection_enabled,
             "context_warnings": config.context_warnings,
+            "code_server_enabled": cs_port > 0,
+            "code_server_workdir": cs_workdir if cs_workdir else None,
         })
 
     @app.post(f"{prefix}/api/config")

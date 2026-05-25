@@ -497,6 +497,15 @@ DEFAULT_TTS_MODELS = [
 ]
 
 
+class CodeServerConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = False
+    port: int = Field(default=18080, ge=0, le=65535)
+    binary_path: str = ""
+    auto_install: bool = True
+
+
 class VibeConfig(BaseSettings):
     active_model: str = DEFAULT_ACTIVE_MODEL
     vim_keybindings: bool = False
@@ -601,6 +610,14 @@ class VibeConfig(BaseSettings):
         description=(
             "List of LSP (Language Server Protocol) server configurations. "
             "Each server can be enabled/disabled and configured with specific options."
+        ),
+    )
+
+    code_server: CodeServerConfig = Field(
+        default_factory=CodeServerConfig,
+        description=(
+            "code-server integration. When enabled, Vibe spawns and reverse-proxies "
+            "code-server so users can browse/edit files from the WebUI."
         ),
     )
 
