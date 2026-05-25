@@ -138,28 +138,20 @@ In Cursor / Pyright, the "Add import" quick fix is missing — use the workspace
 
 # AGENTS.md - User's Instructions for `custom-fix-*` branch
 
-You behave adhering this guidelines strictly to work on `custom-fix-*` branch. These user customization instructions should take precedence over the AGENTS.md file mentioned above.
+These rules take precedence over project-level AGENTS.md above.
 
 ## Override Scope
 
-Rules in this section modify the project-level rules above. Use this table to determine which rule applies:
+The table below determines which rule applies — project rules not listed remain in force.
 
-| Project Rule | Status in `custom-fix-*` |
+| Project Rule | Status |
 |---|---|
-| Core Principles | ADDITIVE — still applies |
-| Commands | UNCHANGED |
-| Project layout & module conventions | UNCHANGED |
-| Python style | UNCHANGED |
-| Typing & imports | UNCHANGED |
-| Pydantic | UNCHANGED |
-| Async | UNCHANGED |
-| Tools | UNCHANGED |
-| Logging & errors | UNCHANGED |
-| File I/O | UNCHANGED |
-| Tests | OVERRIDDEN — see [Testing Requirements](#-testing-requirements) |
-| Git | OVERRIDDEN — see [Git Operations](#git-operations) |
-| Editor tip | UNCHANGED |
-| Autoimprovement | OVERRIDDEN — see [Evidence Over Assertions](#evidence-over-assertions) |
+| Core Principles | **ADDITIVE** — custom rules augment, never replace project rules |
+| Commands, Layout, Style, Typing, Pydantic, Async, Tools, Logging, File I/O, Editor tip | **UNCHANGED** |
+| Tests | **OVERRIDDEN** — [Testing Requirements](#-testing-requirements) |
+| Git | **OVERRIDDEN** — [Git Operations](#git-operations) |
+| Autoimprovement | **OVERRIDDEN** — [Evidence Over Assertions](#evidence-over-assertions) |
+| Safety Rules | **NEW** — [Safety Rules](#-safety-rules) |
 
 ## 🛡️ Safety Rules
 
@@ -170,24 +162,17 @@ Rules in this section modify the project-level rules above. Use this table to de
 - ❌ **NEVER modify/delete files in `~/.vibe`** or write logs to `~/.vibe/logs/vibe.log`
 - ❌ **NEVER create task files in project root** - Use `./tmp/` for artifacts
 - ❌ **NEVER use filename versioning** (`*_v2`, `*_final`)
-- ❌ **NEVER kill processes on ports 9091-9093** - these are production ports in use
-- ❌ **NEVER use `pkill -f "vibe"`** - this kills production processes. Use specific PID or port-based killing instead.
-- ✅ **Backup before destructive operations** - prefer `git stash -u` instead of `git reset --hard`
-- ✅ **All commits MUST pass pre-commit hooks** - use 600s timeout for pre-commit commands
-- ✅ **Always stage changes first and wait for user approval before committing**
-- ✅ **Proactive Verification** - After any code change, automatically run relevant tests before responding. Testing is part of the fix, not a separate task.
-- ✅ **Follow the Rules You're Reading** - The guidelines in AGENTS.md apply to you. You MUST follow all rules. Before any action, verify compliance with existing rules.
+- ❌ **NEVER kill processes on ports 9091-9093** - production ports in use
+- ❌ **NEVER use `pkill -f "vibe"`** - kills production. Use specific PID or port-based killing.
+- ✅ **Backup before destructive ops** - prefer `git stash -u` over `git reset --hard`
+- ✅ **All commits MUST pass pre-commit hooks** - use 600s timeout
+- ✅ **Always stage first, wait for user approval before committing**
+- ✅ **Proactive Verification** - Run relevant tests after any code change. Testing is part of the fix.
+- ✅ **Follow the Rules You're Reading** - AGENTS.md rules apply. Verify compliance before action.
 
 ### Commit Approval Checkpoint
 
-Before running `git commit`, you MUST:
-
-1. Run `git diff --cached --stat` and show the output to the user
-2. Explicitly ask the user to approve the staged changes
-3. Wait for the user's explicit "yes" or "go ahead" before proceeding
-4. Only then run `git commit`
-
-Never skip steps 1-3. A passing pre-commit hook does not replace user approval.
+Before `git commit`: (1) show `git diff --cached --stat`, (2) ask user to approve, (3) wait for explicit "yes", (4) commit. Never skip. A passing pre-commit hook does not replace user approval.
 
 ## Debugging Methodology
 
@@ -195,84 +180,81 @@ Never skip steps 1-3. A passing pre-commit hook does not replace user approval.
 
 ### Honesty Over Appearance
 
-The user values accuracy and honesty over speed and polished output. A correct, incomplete answer builds trust. A wrong answer presented confidently destroys it.
+The user values accuracy over speed. A correct, incomplete answer builds trust. A wrong answer presented confidently destroys it.
 
-- **Run exactly what the user asks** — Do not add flags, options, or arguments to commands unless the user explicitly requests them. If you believe a flag is needed, ask first. Adding `--timeout`, `--ignore`, or any other parameter is a change to the user's command.
-- **Establish a baseline before adapting** — Follow instructions exactly first to confirm they work. Only then apply judgment or deviations. Never skip the baseline step and jump straight to your own approach.
-- **Analyze expected errors, don't hide them** — During development, errors are normal. Read the output, understand the cause, and continue. Do not re-run a broken command with silent modifications hoping for a different result.
-- **Stop and consult only when blocked** — Ask the user when: (1) a critical problem prevents completing the task and requires a trade-off decision, or (2) the procedure itself is broken and requires system-level changes (installing packages, admin access). For everything else, report the issue and proceed.
-- **Admit mistakes immediately** — If you realize you made an error (wrong command, wrong assumption, wrong file), state it plainly. Do not rationalize, reframe, or compound the error. "I should not have added that flag" is better than "the timeout was necessary because..."
-- **Report bad news early** — If tests fail, a build breaks, or a feature doesn't work, lead with the failure. Do not bury it in context or follow it with unrelated activity. The user can fix what they know about.
-- **Never lie to look competent** — Fabricating test results, claiming coverage without running tests, or presenting partial output as complete will be discovered. When it is, the cost is far higher than admitting the gap upfront.
-- **Report findings that match stated concerns** — When a linter, pre-commit hook, or diagnostic flags something that matches a concern the user explicitly stated (sensitive data, avoiding X, fixing Y), mention it in your response — even if you fix it silently. One line is enough: "Also found hardcoded path in E2E test, replaced with /path/to/project." The user may not need to decide, but they need to know their concern was triggered.
+- **Run exactly what the user asks** — No added flags, options, or arguments. If you believe a flag is needed, ask first.
+- **Never reinterpret commands** — When the user writes a command (e.g., `git diff`), run it as-is. Do not treat it as a natural language request and substitute your own command. "git diff" means `git diff`, not `git diff origin/main..HEAD`.
+- **Baseline first** — Follow instructions exactly first to confirm they work. Only then apply judgment. Never skip the baseline step.
+- **Errors are data** — Read output, understand cause, continue. Do not re-run with silent modifications.
+- **Consult only when blocked** — Ask on critical trade-offs or broken procedures. Report everything else and proceed.
+- **Own mistakes immediately** — "I should not have added that flag" beats any rationalization.
+- **Lead with failures** — Tests fail, build breaks, feature broken — state it first. Do not bury it.
+- **Never fabricate** — Fake results, unrun tests, partial output presented as complete — the cost is higher than admitting the gap.
+- **Report matching findings** — If a diagnostic flags something the user stated concern about, mention it. One line is enough.
 
 ### Evidence Over Assertions
 
-When making a claim about code behavior (e.g., "this error is pre-existing", "all tests pass"), **prove it with unfiltered output**. The user must be able to independently verify your conclusion.
+Prove claims with unfiltered output. The user must independently verify your conclusion.
 
-- **Never filter raw diagnostic output** — Do not pipe linter, test, diff, or pre-commit output through `grep`, `tail`, or `head` in the command that runs the tool. Filtering hides failures before you can see them.
-- **Write full output to file first, then search** — For any diagnostic command, redirect all output to a file (`> /tmp/result.log 2>&1`). After the file is written, you may use `grep` or `tail` on the file to locate relevant sections. When using `tail`, use at least `-n 100` to capture enough context. The full file must always exist as the source of truth.
-- **Do not categorize verification commands differently** — Any command whose output you use to claim success (pre-commit, pyright, ruff, pytest, npm test, npm run test:e2e, git diff, etc.) is a diagnostic command. The same no-filtering rule applies to all of them. Never treat a gate command as "infrastructure" and exempt it from evidence-first principles.
-- **Stash-and-compare properly** — When comparing two states (e.g., pre-existing vs introduced), run `git stash`, show the full diagnostic output, then `git stash pop`, show the full output again. Both outputs must be visible.
-- **One claim, one proof** — If you claim "X is pre-existing", show the tool output that demonstrates X existed before your changes. Without the output, the claim is noise.
-- **Run the proof before stating the claim** — Never state a causal diagnosis ("pre-existing", "flaky", "caused by change") before running the isolated test that proves it. If you believe X is pre-existing, run Saved working directory and index state WIP on custom-fix-2.10: 6c438c7 fix: default code-server port to auto-detect (0) instead of 18080 + the specific failing test first. If you believe X is flaky, run it twice on the same code. The claim is the conclusion of the test, not a hypothesis you announce before verifying. State uncertainty ("likely pre-existing, verifying now") rather than certainty until proven.
-- **Investigation is read-only** — When asked to investigate, diagnose, or review, do not edit files, commit changes, or modify configuration. Report findings and stop. The user decides what action to take. Do not convert an investigation task into a change task.
-- **Report facts, not judgments** — When presenting findings, describe what you observe without classifying whether it matters. Say "snapshot shows `pytest-913` vs `pytest-825`" rather than "temp path noise, not a real change." The user makes the judgment call.
-- **Do not suggest rule changes without being asked** — The Autoimprovement section permits suggesting rules; it does not authorize editing AGENTS.md. Propose the change and wait for approval before writing.
+- **Never filter diagnostic output** — No piping through `grep`, `tail`, or `head`. Write to file first (`> /tmp/result.log 2>&1`), then search the file. Use `tail -n 100` minimum. The full file is the source of truth.
+- **All verification commands are diagnostic** — Pre-commit, pyright, ruff, pytest, npm test, git diff — same no-filtering rule. Never exempt a gate command.
+- **Stash-and-compare properly** — `git stash`, show full output, `git stash pop`, show full output. Both visible.
+- **One claim, one proof** — Claim "X is pre-existing"? Show the output proving it. Without output, the claim is noise.
+- **Prove before diagnosing** — Never state "pre-existing", "flaky", or "caused by change" before running the isolated test. "Pre-existing"? Stash and re-run the failing test. "Flaky"? Run it twice on the same code. State uncertainty ("likely pre-existing, verifying now") until proven.
+- **Investigation is read-only** — No edits, commits, or config changes. Report findings and stop. Do not convert an investigation task into a change task. The user decides what action to take.
+- **Report facts, not judgments** — "Snapshot shows `pytest-913` vs `pytest-825`" not "temp path noise." User judges.
+- **Do not suggest rule changes without being asked** — Propose, wait for approval, then write.
 
 ### Diagnosing Test/Snapshot Failures
 
-When test output changes (failures, new warnings, snapshot mismatches), **check git history before theorizing about the cause**.
+**Check git history before theorizing.**
 
-- **Always run `git diff HEAD~3` first** — the simplest explanation is that code changed and the test reflects that. Rule out code changes before blaming environment, dependencies, or timing.
-- **Never name a bug cause without evidence** — do not label a failure as "race condition", "timing issue", "flaky", or "import order" without proving it. Deterministic structural differences are code changes, not races. A race produces random, inconsistent output across runs.
-- **Correlation is not causation** — adding a dependency and seeing a test change does not mean the dependency caused it. The branch may have uncommitted changes from a prior session. Check `git log --oneline -5` and `git status` before drawing conclusions.
-- **Admit ignorance over inventing explanations** — if you cannot explain why a test changed after checking the diff, say so. Do not fabricate a plausible-sounding technical term to cover the gap.
-- **Snapshot regression is a regression** — if `git stash` produces 0 mismatches and your working state produces N > 0, your changes caused it. Identify the specific test, inspect the diff report, and fix the root cause. A varying N across runs does not invalidate the finding — it indicates a race condition introduced by your change. Never dismiss a stash-proven regression as "flaky" or "pre-existing".
-- **Report regressions in final summary** — if any test suite shows a regression attributable to your changes (even if individual tests pass), state it explicitly in the final report. Do not claim "all green" when mismatches exist.
+- **Always `git diff HEAD~3` first** — Code changed, test reflects it. Rule this out before blaming environment, deps, or timing.
+- **Prove cause, never name it** — No "race condition", "timing issue", "flaky", "import order" without evidence. Deterministic diffs are code changes, not races.
+- **Check `git log --oneline -5` and `git status`** — Correlation is not causation. Uncommitted changes from prior sessions exist.
+- **Admit ignorance** — Cannot explain after checking diff? Say so. Do not fabricate technical terms.
+- **Stash-proven regression is your regression** — `git stash` = 0 mismatches, working state = N > 0? Your changes caused it. Identify the specific test, inspect the diff report, fix the root cause. Never dismiss as "flaky" or "pre-existing". Varying N indicates a race you introduced.
+- **Report regressions in summary** — State explicitly. Do not claim "all green" when mismatches exist.
 
 ### Debug Procedure
 
-Follow these 4 steps when diagnosing any bug:
-
-1. **Add debug logging thoroughly** — Insert `logger.debug()` at every decision point in the suspected code path. Log variable values, branch taken, and state transitions. Use `%s` positional args, not f-strings.
-2. **Plan controlled experiments** — Isolate variables by testing minimal cases first (e.g., single tool type), then incrementally add complexity. Compare behavior between known-good and broken scenarios. Use the same debug instrumentation across all experiments.
-3. **Capture stack traces** — When a function is called unexpectedly, log `"".join(traceback.format_stack(limit=8)).strip()` to identify the caller chain. This reveals execution paths that differ between scenarios.
-4. **Verify at render boundaries** — For UI bugs, log both Python state (properties, reactive values) AND rendered output (button labels, widget text). Python state being correct does NOT guarantee the render buffer reflects it.
+1. **Log thoroughly** — `logger.debug()` at every decision point. Variables, branches, state transitions. Use `%s` args, not f-strings.
+2. **Isolate** — Minimal case first, incrementally add complexity. Same instrumentation across experiments.
+3. **Trace callers** — Log `"".join(traceback.format_stack(limit=8)).strip()` when a function fires unexpectedly.
+4. **Verify at render boundaries** — For UI bugs, log Python state (properties, reactive values) AND rendered output (button labels, widget text). Correct state ≠ correct buffer.
 
 ### Systematic Caller Chain Analysis
 
-When a fix targets a function (e.g., "prevent X from being called"), **enumerate every call site before writing code**:
+When fixing a function, **enumerate every call site before writing code**:
 
-1. `grep` all callers of the target function
-2. For each caller, trace **who invokes it** (direct calls, callbacks, tool results, event handlers, async workers)
-3. Classify each path: must skip, must always execute, or conditional
-4. Apply the fix to every classified path — never assume only the obvious caller matters
-5. Verify no caller was missed by re-grep after changes
+1. `grep` all callers
+2. Trace **who invokes each** (direct, callbacks, tool results, event handlers, async workers)
+3. Classify: must skip, must always execute, or conditional
+4. Apply fix to every classified path — never assume only the obvious caller matters
+5. Re-grep after changes — verify no caller missed
 
-### Debugging Async/UI Bugs: Trace State Transitions
+### Debugging Async/UI Bugs
 
-When debugging async code or UI widget state, **prove claims with timestamped evidence**:
+**Prove claims with timestamped evidence.**
 
-- **Trace UI elements to code paths** — When a visual diff shows unexpected UI elements (extra notifications, missing widgets, duplicate toasts), trace the code path that produces them. Count how many times the producing function (e.g., `self.notify()`, `mount()`) is called along that path. A double notification almost always means the same function is called twice through different call chains.
-- **Log at mount/prune/refresh boundaries** — For widget-related bugs, log the widget class name and child count at every `mount`, `prune`, and `refresh` call. Use `time.monotonic()` for timestamps to establish call order. Write to a temp file (`/tmp/debug.txt`) with `flush()` to avoid buffer loss.
-- **Never claim "timing issue" without evidence** — If you suspect race conditions or stale state, prove it by logging the exact state at each async boundary. Show the timestamps and values that demonstrate the discrepancy.
-- **Enumerate the widget tree** — When explaining widget count discrepancies, list every widget in the container with its class name, history index (if mapped), and child count. Count manually to verify formulas rather than assuming counts match.
-- **Trace the formula** — When a computed value (e.g., `remaining = total - visible`) seems wrong, log every input variable at the point of computation. Show the arithmetic: `32 - 5 = 27`, not just the result.
-- **Include widget transitions proactively** — When investigating UI bugs, always show: (1) widgets created, (2) widgets pruned, (3) widgets remaining, (4) the computed count. Don't wait for the user to ask for this detail.
+- **Trace UI elements to code paths** — Extra notification? Count `self.notify()` calls along the path. Double notification = double call chain.
+- **Log at mount/prune/refresh** — Widget class, child count, `time.monotonic()` timestamp. Write to `/tmp/debug.txt` with `flush()`.
+- **Never claim "timing issue" without evidence** — Log exact state at each async boundary with timestamps. Show the discrepancy.
+- **Enumerate the widget tree** — List every widget: class, history index, child count. Count manually.
+- **Trace the formula** — Log inputs at computation: `32 - 5 = 27`, not just the result.
+- **Show transitions** — (1) created, (2) pruned, (3) remaining, (4) computed count. Proactively.
 
 ## Timeout Strategy
 
 For commands exceeding 30s, always set explicit `timeout`:
+
 - Pre-commit: `timeout=600`
 - Full test suite: `timeout=300`
 - Individual tests: `timeout=120`
 
-**Never bypass safety checks** due to timeouts. Retry with higher timeout before escalating.
+Never bypass safety checks due to timeouts. Retry with higher timeout first.
 
-**When asked to "analyze" or "review" code changes:**
-- This is NOT a read-only task - run full test suite and report results
-- Claiming "all tests pass" without running them is a critical failure
+**"Analyze" or "review" code changes** is NOT read-only — run full test suite. Claiming "all tests pass" without running them is a critical failure.
 
 ## Git Operations
 
@@ -290,56 +272,54 @@ EOF
 ```
 
 **Commit Command Rules:**
-- **ALWAYS use `<<'EOF'` heredoc** (or `printf ... | git commit -F -`) for commit messages. Never use `git commit -m` with multi-line messages — single-quote placement errors will silently drop the `Co-Authored-By` footer.
-- **After committing, verify with `git log -1 --format="%B"`** to confirm the full message including `Co-Authored-By` is present. Do not trust `git log --oneline` alone.
-- **Treat non-zero return codes and stderr as hard failures.** A commit that produces stderr output (e.g., `Generated: not found`) has failed — do not declare completion until you verify the message body.
+- **ALWAYS use `<<'EOF'` heredoc** (or `printf ... | git commit -F -`). Never `git commit -m` with multi-line messages — single-quote errors silently drop `Co-Authored-By`.
+- **Verify after committing** — `git log -1 --format="%B"`. Confirm `Co-Authored-By` is present. Do not trust `git log --oneline`.
+- **Non-zero return or stderr = hard failure.** Do not declare completion until verified.
 
 **Pre-commit Hook Failures:**
-1. Fix the issue (formatting, lint, etc.)
-2. Re-run pre-commit to verify fix
-3. Only then proceed to commit
-4. Report hook results in final summary
+1. Fix the issue
+2. Re-run pre-commit to verify
+3. Proceed to commit
+4. Report hook results in summary
 
 ## Change Impact Analysis
 
-**Before changing codes:**
+**Before changing code:**
 - Identify all call sites using `grep` or `lsp`
-- **Caller chain audit**: For each call site found, trace upward to discover who calls it (direct callers, indirect callers via callbacks, tool results, event handlers). Classify each path: does it need the change or must it behave differently? Apply the fix to every path that needs it. Never assume only one caller matters.
+- **Caller chain audit**: Trace upward — direct callers, indirect via callbacks, tool results, event handlers. Classify each path. Apply fix to every path. Never assume one caller.
 - Check for imports of affected symbols
-- Review dependent tests that may fail
-- Trace data flow and verify no unintended breaking changes
+- Review dependent tests
+- Trace data flow — verify no unintended breaking changes
 
 **After test failures:**
-- **Map failures to your diff first** — Before assuming a test failure is pre-existing or flaky, check whether your changed files touch the code path exercised by the failing test. If your changes add/remove/modify UI elements, notifications, or output format, the test diff is expected — update the snapshot or fix the code.
-- **Re-grep after changes** — After modifying code, re-run the same `grep` search to verify no new call sites were introduced that could trigger the same bug through a different path. After every change, re-grep every symbol you touched — new callers may have been added by other changes, or you may have missed indirect paths. The second pass catches what the first missed.
+- **Map failures to your diff first** — Your changes touch the failing test's code path? Expected. If you add/remove/modify UI elements, notifications, or output format — update the snapshot or fix the code.
+- **Re-grep after changes** — Re-grep every symbol you touched. New callers may have been added by other changes, or you may have missed indirect paths. Second pass catches what the first missed.
 
 ## Coding Requirements
 
 **Follow existing coding style:**
-- Investigate deeply before writing tests - understand placement, mocks, domain structure
-- Do NOT write in your own way - it causes financial losses
+- Investigate deeply before writing tests — placement, mocks, domain structure
+- Do NOT write in your own way — it causes financial losses
 - Use FakeBackend if necessary; use pilot.press() for UI tests
 - Do NOT assert internal behavior or mix textual_ui with acp
-- **ONLY use `main` branch as coding style reference** - not `custom-fix-*` branches
+- **ONLY use `main` branch as coding style reference** — not `custom-fix-*` branches
 
 **Minimize Git Diffs:**
-When adding features, minimize the diff against `origin/main` (the PR base), not just the previous commit:
-- Keep existing inline code inline; do not extract to helper functions unless the logic is genuinely new
-- Use early returns instead of `else:` blocks to avoid reindenting existing code
-- Do not add docstrings to existing functions; only add to genuinely new functions
-- Match original indentation from `origin/main` exactly when modifying code
-- Add new feature code as minimal additions rather than refactoring for "cleaner" structure
-Always check `git diff origin/main -- <file>` to verify the actual PR diff size.
+Minimize diff against `origin/main` (the PR base), not just the previous commit:
+- Keep existing inline code inline — no extracting helpers unless logic is genuinely new
+- Early returns over `else:` blocks — avoids reindenting
+- No docstrings on existing functions — genuinely new functions only
+- Match `origin/main` indentation exactly
+- Minimal additions over refactoring
+Always check `git diff origin/main -- <file>` to verify PR diff size.
 
-**Write cohesive, low-coupling code:**
-- Reuse existing logic when possible
-- This code will be maintained long-term
+**Write cohesive, low-coupling code.** Reuse existing logic. This code is long-term maintenance.
 
 ## 🧪 Testing Requirements
 
 ### Verify Before Reporting Completion
 
-After any code modification, always run relevant tests before claiming the fix is complete. Do not wait for explicit instruction to test. Testing is part of the fix, not a separate task.
+Always run relevant tests after any code change. Do not wait for explicit instruction. Testing is part of the fix.
 
 ### MANDATORY: Run ALL Three Test Suites
 
@@ -358,18 +338,11 @@ JavaScript tests: X passed, Y skipped, Z failed
 E2E tests:        X passed, Y skipped, Z failed
 ```
 
-**Critical failures:**
-- Running partial tests (`pytest tests/specific/path/`)
-- Skipping E2E tests
-- Claiming "tests pass" without running all 3
-- Piping pre-commit output through `tail` or `grep` without first writing full output to a file
+**Critical failures:** partial tests, skipping E2E, claiming "tests pass" without running all 3, piping pre-commit output without writing to file first.
 
 ### Test Reporting
 
-**When claiming coverage:**
-- Name specific test function (e.g., `test_lsp_find_references`)
-- State test file path (e.g., `tests/tools/test_lsp_goto.py`)
-- Do not use generic checkmarks without citation
+When claiming coverage: name the test function, state the file path. No generic checkmarks without citation.
 
 ### Debugging
 
@@ -378,9 +351,7 @@ E2E tests:        X passed, Y skipped, Z failed
 
 ### Unit Test Guidelines
 
-**Minimize mocking:**
-- Use actual implementations whenever feasible
-- Mock ONLY for: external services, environment-dependent files, side effects
+**Minimize mocking:** actual implementations whenever feasible. Mock ONLY external services, environment-dependent files, side effects.
 
 ### TUI Tests
 
@@ -388,30 +359,28 @@ All TUI changes MUST be tested with `terminalcp` skill.
 
 ### Snapshot Tests
 
-When a snapshot test fails, **never update the reference snapshot blindly**. Always verify the visual change first:
+**Never update reference snapshots blindly.** Always verify visually first:
 
-1. Run the failing test with `--snapshot-report=snapshot_report.html` to generate a diff report (this does NOT overwrite the reference)
-2. Use the `playwright-cli` skill to open `snapshot_report.html` and take a screenshot
-3. Use `read_image` to inspect the screenshot and verify the change is intentional
-4. Only update the snapshot with `--snapshot-update` if the visual change is correct and expected
-5. If the change is unwanted, fix the code instead of updating the snapshot
+1. Run with `--snapshot-report=snapshot_report.html` (does NOT overwrite reference)
+2. Use `playwright-cli` to open the report, take a screenshot
+3. Use `read_image` to inspect — verify the change is intentional
+4. Only `--snapshot-update` if visual change is correct
+5. If unwanted, fix the code
 
-**Mandatory visual inspection before any statistical analysis.** Do not run stash-and-compare loops, bisect experiments, or flakiness tests until you have opened the diff report and inspected it with `read_image`. Statistics answer "did my change cause this?" but only the visual diff answers "what broke?" — and the visual answer may invalidate your hypothesis entirely. Forming a hypothesis ("it's flaky", "it's pre-existing") before looking at the diff is a violation of the evidence-first principle.
+**Visual inspection before statistics.** Do not run stash-and-compare loops or flakiness tests until you have inspected the diff with `read_image`. Statistics answer "did my change cause this?" — visual diff answers "what broke?" and may invalidate your hypothesis. Forming a hypothesis before looking at the diff violates evidence-first.
 
-Example:
 ```bash
 uv run pytest tests/snapshots/test_xxx.py --snapshot-report=snapshot_report.html
-# Then use playwright-cli to screenshot snapshot_report.html
-# Then use read_image to review
+# playwright-cli screenshot → read_image review
 # If correct: uv run pytest tests/snapshots/test_xxx.py --snapshot-update
 ```
 
-**Reading raw snapshot SVGs:** Snapshot SVGs live in `tests/snapshots/__snapshots__/<test_module>/`. To visually inspect them:
-1. Copy SVGs to scratchpad, create an HTML file embedding them via `<object data="file.svg" type="image/svg+xml">`
-2. Serve via `nohup python3 -m http.server 8765 --directory <scratchpad>` (file:// protocol is blocked by Chromium)
-3. Use `playwright-cli open --browser=chromium http://localhost:8765/page.html` + `screenshot`
-4. Use `read_image` on the screenshot
-5. **ALWAYS kill the HTTP server after use** — `kill <pid>` or `lsof -ti :8765 | xargs kill`. Never leave ports open. Avoid ports 9091-9093 (production).
+**Reading raw snapshot SVGs:** Snapshots live in `tests/snapshots/__snapshots__/<test_module>/`:
+1. Copy SVGs to scratchpad, embed via `<object data="file.svg" type="image/svg+xml">`
+2. Serve: `nohup python3 -m http.server 8765 --directory <scratchpad>` (file:// blocked by Chromium)
+3. `playwright-cli open --browser=chromium http://localhost:8765/page.html` + `screenshot`
+4. `read_image` on the screenshot
+5. **ALWAYS kill the server** — `kill <pid>` or `lsof -ti :8765 | xargs kill`. Avoid ports 9091-9093.
 
 ### Testing Commands
 
@@ -421,37 +390,33 @@ npm install                       # JavaScript dependencies
 npm run playwright:install        # Playwright browsers
 uv run pytest tests/              # Python tests
 npm test                          # JavaScript tests
-nohup npm run test:e2e > /tmp/e2e-test-output.log 2>&1 & echo $! > /tmp/e2e-pid  # E2E tests (background)
-npm run test:e2e:coverage         # E2E tests with JS coverage + HTML report
+nohup npm run test:e2e > /tmp/e2e-test-output.log 2>&1 & echo $! > /tmp/e2e-pid
+npm run test:e2e:coverage         # E2E with JS coverage + HTML report
 npm run test:e2e:ui               # Interactive E2E
 npm run test:e2e:headed           # Visible browser
 ```
 
 **E2E Test Notes:**
-- `bash` calls are stateless — `$!` vanishes between calls. Run these as **two separate** `bash` calls:
+- `bash` calls are stateless — `$!` vanishes between calls. Run as **two separate** `bash` calls:
   ```bash
-  # Kill any existing E2E process before starting new run
+  # Kill existing E2E, then start new
   if kill -0 $(cat /tmp/e2e-pid 2>/dev/null) 2>/dev/null; then kill $(cat /tmp/e2e-pid) 2>/dev/null; while kill -0 $(cat /tmp/e2e-pid) 2>/dev/null; do sleep 1; done; fi; lsof -ti :9100-9109 | xargs -r kill -9 2>/dev/null || true; nohup npm run test:e2e > /tmp/e2e-test-output.log 2>&1 & echo $! > /tmp/e2e-pid
   ```
   ```bash
   while kill -0 $(cat /tmp/e2e-pid) 2>/dev/null; do sleep 2; done; tail -20 /tmp/e2e-test-output.log
   ```
-- NEVER use `tail -f` (blocks forever). NEVER kill ports 9091-9093 (production).
-- E2E uses ports 9100-9109. Kill safely: `lsof -ti :9100-9109 | xargs -r kill -9 2>/dev/null || true`
+- NEVER `tail -f` (blocks). NEVER kill ports 9091-9093 (production).
+- E2E uses ports 9100-9109. Kill: `lsof -ti :9100-9109 | xargs -r kill -9 2>/dev/null || true`
 
 ### Build Commands
 
 ```bash
-# Build Cython extensions (required for performance-critical modules)
 uv run python scripts/build_cython.py    # Manual build
-uv sync --no-editable                   # Build with dependencies (triggers build hook)
-
-# For wheel builds (build hooks run automatically)
-uv build --wheel
+uv sync --no-editable                   # Build with deps (triggers hook)
+uv build --wheel                        # Wheel builds (hooks run automatically)
 ```
 
-**Note:** Editable installs (`uv sync` without `--no-editable`) do not run build hooks. Use `--no-editable` or manually run the build script to compile Cython extensions.
-
+Editable installs (`uv sync` without `--no-editable`) do not run build hooks. Use `--no-editable` or the build script.
 
 ## Tool Usage Guidelines
 
