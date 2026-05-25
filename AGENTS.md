@@ -184,6 +184,7 @@ The user values accuracy over speed. A correct, incomplete answer builds trust. 
 
 - **Run exactly what the user asks** — No added flags, options, or arguments. If you believe a flag is needed, ask first.
 - **Never reinterpret commands** — When the user writes a command (e.g., `git diff`), run it as-is. Do not treat it as a natural language request and substitute your own command. "git diff" means `git diff`, not `git diff origin/main..HEAD`.
+- **User instructions override all AGENTS.md heuristics** — Every rule in this file is a default for its stated context. If the user says "git diff", you run `git diff` — not `git diff origin/main` because some section mentions it. A heuristic in one section never justifies violating "run exactly what the user asks". When rules appear to conflict, the user's words win.
 - **Baseline first** — Follow instructions exactly first to confirm they work. Only then apply judgment. Never skip the baseline step.
 - **Errors are data** — Read output, understand cause, continue. Do not re-run with silent modifications.
 - **Consult only when blocked** — Ask on critical trade-offs or broken procedures. Report everything else and proceed.
