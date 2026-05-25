@@ -45,17 +45,17 @@ test.describe("Status & Monitoring", () => {
     await updateContextProgress(page, 90000, 100000);
     await expect(contextProgress).toBeVisible({ timeout: 10000 });
     await expect(contextProgress).toHaveClass(/high/);
-    await expect(contextProgress).toHaveText(/90% \(90k\/100k tokens\)/);
+    await expect(contextProgress).toHaveText(/90%\s*\n\s*\(90k\/100k tokens\)/);
 
     // 80% → yellow/medium
     await updateContextProgress(page, 80000, 100000);
     await expect(contextProgress).toHaveClass(/medium/);
-    await expect(contextProgress).toHaveText(/80% \(80k\/100k tokens\)/);
+    await expect(contextProgress).toHaveText(/80%\s*\n\s*\(80k\/100k tokens\)/);
 
     // 50% → green/low
     await updateContextProgress(page, 50000, 100000);
     await expect(contextProgress).toHaveClass(/low/);
-    await expect(contextProgress).toHaveText(/50% \(50k\/100k tokens\)/);
+    await expect(contextProgress).toHaveText(/50%\s*\n\s*\(50k\/100k tokens\)/);
   });
 
   test("should show processing indicator with spinner and percentage", async ({

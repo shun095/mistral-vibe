@@ -926,7 +926,7 @@ class VibeClient {
         const currentK = Math.round(currentTokens / 1000);
         const maxK = Math.round(maxTokens / 1000);
 
-        this.elements.contextProgress.textContent = `${percentage}% (${currentK}k/${maxK}k tokens)`;
+        this.elements.contextProgress.textContent = `${percentage}%\n(${currentK}k/${maxK}k tokens)`;
 
         // Update color class based on usage
         this.elements.contextProgress.classList.remove('low', 'medium', 'high');
