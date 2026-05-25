@@ -5,7 +5,7 @@
 import { test as base, Page, APIRequestContext, test as playwrightTest } from "@playwright/test";
 import { ServerManager } from "./server-manager";
 import { MockBackendClient } from "./mock-backend";
-import { resetTestState, Selectors, waitForConnected } from "../helpers/test-utils";
+import { resetTestState, Selectors, waitForConnected, setLogPort } from "../helpers/test-utils";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -100,6 +100,9 @@ export const test = base.extend<WebUIFixtures & { page: Page }>({
   // Page fixture with automatic state reset between tests
   // Depends on mockBackend to ensure mock data is reset before and after each test
   page: async ({ page, webServer, authToken, mockBackend }, use, testInfo) => {
+    // Set port for diagnostic logs — all E2E logs use this as correlation key
+    setLogPort(webServer.getPort());
+
     // Capture browser console logs
     const consoleLogs: string[] = [];
     page.on("console", (msg) => {
@@ -134,6 +137,34 @@ export const test = base.extend<WebUIFixtures & { page: Page }>({
       Selectors.messageInput,
       { timeout: 10000 }
     );
+
+    // Diagnostic: log page state if there are unexpected messages after fresh connect.
+    // The server sends 'reset' → clears DOM → streams history → 'connected'.
+    // A fresh server should have no history, so only the welcome message should exist.
+    // If tool-call cards appear here, it indicates cross-test contamination.
+    const pageState = await page.evaluate(() => {
+      const container = document.getElementById('messages');
+      if (!container) return { error: 'messages container not found' };
+      const messages = Array.from(container.querySelectorAll('.message'));
+      return {
+        totalMessages: messages.length,
+        toolCalls: messages.filter(m => m.classList.contains('tool-call')).map(m => ({
+          toolName: m.querySelector('.tool-name')?.textContent?.trim(),
+          status: m.querySelector('.tool-status')?.textContent?.trim(),
+          collapsed: m.classList.contains('collapsed'),
+        })),
+        systemMessages: messages.filter(m => m.classList.contains('system')).map(m => m.textContent?.slice(0, 80)),
+        assistantMessages: messages.filter(m => m.classList.contains('assistant')).length,
+        userMessages: messages.filter(m => m.classList.contains('user')).length,
+        containerInnerHTML: container.innerHTML.slice(0, 500),
+      };
+    });
+
+    if (pageState.toolCalls?.length > 0) {
+      console.error(
+        `[E2E] [${webServer.getPort()}] stale tool-cards: ${JSON.stringify(pageState.toolCalls)}`
+      );
+    }
 
     await use(page);
 

@@ -4,6 +4,11 @@
 
 import { Page, Locator } from "@playwright/test";
 
+// Set by the page fixture; read by resetTestState for diagnostic logs.
+let _logPort = 0;
+export function setLogPort(port: number): void { _logPort = port; }
+function _e2e(msg: string): string { return `[E2E] [${_logPort}] ${msg}`; }
+
 /**
  * Common CSS selectors for WebUI elements.
  */
@@ -369,20 +374,16 @@ export async function resetTestState(
 
   try {
     // CRITICAL: Click interrupt button FIRST if processing is ongoing
-    // This stops the processing and should close any approval popup
     const interruptBtn = page.locator(Selectors.interruptBtn);
     const isInterruptVisible = await interruptBtn.isVisible().catch(() => false);
 
     if (isInterruptVisible) {
-      console.log("Reset: interrupting processing...");
+      console.log(_e2e("interrupting"));
       try {
         await interruptBtn.click({ timeout: 3000 });
-        // Wait for processing to stop (processing indicator disappears)
-        await waitForHidden(page, Selectors.processingIndicator, 3000).catch(() =>
-          console.debug("Reset: processing indicator did not disappear")
-        );
+        await waitForHidden(page, Selectors.processingIndicator, 3000).catch(() => {});
       } catch {
-        console.warn("Reset: failed to click interrupt button");
+        console.warn(_e2e("failed to click interrupt button"));
       }
     }
 
@@ -391,38 +392,27 @@ export async function resetTestState(
     const isApprovalVisible = await approvalPopup.isVisible().catch(() => false);
 
     if (isApprovalVisible) {
-      // Try No button first (most reliable way to dismiss)
       const noButton = approvalPopup.locator('.popup-btn.no:has-text("No")').first();
       try {
         await noButton.click({ timeout: 2000 });
-        // Wait for approval popup to disappear
-        await waitForHidden(page, Selectors.approvalPopup, 3000).catch(() =>
-          console.debug("Reset: approval popup did not disappear after clicking No")
-        );
+        await waitForHidden(page, Selectors.approvalPopup, 3000).catch(() => {});
       } catch {
-        // Try close button
         const closeButton = approvalPopup.locator('.popup-close, .modal-close').first();
         try {
           await closeButton.click({ timeout: 2000 });
-          // Wait for approval popup to disappear
-          await waitForHidden(page, Selectors.approvalPopup, 3000).catch(() =>
-            console.debug("Reset: approval popup did not disappear after clicking close")
-          );
+          await waitForHidden(page, Selectors.approvalPopup, 3000).catch(() => {});
         } catch {
-          console.warn("Reset: could not close approval popup");
+          console.warn(_e2e("could not close approval popup"));
         }
       }
     }
 
-    // Just reload the page - don't use /clear as it consumes mock responses
-
-    // Reload page - cookie-based auth will persist
     await page.goto(webServerUrl, {
       timeout: 10000,
       waitUntil: "domcontentloaded"
     });
   } catch (navigateError) {
-    console.warn("Reset: navigation failed:", String(navigateError));
+    console.warn(_e2e(`navigation failed: ${String(navigateError)}`));
     return;
   }
 
@@ -455,7 +445,6 @@ export async function resetTestState(
       { timeout: 8000 }
     );
   } catch (error) {
-    // Log but don't fail - the next test's page fixture setup will handle readiness
-    console.warn("Reset: page readiness check failed:", String(error));
+    console.warn(_e2e(`readiness check failed: ${String(error)}`));
   }
 }

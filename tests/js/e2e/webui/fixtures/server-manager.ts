@@ -187,7 +187,7 @@ export class ServerManager {
         this.serverPidFile = `/tmp/vibe-e2e-server-${this.actualPort}.pid`;
         fs.writeFileSync(this.serverPidFile, String(this.process.pid), "utf-8");
         console.log(
-          `[E2E] port=${this.actualPort} pid=${this.process.pid} dir=${this.e2eTestDir}`
+          `[E2E] [${this.actualPort}] pid=${this.process.pid} dir=${this.e2eTestDir}`
         );
       }
 
