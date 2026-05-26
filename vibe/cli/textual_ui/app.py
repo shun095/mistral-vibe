@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import sys
 import time
 from typing import Any, ClassVar, Literal, assert_never, cast
 
@@ -500,6 +501,7 @@ class VibeApp(App):  # noqa: PLR0904
         self._rewind_mode = False
         self._rewind_highlighted_widget: UserMessage | None = None
         self._fatal_init_error = False
+        self._restart_pending = False
         self._force_quit_task: asyncio.Task[None] | None = None
         self.commands = self._build_command_registry()
         self._loop_runner = ScheduledLoopRunner(
@@ -3221,18 +3223,9 @@ class VibeApp(App):  # noqa: PLR0904
         finally:
             self.exit(result=self._get_session_resume_info())
 
-    def _restart_app(self, **kwargs: Any) -> None:
-        """Restart the application using os.execv.
-
-        This replaces the current process with a new instance,
-        preserving TTY attachment and process ID.
-        """
-        import os
-        import sys
-
-        os.execv(
-            sys.executable, [sys.executable, "-m", "vibe.cli.entrypoint"] + sys.argv[1:]
-        )
+    async def _restart_app(self, **kwargs: Any) -> None:
+        self._restart_pending = True
+        await self._exit_app()
 
     def _make_default_voice_manager(self) -> VoiceManager:
         try:
@@ -4265,3 +4258,8 @@ def run_textual_ui(
     print_session_resume_message(
         session_id, agent_loop.stats, agent_loop.config.session_logging
     )
+
+    if app._restart_pending:
+        os.execv(
+            sys.executable, [sys.executable, "-m", "vibe.cli.entrypoint"] + sys.argv[1:]
+        )
