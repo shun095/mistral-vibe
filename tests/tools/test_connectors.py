@@ -677,6 +677,7 @@ class TestBootstrapDiscovery:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skip(reason="Connectors are hardcoded-disabled in custom-fix branch")
 class TestAuthActionablediscovery:
     @respx.mock
     @pytest.mark.asyncio

@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from textual.widgets import Markdown
 
-from vibe.cli.textual_ui.ansi_markdown import AnsiMarkdown
 from vibe.cli.textual_ui.widgets.messages import StreamingMessageBase
 
 
@@ -35,7 +35,7 @@ class MessageTestDouble(StreamingMessageBase):
         self._batch_buffer: list[str] = []
         self._flush_task: asyncio.Task | None = None
         self._stream = None
-        self._markdown = AnsiMarkdown()  # Set to truthy value so _flush_batch works
+        self._markdown = Markdown()  # Set to truthy value so _flush_batch works
         self._at_bottom = at_bottom
         self._should_write = should_write
         self._fake_stream: FakeStream = FakeStream()

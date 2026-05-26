@@ -22,12 +22,11 @@ from textual.widgets import Markdown, Static
 from textual.widgets._markdown import MarkdownStream
 from watchfiles import awatch
 
-from vibe.cli.textual_ui.ansi_markdown import AnsiMarkdown as Markdown
+from vibe.cli.textual_ui.widgets.no_markup_static import NoMarkupStatic
+from vibe.cli.textual_ui.widgets.spinner import SpinnerMixin, SpinnerType
 
 _COLLAPSED_TRIANGLE = "\u25b6"
 _EXPANDED_TRIANGLE = "\u25bc"
-from vibe.cli.textual_ui.widgets.no_markup_static import NoMarkupStatic
-from vibe.cli.textual_ui.widgets.spinner import SpinnerMixin, SpinnerType
 
 
 class NonSelectableStatic(NoMarkupStatic):

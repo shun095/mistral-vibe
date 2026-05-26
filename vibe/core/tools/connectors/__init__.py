@@ -14,4 +14,9 @@ def connectors_enabled() -> bool:
     return os.getenv(CONNECTORS_ENV_VAR) == "1"
 
 
-__all__ = ["CONNECTORS_ENV_VAR", "ConnectorAuthAction", "ConnectorRegistry", "connectors_enabled"]
+__all__ = [
+    "CONNECTORS_ENV_VAR",
+    "ConnectorAuthAction",
+    "ConnectorRegistry",
+    "connectors_enabled",
+]
