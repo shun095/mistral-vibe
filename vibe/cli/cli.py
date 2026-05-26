@@ -349,6 +349,10 @@ def _run_interactive_mode_with_web(
     stop_web_server()
     web_server_thread.join(timeout=5)
     _shutdown_code_server(code_server_manager, monitor_thread)
+    if tui_app._restart_pending:
+        os.execv(
+            sys.executable, [sys.executable, "-m", "vibe.cli.entrypoint"] + sys.argv[1:]
+        )
 
 
 def run_cli(args: argparse.Namespace) -> None:  # noqa: PLR0915
