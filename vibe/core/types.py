@@ -396,7 +396,13 @@ class BaseEvent(BaseModel, ABC):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-class UserMessageEvent(BaseEvent):
+class _IndexedMessage(BaseEvent):
+    """Mixin: user message events carry a position in the message list."""
+
+    message_index: int | None = None
+
+
+class UserMessageEvent(_IndexedMessage):
     content: Content
     message_id: str
 
@@ -611,7 +617,7 @@ class RateLimitError(Exception):
 # New event classes for extended functionality
 
 
-class ContinueableUserMessageEvent(BaseEvent):
+class ContinueableUserMessageEvent(_IndexedMessage):
     """Event for user messages that require the conversation to continue."""
 
     content: Content

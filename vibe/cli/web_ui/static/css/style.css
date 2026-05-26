@@ -243,6 +243,12 @@ body {
     border-bottom-right-radius: 4px;
 }
 
+.message.message-highlight {
+    outline: 3px solid #fbbf24;
+    outline-offset: 2px;
+    box-shadow: 0 0 12px rgba(251, 191, 36, 0.5);
+}
+
 .message.assistant {
     align-self: stretch;
     max-width: 100%;

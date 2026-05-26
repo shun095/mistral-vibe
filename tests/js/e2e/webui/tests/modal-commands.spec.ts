@@ -404,9 +404,10 @@ test.describe("Rewind Modal (/rewind)", () => {
 
     await waitForHidden(page, Selectors.rewindModal, 15000);
 
-    const systemMsg = page.locator(Selectors.systemMessage).last();
-    await expect(systemMsg).toBeVisible({ timeout: 10000 });
-    await expect(systemMsg).toContainText("Rewinding to message");
+    // After rewind, target message is removed from history — input is pre-filled
+    await expect(page.locator(Selectors.userMessage)).toHaveCount(0, {
+      timeout: 10000,
+    });
 
     const input = page.locator(Selectors.messageInput);
     await expect(input).toBeVisible();
@@ -414,15 +415,13 @@ test.describe("Rewind Modal (/rewind)", () => {
     expect(inputValue).toContain(testMsg);
   });
 
-  test("should show restore files system message when clicking Edit & Restore Files", async ({
+  test("should highlight target message when clicking Edit & Restore Files", async ({
     page,
   }) => {
     await page.fill(Selectors.messageInput, "Test message for file restore");
     await page.click(Selectors.sendButton);
-    await page.locator(Selectors.userMessage).last().waitFor({
-      state: "visible",
-      timeout: 5000,
-    });
+    const targetMsg = page.locator(Selectors.userMessage).last();
+    await expect(targetMsg).toBeVisible({ timeout: 5000 });
 
     await sendMessage(page, "/rewind");
     await waitForVisible(page, Selectors.rewindModal);
@@ -435,9 +434,215 @@ test.describe("Rewind Modal (/rewind)", () => {
 
       await waitForHidden(page, Selectors.rewindModal, 15000);
 
-      const systemMsg = page.locator(Selectors.systemMessage).last();
-      await expect(systemMsg).toBeVisible({ timeout: 10000 });
-      await expect(systemMsg).toContainText("restoring files");
+      await expect(targetMsg).toHaveClass(/message-highlight/, {
+        timeout: 10000,
+      });
     }
+  });
+
+  test("should rewind to last message and keep earlier messages with 3+ messages", async ({
+    page,
+  }) => {
+    // Send 3 distinct messages
+    await page.fill(Selectors.messageInput, "Alpha message one");
+    await page.click(Selectors.sendButton);
+    await page.locator(Selectors.userMessage).last().waitFor({
+      state: "visible",
+      timeout: 5000,
+    });
+
+    await page.fill(Selectors.messageInput, "Beta message two");
+    await page.click(Selectors.sendButton);
+    await page.locator(Selectors.userMessage).last().waitFor({
+      state: "visible",
+      timeout: 5000,
+    });
+
+    await page.fill(Selectors.messageInput, "Gamma message three");
+    await page.click(Selectors.sendButton);
+    await page.locator(Selectors.userMessage).last().waitFor({
+      state: "visible",
+      timeout: 5000,
+    });
+
+    // Open rewind modal — defaults to selecting the last (newest) message
+    await sendMessage(page, "/rewind");
+    await waitForVisible(page, Selectors.rewindModal);
+
+    const editBtn = page.locator("#rewind-edit-btn");
+    await expect(editBtn).toBeVisible();
+    await editBtn.click({ force: true });
+
+    await waitForHidden(page, Selectors.rewindModal, 15000);
+
+    // Gamma removed from history; Alpha and Beta remain
+    const remaining = page.locator(Selectors.userMessage);
+    await expect(remaining).toHaveCount(2, { timeout: 10000 });
+    await expect(remaining.nth(0)).toContainText("Alpha message one");
+    await expect(remaining.nth(1)).toContainText("Beta message two");
+
+    // Verify input contains the last message content
+    const input = page.locator(Selectors.messageInput);
+    const inputValue = await input.inputValue();
+    expect(inputValue).toContain("Gamma message three");
+  });
+
+  test("should rewind correctly after page reload then rewind", async ({
+    page,
+  }) => {
+    // Send 2 messages
+    await page.fill(Selectors.messageInput, "First reload message");
+    await page.click(Selectors.sendButton);
+    await page.locator(Selectors.userMessage).last().waitFor({
+      state: "visible",
+      timeout: 5000,
+    });
+
+    await page.fill(Selectors.messageInput, "Second reload message");
+    await page.click(Selectors.sendButton);
+    await page.locator(Selectors.userMessage).last().waitFor({
+      state: "visible",
+      timeout: 5000,
+    });
+
+    // Reload the page — events are replayed with message_index
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(5000);
+
+    // Verify messages are restored
+    const userMessages = page.locator(Selectors.userMessage);
+    await expect(userMessages).toHaveCount(2, { timeout: 10000 });
+
+    // Rewind — last message removed, first remains
+    await sendMessage(page, "/rewind");
+    await waitForVisible(page, Selectors.rewindModal);
+
+    const editBtn = page.locator("#rewind-edit-btn");
+    await expect(editBtn).toBeVisible();
+    await editBtn.click({ force: true });
+
+    await waitForHidden(page, Selectors.rewindModal, 15000);
+
+    // Second message removed; first remains
+    await expect(page.locator(Selectors.userMessage)).toHaveCount(1, {
+      timeout: 10000,
+    });
+    await expect(
+      page.locator(Selectors.userMessage).nth(0)
+    ).toContainText("First reload message");
+
+    const inputValue = await page.locator(Selectors.messageInput).inputValue();
+    expect(inputValue).toContain("Second reload message");
+  });
+
+  test("should rewind from 2nd selected message after reload, not 1st", async ({
+    page,
+  }) => {
+    // Register distinct mock responses: alpha, beta, and 3rd for rewound submission
+    await page.evaluate(async () => {
+      const base = globalThis.__VIBE_BASE_PATH__ || "/";
+      const cookie = document.cookie.match(/vibe_auth=([^;]+)/);
+      const token = cookie ? cookie[1] : "";
+      for (const text of [
+        "Alpha response content",
+        "Beta response content",
+        "Response to rewound edited beta",
+      ]) {
+        await fetch(base + "api/test/mock-data", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Cookie: `vibe_auth=${token}`,
+          },
+          body: JSON.stringify({ response_text: text }),
+        });
+      }
+    });
+
+    // Send 2 distinct messages
+    await page.fill(Selectors.messageInput, "Target alpha message");
+    await page.click(Selectors.sendButton);
+    await page.locator(Selectors.userMessage).last().waitFor({
+      state: "visible",
+      timeout: 5000,
+    });
+    // Wait for alpha's assistant response
+    await page.locator(Selectors.assistantMessage).last().waitFor({
+      state: "visible",
+      timeout: 10000,
+    });
+
+    await page.fill(Selectors.messageInput, "Target beta message");
+    await page.click(Selectors.sendButton);
+    await page.locator(Selectors.userMessage).last().waitFor({
+      state: "visible",
+      timeout: 5000,
+    });
+    // Wait for beta's assistant response
+    const betaOldResponse = page.locator(Selectors.assistantMessage).last();
+    await expect(betaOldResponse).toBeVisible({ timeout: 10000 });
+    await expect(betaOldResponse).toContainText("Beta response content");
+
+    // 1st rewind: select the FIRST message (alpha) — default is last (beta)
+    await sendMessage(page, "/rewind");
+    await waitForVisible(page, Selectors.rewindModal);
+    const firstItem = page.locator(".rewind-message-item").first();
+    await firstItem.click({ force: true });
+    await expect(firstItem).toHaveClass(/selected/);
+    // Close without executing
+    await page.locator(Selectors.rewindModalClose).click({ force: true });
+    await waitForHidden(page, Selectors.rewindModal, 10000);
+
+    // Reload browser
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(5000);
+
+    // 2nd rewind: select the SECOND (last) message (beta) — different from 1st
+    await sendMessage(page, "/rewind");
+    await waitForVisible(page, Selectors.rewindModal);
+    const lastItem = page.locator(".rewind-message-item").last();
+    await expect(lastItem).toHaveClass(/selected/);
+
+    const editBtn = page.locator("#rewind-edit-btn");
+    await editBtn.click({ force: true });
+    await waitForHidden(page, Selectors.rewindModal, 15000);
+
+    // Verify input has beta (2nd target), not alpha (1st target)
+    const inputVal = await page.locator(Selectors.messageInput).inputValue();
+    expect(inputVal).toContain("Target beta message");
+    expect(inputVal).not.toContain("Target alpha message");
+
+    // Edit the beta message before sending to prove it's actually changed
+    await page.fill(Selectors.messageInput, "Edited beta after rewind");
+
+    // Submit the rewinded message
+    await page.click(Selectors.sendButton);
+
+    // Alpha user message must remain (not rewound)
+    const allUserMsgs = page.locator(Selectors.userMessage);
+    await expect(allUserMsgs.nth(0)).toBeVisible({ timeout: 10000 });
+    await expect(allUserMsgs.nth(0)).toContainText("Target alpha message");
+
+    // Alpha's response must remain — find it by content, not index
+    const alphaResponse = page
+      .locator(Selectors.assistantMessage)
+      .filter({ hasText: "Alpha response content" });
+    await expect(alphaResponse).toBeVisible({ timeout: 10000 });
+
+    // Beta's old response must be GONE (rewound)
+    const betaResponse = page
+      .locator(Selectors.assistantMessage)
+      .filter({ hasText: "Beta response content" });
+    await expect(betaResponse).not.toBeVisible();
+
+    // Edited beta message appears (not original "Target beta message")
+    await expect(allUserMsgs.nth(1)).toContainText("Edited beta after rewind");
+    await expect(allUserMsgs.nth(1)).not.toContainText("Target beta message");
+
+    // New response to edited beta appears
+    const newResponse = page
+      .locator(Selectors.assistantMessage)
+      .filter({ hasText: "Response to rewound edited beta" });
+    await expect(newResponse).toBeVisible({ timeout: 15000 });
   });
 });

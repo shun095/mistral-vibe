@@ -349,7 +349,7 @@ class VibeClient {
                 if (event.content) {
                     this._clearUiState();
                 }
-                this._renderUserMessage(event.content);
+                this._renderUserMessage(event.content, event.message_index);
                 if (this._matchPendingContent(event.content)) {
                     this._clearPendingInput();
                 }
@@ -474,7 +474,7 @@ class VibeClient {
 
         switch (eventType) {
             case 'UserMessageEvent':
-                this._renderUserMessage(event.content);
+                this._renderUserMessage(event.content, event.message_index);
                 break;
             case 'AssistantEvent':
                 this.messageStreamer.handleEvent(event);
@@ -489,7 +489,7 @@ class VibeClient {
                 this.messageStreamer.handleEvent(event);
                 break;
             case 'ContinueableUserMessageEvent':
-                this._renderUserMessage(event.content);
+                this._renderUserMessage(event.content, event.message_index);
                 break;
             case 'BashCommandEvent':
                 this._renderBashCommandEvent(event);
@@ -539,19 +539,19 @@ class VibeClient {
         }
     }
 
-    _renderUserMessage(content) {
+    _renderUserMessage(content, messageIndex) {
         if (!content) return;
 
         if (Array.isArray(content)) {
             content.forEach(item => {
                 if (item.type === 'image_url') {
-                    this.addImageMessage(item.image_url?.url || '');
+                    this.addImageMessage(item.image_url?.url || '', messageIndex);
                 } else if (item.type === 'text') {
-                    this.addMessage('user', item.text);
+                    this.addMessage('user', item.text, messageIndex);
                 }
             });
         } else {
-            this.addMessage('user', content);
+            this.addMessage('user', content, messageIndex);
         }
     }
 
@@ -561,6 +561,7 @@ class VibeClient {
         ).find(div => div.textContent?.includes('Welcome to Mistral Vibe'));
 
         this.elements.messages.innerHTML = '';
+        this._clearRewindHighlight();
         if (welcomeMessageDiv) {
             this.elements.messages.appendChild(welcomeMessageDiv);
         }
@@ -1501,9 +1502,16 @@ class VibeClient {
         this._clearUiState();
     }
 
-    addMessage(type, content) {
+    _tagMessageIndex(el, index) {
+        if (index != null) {
+            el.dataset.messageIndex = index;
+        }
+    }
+
+    addMessage(type, content, messageIndex) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${type}`;
+        this._tagMessageIndex(messageDiv, messageIndex);
         const contentDiv = document.createElement('div');
         contentDiv.className = 'content';
 
@@ -1519,9 +1527,10 @@ class VibeClient {
         this.scrollToBottom();
     }
 
-    addImageMessage(imageData) {
+    addImageMessage(imageData, messageIndex) {
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message user';
+        this._tagMessageIndex(messageDiv, messageIndex);
 
         let imageUrl = imageData;
         // Only add data URI prefix if it's not already a data URL or HTTP(S) URL
@@ -1672,6 +1681,7 @@ class VibeClient {
         const imageData = this.imageAttachment?.getImageData();
 
         if (!content && !imageData) return;
+        this._clearRewindHighlight();
 
         if (content && !imageData) {
             // Check for !!command or !command (bash execution) first
@@ -3511,6 +3521,24 @@ class VibeClient {
         this._rewindMessages = [];
     }
 
+    _highlightRewindTarget(messageIndex) {
+        this._clearRewindHighlight();
+        const target = this.elements.messages.querySelector(
+            `.message.user[data-message-index="${messageIndex}"]`
+        );
+        if (!target) return;
+
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        target.classList.add('message-highlight');
+    }
+
+    _clearRewindHighlight() {
+        const highlighted = this.elements.messages.querySelector('.message.message-highlight');
+        if (highlighted) {
+            highlighted.classList.remove('message-highlight');
+        }
+    }
+
     async executeRewind(restoreFiles) {
         if (this._rewindSelectedIndex === null || this._rewindMessages.length === 0) return;
 
@@ -3528,7 +3556,6 @@ class VibeClient {
 
             if (result.success) {
                 this.hideRewindModal();
-                this.addMessage('system', `Rewinding to message #${msg.message_index}${restoreFiles ? ' (restoring files)' : ''}`);
                 if (result.message_content) {
                     this.elements.input.value = result.message_content;
                     this.autoResizeTextarea();

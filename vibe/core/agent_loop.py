@@ -964,6 +964,7 @@ class AgentLoop:
             if user_message.message_id is None:
                 raise AgentLoopError("User message must have a message_id")
             content, message_id = user_msg, user_message.message_id
+            msg_index = len(self.messages) - 1
             self.stats.steps += 1
         else:
             # Replay - find last user message
@@ -981,13 +982,16 @@ class AgentLoop:
             # Type guard: message_id should never be None for user messages
             assert last_user_message.message_id is not None
             content, message_id = msg_content, last_user_message.message_id
+            msg_index = self.messages.index(last_user_message)
             # Don't increment steps for replay
 
         # Set the current user message ID
         self._current_user_message_id = message_id
 
         # Yield a UserMessageEvent
-        user_msg_event = UserMessageEvent(content=content, message_id=message_id)
+        user_msg_event = UserMessageEvent(
+            content=content, message_id=message_id, message_index=msg_index
+        )
         self._notify_event_listeners(user_msg_event)
         yield user_msg_event
 

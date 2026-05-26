@@ -613,6 +613,14 @@ def register_routes(  # noqa: PLR0915
                 msg_index, restore_files=restore_files
             )
 
+            # Notify WebUI listeners that history was truncated so they reload
+            if agent_loop_ref is not None:
+                from vibe.core.ui_events import MessageResetEvent
+
+                agent_loop_ref._notify_event_listeners(
+                    MessageResetEvent(reason="clear")
+                )
+
             error_msgs = [str(e) for e in errors] if errors else []
             return JSONResponse({
                 "success": True,

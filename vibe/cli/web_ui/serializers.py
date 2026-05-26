@@ -84,25 +84,19 @@ def messages_to_events(  # noqa: PLR0912, PLR0915
                 if tc.id and tc.function.name:
                     tool_call_to_name[tc.id] = tc.function.name
 
-    for msg in messages:  # noqa: PLR1702
+    for msg_index, msg in enumerate(messages):  # noqa: PLR1702
         if msg.role == Role.system:
             continue
 
         if msg.role == Role.user:
             user_content = msg.content if msg.content else ""
-
+            kw = {"content": user_content, "message_index": msg_index}
             if msg.tool_call_id:
-                events.append(
-                    ContinueableUserMessageEvent(
-                        content=user_content, message_id=msg.message_id
-                    )
-                )
+                kw["message_id"] = msg.message_id
+                events.append(ContinueableUserMessageEvent(**kw))
             else:
-                events.append(
-                    UserMessageEvent(
-                        content=user_content, message_id=msg.message_id or ""
-                    )
-                )
+                kw["message_id"] = msg.message_id or ""
+                events.append(UserMessageEvent(**kw))
 
         elif msg.role == Role.assistant:
             if msg.reasoning_content:
