@@ -9,7 +9,7 @@ from vibe.core.types import ToolStreamEvent
 
 
 class FakeToolArgs(BaseModel):
-    pass
+    q: str = ""
 
 
 class FakeToolResult(BaseModel):

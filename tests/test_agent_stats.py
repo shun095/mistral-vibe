@@ -704,26 +704,25 @@ class TestClearHistoryObserverBugfix:
 
 class TestEditLastMessageEvents:
     @pytest.mark.asyncio
-    async def test_edit_last_message_emits_message_reset_event(self) -> None:
-        """edit_last_message emits MessageResetEvent with reason='clear'."""
+    async def test_truncate_last_turn_emits_message_reset_event(self) -> None:
+        """truncate_last_turn emits MessageResetEvent with reason='clear'."""
         from vibe.core.ui_events import MessageResetEvent
 
         agent = build_test_agent_loop(backend=FakeBackend())
         events_received: list[object] = []
         agent.add_event_listener(events_received.append)
 
-        # Add a user message first so there's something to edit
         agent.messages.append(LLMMessage(role=Role.user, content="Original message"))
 
-        await agent.edit_last_message("Edited message")
+        await agent.truncate_last_turn()
 
         reset_events = [e for e in events_received if isinstance(e, MessageResetEvent)]
         assert len(reset_events) == 1
         assert reset_events[0].reason == "clear"
 
     @pytest.mark.asyncio
-    async def test_edit_last_message_truncates_history(self) -> None:
-        """edit_last_message truncates messages after the last user message."""
+    async def test_truncate_last_turn_removes_user_and_assistant(self) -> None:
+        """truncate_last_turn removes last user message and preceding assistant."""
         agent = build_test_agent_loop(backend=FakeBackend())
 
         # Build: system + user + assistant + user + assistant
@@ -736,11 +735,13 @@ class TestEditLastMessageEvents:
             LLMMessage(role=Role.assistant, content="Second assistant response")
         )
 
-        pre_count = len(agent.messages)
-        await agent.edit_last_message("Edited second message")
+        await agent.truncate_last_turn()
 
-        assert len(agent.messages) < pre_count
-        assert agent.messages[-1].content == "Edited second message"
+        # Last user + subsequent messages removed, leaving: system + user1 + assistant1
+        assert len(agent.messages) == 3
+        assert agent.messages[0].role == Role.system
+        assert agent.messages[1].role == Role.user
+        assert agent.messages[2].role == Role.assistant
 
 
 class TestStatsEdgeCases:

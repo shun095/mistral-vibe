@@ -127,7 +127,9 @@ async def test_process_queue_single_entry(tmp_path: Path) -> None:
 
     calls: list[str] = []
 
-    async def mock_handle_user_message(message: str) -> None:
+    async def mock_handle_user_message(
+        message: str, *, title_source: str | None = None
+    ) -> None:
         calls.append(message)
 
     app._handle_user_message = mock_handle_user_message
@@ -150,7 +152,7 @@ async def test_process_queue_stops_on_routing_error(tmp_path: Path) -> None:
 
     calls: list[str] = []
 
-    async def failing_handle(message: str) -> None:
+    async def failing_handle(message: str, *, title_source: str | None = None) -> None:
         calls.append(message)
         raise RuntimeError("fail")
 
@@ -219,7 +221,9 @@ async def test_process_queue_skips_empty_entry(tmp_path: Path) -> None:
 
     calls: list[str] = []
 
-    async def mock_handle_user_message(message: str) -> None:
+    async def mock_handle_user_message(
+        message: str, *, title_source: str | None = None
+    ) -> None:
         calls.append(message)
 
     app._handle_user_message = mock_handle_user_message

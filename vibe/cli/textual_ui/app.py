@@ -1909,7 +1909,6 @@ class VibeApp(App):  # noqa: PLR0904
             ) as events:
                 await self._handle_agent_loop_events(events)
 
-            # Task completed successfully — process queued messages
             self._spawn_queue_task()
             if self.event_handler:
                 self.event_handler.handle_event(
@@ -1925,8 +1924,6 @@ class VibeApp(App):  # noqa: PLR0904
         except Exception as e:
             await self._handle_turn_error()
 
-            # _watch_init_completion already rendered the fatal startup error
-            # and told the user to exit -- don't duplicate the message.
             if self._fatal_init_error:
                 return
 
@@ -1937,7 +1934,6 @@ class VibeApp(App):  # noqa: PLR0904
                 ErrorMessage(message, collapsed=self._tools_collapsed)
             )
 
-            # Broadcast LLM error to WebUI
             self._web_broadcast_manager._broadcast_llm_error_event(e)
         finally:
             self._narrator_manager.on_turn_end()
@@ -3071,81 +3067,20 @@ class VibeApp(App):  # noqa: PLR0904
             )
             return
 
-        # Spawn task immediately so UI remains responsive
-        self._agent_task = asyncio.create_task(self._execute_edit_turn(new_content))
+        # Spawn task so UI remains responsive during edit
+        self._agent_task = asyncio.create_task(self._handle_edit_turn(new_content))
 
-    async def _execute_edit_turn(self, new_content: str) -> None:
-        """Execute the edit turn: modify history, rebuild UI, run agent loop."""
-        self._agent_running = True
+    async def _handle_edit_turn(self, new_content: str) -> None:
+        """Truncate last turn, rebuild UI, then run normal agent turn."""
+        await self.agent_loop.truncate_last_turn()
+        self._reset_ui_state()
 
-        loading_area = self._cached_loading_area or self.query_one(
-            "#loading-area-content"
-        )
-        loading = LoadingWidget()
-        self._loading_widget = loading
-        await loading_area.mount(loading)
+        messages_area = self._cached_messages_area or self.query_one("#messages")
+        await messages_area.remove_children()
+        await self._resume_history_from_messages()
 
-        try:
-            # Edit the last message in the agent loop
-            await self.agent_loop.edit_last_message(new_content)
-
-            # Reset UI state
-            self._reset_ui_state()
-
-            # Remove old message widgets and rebuild
-            messages_area = self._cached_messages_area or self.query_one("#messages")
-            await messages_area.remove_children()
-            await self._resume_history_from_messages()
-
-            # Trigger the agent loop to generate a new response
-            async with aclosing(self.agent_loop.act(None)) as events:
-                async for event in events:
-                    if self.event_handler:
-                        self.event_handler.handle_event(
-                            event,
-                            loading_active=self._loading_widget is not None,
-                            loading_widget=self._loading_widget,
-                        )
-
-            # Success — notify after the loop completes without error
-            self._terminal_notifier.notify(NotificationContext.COMPLETE)
-            self._web_broadcast_manager._broadcast_web_notification(
-                "complete",
-                WEB_NOTIFICATION_COMPLETE_TITLE,
-                WEB_NOTIFICATION_COMPLETE_MESSAGE,
-            )
-            await self._mount_and_scroll(
-                UserCommandMessage("Message edited and conversation restarted.")
-            )
-            self._spawn_queue_task()
-
-        except asyncio.CancelledError:
-            if self._loading_widget and self._loading_widget.parent:
-                await self._loading_widget.remove()
-            if self.event_handler:
-                await self.event_handler.stop_current_tool_call(success=False)
-            raise
-        except Exception as e:
-            if self._loading_widget and self._loading_widget.parent:
-                await self._loading_widget.remove()
-            if self.event_handler:
-                await self.event_handler.stop_current_tool_call(success=False)
-
-            await self._mount_and_scroll(
-                ErrorMessage(str(e), collapsed=self._tools_collapsed)
-            )
-
-            # Broadcast LLM error to WebUI
-            self._web_broadcast_manager._broadcast_llm_error_event(e)
-        finally:
-            self._agent_running = False
-            self._interrupt_requested = False
-            if self._loading_widget:
-                await self._loading_widget.remove()
-            self._loading_widget = None
-            if self.event_handler:
-                self.event_handler.finalize_streaming()
-            await self._refresh_windowing_from_history()
+        await self._mount_and_scroll(UserMessage(new_content))
+        await self._handle_agent_loop_turn(new_content)
 
     async def _loop_command(self, cmd_args: str = "", **kwargs: Any) -> None:
         widget = await self._loop_runner.handle_command(cmd_args)
@@ -3397,7 +3332,7 @@ class VibeApp(App):  # noqa: PLR0904
             if chat.is_at_bottom:
                 self.call_after_refresh(chat.anchor)
 
-    def _focus_current_bottom_app(self) -> None:
+    def _focus_current_bottom_app(self) -> None:  # noqa: PLR0912
         try:
             match self._current_bottom_app:
                 case BottomApp.Input:
@@ -3741,7 +3676,7 @@ class VibeApp(App):  # noqa: PLR0904
             pass
         self._last_escape_time = None
 
-    def _try_interrupt_bottom_app_escape(self) -> bool:
+    def _try_interrupt_bottom_app_escape(self) -> bool:  # noqa: PLR0912
         if self._current_bottom_app == BottomApp.Config:
             self._handle_config_app_escape()
         elif self._current_bottom_app == BottomApp.Voice:

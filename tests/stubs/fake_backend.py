@@ -99,18 +99,28 @@ class FakeBackend(BackendLike):
         if self._exception_to_raise:
             raise self._exception_to_raise
 
-        self._requests_messages.append(list(messages))
-        self._requests_extra_headers.append(extra_headers)
-        self._requests_metadata.append(metadata)
+        import sys
 
-        if self._streams:
-            stream = self._streams.pop(0)
-            chunk_agg = LLMChunk(message=LLMMessage(role=Role.assistant))
-            for chunk in stream:
-                chunk_agg += chunk
-            return chunk_agg
+        try:
+            self._requests_messages.append(list(messages))
+            self._requests_extra_headers.append(extra_headers)
+            self._requests_metadata.append(metadata)
 
-        return mock_llm_chunk(content="")
+            if self._streams:
+                stream = self._streams.pop(0)
+                chunk_agg = LLMChunk(message=LLMMessage(role=Role.assistant))
+                for chunk in stream:
+                    chunk_agg += chunk
+                return chunk_agg
+
+            return mock_llm_chunk(content="")
+        except Exception as e:
+            print(
+                f"[FAKE] complete ERROR: {type(e).__name__}: {e}",
+                file=sys.stderr,
+                flush=True,
+            )
+            raise
 
     async def complete_streaming(
         self,
@@ -128,16 +138,26 @@ class FakeBackend(BackendLike):
         if self._exception_to_raise:
             raise self._exception_to_raise
 
-        self._requests_messages.append(list(messages))
-        self._requests_extra_headers.append(extra_headers)
-        self._requests_metadata.append(metadata)
+        import sys
 
-        if self._streams:
-            stream = list(self._streams.pop(0))
-        else:
-            stream = [mock_llm_chunk(content="")]
-        for chunk in stream:
-            yield chunk
+        try:
+            self._requests_messages.append(list(messages))
+            self._requests_extra_headers.append(extra_headers)
+            self._requests_metadata.append(metadata)
+
+            if self._streams:
+                stream = list(self._streams.pop(0))
+            else:
+                stream = [mock_llm_chunk(content="")]
+            for chunk in stream:
+                yield chunk
+        except Exception as e:
+            print(
+                f"[FAKE] complete_streaming ERROR: {type(e).__name__}: {e}",
+                file=sys.stderr,
+                flush=True,
+            )
+            raise
 
     async def count_tokens(
         self,

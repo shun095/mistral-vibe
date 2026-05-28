@@ -6,21 +6,18 @@ from fastapi.testclient import TestClient
 import pytest
 
 from vibe.cli.web_ui.config import AUTH_COOKIE_NAME
+from vibe.core.tools.base import BaseTool
 
 
 class MockToolManager:
     """Mock tool manager for testing."""
 
-    def __init__(self, tools: dict[str, object] | None = None):
-        self._tools = tools or {}
-
-    @property
-    def available_tools(self) -> dict[str, object]:
-        return self._tools
+    def __init__(self, tools: dict[str, type[BaseTool] | BaseTool] | None = None):
+        self.available_tools: dict[str, type[BaseTool] | BaseTool] = tools or {}
 
     def get(self, name: str):
-        if name in self._tools:
-            return self._tools[name]
+        if name in self.available_tools:
+            return self.available_tools[name]
         raise ValueError(f"Unknown tool: {name}")
 
 

@@ -162,7 +162,7 @@ async def test_process_queued_message_after_compaction():
     # Mock the handle_user_message method
     handle_user_message_called = False
 
-    async def mock_handle_user_message(message):
+    async def mock_handle_user_message(message, *, title_source: str | None = None):
         nonlocal handle_user_message_called
         handle_user_message_called = True
         assert message == test_message
@@ -268,7 +268,7 @@ async def test_clear_queued_message_after_compaction_failure():
     # Mock the handle_user_message method to verify it's NOT called
     handle_user_message_called = False
 
-    async def mock_handle_user_message(message):
+    async def mock_handle_user_message(message, *, title_source: str | None = None):
         nonlocal handle_user_message_called
         handle_user_message_called = True
 

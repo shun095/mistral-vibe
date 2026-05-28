@@ -22,10 +22,9 @@ from pydantic_settings import (
     PydanticBaseSettingsSource,
     SettingsConfigDict,
 )
+from textual.theme import BUILTIN_THEMES
 import tomlkit
 from tomlkit.exceptions import TOMLKitError
-from textual.theme import BUILTIN_THEMES
-import tomli_w
 
 from vibe.core.agents.models import BuiltinAgentName
 from vibe.core.config.harness_files import get_harness_files_manager

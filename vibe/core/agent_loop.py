@@ -713,7 +713,7 @@ class AgentLoop:
     @requires_init
     async def act(
         self,
-        msg: Content | None = None,
+        msg: Content,
         client_message_id: str | None = None,
         *,
         auto_title: str | None = None,
@@ -721,13 +721,11 @@ class AgentLoop:
         """Run a conversation turn.
 
         Args:
-            msg: User message content to append. Pass None to replay the
-                last user message already in history (e.g., after /edit).
+            msg: User message content to append.
             client_message_id: Optional client-side message identifier.
         """
-        if msg is not None:
-            self._clean_message_history()
-            self.rewind_manager.create_checkpoint()
+        self._clean_message_history()
+        self.rewind_manager.create_checkpoint()
         try:
             model_name = self.config.get_active_model().name
         except ValueError:
@@ -958,43 +956,20 @@ class AgentLoop:
 
     async def _conversation_loop(  # noqa: PLR0912
         self,
-        user_msg: Content | None = None,
+        user_msg: Content,
         client_message_id: str | None = None,
         *,
         auto_title: str | None = None,
     ) -> AsyncGenerator[BaseEvent]:
-        # Inline message preparation logic (replaces strategy pattern)
-        if user_msg is not None:
-            # New message
-            user_message = LLMMessage(
-                role=Role.user, content=user_msg, message_id=client_message_id
-            )
-            self.messages.append(user_message)
-            if user_message.message_id is None:
-                raise AgentLoopError("User message must have a message_id")
-            content, message_id = user_msg, user_message.message_id
-            msg_index = len(self.messages) - 1
-            self.stats.steps += 1
-        else:
-            # Replay - find last user message
-            history_messages = [msg for msg in self.messages if msg.role != Role.system]
-            last_user_message: LLMMessage | None = None
-            for msg in reversed(history_messages):
-                if msg.role == Role.user:
-                    last_user_message = msg
-                    break
-
-            if last_user_message is None:
-                raise AgentLoopError("No user message found in history")
-
-            msg_content = last_user_message.content or ""
-            # Type guard: message_id should never be None for user messages
-            assert last_user_message.message_id is not None
-            content, message_id = msg_content, last_user_message.message_id
-            msg_index = self.messages.index(last_user_message)
-            # Don't increment steps for replay
-
-        # Set the current user message ID
+        user_message = LLMMessage(
+            role=Role.user, content=user_msg, message_id=client_message_id
+        )
+        self.messages.append(user_message)
+        if user_message.message_id is None:
+            raise AgentLoopError("User message must have a message_id")
+        content, message_id = user_msg, user_message.message_id
+        msg_index = len(self.messages) - 1
+        self.stats.steps += 1
         self._current_user_message_id = message_id
 
         # Yield a UserMessageEvent
@@ -2037,20 +2012,14 @@ class AgentLoop:
         # Notify listeners that history was cleared
         self._notify_event_listeners(MessageResetEvent(reason="clear"))
 
-    async def edit_last_message(self, new_content: str) -> None:
-        """Edit the last user message and remove all subsequent messages.
+    async def truncate_last_turn(self) -> None:
+        """Remove the last user message and its preceding assistant message.
 
-        This method finds the last user message, replaces its content with the
-        new content, and removes all messages that came after it (including
-        assistant responses, tool calls, and tool results).
-
-        Args:
-            new_content: The new content for the last user message.
+        Truncates history to enable re-sending a new message via normal flow.
 
         Raises:
-            AgentLoopStateError: If no user message exists to edit.
+            AgentLoopStateError: If no user message exists to truncate.
         """
-        # Find the last user message (excluding system message at index 0)
         last_user_index = None
         for i in range(len(self.messages) - 1, 0, -1):
             if self.messages[i].role == Role.user:
@@ -2059,21 +2028,12 @@ class AgentLoop:
 
         if last_user_index is None:
             raise AgentLoopStateError(
-                "No user message found to edit. Start a conversation first."
+                "No user message found to truncate. Start a conversation first."
             )
 
-        # Get the message ID of the last user message for tracking
-        edited_message_id = self.messages[last_user_index].message_id
-
-        # Remove all messages after the last user message
         with self.messages.silent():
-            # Keep only messages up to and including the last user message
-            self.messages.reset(self.messages[: last_user_index + 1])
+            self.messages.reset(self.messages[:last_user_index])
 
-            # Update the content of the last user message
-            self.messages[last_user_index].content = new_content
-
-        # Save the updated message history
         await self.session_logger.save_interaction(
             self.messages,
             self.stats,
@@ -2082,11 +2042,7 @@ class AgentLoop:
             self.agent_profile,
         )
 
-        # Notify listeners that history was truncated
         self._notify_event_listeners(MessageResetEvent(reason="clear"))
-
-        # Update the current user message ID for tracking
-        self._current_user_message_id = edited_message_id
 
     @requires_init
     async def compact(self, extra_instructions: str = "") -> str:
