@@ -133,7 +133,8 @@ The table below determines which rule applies — project rules not listed remai
 - Create task files in project root. Use `./tmp/` for artifacts instead.
 - Use filename versioning (`*_v2`, `*_final`).
 - Kill processes on ports 9091-9093 (production) or use `pkill -f "vibe"` (kills production). Use specific PID or port-based killing instead.
-- Filter diagnostic output — no piping through `grep`, `tail`, or `head`. Write to file first (`> ./tmp/result.log 2>&1`), then search. Use `tail -n 100` minimum. The full file is the source of truth.
+- Pipe command output through `grep`, `tail`, or `head` — always write full output to file first (`> /tmp/result.log 2>&1`).
+- Use `grep` to search log files — always read the full summary block with `tail -n 100` first. Grep silently drops lines you didn't anticipate (flaky tests, warnings). Only grep after you've seen the full summary.
 - Fabricate results, unrun tests, or partial output presented as complete.
 - Suggest rule changes without being asked.
 
@@ -145,6 +146,7 @@ The table below determines which rule applies — project rules not listed remai
 - Follow the rules you're reading. Verify compliance before action.
 - "Analyze" or "review" code changes is NOT read-only — run full test suite. Claiming "all tests pass" without running them is a critical failure.
 - Investigation is read-only: no edits, commits, or config changes. Report findings and stop. User decides action.
+- Read log files with `tail -n 100` to see the full summary block before reporting results. Never grep a log file without first reading its tail — grep misses lines you didn't anticipate (flaky, warnings, partial failures).
 
 **Timeout Strategy:** For commands exceeding 30s, always set explicit `timeout`: Pre-commit 300s, full test suite 300s, individual tests 120s. Never bypass safety checks due to timeouts. Retry with higher timeout first.
 

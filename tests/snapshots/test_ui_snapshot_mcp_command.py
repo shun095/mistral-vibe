@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from typing import cast
-from unittest.mock import patch
 
-import pytest
 from textual.pilot import Pilot
 
 from tests.snapshots.base_snapshot_test_app import BaseSnapshotTestApp, default_config
@@ -14,7 +12,7 @@ from tests.stubs.fake_mcp_registry import (
     FakeMCPRegistryWithBrokenServer,
 )
 from vibe.core.config import MCPHttp, MCPStdio
-from vibe.core.tools.connectors import CONNECTORS_ENV_VAR, ConnectorAuthAction
+from vibe.core.tools.connectors import ConnectorAuthAction
 from vibe.core.tools.mcp.tools import RemoteTool
 
 _FAKE_CONNECTORS = {
@@ -79,7 +77,6 @@ async def _run_mcp_command(pilot: Pilot, command: str) -> None:
     await pilot.pause(0.1)
 
 
-@pytest.mark.xdist_group(name="snapshots")
 def test_snapshot_mcp_no_servers(snap_compare: SnapCompare) -> None:
     async def run_before(pilot: Pilot) -> None:
         await _run_mcp_command(pilot, "/mcp")
@@ -91,7 +88,6 @@ def test_snapshot_mcp_no_servers(snap_compare: SnapCompare) -> None:
     )
 
 
-@pytest.mark.xdist_group(name="snapshots")
 def test_snapshot_mcp_broken_server(snap_compare: SnapCompare) -> None:
     async def run_before(pilot: Pilot) -> None:
         await _run_mcp_command(pilot, "/mcp")
@@ -102,7 +98,6 @@ def test_snapshot_mcp_broken_server(snap_compare: SnapCompare) -> None:
     assert snap_compare(app, terminal_size=(120, 36), run_before=run_before)
 
 
-@pytest.mark.xdist_group(name="snapshots")
 def test_snapshot_mcp_overview(snap_compare: SnapCompare) -> None:
     async def run_before(pilot: Pilot) -> None:
         await _run_mcp_command(pilot, "/mcp")
@@ -111,7 +106,6 @@ def test_snapshot_mcp_overview(snap_compare: SnapCompare) -> None:
     assert snap_compare(app, terminal_size=(120, 36), run_before=run_before)
 
 
-@pytest.mark.xdist_group(name="snapshots")
 def test_snapshot_mcp_overview_navigate_down(snap_compare: SnapCompare) -> None:
     async def run_before(pilot: Pilot) -> None:
         await _run_mcp_command(pilot, "/mcp")
@@ -122,7 +116,6 @@ def test_snapshot_mcp_overview_navigate_down(snap_compare: SnapCompare) -> None:
     assert snap_compare(app, terminal_size=(120, 36), run_before=run_before)
 
 
-@pytest.mark.xdist_group(name="snapshots")
 def test_snapshot_mcp_enter_drills_into_server(snap_compare: SnapCompare) -> None:
     async def run_before(pilot: Pilot) -> None:
         await _run_mcp_command(pilot, "/mcp")
@@ -136,7 +129,6 @@ def test_snapshot_mcp_enter_drills_into_server(snap_compare: SnapCompare) -> Non
     assert snap_compare(app, terminal_size=(120, 36), run_before=run_before)
 
 
-@pytest.mark.xdist_group(name="snapshots")
 def test_snapshot_mcp_server_arg(snap_compare: SnapCompare) -> None:
     async def run_before(pilot: Pilot) -> None:
         await _run_mcp_command(pilot, "/mcp filesystem")
@@ -146,7 +138,6 @@ def test_snapshot_mcp_server_arg(snap_compare: SnapCompare) -> None:
     assert snap_compare(app, terminal_size=(120, 36), run_before=run_before)
 
 
-@pytest.mark.xdist_group(name="snapshots")
 def test_snapshot_mcp_backspace_returns_to_overview(snap_compare: SnapCompare) -> None:
     async def run_before(pilot: Pilot) -> None:
         await _run_mcp_command(pilot, "/mcp filesystem")
@@ -157,7 +148,6 @@ def test_snapshot_mcp_backspace_returns_to_overview(snap_compare: SnapCompare) -
     assert snap_compare(app, terminal_size=(120, 36), run_before=run_before)
 
 
-@pytest.mark.xdist_group(name="snapshots")
 def test_snapshot_mcp_escape_closes(snap_compare: SnapCompare) -> None:
     async def run_before(pilot: Pilot) -> None:
         await _run_mcp_command(pilot, "/mcp")
@@ -168,7 +158,6 @@ def test_snapshot_mcp_escape_closes(snap_compare: SnapCompare) -> None:
     assert snap_compare(app, terminal_size=(120, 36), run_before=run_before)
 
 
-@pytest.mark.xdist_group(name="snapshots")
 def test_snapshot_mcp_refresh_shortcut(snap_compare: SnapCompare) -> None:
     async def run_before(pilot: Pilot) -> None:
         await _run_mcp_command(pilot, "/mcp")
@@ -252,8 +241,6 @@ class SnapshotTestAppConnectorsMixedState(BaseSnapshotTestApp):
 # ---------------------------------------------------------------------------
 
 
-@patch.dict("os.environ", {CONNECTORS_ENV_VAR: "1"})
-@pytest.mark.xdist_group(name="snapshots")
 def test_snapshot_mcp_with_connectors_overview(snap_compare: SnapCompare) -> None:
 
     async def run_before(pilot: Pilot) -> None:
@@ -344,8 +331,6 @@ def test_snapshot_mcp_help_bar_shows_connect(snap_compare: SnapCompare) -> None:
     )
 
 
-@patch.dict("os.environ", {CONNECTORS_ENV_VAR: "1"})
-@pytest.mark.xdist_group(name="snapshots")
 def test_snapshot_mcp_connectors_only(snap_compare: SnapCompare) -> None:
 
     async def run_before(pilot: Pilot) -> None:
@@ -358,8 +343,6 @@ def test_snapshot_mcp_connectors_only(snap_compare: SnapCompare) -> None:
     )
 
 
-@patch.dict("os.environ", {CONNECTORS_ENV_VAR: "1"})
-@pytest.mark.xdist_group(name="snapshots")
 def test_snapshot_mcp_connectors_sorted_by_status(snap_compare: SnapCompare) -> None:
 
     async def run_before(pilot: Pilot) -> None:
@@ -372,8 +355,6 @@ def test_snapshot_mcp_connectors_sorted_by_status(snap_compare: SnapCompare) -> 
     )
 
 
-@patch.dict("os.environ", {CONNECTORS_ENV_VAR: "1"})
-@pytest.mark.xdist_group(name="snapshots")
 def test_snapshot_mcp_drill_into_connector(snap_compare: SnapCompare) -> None:
 
     async def run_before(pilot: Pilot) -> None:
@@ -390,8 +371,6 @@ def test_snapshot_mcp_drill_into_connector(snap_compare: SnapCompare) -> None:
     assert snap_compare(app, terminal_size=(120, 36), run_before=run_before)
 
 
-@patch.dict("os.environ", {CONNECTORS_ENV_VAR: "1"})
-@pytest.mark.xdist_group(name="snapshots")
 def test_snapshot_mcp_connector_back_to_overview(snap_compare: SnapCompare) -> None:
 
     async def run_before(pilot: Pilot) -> None:
