@@ -50,7 +50,7 @@ class PopupMetadata:
         self.required_permissions = None
 
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 # Constants
 MESSAGE_PREVIEW_LENGTH = 50
@@ -1857,10 +1857,6 @@ class VibeApp(App):  # noqa: PLR0904
 
         start_time = time.monotonic()
         is_text = isinstance(content, str)
-        act_content: Content = cast(
-            Content,
-            render_path_prompt(content, base_dir=Path.cwd()) if is_text else content,
-        )
 
         try:
             await self._handle_agent_loop_init()
@@ -1869,9 +1865,17 @@ class VibeApp(App):  # noqa: PLR0904
             prompt_payload = (
                 build_path_prompt_payload(content, base_dir=Path.cwd())
                 if is_text
-                else None
+                else build_path_prompt_payload(
+                    " ".join(
+                        item["text"]
+                        for item in content
+                        if item.get("type") == "text"
+                        and isinstance(item.get("text"), str)
+                    ),
+                    base_dir=Path.cwd(),
+                )
             )
-            if prompt_payload and prompt_payload.all_resources:
+            if prompt_payload.all_resources:
                 context_types: dict[str, int] = {}
                 for r in prompt_payload.all_resources:
                     context_types[r.kind] = context_types.get(r.kind, 0) + 1
@@ -1887,6 +1891,20 @@ class VibeApp(App):  # noqa: PLR0904
                     file_extensions=file_ext_counts or None,
                     message_id=message_id,
                 )
+            rendered_content: Content = cast(
+                Content,
+                render_path_prompt(content, base_dir=Path.cwd())
+                if is_text
+                else [
+                    {
+                        **item,
+                        "text": render_path_prompt(item["text"], base_dir=Path.cwd()),
+                    }
+                    if item.get("type") == "text" and isinstance(item.get("text"), str)
+                    else item
+                    for item in content
+                ],
+            )
             auto_title: str | None = None
             if self.agent_loop.session_logger.needs_initial_auto_title():
                 auto_title = (
@@ -1900,11 +1918,13 @@ class VibeApp(App):  # noqa: PLR0904
                 )
             self._narrator_manager.cancel()
             self._narrator_manager.on_turn_start(
-                act_content if isinstance(act_content, str) else ""
+                rendered_content if isinstance(rendered_content, str) else ""
             )
             async with aclosing(
                 self.agent_loop.act(
-                    act_content, client_message_id=message_id, auto_title=auto_title
+                    rendered_content,
+                    client_message_id=message_id,
+                    auto_title=auto_title,
                 )
             ) as events:
                 await self._handle_agent_loop_events(events)
@@ -2592,9 +2612,11 @@ class VibeApp(App):  # noqa: PLR0904
                 await self._resume_remote_session(session)
             else:
                 raise ValueError(f"Unknown session source: {event.source}")
-        except Exception as e:
+        except (ValueError, ValidationError) as e:
             await self._mount_and_scroll(
-                ErrorMessage(str(e), collapsed=self._tools_collapsed)
+                ErrorMessage(
+                    f"Failed to load session: {e}", collapsed=self._tools_collapsed
+                )
             )
 
     async def on_session_picker_app_cancelled(
