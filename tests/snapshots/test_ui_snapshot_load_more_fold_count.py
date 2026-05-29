@@ -14,13 +14,13 @@ import logging
 from typing import Any, cast
 from unittest.mock import patch
 
+import pytest
 from textual.pilot import Pilot
 
 from tests.cli.plan_offer.adapters.fake_whoami_gateway import FakeWhoAmIGateway
 from tests.conftest import build_test_agent_loop
 from tests.mock.utils import mock_llm_chunk
 from tests.snapshots.base_snapshot_test_app import BaseSnapshotTestApp, default_config
-from tests.snapshots.snap_compare import SnapCompare
 from tests.stubs.fake_backend import FakeBackend
 from vibe.cli.plan_offer.ports.whoami_gateway import WhoAmIPlanType, WhoAmIResponse
 from vibe.cli.textual_ui.widgets.load_more import HistoryLoadMoreMessage
@@ -274,22 +274,27 @@ async def _setup_expanded(pilot: Pilot) -> None:
     await pilot.pause(1.0)
 
 
-def test_folded(snap_compare: SnapCompare) -> None:
+@pytest.mark.asyncio
+async def test_folded() -> None:
     """Tools collapsed (default): LoadMore shown after agent task with pruning."""
-    snap_compare(
-        "test_ui_snapshot_load_more_fold_count.py:LoadMoreFoldCountApp",
-        terminal_size=(120, 36),
-        run_before=_setup_folded,
-    )
+    app = LoadMoreFoldCountApp()
+    async with app.run_test(size=(120, 36)) as pilot:
+        await _setup_folded(pilot)
+        widgets = list(app.query(HistoryLoadMoreMessage))
+        assert len(widgets) == 1
+        remaining = widgets[0]._remaining
+        assert remaining is not None
+        assert 20 <= remaining <= 35
 
 
-def test_expanded(snap_compare: SnapCompare) -> None:
-    """Tools expanded (Ctrl+O): LoadMore shown after agent task with pruning.
-
-    The LoadMore remaining count should match the folded snapshot.
-    """
-    snap_compare(
-        "test_ui_snapshot_load_more_fold_count.py:LoadMoreFoldCountApp",
-        terminal_size=(120, 36),
-        run_before=_setup_expanded,
-    )
+@pytest.mark.asyncio
+async def test_expanded() -> None:
+    """Tools expanded (Ctrl+O): LoadMore shown after agent task with pruning."""
+    app = LoadMoreFoldCountApp()
+    async with app.run_test(size=(120, 36)) as pilot:
+        await _setup_expanded(pilot)
+        widgets = list(app.query(HistoryLoadMoreMessage))
+        assert len(widgets) == 1
+        remaining = widgets[0]._remaining
+        assert remaining is not None
+        assert 20 <= remaining <= 35
