@@ -408,7 +408,7 @@ class TTSModelConfig(BaseModel):
     provider: str
     alias: str
     voice: str = "gb_jane_neutral"
-    response_format: SpeechOutputFormat = SpeechOutputFormat.WAV
+    response_format: SpeechOutputFormat = "wav"
 
     _default_alias_to_name = model_validator(mode="before")(_default_alias_to_name)
 

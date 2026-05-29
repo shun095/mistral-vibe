@@ -4,8 +4,7 @@
 # Remove this file and restore `from mistralai...` imports when unquarantined.
 from __future__ import annotations
 
-from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 __all__ = [
     "AssistantMessage",
@@ -93,21 +92,7 @@ class Mistral(_MockModel):
 class AudioFormat(_MockModel): ...
 
 
-class SpeechOutputFormat(StrEnum):
-    """Mock for mistralai SpeechOutputFormat enum."""
-
-    WAV = "wav"
-    MP3 = "mp3"
-    OPUS = "opus"
-    AAC = "aac"
-    FLAC = "flac"
-    PCM = "pcm"
-
-    @classmethod
-    def __get_pydantic_core_schema__(cls, _source_type: Any, _handler: Any) -> Any:
-        from pydantic_core import core_schema
-
-        return core_schema.str_schema()
+SpeechOutputFormat = Literal["pcm", "wav", "mp3", "flac", "opus"]
 
 
 class BackoffStrategy(_MockModel): ...
@@ -225,7 +210,6 @@ try:
         RealtimeTranscriptionError as _RealRealtimeTranscriptionError,
         RealtimeTranscriptionSession as _RealRealtimeTranscriptionSession,
         RealtimeTranscriptionSessionCreated as _RealRealtimeTranscriptionSessionCreated,
-        SpeechOutputFormat as _RealSpeechOutputFormat,
         SystemMessage as _RealSystemMessage,
         TextChunk as _RealTextChunk,
         ThinkChunk as _RealThinkChunk,
@@ -268,7 +252,6 @@ try:
             "RealtimeTranscriptionError": _RealRealtimeTranscriptionError,
             "RealtimeTranscriptionSession": _RealRealtimeTranscriptionSession,
             "RealtimeTranscriptionSessionCreated": _RealRealtimeTranscriptionSessionCreated,
-            "SpeechOutputFormat": _RealSpeechOutputFormat,
             "SystemMessage": _RealSystemMessage,
             "TextChunk": _RealTextChunk,
             "ThinkChunk": _RealThinkChunk,
