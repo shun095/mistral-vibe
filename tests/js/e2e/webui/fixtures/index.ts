@@ -2,32 +2,13 @@
  * Custom Playwright fixtures for WebUI E2E tests.
  */
 
-import { test as base, Page, APIRequestContext, test as playwrightTest } from "@playwright/test";
+import { test as base, Page } from "@playwright/test";
 import { ServerManager } from "./server-manager";
 import { MockBackendClient } from "./mock-backend";
-import { resetTestState, Selectors, waitForConnected, setLogPort } from "../helpers/test-utils";
+import { Selectors, waitForConnected, setLogPort } from "../helpers/test-utils";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-
-// Coverage data collection (enabled when COVERAGE=1)
-const COLLECT_COVERAGE = process.env.COVERAGE === "1";
-const COVERAGE_DIR = ".coverage-e2e";
-
-function saveCoverage(page: Page): void {
-  if (!COLLECT_COVERAGE) return;
-  const testInfo = playwrightTest.info();
-  fs.mkdirSync(COVERAGE_DIR, { recursive: true });
-  const workerIndex = testInfo.workerIndex ?? 0;
-  const testIndex = testInfo.retry ?? 0;
-  const fileName = `worker-${workerIndex}-test-${testIndex}.json`;
-  const filePath = path.join(COVERAGE_DIR, fileName);
-  page.coverage.stopJSCoverage().then((coverage) => {
-    fs.writeFileSync(filePath, JSON.stringify(coverage), "utf-8");
-  }).catch(() => {
-    // Coverage may have been stopped already
-  });
-}
 
 // Pre-allocated ports from global setup
 const portsFile = os.tmpdir() + "/vibe-e2e-ports.json";
@@ -109,11 +90,6 @@ export const test = base.extend<WebUIFixtures & { page: Page }>({
       consoleLogs.push(`[${msg.type()}] ${msg.text()}`);
     });
 
-    // Start JS coverage before each test (if enabled)
-    if (COLLECT_COVERAGE) {
-      await page.coverage.startJSCoverage({ resetOnNavigation: false });
-    }
-
     // Reset mock data BEFORE navigating to ensure clean state
     await mockBackend.reset();
 
@@ -168,11 +144,6 @@ export const test = base.extend<WebUIFixtures & { page: Page }>({
 
     await use(page);
 
-    // Stop coverage after test (if enabled)
-    if (COLLECT_COVERAGE) {
-      saveCoverage(page);
-    }
-
     // Write console logs to test-results directory
     if (consoleLogs.length > 0) {
       const outputDir = testInfo.outputDir || "test-results";
@@ -180,24 +151,9 @@ export const test = base.extend<WebUIFixtures & { page: Page }>({
       fs.writeFileSync(logPath, consoleLogs.join("\n") + "\n", "utf-8");
     }
 
-    // After test, reset mock data and page state
-    // This ensures the next test starts with clean state
-    try {
-      // Reset mock data before page reload
-      await mockBackend.reset();
-
-      // Check if page is still open before trying to reset
-      if (!page.isClosed()) {
-        await resetTestState(page, webServer.getUrl());
-        // resetTestState() already waits for page readiness, no need to wait again here
-      }
-    } catch (error) {
-      // Ignore errors - page might be closed by the test
-      const errorMsg = String(error);
-      if (!errorMsg.includes("page is closed") && !errorMsg.includes("Target page")) {
-        console.warn("Failed to reset test state:", error);
-      }
-    }
+    // No state reset needed — server is stopped/started between tests,
+    // so server-side state is already clean. Next test gets a fresh page
+    // via the login flow above.
   },
 
   // Auth token fixture
@@ -208,4 +164,4 @@ export const test = base.extend<WebUIFixtures & { page: Page }>({
 
 // Re-export Playwright types
 export { expect } from "@playwright/test";
-export type { Page, APIRequestContext };
+export type { Page };

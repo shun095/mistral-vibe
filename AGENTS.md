@@ -327,7 +327,6 @@ npm install                       # JavaScript dependencies
 npm run playwright:install        # Playwright browsers
 uv run pytest tests/              # Python tests
 npm test                          # JavaScript tests
-npm run test:e2e:coverage         # E2E with JS coverage + HTML report
 npm run test:e2e:ui               # Interactive E2E
 npm run test:e2e:headed           # Visible browser
 ```
