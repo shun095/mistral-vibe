@@ -4,6 +4,7 @@ from textual.app import App
 from textual.pilot import Pilot
 
 from tests.snapshots.snap_compare import SnapCompare
+from vibe.cli.textual_ui.widgets.banner.petit_chat import PetitChat
 from vibe.core.config import ProviderConfig
 from vibe.core.types import Backend
 from vibe.setup.onboarding.screens.api_key import ApiKeyScreen
@@ -31,6 +32,7 @@ def test_snapshot_onboarding_api_key_with_valid_input(
 ) -> None:
     async def run_before(pilot: Pilot) -> None:
         await pilot.pause(0.2)
+        pilot.app.screen.query_one(PetitChat).freeze_animation()
         await pilot.press(*"sk-test-api-key")
         await pilot.pause(0.1)
 

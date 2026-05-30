@@ -11,10 +11,19 @@ fi
 # Get staged diff content
 STAGED_DIFF=$(git diff --staged --diff-filter=ACM 2>/dev/null || true)
 
+# Whitelisted test/stub keys — safe to appear in diffs
+WHITELISTED_KEYS="sk-test-api-key|test-api-key"
+
 # Check for API keys from environment
 FAILED=0
 while IFS= read -r API_KEY; do
-    if [[ -n "$API_KEY" ]] && echo "$STAGED_DIFF" | grep -qF "$API_KEY"; then
+    if [[ -z "$API_KEY" ]]; then
+        continue
+    fi
+    if echo "$API_KEY" | grep -qE "^($WHITELISTED_KEYS)$"; then
+        continue
+    fi
+    if echo "$STAGED_DIFF" | grep -qF "$API_KEY"; then
         echo "ERROR: Potential API key exposure detected!"
         echo "Found: $API_KEY"
         FAILED=1
