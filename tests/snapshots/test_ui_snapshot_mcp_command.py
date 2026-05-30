@@ -8,7 +8,10 @@ from textual.pilot import Pilot
 from tests.snapshots.base_snapshot_test_app import BaseSnapshotTestApp, default_config
 from tests.snapshots.snap_compare import SnapCompare
 from tests.stubs.fake_connector_registry import FakeConnectorRegistry
-from tests.stubs.fake_mcp_registry import FakeMCPRegistryWithBrokenServer
+from tests.stubs.fake_mcp_registry import (
+    FakeMCPRegistry,
+    FakeMCPRegistryWithBrokenServer,
+)
 from vibe.core.config import MCPHttp, MCPStdio
 from vibe.core.tools.connectors import ConnectorAuthAction
 from vibe.core.tools.mcp.tools import RemoteTool

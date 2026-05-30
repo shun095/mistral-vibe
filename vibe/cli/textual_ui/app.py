@@ -774,7 +774,7 @@ class VibeApp(App):  # noqa: PLR0904
         if self._fatal_init_error:
             self.exit()
 
-    async def on_chat_input_container_submitted(  # noqa: PLR0911 – kept early returns to minimize diff vs origin/main
+    async def on_chat_input_container_submitted(
         self, event: ChatInputContainer.Submitted
     ) -> None:
         if self._banner:

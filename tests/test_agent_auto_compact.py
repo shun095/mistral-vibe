@@ -449,7 +449,6 @@ async def test_compact_message_shape_preserves_prior_user_messages() -> None:
     backend = FakeBackend([[mock_llm_chunk(content="fresh summary body")]])
     cfg = build_test_vibe_config(models=make_test_models(auto_compact_threshold=999))
     agent = build_test_agent_loop(config=cfg, backend=backend)
-    system_message_before = agent.messages[0]
 
     agent.messages.append(LLMMessage(role=Role.user, content="first real ask"))
     agent.messages.append(
@@ -466,7 +465,7 @@ async def test_compact_message_shape_preserves_prior_user_messages() -> None:
 
     final = list(agent.messages)
     assert len(final) == 4  # [system, prior_user_1, prior_user_2, wrapped_summary]
-    assert final[0] is system_message_before
+    assert final[0].role == Role.system  # system prompt regenerated on compact
     assert [m.role for m in final[1:]] == [Role.user, Role.user, Role.user]
     assert final[1].content == "first real ask"
     assert final[2].content == "follow-up ask"

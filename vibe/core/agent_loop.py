@@ -270,7 +270,6 @@ class AgentLoop:
         headless: bool = False,
         hook_config_result: HookConfigResult | None = None,
         permission_store: PermissionStore | None = None,
-        mcp_registry: MCPRegistry | None = None,
     ) -> None:
         self._base_config = config
         self._headless = headless
@@ -2120,7 +2119,11 @@ class AgentLoop:
             new_system_message = LLMMessage(role=Role.system, content=new_system_prompt)
             wrapped_summary = f"{summary_prefix}\n{summary_content}"
             summary_message = LLMMessage(role=Role.user, content=wrapped_summary)
-            self.messages.reset([new_system_message, *prior_user_messages, summary_message])
+            self.messages.reset([
+                new_system_message,
+                *prior_user_messages,
+                summary_message,
+            ])
             self._notify_event_listeners(SystemPromptRegeneratedEvent())
 
             active_model = self.config.get_active_model()
