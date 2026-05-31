@@ -87,3 +87,29 @@ class TestCompactEventHandling:
         assert (
             shorten_session_id(session.agent_loop.session_id) in compact_end_text.text
         )
+
+
+def test_create_compact_end_session_update_error_path() -> None:
+    from vibe.acp.utils import create_compact_end_session_update
+    from vibe.core.types import CompactEndEvent
+
+    event = CompactEndEvent(
+        summary_length=0,
+        summary_content=None,
+        error="Service unavailable",
+        old_session_id="sess-old",
+        new_session_id="sess-new",
+        tool_call_id="tc-1",
+    )
+
+    result = create_compact_end_session_update(event)
+
+    assert isinstance(result, ToolCallProgress)
+    assert result.session_update == "tool_call_update"
+    assert result.status == "failed"
+    assert result.title == "Compaction failed"
+    assert result.tool_call_id == "tc-1"
+    assert result.content is not None
+    assert len(result.content) == 1
+    assert isinstance(result.content[0].content, TextContentBlock)
+    assert "Service unavailable" in result.content[0].content.text

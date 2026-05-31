@@ -504,16 +504,23 @@ async def test_run_compact_no_spawn_on_error(tmp_path: Path) -> None:
     app.event_handler = MagicMock()
     app._agent_running = False
 
+    error_msgs: list[str] = []
+    complete_called = False
+
     class FakeCompactMsg:
         def set_complete(self, **kw):
-            pass
+            nonlocal complete_called
+            complete_called = True
 
         def set_error(self, msg):
-            pass
+            error_msgs.append(msg)
 
     await app._run_compact(cast(Any, FakeCompactMsg()), "test-session-id")
 
     assert len(spawn_calls) == 0
+    assert complete_called is False
+    assert len(error_msgs) == 1
+    assert error_msgs[0] == "compact failed"
 
 
 # --- TUI interrupt tests ---
