@@ -617,11 +617,9 @@ describe('VibeClient', () => {
             expect(compact.querySelector('.compact-spinner')).toBeTruthy();
         });
 
-        test('renders CompactEndEvent success with token stats', () => {
+        test('renders CompactEndEvent success with summary length', () => {
             client.handleEvent({
                 __type: 'CompactEndEvent',
-                old_context_tokens: 100000,
-                new_context_tokens: 50000,
                 summary_length: 200,
                 summary_content: null,
                 error: null,
@@ -630,15 +628,13 @@ describe('VibeClient', () => {
 
             const compact = client.elements.messages.querySelector('.compact');
             expect(compact.classList.contains('compact-complete')).toBe(true);
-            expect(compact.querySelector('.compact-text').textContent).toContain('100,000');
-            expect(compact.querySelector('.compact-text').textContent).toContain('50,000');
+            expect(compact.querySelector('.compact-text').textContent).toContain('Compaction complete');
+            expect(compact.querySelector('.compact-text').textContent).toContain('200');
         });
 
         test('renders CompactEndEvent error with red icon', () => {
             client.handleEvent({
                 __type: 'CompactEndEvent',
-                old_context_tokens: 100000,
-                new_context_tokens: 100000,
                 summary_length: 0,
                 summary_content: null,
                 error: 'Service unavailable',
@@ -766,8 +762,6 @@ describe('VibeClient', () => {
         test('escapes HTML in CompactEndEvent error', () => {
             client.handleEvent({
                 __type: 'CompactEndEvent',
-                old_context_tokens: 100,
-                new_context_tokens: 50,
                 summary_length: 0,
                 summary_content: null,
                 error: '<img onerror=alert(1)>',
@@ -832,8 +826,6 @@ describe('VibeClient', () => {
 
             client.handleEvent({
                 __type: 'CompactEndEvent',
-                old_context_tokens: 100000,
-                new_context_tokens: 50000,
                 summary_length: 200,
                 summary_content: null,
                 error: null,
@@ -848,8 +840,6 @@ describe('VibeClient', () => {
         test('CompactEndEvent with summary_content renders markdown', () => {
             client.handleEvent({
                 __type: 'CompactEndEvent',
-                old_context_tokens: 1000,
-                new_context_tokens: 500,
                 summary_length: 50,
                 summary_content: 'Agent explored **core** and `utils` modules.',
                 error: null,
@@ -865,8 +855,6 @@ describe('VibeClient', () => {
         test('ignores CompactEndEvent with missing tool_call_id', () => {
             client.handleEvent({
                 __type: 'CompactEndEvent',
-                old_context_tokens: 100,
-                new_context_tokens: 50,
                 summary_length: 0,
                 summary_content: null,
                 error: null,

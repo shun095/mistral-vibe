@@ -712,11 +712,11 @@ class VibeClient {
 
     /**
      * Handle CompactEndEvent - show compaction result
-     * @param {Object} event - {old_context_tokens, new_context_tokens, summary_length, summary_content, error, tool_call_id}
+     * @param {Object} event - {summary_length, summary_content, error, tool_call_id}
      */
     handleCompactEnd(event) {
-        const { old_context_tokens: oldTokens, new_context_tokens: newTokens, summary_content: summary, error, tool_call_id: toolCallId } = event;
-        if (oldTokens == null || newTokens == null || !toolCallId) return;
+        const { summary_length: summaryLength, summary_content: summary, error, tool_call_id: toolCallId } = event;
+        if (!toolCallId) return;
 
         let compactDiv = this.elements.messages.querySelector(`.compact[data-tool-call-id="${toolCallId}"]`);
 
@@ -736,15 +736,15 @@ class VibeClient {
                 </div>
             `;
         } else {
-            const reduction = oldTokens > 0 ? Math.round((1 - newTokens / oldTokens) * 100) : 0;
             compactDiv.classList.add('compact-complete');
             const summaryHtml = summary
                 ? `<div class="compact-summary">${this.renderMarkdownToHtml(summary)}</div>`
                 : '';
+            const lengthText = summaryLength != null ? ` (${summaryLength} chars)` : '';
             compactDiv.innerHTML = `
                 <div class="content">
                     <span class="material-symbols-rounded compact-icon">check_circle</span>
-                    <span class="compact-text">Compaction complete: ${this.formatTokenCount(oldTokens)} → ${this.formatTokenCount(newTokens)} tokens (-${reduction}%)</span>
+                    <span class="compact-text">Compaction complete${lengthText}</span>
                     ${summaryHtml}
                 </div>
             `;
@@ -888,16 +888,6 @@ class VibeClient {
                 <span>Retrying (${this.escapeHtml(String(attempt))}/${this.escapeHtml(String(maxAttempts))}) in ${this.escapeHtml(String(delaySeconds))}s${meta ? ` — ${this.escapeHtml(meta)}` : ''}: ${this.escapeHtml(errorMessage)}</span>
             </div>
         `);
-    }
-
-    /**
-     * Format token count with commas
-     * @param {number} count
-     * @returns {string}
-     * @private
-     */
-    formatTokenCount(count) {
-        return count.toLocaleString();
     }
 
     /**

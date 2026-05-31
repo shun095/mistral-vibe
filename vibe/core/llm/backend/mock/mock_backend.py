@@ -69,42 +69,6 @@ class MockBackend:
         """Exit async context."""
         pass
 
-    async def count_tokens(
-        self,
-        *,
-        model: ModelConfig,
-        messages: Sequence[LLMMessage],
-        temperature: float | None = None,
-        tools: list[AvailableTool] | None = None,
-        tool_choice: StrToolChoice | AvailableTool | None = None,
-        extra_headers: dict[str, str] | None = None,
-        metadata: dict[str, str] | None = None,
-    ) -> int:
-        """Count tokens in messages (stub implementation).
-
-        Args:
-            model: Model configuration.
-            messages: List of messages.
-            temperature: Sampling temperature.
-            tools: Available tools.
-            tool_choice: Tool choice.
-            extra_headers: Extra headers.
-            metadata: Metadata.
-
-        Returns:
-            Approximate token count.
-        """
-        # Simple approximation: count words in all messages
-        total_text = ""
-        for msg in messages:
-            if isinstance(msg.content, str):
-                total_text += msg.content
-            elif isinstance(msg.content, list):
-                for item in msg.content:
-                    if isinstance(item, dict) and "text" in item:
-                        total_text += item["text"]
-        return len(total_text.split()) * 13 // 10
-
     async def complete(
         self,
         *,
