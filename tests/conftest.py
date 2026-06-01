@@ -10,7 +10,6 @@ import tomli_w
 
 from tests.cli.plan_offer.adapters.fake_whoami_gateway import FakeWhoAmIGateway
 from tests.stubs.fake_backend import FakeBackend
-from tests.stubs.fake_mcp_registry import FakeMCPRegistry
 from tests.stubs.fake_voice_manager import FakeVoiceManager
 from tests.update_notifier.adapters.fake_update_cache_repository import (
     FakeUpdateCacheRepository,

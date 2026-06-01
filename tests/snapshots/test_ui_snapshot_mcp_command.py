@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from typing import cast
-from unittest.mock import patch
 
 from textual.pilot import Pilot
 
