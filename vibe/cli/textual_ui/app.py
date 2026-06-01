@@ -102,6 +102,7 @@ from vibe.cli.plan_offer.decide_plan_offer import (
 )
 from vibe.cli.plan_offer.ports.whoami_gateway import WhoAmIGateway, WhoAmIPlanType
 from vibe.cli.queue_manager import QueueManager
+from vibe.cli.terminal_detect import Terminal, detect_terminal
 from vibe.cli.textual_ui.external_editor import ExternalEditor
 from vibe.cli.textual_ui.handlers.event_handler import EventHandler
 from vibe.cli.textual_ui.notifications import (
@@ -135,13 +136,17 @@ from vibe.cli.textual_ui.widgets.loading import (
 )
 from vibe.cli.textual_ui.widgets.mcp_app import MCPApp, MCPSourceKind
 from vibe.cli.textual_ui.widgets.messages import (
+    VSCODE_EXTENSION_PROMO_WHATS_NEW_SUFFIX,
     AssistantMessage,
     BashOutputMessage,
     ErrorMessage,
     InterruptMessage,
+    SlashCommandMessage,
     StreamingMessageBase,
+    TeleportUserMessage,
     UserCommandMessage,
     UserMessage,
+    VscodeExtensionPromoMessage,
     WarningMessage,
     WhatsNewMessage,
 )
@@ -183,6 +188,12 @@ from vibe.cli.update_notifier import (
 from vibe.cli.update_notifier.update import do_update
 from vibe.cli.voice_manager import VoiceManager, VoiceManagerPort
 from vibe.cli.voice_manager.voice_manager_port import TranscribeState
+from vibe.cli.vscode_extension_promo import (
+    FileSystemVscodeExtensionPromoRepository,
+    VscodeExtensionPromo,
+    VscodeExtensionPromoState,
+    should_show_promo,
+)
 from vibe.core.agent_loop import AgentLoop, TeleportError
 from vibe.core.agents import AgentProfile, BuiltinAgentName
 from vibe.core.audio_player.audio_player import AudioPlayer
@@ -255,6 +266,12 @@ from vibe.core.utils import (
     is_dangerous_directory,
 )
 from vibe.core.utils.io import read_safe
+
+_VSCODE_FAMILY_TERMINALS = {Terminal.VSCODE, Terminal.VSCODE_INSIDERS, Terminal.CURSOR}
+
+
+def _is_vscode_family_terminal() -> bool:
+    return detect_terminal() in _VSCODE_FAMILY_TERMINALS
 
 
 def _compute_connector_counts(
@@ -438,6 +455,7 @@ class VibeApp(App):  # noqa: PLR0904
         terminal_notifier: NotificationPort | None = None,
         voice_manager: VoiceManagerPort | None = None,
         narrator_manager: NarratorManagerPort | None = None,
+        vscode_extension_promo: VscodeExtensionPromo | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -487,6 +505,12 @@ class VibeApp(App):  # noqa: PLR0904
         self._update_cache_repository = update_cache_repository
         self._current_version = current_version
         self._plan_offer_gateway = plan_offer_gateway
+        self._vscode_extension_promo = vscode_extension_promo
+        self._show_vscode_extension_promo = (
+            vscode_extension_promo is not None
+            and _is_vscode_family_terminal()
+            and should_show_promo(vscode_extension_promo.initial_state)
+        )
         self._configure_startup_options(startup)
         self._last_escape_time: float | None = None
         self._quit_manager = QuitManager(self)
@@ -793,6 +817,9 @@ class VibeApp(App):  # noqa: PLR0904
             await self._handle_bash_command(value[2:], inject_context=False)
             return
 
+        await self._dispatch_submitted_input(value)
+
+    async def _dispatch_submitted_input(self, value: str) -> None:
         if value.startswith("!"):
             self._bash_task = asyncio.create_task(
                 self._handle_bash_command(value[1:], inject_context=True)
@@ -1123,9 +1150,8 @@ class VibeApp(App):  # noqa: PLR0904
             self.agent_loop.telemetry_client.send_slash_command_used(
                 cmd_name, "builtin"
             )
-            # Store the command input for handlers to access (e.g., /edit command)
             self._last_command_input = user_input
-            await self._mount_and_scroll(UserMessage(user_input))
+            await self._mount_and_scroll(SlashCommandMessage(user_input[1:]))
             handler = getattr(self, command.handler)
             if asyncio.iscoroutinefunction(handler):
                 await handler(cmd_args=cmd_args)
@@ -2009,7 +2035,7 @@ class VibeApp(App):  # noqa: PLR0904
         has_history = any(msg.role != Role.system for msg in self.agent_loop.messages)
         if not value:
             if show_message:
-                await self._mount_and_scroll(UserMessage("/teleport"))
+                await self._mount_and_scroll(SlashCommandMessage("teleport"))
             if not has_history:
                 send_teleport_early_failure_telemetry(
                     self.agent_loop.telemetry_client,
@@ -2025,7 +2051,7 @@ class VibeApp(App):  # noqa: PLR0904
                 )
                 return
         elif show_message:
-            await self._mount_and_scroll(UserMessage(value))
+            await self._mount_and_scroll(TeleportUserMessage(value))
         self.run_worker(self._teleport(value), exclusive=False)
 
     async def _teleport(self, prompt: str | None = None) -> None:
@@ -2914,7 +2940,7 @@ class VibeApp(App):  # noqa: PLR0904
             messages_area = self._cached_messages_area or self.query_one("#messages")
             await messages_area.remove_children()
 
-            await messages_area.mount(UserMessage("/clear"))
+            await messages_area.mount(SlashCommandMessage("clear"))
             await self._mount_and_scroll(
                 UserCommandMessage("Conversation history cleared!")
             )
@@ -4017,23 +4043,45 @@ class VibeApp(App):  # noqa: PLR0904
             )
             await self._mount_and_scroll(WarningMessage(warning, show_border=False))
 
+    async def _record_vscode_extension_promo_shown(self) -> None:
+        if self._vscode_extension_promo is None:
+            return
+        previous_count = (
+            self._vscode_extension_promo.initial_state.shown_count
+            if self._vscode_extension_promo.initial_state is not None
+            else 0
+        )
+        try:
+            await self._vscode_extension_promo.repository.set(
+                VscodeExtensionPromoState(shown_count=previous_count + 1)
+            )
+        except Exception:
+            logger.warning(
+                "Failed to persist VSCode extension promo shown count", exc_info=True
+            )
+
     async def _check_and_show_whats_new(self) -> None:
         if self._update_cache_repository is None:
+            await self._maybe_show_vscode_extension_promo()
             return
 
         if not await should_show_whats_new(
             self._current_version, self._update_cache_repository
         ):
+            await self._maybe_show_vscode_extension_promo()
             return
 
         content = load_whats_new_content()
         if content is not None:
-            whats_new_message = WhatsNewMessage(content)
+            body = content
             plan_offer = plan_offer_cta(
                 self._plan_info, console_base_url=self.config.console_base_url
             )
             if plan_offer is not None:
-                whats_new_message = WhatsNewMessage(f"{content}\n\n{plan_offer}")
+                body = f"{body}\n\n{plan_offer}"
+            if self._show_vscode_extension_promo:
+                body = f"{body}{VSCODE_EXTENSION_PROMO_WHATS_NEW_SUFFIX}"
+            whats_new_message = WhatsNewMessage(body)
             if self._history_widget_indices:
                 whats_new_message.add_class("after-history")
             messages_area = self._cached_messages_area or self.query_one("#messages")
@@ -4043,7 +4091,27 @@ class VibeApp(App):  # noqa: PLR0904
             self._whats_new_message = whats_new_message
             if should_anchor:
                 chat.anchor()
+            if self._show_vscode_extension_promo:
+                self.run_worker(
+                    self._record_vscode_extension_promo_shown(), exclusive=False
+                )
+        else:
+            await self._maybe_show_vscode_extension_promo()
         await mark_version_as_seen(self._current_version, self._update_cache_repository)
+
+    async def _maybe_show_vscode_extension_promo(self) -> None:
+        if not self._show_vscode_extension_promo:
+            return
+        promo_message = VscodeExtensionPromoMessage()
+        if self._history_widget_indices:
+            promo_message.add_class("after-history")
+        messages_area = self._cached_messages_area or self.query_one("#messages")
+        chat = self._cached_chat or self.query_one("#chat", ChatScroll)
+        should_anchor = chat.is_at_bottom
+        await chat.mount(promo_message, after=messages_area)
+        if should_anchor:
+            chat.anchor()
+        self.run_worker(self._record_vscode_extension_promo_shown(), exclusive=False)
 
     async def _resolve_plan(self) -> None:
         if self._plan_offer_gateway is None:
@@ -4263,6 +4331,11 @@ def run_textual_ui(
     update_notifier = PyPIUpdateGateway(project_name="mistral-vibe")
     update_cache_repository = FileSystemUpdateCacheRepository()
     plan_offer_gateway = HttpWhoAmIGateway(base_url=agent_loop.config.console_base_url)
+    vscode_extension_promo_repository = FileSystemVscodeExtensionPromoRepository()
+    vscode_extension_promo = VscodeExtensionPromo(
+        repository=vscode_extension_promo_repository,
+        initial_state=asyncio.run(vscode_extension_promo_repository.get()),
+    )
 
     with stderr_guard():
         app = VibeApp(
@@ -4271,6 +4344,7 @@ def run_textual_ui(
             update_notifier=update_notifier,
             update_cache_repository=update_cache_repository,
             plan_offer_gateway=plan_offer_gateway,
+            vscode_extension_promo=vscode_extension_promo,
         )
         session_id = app.run()
 

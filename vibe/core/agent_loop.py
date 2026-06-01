@@ -31,6 +31,7 @@ from vibe.core.agents.models import (
     AgentType,
     BuiltinAgentName,
 )
+from vibe.core.compaction import collect_prior_user_messages
 from vibe.core.config import ModelConfig, ProviderConfig, VibeConfig
 from vibe.core.event_bus import EventBus
 from vibe.core.experiments import ExperimentManager
@@ -64,6 +65,7 @@ from vibe.core.middleware import (
     PriceLimitMiddleware,
     ReadOnlyAgentMiddleware,
     ResetReason,
+    TokenLimitMiddleware,
     TurnLimitMiddleware,
     make_plan_agent_reminder,
 )
@@ -257,6 +259,7 @@ class AgentLoop:
         message_observer: Callable[[LLMMessage], None] | None = None,
         max_turns: int | None = None,
         max_price: float | None = None,
+        max_session_tokens: int | None = None,
         backend: BackendLike | None = None,
         enable_streaming: bool = False,
         entrypoint_metadata: EntrypointMetadata | None = None,
@@ -267,6 +270,7 @@ class AgentLoop:
         headless: bool = False,
         hook_config_result: HookConfigResult | None = None,
         permission_store: PermissionStore | None = None,
+        mcp_registry: MCPRegistry | None = None,
     ) -> None:
         self._base_config = config
         self._headless = headless
@@ -302,6 +306,7 @@ class AgentLoop:
         self.message_observer = message_observer
         self._max_turns = max_turns
         self._max_price = max_price
+        self._max_session_tokens = max_session_tokens
         self._plan_session = PlanSession()
 
         self.format_handler = APIToolFormatHandler()
@@ -816,6 +821,9 @@ class AgentLoop:
 
         if self._max_price is not None:
             self.middleware_pipeline.add(PriceLimitMiddleware(self._max_price))
+
+        if self._max_session_tokens is not None:
+            self.middleware_pipeline.add(TokenLimitMiddleware(self._max_session_tokens))
 
         self.middleware_pipeline.add(AutoCompactMiddleware())
         if self.config.context_warnings:
@@ -2058,7 +2066,12 @@ class AgentLoop:
                 self.agent_profile,
             )
 
-            summary_request = UtilityPrompt.COMPACT.read()
+            summary_prefix = UtilityPrompt.COMPACT_SUMMARY_PREFIX.read()
+            prior_user_messages = collect_prior_user_messages(
+                list(self.messages), summary_prefix
+            )
+
+            summary_request = self.config.compaction_prompt
             if extra_instructions:
                 summary_request += (
                     f"\n\n## Additional Instructions\n{extra_instructions}"
@@ -2091,8 +2104,10 @@ class AgentLoop:
                     raise AgentLoopLLMResponseError(
                         "Usage data missing in compaction summary response"
                     )
+                summary_content = summary_content.strip()
+                if not summary_content:
+                    summary_content = "(no summary available)"
 
-            summary_message = LLMMessage(role=Role.user, content=summary_content)
             self._resume_system_prompt = None
             new_system_prompt = get_universal_system_prompt(
                 self.tool_manager,
@@ -2103,7 +2118,9 @@ class AgentLoop:
                 headless=self._headless,
             )
             new_system_message = LLMMessage(role=Role.system, content=new_system_prompt)
-            self.messages.reset([new_system_message, summary_message])
+            wrapped_summary = f"{summary_prefix}\n{summary_content}"
+            summary_message = LLMMessage(role=Role.user, content=wrapped_summary)
+            self.messages.reset([new_system_message, *prior_user_messages, summary_message])
             self._notify_event_listeners(SystemPromptRegeneratedEvent())
 
             active_model = self.config.get_active_model()
@@ -2128,7 +2145,6 @@ class AgentLoop:
 
             self.middleware_pipeline.reset(reset_reason=ResetReason.COMPACT)
 
-            # Notify listeners that history was compacted
             self._notify_event_listeners(MessageResetEvent(reason="compact"))
 
             return summary_content or ""
