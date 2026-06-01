@@ -470,8 +470,6 @@ class CompactStartEvent(BaseEvent):
 
 
 class CompactEndEvent(BaseEvent):
-    old_context_tokens: int
-    new_context_tokens: int
     summary_length: int
     summary_content: str | None = None
     error: str | None = None

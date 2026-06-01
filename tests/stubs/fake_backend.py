@@ -25,7 +25,6 @@ class FakeBackend(BackendLike):
         | Iterable[Iterable[LLMChunk]]
         | None = None,
         *,
-        token_counter: Callable[[Sequence[LLMMessage]], int] | None = None,
         exception_to_raise: Exception | None = None,
     ) -> None:
         """Fake backend that will output the given chunks in the order they are given.
@@ -40,8 +39,6 @@ class FakeBackend(BackendLike):
         self._requests_messages: list[list[LLMMessage]] = []
         self._requests_extra_headers: list[dict[str, str] | None] = []
         self._requests_metadata: list[dict[str, str] | None] = []
-        self._count_tokens_calls: list[list[LLMMessage]] = []
-        self._token_counter = token_counter or self._default_token_counter
         self._exception_to_raise = exception_to_raise
 
         self._streams: list[list[LLMChunk]]
@@ -73,10 +70,6 @@ class FakeBackend(BackendLike):
     @property
     def requests_metadata(self) -> list[dict[str, str] | None]:
         return self._requests_metadata
-
-    @staticmethod
-    def _default_token_counter(messages: Sequence[LLMMessage]) -> int:
-        return 1
 
     async def __aenter__(self):
         return self
@@ -158,20 +151,3 @@ class FakeBackend(BackendLike):
                 flush=True,
             )
             raise
-
-    async def count_tokens(
-        self,
-        *,
-        model: ModelConfig,
-        messages: Sequence[LLMMessage],
-        temperature: float | None = None,
-        tools: list[AvailableTool] | None = None,
-        tool_choice: StrToolChoice | AvailableTool | None = None,
-        extra_headers: dict[str, str] | None = None,
-        metadata: dict[str, str] | None = None,
-    ) -> int:
-        self._requests_messages.append(list(messages))
-        self._requests_extra_headers.append(extra_headers)
-        self._requests_metadata.append(metadata)
-        self._count_tokens_calls.append(list(messages))
-        return self._token_counter(messages)

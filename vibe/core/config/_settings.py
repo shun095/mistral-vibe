@@ -34,7 +34,7 @@ from vibe.core.lsp.config import LSPConfig, LSPServerConfig
 from vibe.core.paths import GLOBAL_ENV_FILE, SESSION_LOG_DIR
 from vibe.core.prompts import UtilityPrompt, load_prompt, load_system_prompt
 from vibe.core.types import Backend
-from vibe.core.utils import get_server_url_from_api_base
+from vibe.core.utils import configure_ssl_context, get_server_url_from_api_base
 
 # Magic values for type annotation processing
 DICT_ARGS_MIN_LENGTH = 2
@@ -170,6 +170,7 @@ DEFAULT_MISTRAL_API_ENV_KEY = "MISTRAL_API_KEY"
 DEFAULT_MISTRAL_BROWSER_AUTH_BASE_URL = "https://console.mistral.ai"
 DEFAULT_MISTRAL_BROWSER_AUTH_API_BASE_URL = "https://console.mistral.ai/api"
 DEFAULT_CONSOLE_BASE_URL = "https://console.mistral.ai"
+DEFAULT_VIBE_BASE_URL = "https://chat.mistral.ai"
 
 
 class ProviderConfig(BaseModel):
@@ -538,22 +539,25 @@ class VibeConfig(BaseSettings):
     enable_auto_update: bool = True
     enable_notifications: bool = True
     enable_web_notifications: bool = True
+    enable_system_trust_store: bool = False
     api_timeout: float = 720.0
     auto_compact_threshold: int = 200_000
 
     vibe_code_enabled: bool = Field(default=True, exclude=True)
     vibe_code_base_url: str = Field(default="https://api.mistral.ai", exclude=True)
+    vibe_code_sessions_base_url: str = Field(
+        default="https://chat.mistral.ai", exclude=True
+    )
     vibe_code_workflow_id: str = Field(default="__shared-nuage-workflow", exclude=True)
-    vibe_code_task_queue: str | None = Field(default="shared-vibe-nuage", exclude=True)
     vibe_code_api_key_env_var: str = Field(default="MISTRAL_API_KEY", exclude=True)
     vibe_code_project_name: str | None = Field(default=None, exclude=True)
-    vibe_code_experimental_nuage_enabled: bool = Field(default=False, exclude=True)
 
     # TODO(otel): remove exclude=True once the feature is publicly available
     enable_otel: bool = Field(default=False, exclude=True)
     otel_endpoint: str = Field(default="", exclude=True)
 
     console_base_url: str = Field(default=DEFAULT_CONSOLE_BASE_URL, exclude=True)
+    vibe_base_url: str = Field(default=DEFAULT_VIBE_BASE_URL, exclude=True)
 
     enable_experimental_hooks: bool = Field(default=False, exclude=True)
 
@@ -1644,6 +1648,9 @@ class VibeConfig(BaseSettings):
     def load(cls, **overrides: Any) -> VibeConfig:
         cls._migrate()
         config = cls(**(overrides or {}))
+        configure_ssl_context(
+            enable_system_trust_store=config.enable_system_trust_store
+        )
         cls._apply_lsp_config(config)
         return config
 
