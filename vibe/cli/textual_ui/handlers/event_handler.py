@@ -261,7 +261,8 @@ class EventHandler:
                 self.current_compact.set_error(event.error)
             else:
                 self.current_compact.set_complete(
-                    old_session_id=event.old_session_id, new_session_id=event.new_session_id
+                    old_session_id=event.old_session_id,
+                    new_session_id=event.new_session_id,
                 )
             self.current_compact = None
 

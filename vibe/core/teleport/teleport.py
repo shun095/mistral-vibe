@@ -39,6 +39,7 @@ from vibe.core.utils.http import build_ssl_context
 # to prevent sending any data to external services.
 _TELEPORT_DISABLED = True
 
+
 class TeleportService:
     def __init__(
         self,

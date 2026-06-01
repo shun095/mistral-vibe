@@ -484,7 +484,7 @@ async def test_run_compact_spawns_queue_on_success(tmp_path: Path) -> None:
         def set_error(self, msg):
             pass
 
-    await app._run_compact(cast(Any, FakeCompactMsg()), 200, "test-session-id")
+    await app._run_compact(cast(Any, FakeCompactMsg()), "test-session-id")
 
     assert len(spawn_calls) == 1
 
@@ -511,7 +511,7 @@ async def test_run_compact_no_spawn_on_error(tmp_path: Path) -> None:
         def set_error(self, msg):
             pass
 
-    await app._run_compact(cast(Any, FakeCompactMsg()), 200, "test-session-id")
+    await app._run_compact(cast(Any, FakeCompactMsg()), "test-session-id")
 
     assert len(spawn_calls) == 0
 

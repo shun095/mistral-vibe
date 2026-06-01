@@ -16,6 +16,8 @@ from vibe.core.teleport.nuage import (
     NuageTextPart,
 )
 
+pytestmark = pytest.mark.skip(reason="Teleport is disabled in custom-fix branch")
+
 
 def _request() -> NuageRequest:
     return NuageRequest(
@@ -182,6 +184,7 @@ async def test_start_raises_for_unsuccessful_response() -> None:
 async def test_start_raises_for_invalid_response() -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"url": "https://chat.example.com/code/1/2"})
+
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         nuage = NuageClient("https://chat.example.com", "api-key", client=client)
         with pytest.raises(ServiceTeleportError, match="response was invalid"):

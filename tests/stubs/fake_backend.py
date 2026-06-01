@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, Callable, Iterable, Sequence
+from collections.abc import AsyncGenerator, Iterable, Sequence
 from typing import TYPE_CHECKING, cast
 
 from tests.mock.utils import mock_llm_chunk

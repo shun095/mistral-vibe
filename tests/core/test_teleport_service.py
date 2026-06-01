@@ -157,6 +157,8 @@ class TestTeleportServiceIsSupported:
 
 
 class TestTeleportServiceExecute:
+    pytestmark = pytest.mark.skip(reason="Teleport is disabled in custom-fix branch")
+
     @pytest.mark.asyncio
     async def test_execute_happy_path(self, tmp_path: Path) -> None:
         seen_body: dict[str, object] | None = None
