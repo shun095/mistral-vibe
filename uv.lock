@@ -508,6 +508,15 @@ wheels = [
 ]
 
 [[package]]
+name = "eval-type-backport"
+version = "0.3.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/fb/a3/cafafb4558fd638aadfe4121dc6cefb8d743368c085acb2f521df0f3d9d7/eval_type_backport-0.3.1.tar.gz", hash = "sha256:57e993f7b5b69d271e37482e62f74e76a0276c82490cf8e4f0dffeb6b332d5ed", size = 9445, upload-time = "2025-12-02T11:51:42.987Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cf/22/fdc2e30d43ff853720042fa15baa3e6122722be1a7950a98233ebb55cd71/eval_type_backport-0.3.1-py3-none-any.whl", hash = "sha256:279ab641905e9f11129f56a8a78f493518515b83402b860f6f06dd7c011fdfa8", size = 6063, upload-time = "2025-12-02T11:51:41.665Z" },
+]
+
+[[package]]
 name = "execnet"
 version = "2.1.2"
 source = { registry = "https://pypi.org/simple" }
@@ -943,6 +952,15 @@ wheels = [
 ]
 
 [[package]]
+name = "jsonpath-python"
+version = "1.1.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/2d/db/2f4ecc24da35c6142b39c353d5b7c16eef955cc94b35a48d3fa47996d7c3/jsonpath_python-1.1.5.tar.gz", hash = "sha256:ceea2efd9e56add09330a2c9631ea3d55297b9619348c1055e5bfb9cb0b8c538", size = 87352, upload-time = "2026-03-17T06:16:40.597Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/28/50/1a313fb700526b134c71eb8a225d8b83be0385dbb0204337b4379c698cef/jsonpath_python-1.1.5-py3-none-any.whl", hash = "sha256:a60315404d70a65e76c9a782c84e50600480221d94a58af47b7b4d437351cb4b", size = 14090, upload-time = "2026-03-17T06:16:39.152Z" },
+]
+
+[[package]]
 name = "jsonpointer"
 version = "3.1.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1012,7 +1030,7 @@ name = "macholib"
 version = "1.16.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "altgraph" },
+    { name = "altgraph", marker = "sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/10/2f/97589876ea967487978071c9042518d28b958d87b17dceb7cdc1d881f963/macholib-1.16.4.tar.gz", hash = "sha256:f408c93ab2e995cd2c46e34fe328b130404be143469e41bc366c807448979362", size = 59427, upload-time = "2025-11-22T08:28:38.373Z" }
 wheels = [
@@ -1205,21 +1223,45 @@ version = "2.13.0"
 source = { editable = "." }
 dependencies = [
     { name = "agent-client-protocol" },
+    { name = "annotated-types" },
     { name = "anyio" },
+    { name = "attrs" },
+    { name = "beautifulsoup4" },
     { name = "cachetools" },
     { name = "cairosvg" },
     { name = "certifi" },
+    { name = "cffi" },
     { name = "charset-normalizer" },
+    { name = "click", marker = "sys_platform != 'emscripten'" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
     { name = "cryptography" },
+    { name = "eval-type-backport" },
     { name = "fastapi" },
+    { name = "gitdb" },
     { name = "gitpython" },
     { name = "giturlparse" },
     { name = "google-auth" },
+    { name = "googleapis-common-protos" },
+    { name = "h11" },
+    { name = "httpcore" },
     { name = "httpx" },
+    { name = "httpx-sse" },
+    { name = "idna" },
+    { name = "importlib-metadata" },
+    { name = "jaraco-classes" },
+    { name = "jaraco-context" },
+    { name = "jaraco-functools" },
+    { name = "jeepney", marker = "sys_platform == 'linux'" },
     { name = "jinja2" },
     { name = "json-repair" },
     { name = "jsonpatch" },
+    { name = "jsonpath-python" },
+    { name = "jsonpointer" },
+    { name = "jsonschema" },
+    { name = "jsonschema-specifications" },
     { name = "keyring" },
+    { name = "linkify-it-py" },
+    { name = "markdown-it-py" },
     { name = "markdownify" },
     { name = "markitdown", extra = ["pdf"] },
     { name = "mcp" },
@@ -1227,19 +1269,39 @@ dependencies = [
     { name = "mdurl" },
     { name = "more-itertools" },
     { name = "opentelemetry-api" },
+    { name = "opentelemetry-exporter-otlp-proto-common" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-proto" },
     { name = "opentelemetry-sdk" },
     { name = "opentelemetry-semantic-conventions" },
     { name = "packaging" },
     { name = "pexpect" },
     { name = "pillow" },
+    { name = "platformdirs" },
+    { name = "protobuf" },
+    { name = "ptyprocess" },
+    { name = "pyasn1" },
+    { name = "pyasn1-modules" },
+    { name = "pycparser", marker = "implementation_name != 'PyPy'" },
     { name = "pydantic" },
+    { name = "pydantic-core" },
     { name = "pydantic-settings" },
+    { name = "pygments" },
+    { name = "pyjwt" },
     { name = "pyperclip" },
+    { name = "python-dateutil" },
     { name = "python-dotenv" },
+    { name = "python-multipart" },
+    { name = "pywin32", marker = "sys_platform == 'win32'" },
+    { name = "pywin32-ctypes", marker = "sys_platform == 'win32'" },
     { name = "pyyaml" },
+    { name = "referencing" },
     { name = "requests" },
     { name = "rich" },
+    { name = "rpds-py" },
+    { name = "secretstorage", marker = "sys_platform == 'linux'" },
+    { name = "six" },
+    { name = "smmap" },
     { name = "sounddevice" },
     { name = "soupsieve" },
     { name = "sse-starlette" },
@@ -1255,9 +1317,10 @@ dependencies = [
     { name = "typing-inspection" },
     { name = "uc-micro-py" },
     { name = "urllib3" },
-    { name = "uvicorn" },
+    { name = "uvicorn", marker = "sys_platform != 'emscripten'" },
     { name = "watchfiles" },
     { name = "websockets" },
+    { name = "zipp" },
     { name = "zstandard" },
 ]
 
@@ -1349,41 +1412,85 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "agent-client-protocol", specifier = "==0.9.0" },
+    { name = "annotated-types", specifier = "==0.7.0" },
     { name = "anyio", specifier = "==4.13.0" },
+    { name = "attrs", specifier = "==26.1.0" },
+    { name = "beautifulsoup4", specifier = "==4.14.3" },
     { name = "cachetools", specifier = "==7.0.6" },
-    { name = "cairosvg", specifier = ">=2.7.0" },
+    { name = "cairosvg", specifier = "==2.9.0" },
     { name = "certifi", specifier = "==2026.4.22" },
+    { name = "cffi", specifier = "==2.0.0" },
     { name = "charset-normalizer", specifier = "==3.4.7" },
+    { name = "click", marker = "sys_platform != 'emscripten'", specifier = "==8.3.3" },
+    { name = "colorama", marker = "sys_platform == 'win32'", specifier = "==0.4.6" },
     { name = "cryptography", specifier = "==47.0.0" },
-    { name = "fastapi", specifier = ">=0.115.0" },
+    { name = "eval-type-backport", specifier = "==0.3.1" },
+    { name = "fastapi", specifier = "==0.136.3" },
+    { name = "gitdb", specifier = "==4.0.12" },
     { name = "gitpython", specifier = "==3.1.47" },
     { name = "giturlparse", specifier = "==0.14.0" },
     { name = "google-auth", specifier = "==2.49.2" },
+    { name = "googleapis-common-protos", specifier = "==1.74.0" },
+    { name = "h11", specifier = "==0.16.0" },
+    { name = "httpcore", specifier = "==1.0.9" },
     { name = "httpx", specifier = "==0.28.1" },
-    { name = "jinja2", specifier = ">=3.1.6" },
-    { name = "json-repair", specifier = ">=0.30.0" },
+    { name = "httpx-sse", specifier = "==0.4.3" },
+    { name = "idna", specifier = "==3.13" },
+    { name = "importlib-metadata", specifier = "==8.7.1" },
+    { name = "jaraco-classes", specifier = "==3.4.0" },
+    { name = "jaraco-context", specifier = "==6.1.2" },
+    { name = "jaraco-functools", specifier = "==4.4.0" },
+    { name = "jeepney", marker = "sys_platform == 'linux'", specifier = "==0.9.0" },
+    { name = "jinja2", specifier = "==3.1.6" },
+    { name = "json-repair", specifier = "==0.59.10" },
     { name = "jsonpatch", specifier = "==1.33" },
+    { name = "jsonpath-python", specifier = "==1.1.5" },
+    { name = "jsonpointer", specifier = "==3.1.1" },
+    { name = "jsonschema", specifier = "==4.26.0" },
+    { name = "jsonschema-specifications", specifier = "==2025.9.1" },
     { name = "keyring", specifier = "==25.7.0" },
+    { name = "linkify-it-py", specifier = "==2.1.0" },
+    { name = "markdown-it-py", specifier = "==4.0.0" },
     { name = "markdownify", specifier = "==1.2.2" },
-    { name = "markitdown", extras = ["pdf"], specifier = ">=0.1.0" },
+    { name = "markitdown", extras = ["pdf"], specifier = "==0.1.5" },
     { name = "mcp", specifier = "==1.27.1" },
     { name = "mdit-py-plugins", specifier = "==0.5.0" },
     { name = "mdurl", specifier = "==0.1.2" },
     { name = "more-itertools", specifier = "==11.0.2" },
     { name = "opentelemetry-api", specifier = "==1.39.1" },
+    { name = "opentelemetry-exporter-otlp-proto-common", specifier = "==1.39.1" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = "==1.39.1" },
+    { name = "opentelemetry-proto", specifier = "==1.39.1" },
     { name = "opentelemetry-sdk", specifier = "==1.39.1" },
     { name = "opentelemetry-semantic-conventions", specifier = "==0.60b1" },
     { name = "packaging", specifier = "==26.2" },
     { name = "pexpect", specifier = "==4.9.0" },
-    { name = "pillow", specifier = ">=10.0.0" },
+    { name = "pillow", specifier = "==12.2.0" },
+    { name = "platformdirs", specifier = "==4.9.6" },
+    { name = "protobuf", specifier = "==6.33.6" },
+    { name = "ptyprocess", specifier = "==0.7.0" },
+    { name = "pyasn1", specifier = "==0.6.3" },
+    { name = "pyasn1-modules", specifier = "==0.4.2" },
+    { name = "pycparser", marker = "implementation_name != 'PyPy'", specifier = "==3.0" },
     { name = "pydantic", specifier = "==2.13.3" },
+    { name = "pydantic-core", specifier = "==2.46.3" },
     { name = "pydantic-settings", specifier = "==2.14.0" },
+    { name = "pygments", specifier = "==2.20.0" },
+    { name = "pyjwt", specifier = "==2.12.1" },
     { name = "pyperclip", specifier = "==1.11.0" },
+    { name = "python-dateutil", specifier = "==2.9.0.post0" },
     { name = "python-dotenv", specifier = "==1.2.2" },
+    { name = "python-multipart", specifier = "==0.0.27" },
+    { name = "pywin32", marker = "sys_platform == 'win32'", specifier = "==311" },
+    { name = "pywin32-ctypes", marker = "sys_platform == 'win32'", specifier = "==0.2.3" },
     { name = "pyyaml", specifier = "==6.0.3" },
+    { name = "referencing", specifier = "==0.37.0" },
     { name = "requests", specifier = "==2.33.1" },
     { name = "rich", specifier = "==15.0.0" },
+    { name = "rpds-py", specifier = "==0.30.0" },
+    { name = "secretstorage", marker = "sys_platform == 'linux'", specifier = "==3.5.0" },
+    { name = "six", specifier = "==1.17.0" },
+    { name = "smmap", specifier = "==5.0.3" },
     { name = "sounddevice", specifier = "==0.5.5" },
     { name = "soupsieve", specifier = "==2.8.3" },
     { name = "sse-starlette", specifier = "==3.4.1" },
@@ -1391,7 +1498,7 @@ requires-dist = [
     { name = "textual", specifier = "==8.2.7" },
     { name = "textual-speedups", specifier = "==0.2.1" },
     { name = "tomli-w", specifier = "==1.2.0" },
-    { name = "tomlkit", specifier = ">=0.14.0" },
+    { name = "tomlkit", specifier = "==0.14.0" },
     { name = "tree-sitter", specifier = "==0.25.2" },
     { name = "tree-sitter-bash", specifier = "==0.25.1" },
     { name = "truststore", specifier = "==0.10.4" },
@@ -1399,9 +1506,10 @@ requires-dist = [
     { name = "typing-inspection", specifier = "==0.4.2" },
     { name = "uc-micro-py", specifier = "==2.0.0" },
     { name = "urllib3", specifier = "==2.6.3" },
-    { name = "uvicorn", specifier = ">=0.41.0" },
+    { name = "uvicorn", marker = "sys_platform != 'emscripten'", specifier = "==0.46.0" },
     { name = "watchfiles", specifier = "==1.1.1" },
     { name = "websockets", specifier = "==16.0" },
+    { name = "zipp", specifier = "==3.23.1" },
     { name = "zstandard", specifier = "==0.25.0" },
 ]
 
@@ -2318,6 +2426,18 @@ wheels = [
 ]
 
 [[package]]
+name = "python-dateutil"
+version = "2.9.0.post0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "six" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/66/c0/0c8b6ad9f17a802ee498c46e004a0eb49bc148f2fd230864601a86dcf6db/python-dateutil-2.9.0.post0.tar.gz", hash = "sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3", size = 342432, upload-time = "2024-03-01T18:36:20.211Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ec/57/56b9bcc3c9c6a792fcbaf139543cee77261f3651ca9da0c93f5c1221264b/python_dateutil-2.9.0.post0-py2.py3-none-any.whl", hash = "sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427", size = 229892, upload-time = "2024-03-01T18:36:18.57Z" },
+]
+
+[[package]]
 name = "python-discovery"
 version = "1.2.2"
 source = { registry = "https://pypi.org/simple" }
@@ -2619,8 +2739,8 @@ name = "secretstorage"
 version = "3.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cryptography" },
-    { name = "jeepney" },
+    { name = "cryptography", marker = "sys_platform != 'win32'" },
+    { name = "jeepney", marker = "sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1c/03/e834bcd866f2f8a49a85eaff47340affa3bfa391ee9912a952a1faa68c7b/secretstorage-3.5.0.tar.gz", hash = "sha256:f04b8e4689cbce351744d5537bf6b1329c6fc68f91fa666f60a380edddcd11be", size = 19884, upload-time = "2025-11-23T19:02:53.191Z" }
 wheels = [
