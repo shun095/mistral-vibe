@@ -18,7 +18,7 @@ from textual.containers import Horizontal, Vertical
 from textual.css.query import NoMatches
 from textual.reactive import reactive
 from textual.widget import Widget
-from textual.widgets import Static
+from textual.widgets import Markdown, Static
 from textual.widgets._markdown import MarkdownStream
 from watchfiles import awatch
 

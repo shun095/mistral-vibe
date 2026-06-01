@@ -79,6 +79,7 @@ from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, VerticalGroup, VerticalScroll
 from textual.driver import Driver
 from textual.events import AppBlur, AppFocus, MouseUp
+from textual.theme import BUILTIN_THEMES
 from textual.widget import Widget
 from textual.widgets import Static
 
@@ -153,6 +154,7 @@ from vibe.cli.textual_ui.widgets.question_app import QuestionApp
 from vibe.cli.textual_ui.widgets.rewind_app import RewindApp
 from vibe.cli.textual_ui.widgets.session_picker import SessionPickerApp
 from vibe.cli.textual_ui.widgets.teleport_message import TeleportMessage
+from vibe.cli.textual_ui.widgets.theme_picker import ThemePickerApp, sorted_theme_names
 from vibe.cli.textual_ui.widgets.thinking_picker import ThinkingPickerApp
 from vibe.cli.textual_ui.widgets.tools import ToolCallMessage, ToolResultMessage
 from vibe.cli.textual_ui.widgets.voice_app import VoiceApp
@@ -190,7 +192,7 @@ from vibe.core.autocompletion.path_prompt import (
     build_title_segments,
 )
 from vibe.core.autocompletion.path_prompt_adapter import render_path_prompt
-from vibe.core.config import VibeConfig
+from vibe.core.config import DEFAULT_THEME, VibeConfig
 from vibe.core.data_retention import DATA_RETENTION_MESSAGE
 from vibe.core.fuzzy import using_cython
 from vibe.core.hooks.models import HookStartEvent
@@ -255,17 +257,18 @@ from vibe.core.utils import (
 from vibe.core.utils.io import read_safe
 
 
-def _compute_connectors_count(
+def _compute_connector_counts(
     config: VibeConfig, connector_registry: ConnectorRegistry | None
-) -> int:
+) -> tuple[int, int]:
     total = connector_registry.connector_count if connector_registry else 0
     if total == 0:
-        return 0
+        return (0, 0)
     disabled_names = {c.name for c in config.connectors if c.disabled}
     known_names = set(
         connector_registry.get_connector_names() if connector_registry else []
     )
-    return total - len(disabled_names & known_names)
+    enabled = total - len(disabled_names & known_names)
+    return (enabled, total)
 
 
 class BottomApp(StrEnum):
@@ -285,6 +288,7 @@ class BottomApp(StrEnum):
     ModelPicker = auto()
     ProxySetup = auto()
     Question = auto()
+    ThemePicker = auto()
     ThinkingPicker = auto()
     Rewind = auto()
     SessionPicker = auto()
@@ -577,13 +581,14 @@ class VibeApp(App):  # noqa: PLR0904
 
     def compose(self) -> ComposeResult:
         with ChatScroll(id="chat"):
+            connectors_enabled, connectors_total = _compute_connector_counts(
+                self.config, self.agent_loop.connector_registry
+            )
             self._banner = Banner(
                 config=self.config,
                 skill_manager=self.agent_loop.skill_manager,
-                mcp_registry=self.agent_loop.mcp_registry,
-                connectors_count=_compute_connectors_count(
-                    self.config, self.agent_loop.connector_registry
-                ),
+                connectors_enabled=connectors_enabled,
+                connectors_total=connectors_total,
             )
             yield self._banner
             yield VerticalGroup(id="messages")
@@ -611,7 +616,7 @@ class VibeApp(App):  # noqa: PLR0904
             yield ContextProgress()
 
     async def on_mount(self) -> None:
-        self.theme = "textual-ansi"
+        self._apply_theme(self.config.theme)
         self._terminal_notifier.restore()
 
         self._cached_messages_area = self.query_one("#messages")
@@ -1015,6 +1020,25 @@ class VibeApp(App):  # noqa: PLR0904
     async def on_thinking_picker_app_cancelled(
         self, _event: ThinkingPickerApp.Cancelled
     ) -> None:
+        await self._switch_to_input_app()
+
+    async def on_theme_picker_app_theme_previewed(
+        self, message: ThemePickerApp.ThemePreviewed
+    ) -> None:
+        self._apply_theme(message.theme)
+
+    async def on_theme_picker_app_theme_selected(
+        self, message: ThemePickerApp.ThemeSelected
+    ) -> None:
+        self._apply_theme(message.theme)
+        self.config.theme = message.theme
+        VibeConfig.save_updates({"theme": message.theme})
+        await self._switch_to_input_app()
+
+    async def on_theme_picker_app_cancelled(
+        self, message: ThemePickerApp.Cancelled
+    ) -> None:
+        self._apply_theme(message.original_theme)
         await self._switch_to_input_app()
 
     async def on_mcpapp_mcpclosed(self, _message: MCPApp.MCPClosed) -> None:
@@ -2436,6 +2460,11 @@ class VibeApp(App):  # noqa: PLR0904
             return
         await self._switch_to_thinking_picker_app()
 
+    async def _show_theme(self, **kwargs: Any) -> None:
+        if self._current_bottom_app == BottomApp.ThemePicker:
+            return
+        await self._switch_to_theme_picker_app()
+
     async def _show_proxy_setup(self, **kwargs: Any) -> None:
         if self._current_bottom_app == BottomApp.ProxySetup:
             return
@@ -2759,13 +2788,14 @@ class VibeApp(App):  # noqa: PLR0904
             self._narrator_manager.sync()
 
             if self._banner:
+                ce, ct = _compute_connector_counts(
+                    base_config, self.agent_loop.connector_registry
+                )
                 self._banner.set_state(
                     base_config,
                     self.agent_loop.skill_manager,
-                    self.agent_loop.mcp_registry,
-                    connectors_count=_compute_connectors_count(
-                        base_config, self.agent_loop.connector_registry
-                    ),
+                    connectors_enabled=ce,
+                    connectors_total=ct,
                     plan_description=plan_title(self._plan_info),
                 )
             await self._mount_and_scroll(
@@ -3306,6 +3336,23 @@ class VibeApp(App):  # noqa: PLR0904
             )
         )
 
+    async def _switch_to_theme_picker_app(self) -> None:
+        if self._current_bottom_app == BottomApp.ThemePicker:
+            return
+
+        await self._switch_from_input(
+            ThemePickerApp(
+                theme_names=sorted_theme_names(), current_theme=self.config.theme
+            )
+        )
+
+    def _apply_theme(self, theme: str) -> None:
+        if theme not in BUILTIN_THEMES:
+            logger.warning("Unknown theme=%s; falling back to %s", theme, DEFAULT_THEME)
+            self.theme = DEFAULT_THEME
+            return
+        self.theme = theme
+
     async def _switch_to_proxy_setup_app(self) -> None:
         if self._current_bottom_app == BottomApp.ProxySetup:
             return
@@ -3359,6 +3406,8 @@ class VibeApp(App):  # noqa: PLR0904
                     self.query_one(ConfigApp).focus()
                 case BottomApp.ModelPicker:
                     self.query_one(ModelPickerApp).focus()
+                case BottomApp.ThemePicker:
+                    self.query_one(ThemePickerApp).focus()
                 case BottomApp.ThinkingPicker:
                     self.query_one(ThinkingPickerApp).focus()
                 case BottomApp.ProxySetup:
@@ -3436,6 +3485,16 @@ class VibeApp(App):  # noqa: PLR0904
         try:
             history_picker = self.query_one(HistoryPickerApp)
             history_picker.post_message(HistoryPickerApp.Cancelled())
+        except Exception:
+            pass
+        self._last_escape_time = None
+
+    def _handle_theme_picker_app_escape(self) -> None:
+        try:
+            theme_picker = self.query_one(ThemePickerApp)
+            theme_picker.post_message(
+                ThemePickerApp.Cancelled(original_theme=self.config.theme)
+            )
         except Exception:
             pass
         self._last_escape_time = None
@@ -3701,6 +3760,8 @@ class VibeApp(App):  # noqa: PLR0904
             self._handle_model_picker_app_escape()
         elif self._current_bottom_app == BottomApp.HistoryPicker:
             self._handle_history_picker_app_escape()
+        elif self._current_bottom_app == BottomApp.ThemePicker:
+            self._handle_theme_picker_app_escape()
         elif self._current_bottom_app == BottomApp.ThinkingPicker:
             self._handle_thinking_picker_app_escape()
         elif self._current_bottom_app == BottomApp.SessionPicker:
@@ -3839,13 +3900,14 @@ class VibeApp(App):  # noqa: PLR0904
 
     def _refresh_banner(self) -> None:
         if self._banner:
+            ce, ct = _compute_connector_counts(
+                self.config, self.agent_loop.connector_registry
+            )
             self._banner.set_state(
                 self.config,
                 self.agent_loop.skill_manager,
-                self.agent_loop.mcp_registry,
-                connectors_count=_compute_connectors_count(
-                    self.config, self.agent_loop.connector_registry
-                ),
+                connectors_enabled=ce,
+                connectors_total=ct,
                 plan_description=plan_title(self._plan_info),
             )
 

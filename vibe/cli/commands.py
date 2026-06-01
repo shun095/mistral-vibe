@@ -205,6 +205,11 @@ class CommandRegistry:
                 description="Queue messages for auto-submit after task completion",
                 handler="_queue_command",
             ),
+            "theme": Command(
+                aliases=frozenset(["/theme"]),
+                description="Select theme",
+                handler="_show_theme",
+            ),
         }
 
     @property

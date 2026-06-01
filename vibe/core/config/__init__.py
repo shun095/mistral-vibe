@@ -5,6 +5,7 @@ from vibe.core.config._settings import (
     DEFAULT_MISTRAL_API_ENV_KEY,
     DEFAULT_MODELS,
     DEFAULT_PROVIDERS,
+    DEFAULT_THEME,
     DEFAULT_TRANSCRIBE_MODELS,
     DEFAULT_TRANSCRIBE_PROVIDERS,
     DEFAULT_TTS_MODELS,
@@ -47,6 +48,7 @@ from vibe.core.config.layer import (
 )
 from vibe.core.config.patch import (
     AppendToList,
+    ConfigPatch,
     DeleteField,
     PatchOp,
     RemoveFromList,
@@ -71,6 +73,7 @@ __all__ = [
     "DEFAULT_MISTRAL_API_ENV_KEY",
     "DEFAULT_MODELS",
     "DEFAULT_PROVIDERS",
+    "DEFAULT_THEME",
     "DEFAULT_TRANSCRIBE_MODELS",
     "DEFAULT_TRANSCRIBE_PROVIDERS",
     "DEFAULT_TTS_MODELS",
@@ -82,6 +85,7 @@ __all__ = [
     "ConfigFragment",
     "ConfigLayer",
     "ConfigLayerError",
+    "ConfigPatch",
     "ConfigSchema",
     "ConnectorConfig",
     "DeleteField",

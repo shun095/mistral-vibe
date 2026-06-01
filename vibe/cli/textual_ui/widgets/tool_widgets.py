@@ -9,9 +9,8 @@ from pydantic import BaseModel
 STRING_PREVIEW_LENGTH = 200
 from textual.app import ComposeResult
 from textual.containers import Vertical
-from textual.widgets import Static
+from textual.widgets import Markdown, Static
 
-from vibe.cli.textual_ui.ansi_markdown import AnsiMarkdown as Markdown
 from vibe.cli.textual_ui.widgets.no_markup_static import NoMarkupStatic
 from vibe.core.lsp import LSPDiagnosticFormatter
 from vibe.core.tools.builtins.ask_user_question import AskUserQuestionResult
