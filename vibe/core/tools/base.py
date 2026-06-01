@@ -14,18 +14,25 @@ from typing import (
     TYPE_CHECKING,
     Any,
     ClassVar,
+    Protocol,
     Union,
     cast,
     get_args,
     get_origin,
     get_type_hints,
+    runtime_checkable,
 )
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from vibe.core.logger import logger
 from vibe.core.rewind.manager import FileSnapshot
-from vibe.core.types import ToolStreamEvent
+from vibe.core.types import (
+    AssistantEvent,
+    ContinueableUserMessageEvent,
+    LLMMessage,
+    ToolStreamEvent,
+)
 from vibe.core.utils.io import read_safe
 
 if TYPE_CHECKING:
@@ -38,6 +45,27 @@ if TYPE_CHECKING:
     from vibe.core.types import ApprovalCallback, SwitchAgentCallback, UserInputCallback
 
 ARGS_COUNT = 4
+
+
+@runtime_checkable
+class SpecialToolBehavior(Protocol):
+    """Interface for tools that require special handling in the agent loop."""
+
+    @classmethod
+    def get_event_constructor(cls) -> EventConstructor | None:
+        """Return event constructor for tools that need custom UI events."""
+        return None
+
+    @classmethod
+    def get_llm_message_constructor(cls) -> LLMMessageConstructor | None:
+        """Return LLM message constructor for tools that need to add context to LLM."""
+        return None
+
+
+EventConstructor = (
+    Callable[..., list[AssistantEvent | ContinueableUserMessageEvent]] | None
+)
+LLMMessageConstructor = Callable[..., LLMMessage | list[LLMMessage] | None] | None
 
 
 @dataclass

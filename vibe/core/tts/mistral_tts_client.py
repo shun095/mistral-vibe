@@ -4,12 +4,15 @@ import base64
 import os
 
 import httpx
-from mistralai.client import Mistral
-from mistralai.client.models import SpeechOutputFormat
 
 from vibe.core.config import TTSModelConfig, TTSProviderConfig
+from vibe.core.llm._mistralai_stub import Mistral, SpeechOutputFormat
 from vibe.core.tts.tts_client_port import TTSResult
 from vibe.core.utils.http import build_ssl_context
+
+# SECURITY: Hardcoded disable - Text-to-Speech is permanently disabled
+# to prevent sending any data to external services.
+_TTS_DISABLED = True
 
 
 class MistralTTSClient:
@@ -35,6 +38,11 @@ class MistralTTSClient:
         return self._client
 
     async def speak(self, text: str) -> TTSResult:
+        if _TTS_DISABLED:
+            raise RuntimeError(
+                "Text-to-Speech is disabled for security reasons. "
+                "External TTS services have been hardcoded disabled."
+            )
         client = self._get_client()
         response = await client.audio.speech.complete_async(
             model=self._model_name,

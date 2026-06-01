@@ -88,8 +88,9 @@ def vibe_config_with_update_checks_enabled() -> VibeConfig:
 async def test_ui_displays_update_notification(
     build_update_test_app: Callable[..., VibeApp],
 ) -> None:
+    config = build_test_vibe_config(enable_update_checks=True, enable_auto_update=False)
     notifier = FakeUpdateGateway(update=Update(latest_version="0.2.0"))
-    app = build_update_test_app(update_notifier=notifier)
+    app = build_update_test_app(update_notifier=notifier, config=config)
 
     async with app.run_test() as pilot:
         notification = await _wait_for_notification(app, pilot, timeout=0.3)
@@ -156,8 +157,11 @@ async def test_ui_does_not_show_toast_when_update_is_known_in_recent_cache_alrea
         latest_version="0.2.0", stored_at_timestamp=timestamp_two_hours_ago
     )
     update_cache_repository = FakeUpdateCacheRepository(update_cache=update_cache)
+    config = build_test_vibe_config(enable_update_checks=True, enable_auto_update=False)
     app = build_update_test_app(
-        update_notifier=notifier, update_cache_repository=update_cache_repository
+        update_notifier=notifier,
+        update_cache_repository=update_cache_repository,
+        config=config,
     )
 
     async with app.run_test() as pilot:
@@ -176,8 +180,11 @@ async def test_ui_does_show_toast_when_cache_entry_is_too_old(
         latest_version="0.2.0", stored_at_timestamp=timestamp_two_days_ago
     )
     update_cache_repository = FakeUpdateCacheRepository(update_cache=update_cache)
+    config = build_test_vibe_config(enable_update_checks=True, enable_auto_update=False)
     app = build_update_test_app(
-        update_notifier=notifier, update_cache_repository=update_cache_repository
+        update_notifier=notifier,
+        update_cache_repository=update_cache_repository,
+        config=config,
     )
 
     async with app.run_test() as pilot:

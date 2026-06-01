@@ -84,7 +84,7 @@ def test_spillover_message_middle_truncated() -> None:
     assert len(out) == 2  # oldest dropped
     assert out[-1].content == "recent"
     middle = out[0].content
-    assert middle is not None
+    assert isinstance(middle, str)
     assert middle.startswith("MIDDLE_HEAD")
     assert middle.endswith("MIDDLE_TAIL")
     assert "[... truncated ...]" in middle

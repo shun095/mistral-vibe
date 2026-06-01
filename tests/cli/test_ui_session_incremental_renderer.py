@@ -3,7 +3,6 @@ from __future__ import annotations
 import time
 
 import pytest
-from textual.widgets import Button
 
 from tests.cli.plan_offer.adapters.fake_whoami_gateway import FakeWhoAmIGateway
 from tests.conftest import build_test_agent_loop
@@ -55,7 +54,8 @@ async def _wait_for_load_more(app: VibeApp, pause) -> None:
 
 
 def _load_more_remaining(app: VibeApp) -> int:
-    label = app.query_one(HistoryLoadMoreMessage).query_one(Button).label
+    widget = app.query_one(HistoryLoadMoreMessage)
+    label = widget._label_widget.label if widget._label_widget else ""
     text = str(label)
     _, _, remainder = text.rpartition("(")
     return int(remainder.rstrip(")"))
@@ -82,7 +82,7 @@ async def test_ui_session_incremental_loader_shows_tail_and_load_more(
 
         assert len(app.query(UserMessage)) == HISTORY_RESUME_TAIL_MESSAGES
         load_more = app.query_one(HistoryLoadMoreMessage)
-        label = load_more.query_one(Button).label
+        label = load_more._label_widget.label if load_more._label_widget else ""
         assert "(" in str(label)
 
 
@@ -90,7 +90,7 @@ async def test_ui_session_incremental_loader_shows_tail_and_load_more(
 async def test_ui_session_incremental_loader_load_more_shows_remaining_count(
     vibe_config: VibeConfig,
 ) -> None:
-    total_messages = 31
+    total_messages = 45  # 20 tail + 25 remaining; 1 click loads 20, 5 remain
     agent_loop = build_test_agent_loop(config=vibe_config, enable_streaming=False)
     agent_loop.messages.extend([
         LLMMessage(role=Role.user, content=f"msg-{idx}")

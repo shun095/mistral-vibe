@@ -33,6 +33,7 @@ dependencies = [
     "attrs==26.1.0",
     "beautifulsoup4==4.14.3",
     "cachetools==7.0.6",
+    "cairosvg==2.9.0",
     "certifi==2026.4.22",
     "cffi==2.0.0",
     "charset-normalizer==3.4.7",
@@ -40,6 +41,7 @@ dependencies = [
     "colorama==0.4.6 ; sys_platform == 'win32'",
     "cryptography==47.0.0",
     "eval-type-backport==0.3.1",
+    "fastapi==0.136.3",
     "gitdb==4.0.12",
     "gitpython==3.1.47",
     "giturlparse==0.14.0",
@@ -55,6 +57,8 @@ dependencies = [
     "jaraco-context==6.1.2",
     "jaraco-functools==4.4.0",
     "jeepney==0.9.0 ; sys_platform == 'linux'",
+    "jinja2==3.1.6",
+    "json-repair==0.59.10",
     "jsonpatch==1.33",
     "jsonpath-python==1.1.5",
     "jsonpointer==3.1.1",
@@ -64,10 +68,11 @@ dependencies = [
     "linkify-it-py==2.1.0",
     "markdown-it-py==4.0.0",
     "markdownify==1.2.2",
+    "markitdown[pdf]==0.1.5",
     "mcp==1.27.1",
     "mdit-py-plugins==0.5.0",
     "mdurl==0.1.2",
-    "mistralai==2.4.4",
+    # "mistralai==2.4.4",  # quarantined on PyPI - commented out; restore when unquarantined
     "more-itertools==11.0.2",
     "opentelemetry-api==1.39.1",
     "opentelemetry-exporter-otlp-proto-common==1.39.1",
@@ -77,6 +82,7 @@ dependencies = [
     "opentelemetry-semantic-conventions==0.60b1",
     "packaging==26.2",
     "pexpect==4.9.0",
+    "Pillow==12.2.0",
     "platformdirs==4.9.6",
     "protobuf==6.33.6",
     "ptyprocess==0.7.0",
@@ -109,6 +115,7 @@ dependencies = [
     "textual==8.2.7",
     "textual-speedups==0.2.1",
     "tomli-w==1.2.0",
+    "tomlkit==0.14.0",
     "tree-sitter==0.25.2",
     "tree-sitter-bash==0.25.1",
     "truststore==0.10.4",
@@ -130,7 +137,7 @@ Issues = "https://github.com/mistralai/mistral-vibe/issues"
 Documentation = "https://github.com/mistralai/mistral-vibe#readme"
 
 [build-system]
-requires = ["hatchling", "hatch-vcs", "editables"]
+requires = ["hatchling", "hatch-vcs", "editables", "Cython>=3.0.0", "setuptools", "hatch-build-scripts"]
 build-backend = "hatchling.build"
 
 [tool.hatch.metadata]
@@ -138,7 +145,17 @@ allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 include = ["vibe/"]
+ignore-vcs = true
+exclude = [
+    "**/.gitignore",
+    "**/__pycache__/",
+    "**/*.pyc",
+    "**/*.pyo",
+    "**/build/",
+]
 
+[[tool.hatch.build.hooks.build-scripts.scripts]]
+commands = ["python scripts/build_cython.py"]
 
 [project.scripts]
 vibe = "vibe.cli.entrypoint:main"
@@ -155,12 +172,16 @@ required-version = ">=0.8.0"
 
 [dependency-groups]
 dev = [
+    "coverage>=7.13.2",
     "debugpy>=1.8.19",
+    "import-linter>=2.11",
+    "playwright>=1.40.0",
     "pre-commit>=4.2.0",
     "pyinstrument>=5.1.2",
     "pyright>=1.1.403",
     "pytest>=8.3.5",
     "pytest-asyncio>=1.2.0",
+    "pytest-cov>=7.0.0",
     "pytest-textual-snapshot>=1.1.0",
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.8.0",
@@ -235,6 +256,36 @@ build = [
     "virtualenv==21.2.4",
 ]
 
+[tool.importlinter]
+root_package = "vibe"
+exclude_type_checking_imports = true
+
+# core は acp を依存してはいけない
+[[tool.importlinter.contracts]]
+name = "Core has no dependencies on ACP"
+type = "forbidden"
+source_modules = ["vibe.core.*"]
+forbidden_modules = ["vibe.acp.*"]
+
+# core は cli を依存してはいけない（terminal_detect 依存のみ許可）
+[[tool.importlinter.contracts]]
+name = "Core has no dependencies on CLI"
+type = "forbidden"
+source_modules = ["vibe.core.*"]
+forbidden_modules = ["vibe.cli.*"]
+ignore_imports = [
+    "vibe.core.agent_loop -> vibe.cli.terminal_detect",
+    "vibe.core.experiments.session -> vibe.cli.terminal_detect",
+    "vibe.core.feedback -> vibe.cli.cache",
+]
+
+# cli/acp は互いに依存してはいけない
+[[tool.importlinter.contracts]]
+name = "CLI and ACP are independent"
+type = "forbidden"
+source_modules = ["vibe.cli.*"]
+forbidden_modules = ["vibe.acp.*"]
+
 [tool.pyright]
 pythonVersion = "3.12"
 reportMissingTypeStubs = false
@@ -306,8 +357,12 @@ ignore_decorators = ["@*"]
 
 [tool.pytest.ini_options]
 addopts = "-vvvv -q -n auto --durations=10 --import-mode=importlib --maxschedchunk=1"
-timeout = 10
+timeout = 120
 filterwarnings = [
     # (e2e) streaming mock server is started in a thread; and the cli is spawn in a fork
     "ignore:This process \\(pid=.*\\) is multi-threaded, use of forkpty\\(\\) may lead to deadlocks in the child\\.:DeprecationWarning",
 ]
+
+[tool.pytest-playwright]
+# Disable playwright's base_url fixture to avoid conflict with pytest-base-url
+base_url = ""

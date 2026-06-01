@@ -90,7 +90,7 @@ class TestAcpReadFileExecution:
     ) -> None:
         test_file = tmp_path / "test_file.txt"
         test_file.touch()
-        args = ReadFileArgs(path=str(test_file))
+        args = ReadFileArgs(path=str(test_file), offset=0)
         result = await collect_result(acp_read_file_tool.run(args))
 
         assert isinstance(result, ReadFileResult)
@@ -143,7 +143,7 @@ class TestAcpReadFileExecution:
             ),
         )
 
-        args = ReadFileArgs(path=str(test_file), limit=2)
+        args = ReadFileArgs(path=str(test_file), offset=0, limit=2)
         result = await collect_result(tool.run(args))
 
         assert result.lines_read == 2
@@ -191,7 +191,7 @@ class TestAcpReadFileExecution:
             ),
         )
 
-        args = ReadFileArgs(path=str(test_file))
+        args = ReadFileArgs(path=str(test_file), offset=0)
         with pytest.raises(ToolError) as exc_info:
             await collect_result(tool.run(args))
 
@@ -211,7 +211,7 @@ class TestAcpReadFileExecution:
             ),
         )
 
-        args = ReadFileArgs(path=str(test_file))
+        args = ReadFileArgs(path=str(test_file), offset=0)
         with pytest.raises(ToolError) as exc_info:
             await collect_result(tool.run(args))
 
@@ -233,7 +233,7 @@ class TestAcpReadFileExecution:
             state=AcpReadFileState.model_construct(client=mock_client, session_id=None),
         )
 
-        args = ReadFileArgs(path=str(test_file))
+        args = ReadFileArgs(path=str(test_file), offset=0)
         with pytest.raises(ToolError) as exc_info:
             await collect_result(tool.run(args))
 

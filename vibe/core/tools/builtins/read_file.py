@@ -8,6 +8,7 @@ import anyio
 from pydantic import BaseModel, Field
 
 from vibe.core.config.harness_files import get_harness_files_manager
+from vibe.core.lsp.utils import get_lsp_diagnostics
 from vibe.core.scratchpad import is_scratchpad_path
 from vibe.core.tools.base import (
     BaseTool,
@@ -37,8 +38,7 @@ class _ReadResult(NamedTuple):
 class ReadFileArgs(BaseModel):
     path: str
     offset: int = Field(
-        default=0,
-        description="Line number to start reading from (0-indexed, inclusive).",
+        description="Line number to start reading from (0-indexed, inclusive)."
     )
     limit: int | None = Field(
         default=None, description="Maximum number of lines to read."
@@ -52,6 +52,9 @@ class ReadFileResult(BaseModel):
     lines_read: int
     was_truncated: bool = Field(
         description="True if the reading was stopped due to the max_read_bytes limit."
+    )
+    lsp_diagnostics: str | None = Field(
+        default=None, description="LSP diagnostics for the file content, if available."
     )
 
 
@@ -88,12 +91,15 @@ class ReadFile(
 
         read_result = await self._read_file(args, file_path)
 
+        lsp_diagnostics = await get_lsp_diagnostics(str(file_path))
+
         yield ReadFileResult(
             path=str(file_path),
             content="".join(read_result.lines),
             offset=args.offset,
             lines_read=len(read_result.lines),
             was_truncated=read_result.was_truncated,
+            lsp_diagnostics=lsp_diagnostics,
         )
 
     def resolve_permission(self, args: ReadFileArgs) -> PermissionContext | None:

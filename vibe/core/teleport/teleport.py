@@ -35,6 +35,10 @@ from vibe.core.teleport.types import (
 )
 from vibe.core.utils.http import build_ssl_context
 
+# SECURITY: Hardcoded disable - Teleport is permanently disabled
+# to prevent sending any data to external services.
+_TELEPORT_DISABLED = True
+
 
 class TeleportService:
     def __init__(
@@ -110,6 +114,11 @@ class TeleportService:
     async def execute(
         self, prompt: str
     ) -> AsyncGenerator[TeleportYieldEvent, TeleportSendEvent]:
+        if _TELEPORT_DISABLED:
+            raise ServiceTeleportError(
+                "Teleport is disabled for security reasons. "
+                "External workflow services have been hardcoded disabled."
+            )
         if not prompt:
             raise ServiceTeleportError("Teleport requires a non-empty prompt.")
         self._validate_config()

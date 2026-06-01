@@ -23,6 +23,7 @@ class PathCompletionController:
         self._pending_future: Future | None = None
         self._last_query: tuple[str, int] | None = None
         self._query_lock = Lock()
+        self._suppressed = False
 
     def can_handle(self, text: str, cursor_index: int) -> bool:
         if cursor_index < 0 or cursor_index > len(text):
@@ -50,6 +51,7 @@ class PathCompletionController:
                 self._pending_future.cancel()
             self._pending_future = None
             self._last_query = None
+            self._suppressed = True
         if self._suggestions:
             self._suggestions.clear()
             self._selected_index = 0
@@ -71,6 +73,7 @@ class PathCompletionController:
                 self._pending_future.cancel()
 
             self._last_query = query
+            self._suppressed = False
 
         app = getattr(self._view, "app", None)
         if app:
@@ -97,7 +100,7 @@ class PathCompletionController:
         try:
             suggestions = future.result()
             with self._query_lock:
-                if query == self._last_query:
+                if query == self._last_query and not self._suppressed:
                     self._update_suggestions(suggestions)
         except Exception:
             with self._query_lock:

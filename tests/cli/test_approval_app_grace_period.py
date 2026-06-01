@@ -40,9 +40,20 @@ class TestGracePeriod:
             approval_app.action_select_1()
             approval_app.action_select_2()
             approval_app.action_select_3()
-            approval_app.action_reject()
 
             posted.assert_not_called()
+
+    def test_reject_bypasses_grace_period(self, approval_app: ApprovalApp):
+        with (
+            patch("vibe.cli.textual_ui.widgets.approval_app.time") as mock_time,
+            patch.object(approval_app, "post_message") as posted,
+        ):
+            mock_time.monotonic.return_value = 100.0 + _TEST_GRACE_PERIOD_S - 0.01
+            assert approval_app.is_within_grace_period()
+
+            approval_app.action_reject()
+
+            posted.assert_called_once()
 
     def test_actions_post_messages_after_grace_period(self, approval_app: ApprovalApp):
         with (

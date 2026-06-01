@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 import json
 import threading
-from typing import Any, ClassVar
+from typing import Any, ClassVar, override
 
 import google.auth
 import google.auth.credentials
@@ -64,12 +64,13 @@ class VertexAnthropicAdapter(AnthropicAdapter):
         super().__init__()
         self.credentials = VertexCredentials()
 
+    @override
     def prepare_request(
         self,
         *,
         model_name: str,
         messages: Sequence[LLMMessage],
-        temperature: float,
+        temperature: float | None,
         tools: list[AvailableTool] | None,
         max_tokens: int | None,
         tool_choice: StrToolChoice | AvailableTool | None,
@@ -77,6 +78,7 @@ class VertexAnthropicAdapter(AnthropicAdapter):
         provider: ProviderConfig,
         api_key: str | None = None,
         thinking: str = "off",
+        return_progress: bool = False,
     ) -> PreparedRequest:
         project_id = provider.project_id
         region = provider.region

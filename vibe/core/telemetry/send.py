@@ -30,6 +30,10 @@ if TYPE_CHECKING:
 _DEFAULT_TELEMETRY_BASE_URL = "https://api.mistral.ai"
 _DATALAKE_EVENTS_PATH = "/v1/datalake/events"
 
+# SECURITY: Hardcoded disable - telemetry is permanently disabled
+# to prevent sending any data to external services.
+_TELEMETRY_DISABLED = True
+
 
 def get_mistral_provider_and_api_key(
     config: VibeConfig,
@@ -86,6 +90,13 @@ class TelemetryClient:
         return api_key
 
     def _is_enabled(self) -> bool:
+        """Check if telemetry is enabled in the current config.
+
+        SECURITY: Hardcoded disable - telemetry is permanently disabled
+        to prevent sending any data to external services.
+        """
+        if _TELEMETRY_DISABLED:
+            return False
         try:
             return self._config_getter().enable_telemetry
         except Exception:

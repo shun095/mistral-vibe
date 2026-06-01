@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Callable, Sequence
 import json
 import os
 import types
-from typing import TYPE_CHECKING, Literal, NamedTuple, cast
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, cast
 
 import httpx
-from mistralai.client import Mistral
-from mistralai.client.errors import SDKError
-from mistralai.client.models import (
+
+from vibe.core.llm._mistralai_stub import (
     AssistantMessage,
     AssistantMessageContent,
+    BackoffStrategy,
     ChatCompletionRequestMessage,
     ChatCompletionStreamRequestToolChoice,
     ContentChunk,
@@ -19,6 +19,9 @@ from mistralai.client.models import (
     Function,
     FunctionCall as MistralFunctionCall,
     FunctionName,
+    Mistral,
+    RetryConfig,
+    SDKError,
     SystemMessage,
     TextChunk,
     ThinkChunk,
@@ -29,22 +32,22 @@ from mistralai.client.models import (
     ToolMessage,
     UserMessage,
 )
-from mistralai.client.utils.retries import BackoffStrategy, RetryConfig
-
 from vibe.core.llm.exceptions import BackendErrorBuilder
+from vibe.core.logger import logger
 from vibe.core.types import (
     AvailableTool,
     Content,
     FunctionCall,
     LLMChunk,
     LLMMessage,
+    LLMRetryEvent,
     LLMUsage,
     Role,
     StrToolChoice,
     ToolCall,
 )
-from vibe.core.utils import get_server_url_from_api_base
-from vibe.core.utils.http import build_ssl_context
+from vibe.core.utils.http import build_ssl_context, get_server_url_from_api_base
+from vibe.core.utils.retry import apply_retry_decorator
 
 if TYPE_CHECKING:
     from vibe.core.config import ModelConfig, ProviderConfig
@@ -59,25 +62,30 @@ class MistralMapper:
     def prepare_message(self, msg: LLMMessage) -> ChatCompletionRequestMessage:
         match msg.role:
             case Role.system:
-                return SystemMessage(role="system", content=msg.content or "")
+                content = msg.content if isinstance(msg.content, str) else ""
+                return SystemMessage(role="system", content=content)
             case Role.user:
-                return UserMessage(role="user", content=msg.content)
+                content = msg.content if isinstance(msg.content, str) else None
+                return UserMessage(role="user", content=content)
             case Role.assistant:
-                content: AssistantMessageContent
-                if msg.reasoning_content:
+                reasoning = (
+                    msg.reasoning_content
+                    if isinstance(msg.reasoning_content, str)
+                    else None
+                )
+                text = msg.content if isinstance(msg.content, str) else None
+                if reasoning:
                     chunks: list[ContentChunk] = [
                         ThinkChunk(
                             type="thinking",
-                            thinking=[
-                                TextChunk(type="text", text=msg.reasoning_content)
-                            ],
+                            thinking=[TextChunk(type="text", text=reasoning)],
                         )
                     ]
-                    if msg.content:
-                        chunks.append(TextChunk(type="text", text=msg.content))
+                    if text:
+                        chunks.append(TextChunk(type="text", text=text))
                     content = chunks
                 else:
-                    content = msg.content or ""
+                    content = text or ""
 
                 return AssistantMessage(
                     role="assistant",
@@ -96,9 +104,10 @@ class MistralMapper:
                     ],
                 )
             case Role.tool:
+                content = msg.content if isinstance(msg.content, str) else None
                 return ToolMessage(
                     role="tool",
-                    content=msg.content,
+                    content=content,
                     tool_call_id=msg.tool_call_id,
                     name=msg.name,
                 )
@@ -180,7 +189,12 @@ _THINKING_TO_REASONING_EFFORT: dict[str, ReasoningEffortValue] = {
 
 
 class MistralBackend:
-    def __init__(self, provider: ProviderConfig, timeout: float = 720.0) -> None:
+    def __init__(
+        self,
+        provider: ProviderConfig,
+        timeout: float = 720.0,
+        on_retry: Callable[[LLMRetryEvent], None] | None = None,
+    ) -> None:
         self._client: Mistral | None = None
         self._http_client: httpx.AsyncClient | None = None
         self._provider = provider
@@ -190,6 +204,7 @@ class MistralBackend:
             if self._provider.api_key_env_var
             else None
         )
+        self._on_retry = on_retry
 
         reasoning_field = getattr(provider, "reasoning_field_name", "reasoning_content")
         if reasoning_field != "reasoning_content":
@@ -209,6 +224,23 @@ class MistralBackend:
         self._timeout = timeout
         self._retry_config = self._build_retry_config()
 
+        if on_retry is not None:
+            self._apply_retry_decorators()
+
+    def _apply_retry_decorators(self) -> None:
+        """Apply retry decorators with the on_retry callback to request methods."""
+        retry_config: dict[str, Any] = {
+            "tries": 10,
+            "on_retry": self._on_retry,
+            "provider": self._provider.name,
+            "model": None,
+        }
+
+        apply_retry_decorator(self, "complete", retry_config, is_streaming=False)
+        apply_retry_decorator(
+            self, "complete_streaming", retry_config, is_streaming=True
+        )
+
     def _build_retry_config(self) -> RetryConfig:
         return RetryConfig(
             strategy="backoff",
@@ -222,8 +254,9 @@ class MistralBackend:
         )
 
     async def __aenter__(self) -> MistralBackend:
-        self._client = self._create_mistral_client()
-        await self._client.__aenter__()
+        client = self._create_mistral_client()
+        self._client = client
+        await client.__aenter__()
         return self
 
     async def __aexit__(
@@ -270,7 +303,7 @@ class MistralBackend:
         *,
         model: ModelConfig,
         messages: Sequence[LLMMessage],
-        temperature: float,
+        temperature: float | None,
         tools: list[AvailableTool] | None,
         max_tokens: int | None,
         tool_choice: StrToolChoice | AvailableTool | None,
@@ -281,6 +314,14 @@ class MistralBackend:
             reasoning_effort = _THINKING_TO_REASONING_EFFORT.get(model.thinking)
             if reasoning_effort is not None:
                 temperature = 1.0
+
+            logger.debug(
+                "Mistral Backend Request: model=%s messages=%d tools=%s max_tokens=%s",
+                model.name,
+                len(messages),
+                bool(tools),
+                max_tokens,
+            )
 
             response = await self._get_client().chat.complete_async(
                 model=model.name,
@@ -297,6 +338,11 @@ class MistralBackend:
                 metadata=metadata,
                 stream=False,
                 reasoning_effort=reasoning_effort,
+            )
+
+            logger.debug(
+                "Mistral Backend Response: %s",
+                json.dumps(response.model_dump(), default=str, ensure_ascii=False),
             )
 
             message = response.choices[0].message
@@ -348,7 +394,7 @@ class MistralBackend:
         *,
         model: ModelConfig,
         messages: Sequence[LLMMessage],
-        temperature: float,
+        temperature: float | None,
         tools: list[AvailableTool] | None,
         max_tokens: int | None,
         tool_choice: StrToolChoice | AvailableTool | None,
@@ -359,6 +405,13 @@ class MistralBackend:
             reasoning_effort = _THINKING_TO_REASONING_EFFORT.get(model.thinking)
             if reasoning_effort is not None:
                 temperature = 1.0
+
+            logger.debug(
+                "Mistral Backend Streaming Request: model=%s messages=%d tools=%s",
+                model.name,
+                len(messages),
+                bool(tools),
+            )
 
             stream = await self._get_client().chat.stream_async(
                 model=model.name,
@@ -377,6 +430,15 @@ class MistralBackend:
             )
             correlation_id = stream.response.headers.get("mistral-correlation-id")
             async for chunk in stream:
+                logger.debug(
+                    "Mistral Backend Streaming Response Chunk: %s",
+                    json.dumps(
+                        chunk.data.model_dump(),
+                        indent=2,
+                        default=str,
+                        ensure_ascii=False,
+                    ),
+                )
                 parsed = (
                     self._mapper.parse_content(chunk.data.choices[0].delta.content)
                     if chunk.data.choices[0].delta.content

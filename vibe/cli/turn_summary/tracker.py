@@ -138,7 +138,13 @@ class TurnSummaryTracker(TurnSummaryPort):
                 metadata=self._build_metadata(data),
             )
 
-            summary = result.message.content or ""
+            summary = result.message.content
+            if isinstance(summary, list):
+                # Convert list content to string
+                summary = "".join(str(item) for item in summary) if summary else ""
+            elif summary is None:
+                summary = ""
+
             if self._on_summary is not None:
                 self._on_summary(TurnSummaryResult(generation=gen, summary=summary))
         except Exception:

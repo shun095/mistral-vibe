@@ -10,6 +10,10 @@ from pydantic import BaseModel
 from vibe.core.logger import logger
 from vibe.core.nuage.exceptions import ErrorCode, WorkflowsException
 from vibe.core.nuage.streaming import StreamEvent, StreamEventsQueryParams
+
+# SECURITY: Hardcoded disable - Nuage workflows is permanently disabled
+# to prevent sending any data to external services.
+_NUAGE_DISABLED = True
 from vibe.core.nuage.workflow import (
     SignalWorkflowResponse,
     UpdateWorkflowResponse,
@@ -82,6 +86,12 @@ class WorkflowsClient:
     async def stream_events(
         self, params: StreamEventsQueryParams
     ) -> AsyncGenerator[StreamEvent, None]:
+        if _NUAGE_DISABLED:
+            raise WorkflowsException(
+                message="Nuage workflows is disabled for security reasons. "
+                "External workflow services have been hardcoded disabled.",
+                code=ErrorCode.GET_EVENTS_STREAM_ERROR,
+            )
         endpoint = "/events/stream"
         query = params.model_dump(exclude_none=True)
         try:
@@ -131,6 +141,12 @@ class WorkflowsClient:
     async def signal_workflow(
         self, execution_id: str, signal_name: str, input_data: BaseModel | None = None
     ) -> SignalWorkflowResponse:
+        if _NUAGE_DISABLED:
+            raise WorkflowsException(
+                message="Nuage workflows is disabled for security reasons. "
+                "External workflow services have been hardcoded disabled.",
+                code=ErrorCode.POST_EXECUTIONS_SIGNALS_ERROR,
+            )
         endpoint = f"/executions/{execution_id}/signals"
         try:
             input_data_dict = input_data.model_dump(mode="json") if input_data else {}
@@ -154,6 +170,12 @@ class WorkflowsClient:
     async def update_workflow(
         self, execution_id: str, update_name: str, input_data: BaseModel | None = None
     ) -> UpdateWorkflowResponse:
+        if _NUAGE_DISABLED:
+            raise WorkflowsException(
+                message="Nuage workflows is disabled for security reasons. "
+                "External workflow services have been hardcoded disabled.",
+                code=ErrorCode.POST_EXECUTIONS_UPDATES_ERROR,
+            )
         endpoint = f"/executions/{execution_id}/updates"
         try:
             input_data_dict = input_data.model_dump(mode="json") if input_data else {}
@@ -182,6 +204,12 @@ class WorkflowsClient:
         status: Sequence[WorkflowExecutionStatus] | None = None,
         user_id: str = "current",
     ) -> WorkflowExecutionListResponse:
+        if _NUAGE_DISABLED:
+            raise WorkflowsException(
+                message="Nuage workflows is disabled for security reasons. "
+                "External workflow services have been hardcoded disabled.",
+                code=ErrorCode.GET_EXECUTIONS_ERROR,
+            )
         params: dict[str, Any] = {"page_size": page_size, "user_id": user_id}
         if workflow_identifier:
             params["workflow_identifier"] = workflow_identifier

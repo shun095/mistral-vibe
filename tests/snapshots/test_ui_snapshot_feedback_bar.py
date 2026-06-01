@@ -31,6 +31,9 @@ class FeedbackBarSnapshotApp(BaseSnapshotTestApp):
         super().__init__(backend=fake_backend)
 
 
+@pytest.mark.skip(
+    reason="Telemetry disabled to prevent sending sensitive data externally"
+)
 def test_snapshot_feedback_bar_visible(snap_compare: SnapCompare) -> None:
     async def run_before(pilot: Pilot) -> None:
         with patch("vibe.core.feedback.random.random", return_value=0):

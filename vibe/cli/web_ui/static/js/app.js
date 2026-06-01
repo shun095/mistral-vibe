@@ -1,0 +1,3575 @@
+// Mistral Vibe Web UI - Main Application
+//
+// Orchestrates WebSocket connection, API calls, and UI updates.
+// Delegates concerns to specialized modules.
+
+import { QuestionHandler } from './question-handler.js';
+import * as scrollUtils from './scroll-utils.js';
+import { SlashCommandRegistry, SlashAutocomplete } from './slash-commands.js';
+import { ImageAttachmentHandler } from './image-attachment.js';
+import { WebSocketClient } from './websocket-client.js';
+import { APIClient } from './api-client.js';
+import { MessageStreamer } from './message-streamer.js';
+import { showBrowserNotification } from './notification.js';
+import { formatDuration } from './format-utils.js';
+import { buildUrl } from './utils.js';
+import * as toolFormatters from './tool-formatters.js';
+import { createStructuredArgs, createStructuredResult } from './structured-renderer.js';
+
+class VibeClient {
+    static _severityMap = {
+        'OK': { icon: 'check_circle', cls: 'hook-ok' },
+        'WARNING': { icon: 'warning', cls: 'hook-warning' },
+        'ERROR': { icon: 'error', cls: 'hook-error' }
+    };
+
+    constructor() {
+        // Authentication is handled via HTTP-only cookie, no token in JS
+        this.historyLoaded = false;
+        this.isProcessing = false;
+        this.statusPollInterval = null;
+        this._prevStatusOk = null;
+
+        // Popup state
+        this.currentPopupId = null;
+        this.currentPopupElement = null;
+        this.wasAtBottomBeforePopup = false;
+
+        // UI rendering state
+        this.currentReasoningMessage = null;
+        this.currentReasoningText = '';
+        this.currentAssistantMessage = null;
+        this.currentAssistantText = '';
+        this.currentToolCall = null;
+        this.currentToolCallId = null;
+        this.toolCallMap = new Map(); // Map<toolCallId, toolCallElement>
+        this._toolCallTimers = new Map(); // Map<toolCallId, {intervalId, startTime}>
+        this._preferCollapsed = true; // Track collapse preference
+
+        // Pending input — cleared only after server acknowledges via event
+        this._pendingInputContent = null;
+
+        // Suppress FAB show during programmatic scrolls
+        this._suppressFabShow = false;
+
+        // Event listener registry for cleanup
+        this._listeners = [];
+
+        // DOM elements
+        this.elements = {
+            statusDot: document.getElementById('status-dot'),
+            messages: document.getElementById('messages'),
+            input: document.getElementById('message-input'),
+            sendBtn: document.getElementById('send-btn'),
+            interruptBtn: document.getElementById('interrupt-btn'),
+            processingIndicator: document.getElementById('processing-indicator'),
+            contextProgress: document.getElementById('context-progress'),
+            themeToggle: document.getElementById('theme-toggle'),
+            toggleCardsBtn: document.getElementById('toggle-cards-btn'),
+            vscodeBtn: document.getElementById('vscode-btn'),
+            logoutBtn: document.getElementById('logout-btn'),
+            imagePreviewContainer: document.getElementById('image-preview-container'),
+            imagePreviewImg: document.getElementById('image-preview-img'),
+            imagePreviewRemove: document.getElementById('image-preview-remove'),
+            attachImageBtn: document.getElementById('attach-image-btn'),
+            imageFileInput: document.getElementById('image-file-input'),
+            sessionPickerModal: document.getElementById('session-picker-modal'),
+            sessionPickerContent: document.getElementById('session-picker-content'),
+            sessionPickerClose: document.getElementById('session-picker-close'),
+            promptHistoryBtn: document.getElementById('prompt-history-btn'),
+            promptHistoryModal: document.getElementById('prompt-history-modal'),
+            promptHistoryContent: document.getElementById('prompt-history-content'),
+            promptHistoryClose: document.getElementById('prompt-history-close'),
+            promptHistorySearch: document.getElementById('prompt-history-search'),
+            gitStatusBtn: document.getElementById('git-status-btn'),
+            gitDiffBtn: document.getElementById('git-diff-btn'),
+            modelPickerModal: document.getElementById('model-picker-modal'),
+            modelPickerContent: document.getElementById('model-picker-content'),
+            modelPickerClose: document.getElementById('model-picker-close'),
+            thinkingPickerModal: document.getElementById('thinking-picker-modal'),
+            thinkingPickerContent: document.getElementById('thinking-picker-content'),
+            thinkingPickerClose: document.getElementById('thinking-picker-close'),
+            configModal: document.getElementById('config-modal'),
+            configModalContent: document.getElementById('config-modal-content'),
+            configModalClose: document.getElementById('config-modal-close'),
+            mcpModal: document.getElementById('mcp-modal'),
+            mcpModalContent: document.getElementById('mcp-modal-content'),
+            mcpModalClose: document.getElementById('mcp-modal-close'),
+            rewindModal: document.getElementById('rewind-modal'),
+            rewindMessagesList: document.getElementById('rewind-messages-list'),
+            rewindActions: document.getElementById('rewind-actions'),
+            rewindModalClose: document.getElementById('rewind-modal-close'),
+            rewindRestoreBtn: document.getElementById('rewind-restore-btn'),
+            rewindEditBtn: document.getElementById('rewind-edit-btn'),
+        };
+
+        // Initialize modules
+        this._initModules();
+        this.init();
+    }
+
+    _initModules() {
+        this.questionHandler = new QuestionHandler();
+        this.slashRegistry = new SlashCommandRegistry();
+        this.slashAutocomplete = null;
+        this.imageAttachment = null;
+
+        this.wsClient = new WebSocketClient({
+            onOpen: () => this._onWsOpen(),
+            onMessage: (msg) => this._onWsMessage(msg),
+            onClose: () => this._onWsClose(),
+            onError: (err) => this._onWsError(err)
+        });
+
+        this.apiClient = new APIClient();
+
+        // Marked: wrap tables in scrollable container (CDN-only, guard for tests)
+        if (typeof marked !== 'undefined' && marked.Renderer) {
+            marked.use({
+                renderer: {
+                    table({ header, rows }) {
+                        const cell = (t) => {
+                            let attr = '';
+                            if (t.align) attr += ` align="${t.align}"`;
+                            if (t.colspan > 1) attr += ` colspan="${t.colspan}"`;
+                            return `<td${attr}>${this.parser.parseInline(t.tokens)}</td>`;
+                        };
+                        return `<div class="table-wrapper"><table><thead><tr>${header.map(cell).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map(cell).join('')}</tr>`).join('')}</tbody></table></div>`;
+                    }
+                }
+            });
+        }
+
+        this.messageStreamer = new MessageStreamer({
+            onReasoningStart: (data) => this._onReasoningStart(data),
+            onReasoningUpdate: (data) => this._onReasoningUpdate(data),
+            onReasoningEnd: () => this._onReasoningEnd(),
+            onAssistantStart: (data) => this._onAssistantStart(data),
+            onAssistantUpdate: (data) => this._onAssistantUpdate(data),
+            onAssistantEnd: () => this._onAssistantEnd(),
+            onToolCallStart: (data) => this._onToolCallStart(data),
+            onToolCallUpdate: (data) => this._updateExistingToolCall(this.toolCallMap.get(data.id), data),
+            onToolResult: (data) => this._onToolResult(data),
+            onStopStreaming: () => this._onStopStreaming()
+        });
+    }
+
+    init() {
+        this._codeServerEnabled = false;
+        this.bindEvents();
+
+        if (this.elements.input && !this.slashAutocomplete) {
+            this.slashAutocomplete = new SlashAutocomplete(this.elements.input, this.slashRegistry);
+        }
+
+        this.slashRegistry.loadCommands();
+        this.updatePlaceholder();
+        this._placeholderResizeHandler = () => this.updatePlaceholder();
+        window.addEventListener('resize', this._placeholderResizeHandler);
+        this.loadTheme();
+        this.wsClient.connect();
+        this.startStatusPolling();
+        this._loadCodeServerConfig();
+    }
+
+    async _loadCodeServerConfig() {
+        try {
+            const config = await this.apiClient.getConfig();
+            this._codeServerEnabled = !!config.code_server_enabled;
+            this._codeServerWorkdir = config.code_server_workdir || '';
+        } catch {
+            this._codeServerEnabled = false;
+            this._codeServerWorkdir = '';
+        }
+        if (this.elements.vscodeBtn) {
+            this.elements.vscodeBtn.style.display = this._codeServerEnabled ? 'inline-flex' : 'none';
+        }
+    }
+
+    async logout() {
+        const base = globalThis.__VIBE_BASE_PATH__ || '/';
+        try {
+            await fetch(base + 'api/logout', { method: 'POST' });
+            window.location.href = base + 'login';
+        } catch (error) {
+            console.error('Logout error:', error);
+            window.location.href = base + 'login';
+        }
+    }
+
+    bindEvents() {
+        this._on(this.elements.sendBtn, 'click', () => this.sendMessage());
+        this._on(this.elements.interruptBtn, 'click', () => this.requestInterrupt());
+
+        this._on(this.elements.input, 'keydown', (e) => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                this.sendMessage();
+            }
+        });
+
+        this._on(this.elements.input, 'input', () => {
+            this.updateSendButtonState();
+            this.autoResizeTextarea();
+        });
+
+        this._on(this.elements.input, 'scroll', () => this.autoResizeTextarea());
+        this.bindScrollNavigationEvents();
+        this._on(this.elements.themeToggle, 'click', () => this.toggleTheme());
+        this._on(this.elements.toggleCardsBtn, 'click', () => this.toggleAllCards());
+        this._on(this.elements.vscodeBtn, 'click', () => this._openInCodeServer());
+        this._on(this.elements.logoutBtn, 'click', () => this.logout());
+
+        this.imageAttachment = new ImageAttachmentHandler({
+            previewContainer: this.elements.imagePreviewContainer,
+            previewImg: this.elements.imagePreviewImg,
+            fileInput: this.elements.imageFileInput,
+            onImageAttached: () => this.updateSendButtonState(),
+            onImageRemoved: () => this.updateSendButtonState(),
+            onError: (msg) => this.addMessage('system', msg)
+        });
+
+        this._on(this.elements.input, 'paste', (e) => this.imageAttachment.handlePaste(e));
+        this._on(this.elements.imagePreviewRemove, 'click', () => this.imageAttachment.removeImage());
+        this._on(this.elements.attachImageBtn, 'click', () => this.elements.imageFileInput.click());
+        this._on(this.elements.imageFileInput, 'change', (e) => this.imageAttachment.handleFileSelect(e));
+
+        this.bindSessionPickerEvents();
+        this.bindPromptHistoryEvents();
+        this.bindModelPickerEvents();
+        this.bindThinkingPickerEvents();
+        this.bindConfigModalEvents();
+        this.bindMcpModalEvents();
+        this.bindRewindModalEvents();
+    }
+
+    autoResizeTextarea() {
+        const textarea = this.elements.input;
+        textarea.style.height = 'auto';
+        const scrollHeight = textarea.scrollHeight;
+        const lineHeight = 27;
+        const maxLines = 5;
+        textarea.style.height = Math.min(scrollHeight, lineHeight * maxLines) + 'px';
+    }
+
+    startStatusPolling() {
+        this.statusPollInterval = setInterval(() => this.pollStatus(), 500);
+    }
+
+    async pollStatus() {
+        const data = await this.apiClient.getStatus();
+        const statusOk = data !== null;
+
+        if (data) {
+            this.updateProcessingState(data.running);
+            this.updateContextProgress(data.context_tokens, data.max_tokens);
+        }
+
+        // Reconnect WebSocket when server recovers
+        if (statusOk && !this._prevStatusOk && !this.wsClient.isConnected()) {
+            console.log('[VibeClient] Server recovered, reconnecting WebSocket');
+            this.wsClient.connect();
+        }
+        this._prevStatusOk = statusOk;
+    }
+
+    updateProcessingState(isRunning) {
+        if (isRunning === this.isProcessing) return;
+
+        this.isProcessing = isRunning;
+
+        if (isRunning) {
+            this.elements.processingIndicator.style.display = 'flex';
+            this.elements.interruptBtn.style.display = 'inline-flex';
+            this.elements.sendBtn.style.display = 'none';
+            this.elements.input.disabled = true;
+        } else {
+            this.elements.processingIndicator.style.display = 'none';
+            this.elements.interruptBtn.style.display = 'none';
+            this.elements.sendBtn.style.display = 'flex';
+            this.elements.input.disabled = !!this._pendingInputContent;
+        }
+    }
+
+    async requestInterrupt() {
+        const success = await this.apiClient.requestInterrupt();
+        this.addMessage('system', success ? '⏹️ Interrupt requested...' : 'Failed to request interrupt');
+    }
+
+    // WebSocket callbacks (thin delegates)
+    _onWsOpen() {
+        this.updateStatus('Connected', true);
+        this.updateSendButtonState();
+    }
+
+    _onWsMessage(message) {
+        this.handleMessage(message);
+    }
+
+    _onWsClose() {
+        this.updateStatus('Disconnected');
+        if (this._pendingInputContent) {
+            this.elements.input.disabled = false;
+            this.elements.sendBtn.disabled = false;
+        }
+    }
+
+    _onWsError(error) {
+        console.error('[VibeClient] WebSocket error:', error);
+        this.updateStatus('Error');
+    }
+
+    handleMessage(message) {
+        switch (message.type) {
+            case 'reset':
+                this._clearMessagesDom();
+                break;
+            case 'connected':
+                this.updateStatus('Connected', true);
+                this.historyLoaded = true;
+                setTimeout(() => {
+                    this.forceScrollToBottom();
+                    this.updateToggleCardsIcon();
+                }, 0);
+                break;
+            case 'event':
+                this.handleEvent(message.event);
+                break;
+            case 'error':
+                this.addMessage('system', `Error: ${message.message}`);
+                break;
+        }
+    }
+
+    handleEvent(event) {
+        const eventType = event.__type;
+
+        switch (eventType) {
+            case 'UserMessageEvent':
+                if (event.content) {
+                    this._clearUiState();
+                }
+                this._renderUserMessage(event.content, event.message_index);
+                if (this._matchPendingContent(event.content)) {
+                    this._clearPendingInput();
+                }
+                break;
+            case 'AssistantEvent':
+                this.messageStreamer.handleEvent(event);
+                break;
+            case 'ReasoningEvent':
+                this.messageStreamer.handleEvent(event);
+                break;
+            case 'ToolCallEvent':
+                this.messageStreamer.handleEvent(event);
+                break;
+            case 'ToolResultEvent':
+                this.messageStreamer.handleEvent(event);
+                break;
+            case 'ContinueableUserMessageEvent':
+                if (event.content) {
+                    this._clearUiState();
+                }
+                this._renderUserMessage(event.content);
+                if (this._matchPendingContent(event.content)) {
+                    this._clearPendingInput();
+                }
+                break;
+            case 'ApprovalPopupEvent':
+                this.showApprovalPopup(event);
+                break;
+            case 'QuestionPopupEvent':
+                this.showQuestionPopup(event);
+                break;
+            case 'PopupResponseEvent':
+                this.hidePopup(event);
+                break;
+            case 'MessageResetEvent':
+                this.handleMessageReset(event.reason);
+                break;
+            case 'SystemPromptRegeneratedEvent':
+                this.addMessage(
+                    'system',
+                    'System prompt regenerated. Tools or config may differ from the original session.',
+                );
+                break;
+            case 'BashCommandEvent':
+                this._renderBashCommandEvent(event);
+                const pending = this._pendingInputContent;
+                if (pending && (pending.startsWith('!!') || pending.startsWith('!'))) {
+                    const stripped = pending.startsWith('!!') ? pending.slice(2) : pending.slice(1);
+                    if (stripped === event.command) {
+                        this._clearPendingInput();
+                    }
+                }
+                break;
+            case 'WebNotificationEvent':
+                this.handleWebNotification(event);
+                break;
+            case 'LLMErrorEvent':
+                this.handleLLMError(event);
+                break;
+            case 'PromptProgressEvent':
+                this.handlePromptProgress(event);
+                break;
+            case 'ToolStreamEvent':
+                this.handleToolStream(event);
+                break;
+            case 'CompactStartEvent':
+                this.handleCompactStart(event);
+                break;
+            case 'CompactEndEvent':
+                this.handleCompactEnd(event);
+                break;
+            case 'AgentProfileChangedEvent':
+                this.handleAgentProfileChanged(event);
+                break;
+            case 'TaskCompletedEvent':
+                this.handleTaskCompleted(event);
+                break;
+            case 'WaitingForInputEvent':
+                this.handleWaitingForInput(event);
+                break;
+            case 'HookRunStartEvent':
+                this.handleHookRunStart(event);
+                break;
+            case 'HookRunEndEvent':
+                this.handleHookRunEnd(event);
+                break;
+            case 'HookStartEvent':
+                this.handleHookStart(event);
+                break;
+            case 'HookEndEvent':
+                this.handleHookEnd(event);
+                break;
+            case 'LLMRetryEvent':
+                this.handleLLMRetry(event);
+                break;
+        }
+    }
+
+    /**
+     * Route bash command events to the appropriate renderer
+     * @param {Object} event
+     * @private
+     */
+    _renderBashCommandEvent(event) {
+        const cmd = event.command || '';
+        if (cmd.startsWith('git status')) {
+            this._renderGitStatusResult(event);
+        } else if (cmd.startsWith('git diff')) {
+            this._renderGitDiffResult(event);
+        } else {
+            this._renderBashCommandResult(event);
+        }
+    }
+
+    /**
+     * Replay event for history loading (without clearing state)
+     * @param {Object} event
+     * @private
+     */
+    _replayEvent(event) {
+        const eventType = event.__type;
+
+        switch (eventType) {
+            case 'UserMessageEvent':
+                this._renderUserMessage(event.content, event.message_index);
+                break;
+            case 'AssistantEvent':
+                this.messageStreamer.handleEvent(event);
+                break;
+            case 'ReasoningEvent':
+                this.messageStreamer.handleEvent(event);
+                break;
+            case 'ToolCallEvent':
+                this.messageStreamer.handleEvent(event);
+                break;
+            case 'ToolResultEvent':
+                this.messageStreamer.handleEvent(event);
+                break;
+            case 'ContinueableUserMessageEvent':
+                this._renderUserMessage(event.content, event.message_index);
+                break;
+            case 'BashCommandEvent':
+                this._renderBashCommandEvent(event);
+                break;
+            case 'ApprovalPopupEvent':
+                // Skip popup events during replay - ToolResultEvent already contains the result
+                break;
+            case 'QuestionPopupEvent':
+                // Skip popup events during replay - ToolResultEvent already contains the result
+                break;
+            case 'PopupResponseEvent':
+                // Skip popup events during replay - ToolResultEvent already contains the result
+                break;
+            case 'ToolStreamEvent':
+                this.handleToolStream(event);
+                break;
+            case 'CompactStartEvent':
+                // Skip during replay - CompactEndEvent shows the final result
+                break;
+            case 'CompactEndEvent':
+                this.handleCompactEnd(event);
+                break;
+            case 'AgentProfileChangedEvent':
+                // Skip during replay - profile is current on page load
+                break;
+            case 'TaskCompletedEvent':
+                this.handleTaskCompleted(event);
+                break;
+            case 'WaitingForInputEvent':
+                // Skip during replay - input is no longer waiting
+                break;
+            case 'HookRunStartEvent':
+                this.handleHookRunStart(event);
+                break;
+            case 'HookRunEndEvent':
+                this.handleHookRunEnd(event);
+                break;
+            case 'HookStartEvent':
+                // Skip during replay - HookEndEvent shows the final result
+                break;
+            case 'HookEndEvent':
+                this.handleHookEnd(event);
+                break;
+            case 'LLMRetryEvent':
+                // Skip during replay - retry is no longer in progress
+                break;
+        }
+    }
+
+    _renderUserMessage(content, messageIndex) {
+        if (!content) return;
+
+        if (Array.isArray(content)) {
+            content.forEach(item => {
+                if (item.type === 'image_url') {
+                    this.addImageMessage(item.image_url?.url || '', messageIndex);
+                } else if (item.type === 'text') {
+                    this.addMessage('user', item.text, messageIndex);
+                }
+            });
+        } else {
+            this.addMessage('user', content, messageIndex);
+        }
+    }
+
+    _clearMessagesDom() {
+        const welcomeMessageDiv = Array.from(
+            this.elements.messages.querySelectorAll('.message.system')
+        ).find(div => div.textContent?.includes('Welcome to Mistral Vibe'));
+
+        this.elements.messages.innerHTML = '';
+        this._clearRewindHighlight();
+        if (welcomeMessageDiv) {
+            this.elements.messages.appendChild(welcomeMessageDiv);
+        }
+    }
+
+    async handleMessageReset(reason) {
+        console.log(`Handling message reset (reason: ${reason})`);
+        this.stopStreaming();
+
+        const data = await this.apiClient.getMessages();
+        if (!data) {
+            console.error('Failed to fetch messages');
+            return;
+        }
+
+        this._clearMessagesDom();
+
+        for (const event of data.events) {
+            this._replayEvent(event);
+        }
+
+        setTimeout(() => this.forceScrollToBottom(), 0);
+    }
+
+    /**
+     * Handle web notification event
+     * @param {Object} event
+     */
+    handleWebNotification(event) {
+        const { title, message } = event;
+        showBrowserNotification(title, message);
+    }
+
+    /**
+     * Handle LLM error event
+     * @param {Object} event
+     */
+    handleLLMError(event) {
+        const { error_message: errorMessage, error_type: errorType, provider, model } = event;
+
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'message error';
+
+        let metaHtml = '';
+        if (provider || model) {
+            const parts = [];
+            if (provider) parts.push(`Provider: ${this.escapeHtml(provider)}`);
+            if (model) parts.push(`Model: ${this.escapeHtml(model)}`);
+            metaHtml = `<div class="error-meta">${parts.join(' | ')}</div>`;
+        }
+
+        errorDiv.innerHTML = `
+            <div class="error-header">
+                <span class="material-symbols-rounded">error</span>
+                <span>${this.escapeHtml(errorType)}</span>
+            </div>
+            <div class="error-details">${this.escapeHtml(errorMessage)}</div>
+            ${metaHtml}
+        `;
+
+        this.elements.messages.appendChild(errorDiv);
+        this.forceScrollToBottom();
+    }
+
+    /**
+     * Handle prompt progress event
+     * @param {Object} event - PromptProgressEvent with total, cache, processed, time_ms
+     */
+    handlePromptProgress(event) {
+        const { total, cache, processed, time_ms } = event;
+        if (total === 0) return;
+
+        const percentage = Math.round((processed / total) * 100);
+        this.updateProcessingIndicator(percentage);
+    }
+
+    /**
+     * Update processing indicator with progress percentage
+     * @param {number} percentage - Progress percentage (0-100)
+     */
+    updateProcessingIndicator(percentage) {
+        const spinner = this.elements.processingIndicator.querySelector('.processing-spinner');
+        const percentageSpan = this.elements.processingIndicator.querySelector('.processing-percentage');
+
+        if (percentageSpan) {
+            percentageSpan.textContent = `${percentage}%`;
+        }
+    }
+
+    /**
+     * Handle ToolStreamEvent - incremental tool output
+     * @param {Object} event - {tool_name, message, tool_call_id}
+     */
+    handleToolStream(event) {
+        const { tool_call_id: toolCallId, message } = event;
+        if (!toolCallId || !message) return;
+        const toolCallElement = this.toolCallMap.get(toolCallId);
+        if (!toolCallElement) return;
+
+        let streamContainer = toolCallElement.querySelector('.tool-stream');
+        if (!streamContainer) {
+            streamContainer = document.createElement('div');
+            streamContainer.className = 'tool-stream';
+            const contentDiv = toolCallElement.querySelector('.content');
+            if (contentDiv) {
+                contentDiv.appendChild(streamContainer);
+            }
+        }
+        const line = document.createElement('div');
+        line.className = 'tool-stream-line';
+        line.innerHTML = `<span class="material-symbols-rounded">arrow_right</span> ${this.escapeHtml(message)}`;
+        streamContainer.appendChild(line);
+        this.scrollToBottom();
+    }
+
+    /**
+     * Create a system message card and append to messages container.
+     * @param {string} className - CSS class (without 'message' prefix)
+     * @param {string} html - Inner HTML content
+     * @returns {HTMLDivElement}
+     * @private
+     */
+    _createSystemMessage(className, html) {
+        const div = document.createElement('div');
+        div.className = `message ${className}`;
+        div.innerHTML = html;
+        this.elements.messages.appendChild(div);
+        this.scrollToBottom();
+        return div;
+    }
+
+    /**
+     * Handle CompactStartEvent - show compaction in progress
+     * @param {Object} event - {current_context_tokens, threshold, tool_call_id}
+     */
+    handleCompactStart(event) {
+        const { tool_call_id: toolCallId } = event;
+        if (!toolCallId) return;
+        const compactDiv = this._createSystemMessage('compact compact-starting', `
+            <div class="content">
+                <span class="material-symbols-rounded compact-icon">compress</span>
+                <span class="compact-text">Compacting conversation history...</span>
+                <span class="compact-spinner"></span>
+            </div>
+        `);
+        compactDiv.dataset.toolCallId = toolCallId;
+    }
+
+    /**
+     * Handle CompactEndEvent - show compaction result
+     * @param {Object} event - {summary_length, summary_content, error, tool_call_id}
+     */
+    handleCompactEnd(event) {
+        const { summary_length: summaryLength, summary_content: summary, error, tool_call_id: toolCallId } = event;
+        if (!toolCallId) return;
+
+        let compactDiv = this.elements.messages.querySelector(`.compact[data-tool-call-id="${toolCallId}"]`);
+
+        if (!compactDiv) {
+            compactDiv = this._createSystemMessage('compact', '');
+            compactDiv.dataset.toolCallId = toolCallId;
+        }
+
+        compactDiv.classList.remove('compact-starting');
+
+        if (error) {
+            compactDiv.classList.add('compact-error');
+            compactDiv.innerHTML = `
+                <div class="content">
+                    <span class="material-symbols-rounded compact-icon">error</span>
+                    <span class="compact-text">Compaction failed: ${this.escapeHtml(error)}</span>
+                </div>
+            `;
+        } else {
+            compactDiv.classList.add('compact-complete');
+            const summaryHtml = summary
+                ? `<div class="compact-summary">${this.renderMarkdownToHtml(summary)}</div>`
+                : '';
+            const lengthText = summaryLength != null ? ` (${summaryLength} chars)` : '';
+            compactDiv.innerHTML = `
+                <div class="content">
+                    <span class="material-symbols-rounded compact-icon">check_circle</span>
+                    <span class="compact-text">Compaction complete${lengthText}</span>
+                    ${summaryHtml}
+                </div>
+            `;
+        }
+        this.scrollToBottom();
+    }
+
+    /**
+     * Handle AgentProfileChangedEvent - show profile switch notification
+     * @param {Object} event - {agent_name}
+     */
+    handleAgentProfileChanged(event) {
+        const { agent_name: agentName } = event;
+        if (!agentName) return;
+        this._createSystemMessage('agent-profile-changed', `
+            <div class="content">
+                <span class="material-symbols-rounded">swap_horiz</span>
+                <span>Switched to <strong>${this.escapeHtml(agentName)}</strong></span>
+            </div>
+        `);
+    }
+
+    /**
+     * Handle TaskCompletedEvent - show elapsed time
+     * @param {Object} event - {elapsed_text}
+     */
+    handleTaskCompleted(event) {
+        const { elapsed_text: elapsedText } = event;
+        if (!elapsedText) return;
+        this._createSystemMessage('task-completed', `
+            <div class="content">
+                <span class="material-symbols-rounded">check_circle</span>
+                <span>${this.escapeHtml(elapsedText)}</span>
+            </div>
+        `);
+    }
+
+    /**
+     * Handle WaitingForInputEvent - show input waiting indicator
+     * @param {Object} event - {task_id, label, predefined_answers}
+     */
+    handleWaitingForInput(event) {
+        this.updateProcessingState(false);
+    }
+
+    /**
+     * Handle HookRunStartEvent - create hook container
+     * @param {Object} event
+     */
+    handleHookRunStart() {
+        const hookContainer = document.createElement('div');
+        hookContainer.className = 'message hook-run-container';
+        this.elements.messages.appendChild(hookContainer);
+    }
+
+    /**
+     * Handle HookRunEndEvent - remove hook container if empty
+     * @param {Object} event
+     */
+    handleHookRunEnd() {
+        const containers = this.elements.messages.querySelectorAll('.hook-run-container');
+        containers.forEach(container => {
+            if (container.children.length === 0) {
+                container.remove();
+            }
+        });
+    }
+
+    /**
+     * Handle HookStartEvent - show hook running status
+     * @param {Object} event - {hook_name}
+     */
+    handleHookStart(event) {
+        const { hook_name: hookName } = event;
+        if (!hookName) return;
+        const containers = this.elements.messages.querySelectorAll('.hook-run-container');
+        const container = containers[containers.length - 1];
+        if (!container) return;
+
+        const hookDiv = document.createElement('div');
+        hookDiv.className = 'hook-system-message hook-running';
+        hookDiv.innerHTML = `
+            <div class="content">
+                <span class="material-symbols-rounded hook-icon">hourglass_empty</span>
+                <span class="hook-text">Running hook <strong>${this.escapeHtml(hookName)}</strong>...</span>
+            </div>
+        `;
+        container.appendChild(hookDiv);
+        this.scrollToBottom();
+    }
+
+    /**
+     * Handle HookEndEvent - show hook result with severity
+     * @param {Object} event - {hook_name, status, content}
+     */
+    handleHookEnd(event) {
+        const { hook_name: hookName, status, content } = event;
+        if (!hookName || !status) return;
+        const containers = this.elements.messages.querySelectorAll('.hook-run-container');
+        const container = containers[containers.length - 1];
+        if (!container) return;
+
+        // Update the running indicator to show result
+        const runningMessages = container.querySelectorAll('.hook-running');
+        let hookDiv = runningMessages[runningMessages.length - 1];
+        if (!hookDiv) {
+            hookDiv = document.createElement('div');
+            container.appendChild(hookDiv);
+        }
+
+        const { icon, cls } = VibeClient._severityMap[status] || { icon: 'check', cls: '' };
+
+        hookDiv.className = `hook-system-message ${cls}`;
+
+        const contentText = content ? `: ${this.escapeHtml(content)}` : '';
+        hookDiv.innerHTML = `
+            <div class="content">
+                <span class="material-symbols-rounded hook-icon">${icon}</span>
+                <span class="hook-text"><strong>${this.escapeHtml(hookName)}</strong>${contentText}</span>
+            </div>
+        `;
+        this.scrollToBottom();
+    }
+
+    /**
+     * Handle LLMRetryEvent - show retry progress
+     * @param {Object} event - {attempt, max_attempts, error_message, delay_seconds, provider, model}
+     */
+    handleLLMRetry(event) {
+        const { attempt, max_attempts: maxAttempts, error_message: errorMessage, delay_seconds: delaySeconds, provider, model } = event;
+        if (attempt == null || maxAttempts == null || !errorMessage) return;
+
+        const parts = [];
+        if (provider) parts.push(provider);
+        if (model) parts.push(model);
+        const meta = parts.length > 0 ? parts.join(' / ') : '';
+
+        this._createSystemMessage('llm-retry', `
+            <div class="content">
+                <span class="material-symbols-rounded">refresh</span>
+                <span>Retrying (${this.escapeHtml(String(attempt))}/${this.escapeHtml(String(maxAttempts))}) in ${this.escapeHtml(String(delaySeconds))}s${meta ? ` — ${this.escapeHtml(meta)}` : ''}: ${this.escapeHtml(errorMessage)}</span>
+            </div>
+        `);
+    }
+
+    /**
+     * Simple markdown to HTML converter for compact summaries
+     * @param {string} text
+     * @returns {string}
+     * @private
+     */
+    renderMarkdownToHtml(text) {
+        let html = this.escapeHtml(text);
+        html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+        html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+        html = html.replace(/\n/g, '<br>');
+        return html;
+    }
+
+    /**
+     * Update context progress display
+     * @param {number} currentTokens - Current token count
+     * @param {number} maxTokens - Maximum token limit
+     */
+    updateContextProgress(currentTokens, maxTokens) {
+        if (!this.elements.contextProgress || !maxTokens || maxTokens === 0) return;
+
+        const percentage = Math.round((currentTokens / maxTokens) * 100);
+        const currentK = Math.round(currentTokens / 1000);
+        const maxK = Math.round(maxTokens / 1000);
+
+        this.elements.contextProgress.textContent = `${percentage}%\n(${currentK}k/${maxK}k tokens)`;
+
+        // Update color class based on usage
+        this.elements.contextProgress.classList.remove('low', 'medium', 'high');
+        if (percentage >= 90) {
+            this.elements.contextProgress.classList.add('high');
+        } else if (percentage >= 75) {
+            this.elements.contextProgress.classList.add('medium');
+        } else {
+            this.elements.contextProgress.classList.add('low');
+        }
+    }
+
+    // Message streamer callbacks (thin delegates to UI methods)
+    _onReasoningStart(data) {
+        this._appendReasoningContent(data.text || '');
+    }
+
+    _onReasoningUpdate(data) {
+        const previousScrollHeight = this.elements.messages.scrollHeight;
+        this._appendReasoningContent(data.text);
+        this._scrollAfterUpdate(previousScrollHeight);
+    }
+
+    _onReasoningEnd() {
+        this.finalizeReasoningMessage();
+        this.currentReasoningMessage = null;
+        this.currentReasoningText = '';
+    }
+
+    _onAssistantStart(data) {
+        if (this.currentReasoningMessage) {
+            this.finalizeReasoningMessage();
+            this.currentReasoningMessage = null;
+        }
+        this._appendAssistantContent(data.text || '');
+    }
+
+    _onAssistantUpdate(data) {
+        const previousScrollHeight = this.elements.messages.scrollHeight;
+        this._appendAssistantContent(data.text);
+        this._scrollAfterUpdate(previousScrollHeight);
+    }
+
+    _onAssistantEnd() {
+        this.currentAssistantMessage = null;
+        this.currentAssistantText = '';
+    }
+
+    _renderBashCommandResult(event) {
+        // Create bash command card from event data
+        const { command, exit_code: exitCode, output } = event;
+        const isSuccess = exitCode === 0;
+
+        // Capture scroll height BEFORE appending
+        const previousScrollHeight = this.elements.messages.scrollHeight;
+
+        // Create message div
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message bash-command';
+        this.elements.messages.appendChild(messageDiv);
+
+        // Header with command
+        const header = document.createElement('div');
+        header.className = 'bash-card-header';
+        header.innerHTML = `
+            <div class="bash-card-title">
+                <span class="material-symbols-rounded">${isSuccess ? 'terminal' : 'error'}</span>
+                <span>Bash Command</span>
+            </div>
+            <div class="bash-exit-code ${isSuccess ? 'success' : 'failure'}">
+                Exit code: ${exitCode}
+            </div>
+        `;
+
+        // Command line
+        const commandDiv = document.createElement('div');
+        commandDiv.className = 'bash-command-line';
+        commandDiv.textContent = this.escapeHtml(command);
+
+        // Output
+        const outputDiv = document.createElement('div');
+        outputDiv.className = 'bash-output';
+        const pre = document.createElement('pre');
+        pre.textContent = output || '(no output)';
+        outputDiv.appendChild(pre);
+
+        messageDiv.appendChild(header);
+        messageDiv.appendChild(commandDiv);
+        messageDiv.appendChild(outputDiv);
+
+        this._scrollAfterUpdate(previousScrollHeight);
+    }
+
+    async _triggerDownload(filePath) {
+        const url = buildUrl(`api/download?file_path=${encodeURIComponent(filePath)}`);
+        try {
+            const response = await fetch(url);
+            if (response.ok) {
+                const blob = await response.blob();
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = filePath.split('/').pop() || 'download';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(downloadUrl);
+                document.body.removeChild(a);
+            }
+        } catch (err) {
+            console.error('Download failed:', err);
+        }
+    }
+
+    _openInCodeServer() {
+        if (!this._codeServerEnabled) {
+            return;
+        }
+        let url = buildUrl('vscode/');
+        if (this._codeServerWorkdir) {
+            url += `?folder=${encodeURIComponent(this._codeServerWorkdir)}`;
+        }
+        window.open(url, '_blank');
+    }
+
+    _getIconForMimeType(mimeType) {
+        if (mimeType.startsWith('image/')) return 'image';
+        if (mimeType.startsWith('text/')) return 'description';
+        if (mimeType.includes('pdf')) return 'picture_as_pdf';
+        if (mimeType.includes('zip') || mimeType.includes('compressed')) return 'archive';
+        if (mimeType.includes('code') || mimeType.endsWith('+xml')) return 'code';
+        return 'description';
+    }
+
+    _onToolCallStart(data) {
+        const existing = this.toolCallMap.get(data.id);
+        if (existing) {
+            this._updateExistingToolCall(existing, data);
+            return;
+        }
+        this._createNewToolCall(data);
+    }
+
+    _onToolResult(data) {
+        this._handleToolResultUpdate(data);
+    }
+
+    _onStopStreaming() {
+        this._clearUiState();
+    }
+
+    _clearUiState() {
+        this.currentReasoningMessage = null;
+        this.currentReasoningText = '';
+        this.currentAssistantMessage = null;
+        this.currentAssistantText = '';
+        this.currentToolCall = null;
+        this.currentToolCallId = null;
+        this.toolCallMap.clear();
+    }
+
+    // Private helpers for streaming UI
+    _appendReasoningContent(content) {
+        if (this.currentAssistantMessage) {
+            this.currentAssistantMessage = null;
+        }
+
+        if (!this.currentReasoningMessage) {
+            this.currentReasoningMessage = this.createReasoningMessage();
+            this.elements.messages.appendChild(this.currentReasoningMessage);
+        }
+
+        this.currentReasoningText += content;
+        const textSpan = this.currentReasoningMessage?.querySelector('.reasoning-text');
+        if (textSpan) {
+            textSpan.textContent = this.currentReasoningText;
+        }
+    }
+
+    _appendAssistantContent(content) {
+        if (!this.currentAssistantMessage) {
+            this.currentAssistantMessage = this.createAssistantMessage();
+            this.elements.messages.appendChild(this.currentAssistantMessage);
+        }
+
+        this.currentAssistantText += content;
+        const contentDiv = this.currentAssistantMessage?.querySelector('.content');
+        if (contentDiv) {
+            this.renderMarkdownFromText(contentDiv, this.currentAssistantText);
+        }
+    }
+
+    _createNewToolCall(data) {
+        const toolCallDiv = this.createToolCallElement(data.name, data.arguments, 'hourglass_empty', 'Running...');
+        this.elements.messages.appendChild(toolCallDiv);
+        this.currentToolCall = toolCallDiv;
+        this.currentToolCallId = data.id;
+        this.toolCallMap.set(data.id, toolCallDiv);
+        if (this.historyLoaded) {
+            this._startElapsedTimer(data.id, toolCallDiv, Date.now());
+        }
+        this.scrollToBottom();
+    }
+
+    _startElapsedTimer(toolCallId, toolCallDiv, startTime) {
+        const updateElapsed = () => {
+            const statusSpan = toolCallDiv.querySelector('.tool-status');
+            if (!statusSpan) {
+                clearInterval(intervalId);
+                this._toolCallTimers.delete(toolCallId);
+                return;
+            }
+            const elapsed = (Date.now() - startTime) / 1000;
+            const icon = statusSpan.querySelector('.material-symbols-outlined, .material-symbols-rounded');
+            const iconHtml = icon ? icon.outerHTML : '<span class="material-symbols-outlined">hourglass_empty</span>';
+            statusSpan.innerHTML = `${iconHtml} Running... ${formatDuration(elapsed)}`;
+        };
+        const intervalId = setInterval(updateElapsed, 500);
+        this._toolCallTimers.set(toolCallId, { intervalId, startTime });
+    }
+
+    _stopElapsedTimer(toolCallId) {
+        const timer = this._toolCallTimers.get(toolCallId);
+        if (timer) {
+            clearInterval(timer.intervalId);
+            const elapsed = (Date.now() - timer.startTime) / 1000;
+            this._toolCallTimers.delete(toolCallId);
+            return elapsed;
+        }
+        return null;
+    }
+
+    _updateExistingToolCall(toolCallDiv, data) {
+        const contentDiv = toolCallDiv?.querySelector('.content');
+        const toolNameSpan = toolCallDiv?.querySelector('.tool-name');
+
+        if (!contentDiv || !toolNameSpan) {
+            return;
+        }
+
+        if (toolNameSpan) {
+            toolNameSpan.textContent = this.escapeHtml(data.name);
+        }
+
+        if (data.arguments) {
+            const previousScrollHeight = this.elements.messages.scrollHeight;
+            const existingArgs = contentDiv.querySelector('.structured-args');
+            if (existingArgs) {
+                existingArgs.replaceWith(createStructuredArgs(data.arguments));
+            } else {
+                this._appendToolArgs(contentDiv, data.arguments);
+            }
+            this._scrollAfterUpdate(previousScrollHeight);
+        }
+    }
+
+    _appendToolArgs(contentDiv, args) {
+        contentDiv.appendChild(createStructuredArgs(args));
+    }
+
+    _handleToolResultUpdate(data) {
+        // Try to find the tool call element from the map first
+        let toolCallElement = this.toolCallMap.get(data.toolCallId);
+
+        // If not in map, fall back to currentToolCall (for live streaming)
+        if (!toolCallElement && this.currentToolCallId === data.toolCallId) {
+            toolCallElement = this.currentToolCall;
+        }
+
+        if (!toolCallElement) {
+            return;
+        }
+
+        // Stop the realtime timer and show the elapsed time the user last saw ticking.
+        const elapsed = this._stopElapsedTimer(data.toolCallId);
+        const durationStr = elapsed != null ? ` (${formatDuration(elapsed)})` : '';
+
+        // Capture scroll height BEFORE modifying content
+        const previousScrollHeight = this.elements.messages.scrollHeight;
+
+        const statusSpan = toolCallElement.querySelector('.tool-status');
+        const contentDiv = toolCallElement.querySelector('.content');
+
+        if (data.error) {
+            if (statusSpan) statusSpan.innerHTML = `<span class="material-symbols-rounded">error</span> Failed${durationStr}`;
+            contentDiv.appendChild(this._createErrorDiv(data.error));
+        } else if (data.result) {
+            if (statusSpan) statusSpan.innerHTML = `<span class="material-symbols-rounded">check_circle</span> Completed${durationStr}`;
+            contentDiv.appendChild(this.formatToolResult(data.tool_name, data.result));
+        } else if (data.skipped) {
+            if (statusSpan) statusSpan.innerHTML = `<span class="material-symbols-rounded">skip_next</span> Skipped${durationStr}`;
+            contentDiv.appendChild(this._createSkipDiv(data.skip_reason));
+        }
+
+        this._scrollAfterUpdate(previousScrollHeight);
+
+        // Clear the map entry and current state only if this is the current tool call
+        if (this.currentToolCallId === data.toolCallId) {
+            this.currentToolCall = null;
+            this.currentToolCallId = null;
+        }
+        this.toolCallMap.delete(data.toolCallId);
+    }
+
+    _createErrorDiv(error) {
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'tool-error';
+        errorDiv.innerHTML = `<pre>${this.escapeHtml(error)}</pre>`;
+        return errorDiv;
+    }
+
+    _createSkipDiv(skipReason) {
+        const skipDiv = document.createElement('div');
+        skipDiv.className = 'tool-skip';
+        skipDiv.textContent = skipReason || 'Tool was skipped';
+        return skipDiv;
+    }
+
+    _scrollAfterUpdate(previousScrollHeight) {
+        this.scrollToBottomIfWasAtBottom(previousScrollHeight);
+    }
+
+    showApprovalPopup(event) {
+        this.currentPopupId = event.popup_id;
+        this.wasAtBottomBeforePopup = scrollUtils.isAtBottom(this.elements.messages);
+
+        const popupDiv = document.createElement('div');
+        popupDiv.className = 'popup-card approval-popup';
+        popupDiv.id = `popup-${event.popup_id}`;
+
+        popupDiv.innerHTML = `
+            <div class="popup-header">
+                <span class="popup-icon material-symbols-rounded">warning</span>
+                <span class="popup-title">${this.escapeHtml(`${event.tool_name} command`)}</span>
+            </div>
+            <div class="popup-content">
+                <div class="popup-args-placeholder"></div>
+            </div>
+            <div class="popup-options">
+                <button class="popup-btn yes" data-option="0">Yes</button>
+                <button class="popup-btn yes" data-option="1">Yes (This Session)</button>
+                <button class="popup-btn yes" data-option="2">Enable Auto-Approve</button>
+                <button class="popup-btn no" data-option="3">No</button>
+            </div>
+        `;
+
+        const placeholder = popupDiv.querySelector('.popup-args-placeholder');
+        if (placeholder && event.tool_args) {
+            const structured = createStructuredArgs(event.tool_args);
+            structured.className = 'structured-args popup-structured-args';
+            placeholder.replaceWith(structured);
+        }
+
+        popupDiv.querySelectorAll('.popup-btn').forEach(btn => {
+            btn.onclick = () => this.handleApprovalOption(parseInt(btn.dataset.option));
+        });
+
+        this.currentPopupElement = popupDiv;
+        this.elements.messages.appendChild(popupDiv);
+        this.elements.input.disabled = true;
+        this.forceScrollToBottom();
+    }
+
+    handleApprovalOption(option) {
+        if (!this.currentPopupId) return;
+
+        const options = [
+            { response: 'y', feedback: null, approvalType: 'once' },
+            { response: 'y', feedback: null, approvalType: 'session' },
+            { response: 'y', feedback: null, approvalType: 'auto-approve' },
+            { response: 'n', feedback: 'User denied approval via web UI', approvalType: 'once' }
+        ];
+
+        const { response, feedback, approvalType } = options[option] || options[0];
+        this.sendApprovalResponse(this.currentPopupId, response, feedback, approvalType);
+        this.currentPopupId = null;
+    }
+
+    sendApprovalResponse(popupId, response, feedback, approvalType = 'once') {
+        this.wsClient.send({
+            type: 'approval_response',
+            popup_id: popupId,
+            response,
+            feedback,
+            approval_type: approvalType
+        });
+    }
+
+    showQuestionPopup(event) {
+        const currentQuestion = this.questionHandler.showQuestionPopup(event);
+        if (!currentQuestion) {
+            console.error('showQuestionPopup: No questions provided');
+            return;
+        }
+
+        this.wasAtBottomBeforePopup = scrollUtils.isAtBottom(this.elements.messages);
+        this.currentPopupId = this.questionHandler.currentPopupId;
+
+        const optionsHtml = currentQuestion.options.map((opt, idx) => `
+            <button class="popup-btn" data-option="${idx}">
+                <strong>${this.escapeHtml(opt.label)}</strong><br>
+                <small>${this.escapeHtml(opt.description)}</small>
+            </button>
+        `).join('');
+
+        const hasOther = !currentQuestion.hide_other;
+        const isLastQuestion = this.questionHandler.currentQuestions.length === 1 ||
+                               this.questionHandler.currentQuestionIndex === this.questionHandler.currentQuestions.length - 1;
+        const submitButtonText = isLastQuestion ? 'Submit' : 'Next';
+
+        const popupDiv = document.createElement('div');
+        popupDiv.className = 'popup-card question-popup';
+        popupDiv.id = `popup-${event.popup_id}`;
+
+        popupDiv.innerHTML = `
+            <div class="popup-header">
+                <span class="popup-icon material-symbols-rounded">help</span>
+                <span class="popup-title">${this.escapeHtml(currentQuestion.header || 'Question')}</span>
+            </div>
+            <div class="popup-content">${this.escapeHtml(currentQuestion.question)}</div>
+            <div class="popup-options">${optionsHtml}${hasOther ? '<button class="popup-btn other-btn">Other (custom answer)</button>' : ''}</div>
+            ${hasOther ? '<div class="popup-other" style="display:none;"><input type="text" id="question-other-input" placeholder="Type your answer..."></div>' : ''}
+            <div class="popup-actions">
+                <button class="popup-btn submit" id="question-submit">${submitButtonText}</button>
+                <button class="popup-btn cancel" id="question-cancel">Cancel</button>
+            </div>
+        `;
+
+        popupDiv.querySelectorAll('.popup-btn[data-option]').forEach(btn => {
+            btn.onclick = () => {
+                if (currentQuestion.multi_select) {
+                    btn.classList.toggle('selected');
+                } else {
+                    popupDiv.querySelectorAll('.popup-btn[data-option]').forEach(b => b.classList.remove('selected'));
+                    btn.classList.add('selected');
+                    const optionIdx = parseInt(btn.dataset.option);
+                    const questionText = popupDiv.querySelector('.popup-content').textContent;
+                    this.questionHandler.currentQuestionAnswers.push({
+                        question: questionText,
+                        answer: currentQuestion.options[optionIdx].label,
+                        is_other: false
+                    });
+                    this.submitCurrentQuestionOrNext();
+                }
+            };
+        });
+
+        if (hasOther) {
+            const otherBtn = popupDiv.querySelector('.other-btn');
+            const otherContainer = popupDiv.querySelector('.popup-other');
+            otherBtn.onclick = () => {
+                otherContainer.style.display = 'block';
+                otherContainer.querySelector('input').focus();
+            };
+        }
+
+        popupDiv.querySelector('#question-submit').onclick = () => {
+            const selectedBtns = popupDiv.querySelectorAll('.popup-btn[data-option].selected');
+            const otherInput = popupDiv.querySelector('#question-other-input');
+
+            if (hasOther && otherInput?.value.trim()) {
+                const questionText = popupDiv.querySelector('.popup-content').textContent;
+                this.questionHandler.currentQuestionAnswers.push({
+                    question: questionText,
+                    answer: otherInput.value.trim(),
+                    is_other: true
+                });
+                this.submitCurrentQuestionOrNext();
+                return;
+            }
+
+            if (selectedBtns.length > 0) {
+                const questionText = popupDiv.querySelector('.popup-content').textContent;
+                const answers = Array.from(selectedBtns).map(btn => {
+                    const optionIdx = parseInt(btn.dataset.option);
+                    return {
+                        question: questionText,
+                        answer: currentQuestion.options[optionIdx].label,
+                        is_other: false
+                    };
+                });
+                this.questionHandler.currentQuestionAnswers.push(...answers);
+                this.submitCurrentQuestionOrNext();
+            }
+        };
+
+        popupDiv.querySelector('#question-cancel').onclick = () => {
+            this.sendQuestionResponse(this.currentPopupId, [], true);
+            this.hidePopup({popup_id: this.currentPopupId});
+            this.questionHandler.reset();
+        };
+
+        this.currentPopupElement = popupDiv;
+        this.elements.messages.appendChild(popupDiv);
+        this.elements.input.disabled = true;
+        this.forceScrollToBottom();
+    }
+
+    submitCurrentQuestionOrNext() {
+        const result = this.questionHandler.submitCurrentQuestionOrNext();
+
+        if (result.hasMore && result.nextEvent) {
+            this.hidePopup({ popup_id: this.currentPopupId });
+            this.showQuestionPopup(result.nextEvent);
+        } else if (!result.hasMore && result.message) {
+            this.wsClient.send(result.message);
+            this.hidePopup({ popup_id: this.currentPopupId });
+        }
+    }
+
+    sendQuestionResponse(popupId, answers, cancelled) {
+        this.wsClient.send({
+            type: 'question_response',
+            popup_id: popupId,
+            answers,
+            cancelled
+        });
+    }
+
+    hidePopup(event) {
+        if (this.currentPopupElement?.parentNode) {
+            this.currentPopupElement.parentNode.removeChild(this.currentPopupElement);
+        }
+
+        this.elements.input.disabled = false;
+
+        if (this.wasAtBottomBeforePopup) {
+            this.forceScrollToBottom();
+        }
+
+        this.currentPopupId = null;
+        this.currentPopupElement = null;
+        this.wasAtBottomBeforePopup = false;
+    }
+
+    createReasoningMessage() {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message reasoning' + (this._preferCollapsed ? ' collapsed' : '');
+
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'content';
+
+        const headerDiv = document.createElement('div');
+        headerDiv.className = 'reasoning-header';
+        headerDiv.innerHTML = `
+            <span class="label">Thought</span>
+            <span class="reasoning-toggle">▼</span>
+        `;
+        headerDiv.addEventListener('click', () => messageDiv.classList.toggle('collapsed'));
+        contentDiv.appendChild(headerDiv);
+
+        const textSpan = document.createElement('span');
+        textSpan.className = 'reasoning-text';
+        contentDiv.appendChild(textSpan);
+
+        messageDiv.appendChild(contentDiv);
+        return messageDiv;
+    }
+
+    createAssistantMessage() {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message assistant';
+        messageDiv.innerHTML = `<div class="content"></div>`;
+        return messageDiv;
+    }
+
+    finalizeReasoningMessage() {
+        this.currentReasoningMessage = null;
+    }
+
+    stopStreaming() {
+        this.messageStreamer.stopStreaming();
+        this._clearUiState();
+    }
+
+    _tagMessageIndex(el, index) {
+        if (index != null) {
+            el.dataset.messageIndex = index;
+        }
+    }
+
+    addMessage(type, content, messageIndex) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${type}`;
+        this._tagMessageIndex(messageDiv, messageIndex);
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'content';
+
+        if (type === 'assistant') {
+            contentDiv.textContent = content;
+            this.renderMarkdown(contentDiv);
+        } else {
+            contentDiv.innerHTML = this.escapeHtml(content);
+        }
+
+        messageDiv.appendChild(contentDiv);
+        this.elements.messages.appendChild(messageDiv);
+        this.scrollToBottom();
+    }
+
+    addImageMessage(imageData, messageIndex) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message user';
+        this._tagMessageIndex(messageDiv, messageIndex);
+
+        let imageUrl = imageData;
+        // Only add data URI prefix if it's not already a data URL or HTTP(S) URL
+        if (imageData && !imageData.startsWith('data:') && !imageData.startsWith('http://') && !imageData.startsWith('https://')) {
+            imageUrl = `data:image/jpeg;base64,${imageData}`;
+        }
+
+        messageDiv.innerHTML = `<div class="content"><img src="${imageUrl}" style="max-width: 100%; border-radius: 8px;"></div>`;
+        this.elements.messages.appendChild(messageDiv);
+        this.scrollToBottom();
+    }
+
+    updateSendButtonState() {
+        const hasText = this.elements.input.value.trim();
+        const hasImage = this.imageAttachment?.getImageData() !== null;
+        this.elements.sendBtn.disabled = !(hasText || hasImage);
+    }
+
+    _clearPendingInput() {
+        if (!this._pendingInputContent) return;
+        this._pendingInputContent = null;
+        this.elements.input.value = '';
+        this.elements.input.disabled = false;
+        this.autoResizeTextarea();
+        this.updateSendButtonState();
+        this.imageAttachment?.clear();
+    }
+
+    _matchPendingContent(eventContent) {
+        if (!this._pendingInputContent) return false;
+        if (typeof eventContent === 'string') return eventContent === this._pendingInputContent;
+        if (Array.isArray(eventContent)) {
+            const textPart = eventContent.find(p => p && p.type === 'text');
+            return textPart?.text === this._pendingInputContent;
+        }
+        return false;
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    scrollToBottom() {
+        this._suppressFabShow = true;
+        scrollUtils.scrollToBottomIfNeeded(this.elements.messages);
+        this._afterProgrammaticScroll();
+    }
+
+    scrollToBottomIfWasAtBottom(previousScrollHeight) {
+        this._suppressFabShow = true;
+        scrollUtils.scrollToBottomIfWasAtBottom(this.elements.messages, previousScrollHeight);
+        this._afterProgrammaticScroll();
+    }
+
+    forceScrollToBottom() {
+        this._suppressFabShow = true;
+        scrollUtils.scrollToBottom(this.elements.messages);
+        this._afterProgrammaticScroll();
+    }
+
+    scrollToTop() {
+        this._suppressFabShow = true;
+        scrollUtils.scrollToTop(this.elements.messages);
+        this._afterProgrammaticScroll();
+    }
+
+    scrollToPreviousUserMessage() {
+        this._suppressFabShow = true;
+        scrollUtils.scrollToPreviousUserMessage(this.elements.messages);
+        this._afterProgrammaticScroll();
+    }
+
+    scrollToNextUserMessage() {
+        this._suppressFabShow = true;
+        scrollUtils.scrollToNextUserMessage(this.elements.messages);
+        this._afterProgrammaticScroll();
+    }
+
+    _afterProgrammaticScroll() {
+        setTimeout(() => { this._suppressFabShow = false; }, 0);
+    }
+
+    _restartFabTimer() {
+        const fabContainer = document.querySelector('.fab-container');
+        if (!fabContainer) return;
+        fabContainer.classList.remove('hidden');
+        clearTimeout(this._fabHideTimer);
+        this._fabHideTimer = setTimeout(() => fabContainer.classList.add('hidden'), 2000);
+    }
+
+    bindScrollNavigationEvents() {
+        const scrollTopBtn = document.getElementById('scroll-top-btn');
+        const scrollPrevUserBtn = document.getElementById('scroll-prev-user-btn');
+        const scrollNextUserBtn = document.getElementById('scroll-next-user-btn');
+        const scrollBottomBtn = document.getElementById('scroll-bottom-btn');
+
+        this._on(scrollTopBtn, 'click', () => { this._restartFabTimer(); this.scrollToTop(); });
+        this._on(scrollPrevUserBtn, 'click', () => { this._restartFabTimer(); this.scrollToPreviousUserMessage(); });
+        this._on(scrollNextUserBtn, 'click', () => { this._restartFabTimer(); this.scrollToNextUserMessage(); });
+        this._on(scrollBottomBtn, 'click', () => { this._restartFabTimer(); this.forceScrollToBottom(); });
+
+        // Show FABs on user scroll only; hide 2s after scroll idle
+        this._fabHideTimer = null;
+        const showFabs = () => {
+            if (this._suppressFabShow) return;
+            this._restartFabTimer();
+        };
+        this._on(this.elements.messages, 'scroll', showFabs);
+
+        this.updateFabPosition();
+        this._resizeHandler = () => this.updateFabPosition();
+        window.addEventListener('resize', this._resizeHandler);
+
+        const inputArea = document.querySelector('.input-area');
+        if (inputArea && typeof ResizeObserver !== 'undefined') {
+            new ResizeObserver(() => this.updateFabPosition()).observe(inputArea);
+        }
+    }
+
+    updateFabPosition() {
+        const fabContainer = document.querySelector('.fab-container');
+        const inputArea = document.querySelector('.input-area');
+        const chatContainer = document.querySelector('.chat-container');
+
+        if (!fabContainer || !inputArea || !chatContainer) return;
+        fabContainer.style.bottom = `${inputArea.clientHeight + 16}px`;
+    }
+
+    renderMarkdown(element) {
+        const text = element.textContent;
+        if (!text.trim()) return;
+
+        element.innerHTML = marked.parse(text);
+        element.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
+    }
+
+    renderMarkdownFromText(element, text) {
+        if (!text.trim()) return;
+
+        element.innerHTML = marked.parse(text);
+        element.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
+    }
+
+    async sendMessage() {
+        const content = this.elements.input.value.trim();
+        const imageData = this.imageAttachment?.getImageData();
+
+        if (!content && !imageData) return;
+        this._clearRewindHighlight();
+
+        if (content && !imageData) {
+            // Check for !!command or !command (bash execution) first
+            if (content.startsWith('!!') || content.startsWith('!')) {
+                if (!this.wsClient.isConnected()) return;
+
+                this._pendingInputContent = content;
+                this.elements.input.disabled = true;
+                this.elements.sendBtn.disabled = true;
+
+                try {
+                    const message = { type: 'user_message', content };
+                    this.wsClient.send(message);
+                } catch {
+                    this._pendingInputContent = null;
+                    this.elements.input.disabled = false;
+                    this.elements.sendBtn.disabled = false;
+                }
+                return;
+            }
+
+            const command = this.slashRegistry.getCommand(content);
+            if (command) {
+                // Special handling for /translate - translate input text to English
+                if (command.name === 'translate') {
+                    if (!command.args) {
+                        this.addMessage('system', 'Usage: /translate <text to translate>');
+                        this.elements.input.value = '';
+                        this.autoResizeTextarea();
+                        this.updateSendButtonState();
+                        return;
+                    }
+                    await this.handleTranslate(command.args);
+                    return;
+                }
+
+                // Modal commands: clear input and open the modal
+                const modalHandlers = {
+                    resume: () => this.showSessionPicker(),
+                    model: () => this.showModelPicker(),
+                    config: () => this.showConfigModal(),
+                    mcp: () => this.showMcpModal(),
+                    rewind: () => this.showRewindModal(),
+                };
+                const handler = modalHandlers[command.name];
+                if (handler) {
+                    this.elements.input.value = '';
+                    this.autoResizeTextarea();
+                    this.updateSendButtonState();
+                    handler();
+                    return;
+                }
+
+                const result = await this.slashRegistry.execute(command.name, command.args);
+
+                if (result.success) {
+                    this.elements.input.value = '';
+                    this.autoResizeTextarea();
+                    this.updateSendButtonState();
+                } else {
+                    this.addMessage('system', `Command error: ${result.error}`);
+                }
+                return;
+            }
+        }
+
+        if (!this.wsClient.isConnected()) return;
+
+        const message = { type: 'user_message', content };
+        if (imageData) message.image = imageData;
+
+        this._pendingInputContent = content;
+        this.elements.input.disabled = true;
+        this.elements.sendBtn.disabled = true;
+
+        try {
+            this.wsClient.send(message);
+        } catch {
+            this._pendingInputContent = null;
+            this.elements.input.disabled = false;
+            this.elements.sendBtn.disabled = false;
+        }
+    }
+
+    updateStatus(text, connected = false) {
+        // Remove all status classes
+        this.elements.statusDot.classList.remove('connected', 'error');
+
+        if (connected) {
+            this.elements.statusDot.classList.add('connected');
+            this.elements.statusDot.title = 'Connected';
+        } else if (text === 'Error') {
+            this.elements.statusDot.classList.add('error');
+            this.elements.statusDot.title = 'Error';
+        } else {
+            this.elements.statusDot.title = 'Disconnected';
+        }
+    }
+
+    createToolCallElement(toolName, args, statusIcon, statusText) {
+        const toolCallDiv = document.createElement('div');
+        toolCallDiv.className = 'message tool-call' + (this._preferCollapsed ? ' collapsed' : '');
+
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'content';
+
+        const headerDiv = document.createElement('div');
+        headerDiv.className = 'tool-header';
+        headerDiv.innerHTML = `
+            <span class="material-symbols-rounded tool-icon">settings</span>
+            <span class="tool-name">${this.escapeHtml(toolName)}</span>
+            <span class="tool-status">
+                <span class="material-symbols-outlined">${this.escapeHtml(statusIcon || 'check_circle')}</span>
+                ${this.escapeHtml(statusText || '')}
+            </span>
+            <span class="tool-toggle">▼</span>
+        `;
+
+        headerDiv.addEventListener('click', () => toolCallDiv.classList.toggle('collapsed'));
+        contentDiv.appendChild(headerDiv);
+
+        if (args) {
+            try {
+                contentDiv.appendChild(createStructuredArgs(args));
+            } catch (e) {
+                const argsPre = document.createElement('pre');
+                argsPre.className = 'tool-args';
+                argsPre.textContent = String(args);
+                contentDiv.appendChild(argsPre);
+            }
+        }
+
+        toolCallDiv.appendChild(contentDiv);
+        return toolCallDiv;
+    }
+
+    formatToolResult(toolName, result) {
+        const helpers = toolFormatters.getFormatterHelpers(this);
+        return toolFormatters.formatToolResult(toolName, result, helpers);
+    }
+
+    createCardHeader(card, title, icon, summary) {
+        const header = document.createElement('div');
+        header.className = 'card-header';
+        header.innerHTML = `
+            <div class="card-title">
+                <span class="card-icon">${icon}</span>
+                <span>${this.escapeHtml(title)}</span>
+            </div>
+            <span class="card-toggle">▼</span>
+        `;
+
+        header.addEventListener('click', () => card.classList.toggle('collapsed'));
+
+        const content = document.createElement('div');
+        content.className = 'card-content';
+
+        if (summary) {
+            const summaryPre = document.createElement('pre');
+            summaryPre.textContent = summary;
+            content.appendChild(summaryPre);
+        }
+
+        card.appendChild(header);
+        card.appendChild(content);
+        return card;
+    }
+
+    formatBashResult(card, result) {
+        const returncode = parseInt(result.returncode) || 0;
+        const isSuccess = returncode === 0;
+
+        this.createCardHeader(card, `bash: ${result.command || 'command'}`,
+            isSuccess ? '<span class="material-symbols-rounded">check_circle</span>' : '<span class="material-symbols-rounded">error</span>',
+            `Return code: ${returncode}`);
+
+        const content = card.querySelector('.card-content');
+
+        if (result.stdout) {
+            content.appendChild(this._createOutputSection('stdout', result.stdout));
+        }
+        if (result.stderr) {
+            content.appendChild(this._createOutputSection('stderr', result.stderr));
+        }
+
+        const returncodeBadge = document.createElement('div');
+        returncodeBadge.className = `bash-returncode ${isSuccess ? 'success' : 'failure'}`;
+        returncodeBadge.textContent = `Return code: ${returncode}`;
+        content.appendChild(returncodeBadge);
+
+        return card;
+    }
+
+    _createOutputSection(type, content) {
+        const section = document.createElement('div');
+        section.className = `bash-output-section ${type}`;
+        section.innerHTML = `<div class="output-label">${type.toUpperCase()}</div><div class="output-content"><pre>${this.escapeHtml(content)}</pre></div>`;
+        return section;
+    }
+
+    formatWebSearchResult(card, result) {
+        const sourceCount = result.sources?.length || 0;
+        this.createCardHeader(card, `Web search: ${result.answer?.substring(0, 50) || 'search'}...`,
+            '<span class="material-symbols-rounded">search</span>', `${sourceCount} sources found`);
+
+        const content = card.querySelector('.card-content');
+
+        if (result.answer) {
+            const answerPre = document.createElement('pre');
+            answerPre.textContent = result.answer;
+            content.appendChild(answerPre);
+        }
+
+        if (result.sources?.length > 0) {
+            const sourcesDiv = document.createElement('div');
+            sourcesDiv.style.marginTop = '12px';
+            result.sources.forEach(source => {
+                const sourceItem = document.createElement('div');
+                sourceItem.className = 'search-source-item';
+                sourceItem.innerHTML = `<div class="source-title">${this.escapeHtml(source.title)}</div><div class="source-url">${this.escapeHtml(source.url)}</div>`;
+                sourcesDiv.appendChild(sourceItem);
+            });
+            content.appendChild(sourcesDiv);
+        }
+
+        return card;
+    }
+
+    formatWebFetchResult(card, result) {
+        const linesRead = result.lines_read || 0;
+        const totalLines = result.total_lines || 0;
+        const wasTruncated = result.was_truncated ? ' (truncated)' : '';
+
+        this.createCardHeader(card, `Fetch: ${result.url || 'URL'}`,
+            '<span class="material-symbols-rounded">description</span>',
+            `Fetched ${linesRead}/${totalLines} lines${wasTruncated}`);
+
+        const content = card.querySelector('.card-content');
+
+        if (result.content) {
+            const lines = result.content.split('\n');
+            content.appendChild(document.createElement('pre')).textContent = lines.slice(0, 100).join('\n');
+
+            if (lines.length > 100) {
+                const moreDiv = document.createElement('div');
+                moreDiv.className = 'tool-formatter-more-lines';
+                moreDiv.textContent = `... and ${lines.length - 100} more lines`;
+                content.appendChild(moreDiv);
+            }
+        }
+
+        return card;
+    }
+
+    formatGrepResult(card, result) {
+        const matchCount = result.match_count || 0;
+        const wasTruncated = result.was_truncated ? ' (truncated)' : '';
+
+        this.createCardHeader(card, `Grep: ${result.pattern || 'pattern'}`,
+            '<span class="material-symbols-rounded">search</span>',
+            `${matchCount} matches found${wasTruncated}`);
+
+        const content = card.querySelector('.card-content');
+        if (result.matches) {
+            content.appendChild(document.createElement('pre')).textContent = result.matches;
+        }
+
+        return card;
+    }
+
+    formatReadFileResult(card, result) {
+        const path = result.path || 'unknown';
+        const linesRead = result.lines_read || 0;
+        const wasTruncated = result.was_truncated ? ' (truncated)' : '';
+
+        this.createCardHeader(card, `Read: ${path}`,
+            '<span class="material-symbols-rounded">description</span>',
+            `Read ${linesRead} lines${wasTruncated}`);
+
+        const content = card.querySelector('.card-content');
+
+        if (result.content) {
+            this.createCodeBlock(path, result.content, content, result.offset || 0);
+        }
+
+        if (result.lsp_diagnostics) {
+            const diagnosticsDiv = document.createElement('div');
+            diagnosticsDiv.className = 'tool-formatter-diagnostics';
+            diagnosticsDiv.innerHTML = `<div style="font-weight: 600; color: var(--yellow); margin-bottom: 4px;">LSP Diagnostics</div><pre style="margin: 0; font-size: 0.85rem;">${this.escapeHtml(result.lsp_diagnostics)}</pre>`;
+            content.appendChild(diagnosticsDiv);
+        }
+
+        return card;
+    }
+
+    formatEditFileResult(card, result) {
+        const blocksApplied = result.blocks_applied || 0;
+        const linesChanged = result.lines_changed || 0;
+
+        this.createCardHeader(card, `Edit: ${result.file || 'file'}`,
+            '<span class="material-symbols-rounded">edit</span>',
+            `${blocksApplied} block(s) applied, ${linesChanged} line(s) changed`);
+
+        const content = card.querySelector('.card-content');
+
+        if (result.warnings) {
+            let warningsArray = result.warnings;
+            if (typeof warningsArray === 'string') {
+                try { warningsArray = JSON.parse(warningsArray); } catch (e) { warningsArray = [warningsArray]; }
+            }
+
+            if (Array.isArray(warningsArray) && warningsArray.length > 0) {
+                const warningsDiv = document.createElement('div');
+                warningsDiv.className = 'tool-formatter-warnings';
+                warningsDiv.innerHTML = `<div style="font-weight: 600; color: #f0ad4e; margin-bottom: 4px;">Warnings</div><ul style="margin: 0; padding-left: 20px; font-size: 0.85rem;">${warningsArray.map(w => `<li>${this.escapeHtml(w)}</li>`).join('')}</ul>`;
+                content.appendChild(warningsDiv);
+            }
+        }
+
+        if (result.content) {
+            // Use createCodeBlock with "diff" as pseudo-path, then override language
+            const codeBlock = this.createCodeBlock('diff', result.content, content);
+
+            // Override language class to diff (detectLanguageFromPath returns plaintext for "diff")
+            const codeElement = codeBlock.querySelector('code');
+            if (codeElement) {
+                codeElement.className = 'language-diff';
+                // Re-apply syntax highlighting with correct language
+                if (window.hljs) {
+                    window.hljs.highlightElement(codeBlock);
+                }
+            }
+
+            // Add diff-block CSS class for styling
+            codeBlock.classList.add('diff-block');
+        }
+
+        return card;
+    }
+
+    formatLspResult(card, result) {
+        const diagnostics = result.diagnostics || [];
+        const errors = diagnostics.filter(d => d.severity === 1).length;
+        const warnings = diagnostics.filter(d => d.severity === 2).length;
+
+        let headerIcon = errors > 0 ? '<span class="material-symbols-rounded">error</span>' :
+                         warnings > 0 ? '<span class="material-symbols-rounded">warning</span>' :
+                         '<span class="material-symbols-rounded">check_circle</span>';
+        const summary = errors === 0 && warnings === 0 ? 'No issues found' : `${errors} error(s), ${warnings} warning(s)`;
+
+        this.createCardHeader(card, 'LSP Diagnostics', headerIcon, summary);
+
+        const content = card.querySelector('.card-content');
+        if (result.formatted_output) {
+            content.appendChild(document.createElement('pre')).textContent = result.formatted_output;
+        }
+
+        return card;
+    }
+
+    formatTodoResult(card, result) {
+        const total = result.total_count || 0;
+        this.createCardHeader(card, 'Todo List',
+            '<span class="material-symbols-rounded">check_circle</span>',
+            `${total} total tasks`);
+
+        const content = card.querySelector('.card-content');
+
+        if (result.todos?.length > 0) {
+            const table = document.createElement('table');
+            table.className = 'tool-table';
+            table.innerHTML = `
+                <thead><tr><th>Status</th><th>Priority</th><th>Content</th></tr></thead>
+                <tbody>${result.todos.map(todo => `
+                    <tr>
+                        <td>${this.escapeHtml(todo.status || 'pending')}</td>
+                        <td>${this.escapeHtml(todo.priority || 'medium')}</td>
+                        <td>${this.escapeHtml(todo.content || '')}</td>
+                    </tr>
+                `).join('')}</tbody>
+            `;
+            content.appendChild(table);
+        }
+
+        return card;
+    }
+
+    formatAskUserQuestionResult(card, result) {
+        // Server now returns proper JSON, but handle legacy string format for backward compatibility
+        let answers = result.answers;
+        if (typeof answers === 'string') {
+            try {
+                // Legacy format: Python-style list string "[{'question': '...', 'answer': '...'}]"
+                answers = JSON.parse(answers.replace(/'/g, '"').replace(/False/g, 'false').replace(/True/g, 'true'));
+            } catch (e) {
+                answers = [];
+            }
+        }
+        answers = Array.isArray(answers) ? answers : [];
+
+        // Handle cancelled boolean (now proper JSON, but support legacy string format)
+        const cancelled = result.cancelled === true;
+
+        this.createCardHeader(card, 'User Answers',
+            '<span class="material-symbols-rounded">chat</span>',
+            `${answers.length} answer(s)${cancelled ? ' (cancelled)' : ''}`);
+
+        const content = card.querySelector('.card-content');
+
+        if (answers.length > 0) {
+            answers.forEach((answer, index) => {
+                const answerItem = document.createElement('div');
+                answerItem.className = 'answer-item';
+                const questionText = this.escapeHtml(answer.question);
+                const answerText = this.escapeHtml(answer.answer);
+                const otherBadge = answer.is_other ? '<span class="answer-other-badge">(Custom answer)</span>' : '';
+
+                answerItem.innerHTML = `
+                    <div class="answer-question">${questionText}</div>
+                    <div class="answer-text">${answerText}${otherBadge}</div>
+                `;
+                content.appendChild(answerItem);
+            });
+        } else if (cancelled) {
+            const cancelledText = document.createElement('div');
+            cancelledText.className = 'answer-cancelled';
+            cancelledText.textContent = 'Question was cancelled by the user';
+            content.appendChild(cancelledText);
+        }
+
+        return card;
+    }
+
+    formatGenericResult(card, result) {
+        const keys = result && typeof result === 'object' ? Object.keys(result) : [];
+        const summary = Array.isArray(result)
+            ? `${result.length} items`
+            : keys.length > 0
+                ? `${keys.length} fields`
+                : 'empty';
+
+        this.createCardHeader(card, 'Result',
+            '<span class="material-symbols-rounded">analytics</span>',
+            summary);
+
+        const content = card.querySelector('.card-content');
+        if (content && result !== null && result !== undefined) {
+            content.appendChild(createStructuredResult(result));
+        }
+        return card;
+    }
+
+    formatRegisterDownloadResult(card, result) {
+        card.className = 'download-card';
+        const filename = result.filename || 'file';
+        const filePath = result.file_path || '';
+        const mimeType = result.mime_type || 'application/octet-stream';
+        const description = result.description;
+
+        const header = document.createElement('div');
+        header.className = 'download-card-header';
+
+        const icon = this._getIconForMimeType(mimeType);
+        header.innerHTML = `
+            <div class="download-card-title">
+                <span class="material-symbols-rounded">${icon}</span>
+                <span>${this.escapeHtml(filename)}</span>
+            </div>
+            <div class="download-card-type">${this.escapeHtml(mimeType)}</div>
+        `;
+
+        let descriptionDiv = null;
+        if (description) {
+            descriptionDiv = document.createElement('div');
+            descriptionDiv.className = 'download-card-description';
+            descriptionDiv.textContent = this.escapeHtml(description);
+        }
+
+        const button = document.createElement('button');
+        button.className = 'download-card-button';
+        button.innerHTML = `
+            <span class="material-symbols-rounded">download</span>
+            <span>Download</span>
+        `;
+        button.addEventListener('click', () => this._triggerDownload(filePath));
+
+        card.appendChild(header);
+        if (descriptionDiv) card.appendChild(descriptionDiv);
+        card.appendChild(button);
+
+        return card;
+    }
+
+    createCodeBlock(path, content, container, offset = 0) {
+        const language = this.detectLanguageFromPath(path);
+        const codeBlock = document.createElement('pre');
+        codeBlock.className = 'tool-formatter-code-block';
+        codeBlock.title = 'Double-click to view full screen';
+
+        const code = document.createElement('code');
+        code.className = `language-${language}`;
+        code.textContent = content;
+
+        codeBlock.appendChild(code);
+        container.appendChild(codeBlock);
+
+        // Apply syntax highlighting
+        if (window.hljs) {
+            window.hljs.highlightElement(codeBlock);
+        }
+
+        // Add double-click handler for fullscreen
+        codeBlock.addEventListener('dblclick', () => {
+            this.showCodeFullscreen(path, content, language, offset);
+        });
+
+        return codeBlock;
+    }
+
+    formatWriteFileResult(card, result) {
+        const path = result.path || 'unknown';
+        const bytesWritten = result.bytes_written || 0;
+        const fileExisted = result.file_existed;
+
+        const status = fileExisted ? 'Overwritten' : 'Created';
+        const statusIcon = fileExisted ? 'edit_note' : 'note_add';
+        const statusColor = fileExisted ? 'var(--yellow)' : 'var(--green)';
+
+        this.createCardHeader(card, status,
+            `<span class="material-symbols-rounded" style="color: ${statusColor}">${statusIcon}</span>`,
+            `${bytesWritten} bytes written`);
+
+        const contentDiv = card.querySelector('.card-content');
+
+        const pathDiv = document.createElement('div');
+        pathDiv.className = 'tool-formatter-path';
+        pathDiv.textContent = `Path: ${path}`;
+        contentDiv.appendChild(pathDiv);
+
+        if (result.content) {
+            this.createCodeBlock(path, result.content, contentDiv);
+        }
+
+        return card;
+    }
+
+    truncatePathFromStart(path, container) {
+        const buttonsWidth = 70;
+        const padding = 40;
+        const availableWidth = container.offsetWidth - buttonsWidth - padding;
+        const style = window.getComputedStyle(container);
+        const fontSize = parseFloat(style.fontSize);
+        const maxChars = Math.floor(availableWidth / (fontSize * 0.6));
+        if (path.length <= maxChars) return path;
+        const parts = path.split('/');
+        let result = parts[parts.length - 1];
+        for (let i = parts.length - 2; i >= 0; i--) {
+            const test = '...' + parts.slice(i).join('/');
+            if (test.length > maxChars) break;
+            result = test;
+        }
+        return result;
+    }
+
+    showCodeFullscreen(path, content, language, offset = 0) {
+        // Create modal if it doesn't exist
+        if (!this.codeModal) {
+            this.codeModal = this.createCodeModal();
+            document.body.appendChild(this.codeModal);
+        }
+
+        // Populate modal content
+        const titleEl = this.codeModal.querySelector('.code-modal-title');
+        const headerEl = this.codeModal.querySelector('.code-modal-header');
+        titleEl.textContent = this.truncatePathFromStart(path, headerEl);
+        if (offset > 0) {
+            titleEl.textContent += ` (from line ${offset + 1})`;
+        }
+
+        const monacoContainer = this.codeModal.querySelector('.monaco-container');
+        monacoContainer.innerHTML = '';
+
+        // Show modal first
+        this.codeModal.classList.add('active');
+
+        // Initialize Monaco Editor with proper timing
+        require(['vs/editor/editor.main'], (monaco) => {
+            // Wait for DOM to be fully rendered
+            setTimeout(() => {
+                try {
+                    const editor = monaco.editor.create(monacoContainer, {
+                        value: content,
+                        language: this.mapLanguageToMonaco(language),
+                        theme: 'vs-dark',
+                        readOnly: true,
+                        domReadOnly: true,
+                        scrollBeyondLastLine: false,
+                        minimap: { enabled: false },
+                        lineNumbers: num => num + offset,
+                        wordWrap: 'off',
+                        automaticLayout: true,
+                        fontSize: 14,
+                        renderLineHighlight: 'none',
+                        cursorStyle: 'line',
+                        cursorBlinking: 'smooth',
+                        selectionHighlight: false,
+                        scrollbar: {
+                            vertical: 'visible',
+                            horizontal: 'auto',
+                            useShadows: false,
+                            verticalScrollbarSize: 12,
+                            horizontalScrollbarSize: 12
+                        }
+                    });
+
+                    // domReadOnly: true handles focus prevention automatically
+
+                    // Store editor reference for word wrap toggle
+                    this.currentEditor = editor;
+                    this.monacoContainer = monacoContainer;
+
+                    // Update word wrap button state
+                    const wrapBtn = this.codeModal.querySelector('.code-modal-btn');
+                    wrapBtn.dataset.wrap = 'false';
+                    wrapBtn.querySelector('.material-symbols-rounded').textContent = 'wrap_text';
+                } catch (error) {
+                    console.error('Monaco editor creation failed:', error);
+                    // Fallback to simple display
+                    monacoContainer.innerHTML = `<pre style="padding: 20px; color: #fff; font-family: monospace;">${content}</pre>`;
+                }
+            }, 100);
+        });
+
+        // Prevent body scroll
+        document.body.style.overflow = 'hidden';
+    }
+
+    hideCodeFullscreen() {
+        if (this.codeModal) {
+            // Dispose Monaco editor if it exists
+            if (this.currentEditor) {
+                this.currentEditor.dispose();
+                this.currentEditor = null;
+            }
+            this.codeModal.classList.remove('active');
+            document.body.style.overflow = '';
+        }
+    }
+
+    createCodeModal() {
+        const modal = document.createElement('div');
+        modal.className = 'code-modal';
+
+        const header = document.createElement('div');
+        header.className = 'code-modal-header';
+
+        const title = document.createElement('h3');
+        title.className = 'code-modal-title';
+        title.textContent = 'File path';
+
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'code-modal-actions';
+
+        const wrapBtn = document.createElement('button');
+        wrapBtn.className = 'code-modal-btn';
+        wrapBtn.innerHTML = '<span class="material-symbols-rounded">wrap_text</span>';
+        wrapBtn.title = 'Toggle word wrap';
+        wrapBtn.dataset.wrap = 'false';
+
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'code-modal-close';
+        closeBtn.innerHTML = '<span class="material-symbols-rounded">close</span>';
+        closeBtn.title = 'Close (ESC)';
+
+        actionsDiv.appendChild(wrapBtn);
+        actionsDiv.appendChild(closeBtn);
+        header.appendChild(title);
+        header.appendChild(actionsDiv);
+
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'code-modal-content';
+
+        const monacoContainer = document.createElement('div');
+        monacoContainer.className = 'monaco-container';
+        contentDiv.appendChild(monacoContainer);
+
+        modal.appendChild(header);
+        modal.appendChild(contentDiv);
+
+        // Close handlers
+        const close = () => this.hideCodeFullscreen();
+        closeBtn.addEventListener('click', close);
+
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                close();
+            }
+        });
+
+        // Word wrap toggle
+        wrapBtn.addEventListener('click', () => {
+            if (this.currentEditor) {
+                const isWrap = wrapBtn.dataset.wrap === 'true';
+                const newWrap = !isWrap;
+                wrapBtn.dataset.wrap = String(newWrap);
+
+                this.currentEditor.updateOptions({
+                    wordWrap: newWrap ? 'on' : 'off',
+                    lineNumbers: 'on'  // Always keep line numbers visible
+                });
+
+                wrapBtn.querySelector('.material-symbols-rounded').textContent =
+                    newWrap ? 'format_line_spacing' : 'wrap_text';
+            }
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && this.codeModal && this.codeModal.classList.contains('active')) {
+                close();
+            }
+        });
+
+        return modal;
+    }
+
+    mapLanguageToMonaco(language) {
+        const map = {
+            'javascript': 'javascript',
+            'jsx': 'javascript',
+            'typescript': 'typescript',
+            'tsx': 'typescript',
+            'python': 'python',
+            'ruby': 'ruby',
+            'java': 'java',
+            'cpp': 'cpp',
+            'c': 'c',
+            'csharp': 'csharp',
+            'go': 'go',
+            'rust': 'rust',
+            'php': 'php',
+            'swift': 'swift',
+            'kotlin': 'kotlin',
+            'scala': 'scala',
+            'bash': 'shell',
+            'sh': 'shell',
+            'sql': 'sql',
+            'json': 'json',
+            'css': 'css',
+            'scss': 'scss',
+            'html': 'html',
+            'xml': 'xml',
+            'yaml': 'yaml',
+            'yml': 'yaml',
+            'markdown': 'markdown',
+            'plaintext': 'plaintext',
+            'text': 'plaintext'
+        };
+        return map[language] || 'plaintext';
+    }
+
+    detectLanguageFromPath(path) {
+        const extMap = {
+            // Common languages
+            'js': 'javascript',
+            'jsx': 'jsx',
+            'ts': 'typescript',
+            'tsx': 'tsx',
+            'py': 'python',
+            'rb': 'ruby',
+            'java': 'java',
+            'cpp': 'cpp',
+            'cc': 'cpp',
+            'cxx': 'cpp',
+            'h': 'cpp',
+            'hpp': 'cpp',
+            'c': 'c',
+            'cs': 'csharp',
+            'go': 'go',
+            'rs': 'rust',
+            'php': 'php',
+            'phtml': 'php',
+            'php3': 'php',
+            'php4': 'php',
+            'php5': 'php',
+            'phpt': 'php',
+            'swift': 'swift',
+            'kt': 'kotlin',
+            'scala': 'scala',
+            // Shell scripts
+            'sh': 'bash',
+            'bash': 'bash',
+            'zsh': 'bash',
+            'fish': 'bash',
+            // Markup
+            'html': 'xml',
+            'htm': 'xml',
+            'xhtml': 'xml',
+            'xml': 'xml',
+            'json': 'json',
+            // Stylesheets
+            'css': 'css',
+            'scss': 'scss',
+            'sass': 'scss',
+            'less': 'less',
+            // Config
+            'yaml': 'yaml',
+            'yml': 'yaml',
+            'toml': 'toml',
+            'ini': 'ini',
+            'cfg': 'ini',
+            'conf': 'ini',
+            // Documentation
+            'md': 'markdown',
+            'markdown': 'markdown',
+            'rst': 'rst',
+            'tex': 'latex',
+            // Database
+            'sql': 'sql',
+            'mysql': 'sql',
+            'postgres': 'sql',
+            'psql': 'sql',
+            // API
+            'graphql': 'graphql',
+            'gql': 'graphql',
+            'proto': 'protobuf',
+            // Frameworks
+            'vue': 'vue',
+            'svelte': 'javascript',
+            // Data science
+            'r': 'r',
+            'R': 'r',
+            // PowerShell
+            'ps1': 'powershell',
+            'psm1': 'powershell',
+            'psd1': 'powershell',
+            'ps1xml': 'xml',
+            'ps1tab': 'xml',
+            'pssc': 'xml',
+            'psrc': 'xml',
+            // Scripting
+            'lua': 'lua',
+            'pl': 'perl',
+            'pm': 'perl',
+            'tcl': 'tcl',
+            'awk': 'awk',
+            // Build tools
+            'sbt': 'scala',
+            'gradle': 'groovy',
+            'gradle.kts': 'kotlin',
+            'cake': 'csharp',
+            // .NET
+            'fs': 'fsharp',
+            'fsi': 'fsharp',
+            'fsx': 'fsharp',
+            'fsproj': 'xml',
+            // Functional
+            'ml': 'ocaml',
+            'mli': 'ocaml',
+            'erl': 'erlang',
+            'hrl': 'erlang',
+            'ex': 'elixir',
+            'exs': 'elixir',
+            'eex': 'elixir',
+            'heex': 'elixir',
+            'leex': 'elixir',
+            // Legacy
+            'aw': 'actionscript',
+            'as': 'actionscript',
+            'as3': 'actionscript',
+            'mxml': 'xml',
+            'actionscript': 'actionscript',
+            'asp': 'asp',
+            'aspx': 'asp',
+            'vb': 'vbnet',
+            'vbs': 'vbnet',
+            'vbhtml': 'asp',
+            'vbscript': 'vbnet',
+            // Templating
+            'hbs': 'handlebars',
+            'handlebars': 'handlebars',
+            'mustache': 'handlebars',
+            'ejs': 'ejs',
+            'pug': 'pug',
+            'jade': 'pug',
+            'haml': 'haml',
+            'slim': 'slim',
+            'coffee': 'coffeescript',
+            'litcoffee': 'coffeescript',
+            // Dart
+            'dart': 'dart',
+            'flap': 'dart',
+            'pubspec': 'yaml',
+            'pubspec.lock': 'yaml',
+            'dart_tool': 'yaml',
+            // Lisp family
+            'clj': 'clojure',
+            'cljs': 'clojure',
+            'cljc': 'clojure',
+            'end': 'clojure',
+            'lisp': 'lisp',
+            'el': 'lisp',
+            'scm': 'lisp',
+            'ss': 'lisp',
+            'rkt': 'scheme',
+            'rktl': 'scheme',
+            'scheme': 'scheme',
+            // Assembly
+            'asm': 'asm',
+            'nasm': 'asm',
+            'masm': 'asm',
+            'fasm': 'asm',
+            's': 'asm',
+            'S': 'asm',
+            // Hardware
+            'v': 'verilog',
+            'sv': 'systemverilog',
+            'svh': 'systemverilog',
+            'vh': 'vhdl',
+            'vhd': 'vhdl',
+            'vu': 'verilog',
+            // Build
+            'make': 'makefile',
+            'mk': 'makefile',
+            'cmake': 'cmake',
+            'dockerfile': 'dockerfile',
+            'docker': 'dockerfile',
+            // Git
+            'gitignore': 'ini',
+            'gitattributes': 'ini',
+            'editorconfig': 'ini',
+            'gitconfig': 'ini',
+            // Sublime Text
+            'sublime': 'ini',
+            'sublime-project': 'json',
+            'sublime-workspace': 'json',
+            'sublime-build': 'json',
+            'sublime-settings': 'json',
+            'sublime-keybindings': 'json',
+            'sublime-completions': 'json',
+            'sublime-menu': 'json',
+            'sublime-macro': 'json',
+            'sublime-syntax': 'yaml',
+            'sublime-theme': 'json',
+            'sublime-completion': 'json',
+        };
+
+        const ext = path.split('.').pop().toLowerCase();
+        return extMap[ext] || 'plaintext';
+    }
+
+    updatePlaceholder() {
+        this.elements.input.placeholder = window.innerWidth <= 480
+            ? 'Type your message...'
+            : 'Type your message... (Ctrl+Enter/Cmd+Enter to send)';
+    }
+
+    toggleTheme() {
+        const currentTheme = document.documentElement.getAttribute('data-theme');
+        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+        const icon = this.elements.themeToggle.querySelector('.material-symbols-rounded');
+
+        document.documentElement.setAttribute('data-theme', newTheme);
+        localStorage.setItem('theme', newTheme);
+        icon.textContent = newTheme === 'dark' ? 'light_mode' : 'dark_mode';
+    }
+
+    loadTheme() {
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        const icon = this.elements.themeToggle.querySelector('.material-symbols-rounded');
+
+        document.documentElement.setAttribute('data-theme', savedTheme);
+        icon.textContent = savedTheme === 'dark' ? 'light_mode' : 'dark_mode';
+    }
+
+    _getCollapsibleCards() {
+        return document.querySelectorAll('.message.tool-call, .message.reasoning');
+    }
+
+    _getAllCardsCollapsed() {
+        return Array.from(this._getCollapsibleCards()).every(card => card.classList.contains('collapsed'));
+    }
+
+    updateToggleCardsIcon() {
+        const icon = this.elements.toggleCardsBtn.querySelector('.material-symbols-rounded');
+        icon.textContent = this._getAllCardsCollapsed() ? 'add' : 'remove';
+    }
+
+    toggleAllCards() {
+        const allCollapsed = this._getAllCardsCollapsed();
+        this._preferCollapsed = !allCollapsed;
+
+        this._getCollapsibleCards().forEach(card => {
+            if (allCollapsed) {
+                card.classList.remove('collapsed');
+            } else {
+                card.classList.add('collapsed');
+            }
+        });
+
+        this.updateToggleCardsIcon();
+    }
+
+    async handleTranslate(textToTranslate) {
+        try {
+            this.elements.sendBtn.disabled = true;
+            this.elements.sendBtn.textContent = '⏳';
+
+            const response = await fetch(buildUrl('api/translate'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: textToTranslate })
+            });
+
+            const result = await response.json();
+
+            if (result.success && result.translated) {
+                this.elements.input.value = result.translated;
+                this.autoResizeTextarea();
+                this.updateSendButtonState();
+                this.addMessage('system', 'Text translated to English.');
+            } else {
+                this.addMessage('system', `Translation error: ${result.error || 'Unknown error'}`);
+            }
+        } catch (error) {
+            this.addMessage('system', `Translation failed: ${error.message}`);
+        } finally {
+            this.elements.sendBtn.disabled = false;
+            this.elements.sendBtn.textContent = '➤';
+        }
+    }
+
+    // =========================================================================
+    // Session Picker
+    // =========================================================================
+
+    async showSessionPicker() {
+        this.elements.sessionPickerModal.style.display = 'flex';
+        this.elements.sessionPickerContent.innerHTML = '<div class="session-picker-loading">Loading sessions...</div>';
+
+        try {
+            const sessions = await this.apiClient.listSessions();
+
+            if (sessions.length === 0) {
+                this.elements.sessionPickerContent.innerHTML = '<div class="session-picker-empty">No sessions found.</div>';
+                return;
+            }
+
+            const ul = document.createElement('ul');
+            ul.className = 'session-picker-list';
+
+            sessions.forEach(session => {
+                const li = document.createElement('li');
+                li.className = 'modal-list-item session-picker-item';
+                li.innerHTML = `
+                    <div class="session-picker-item-header">
+                        <span class="session-picker-short-id">${this.escapeHtml(session.short_id)}</span>
+                        <span class="session-picker-time">${this._formatSessionTime(session.end_time)}</span>
+                    </div>
+                    <div class="session-picker-message">${this.escapeHtml(session.first_message || '(no messages)')}</div>
+                `;
+                li.addEventListener('click', () => this.resumeSession(session.session_id));
+                ul.appendChild(li);
+            });
+
+            this.elements.sessionPickerContent.innerHTML = '';
+            this.elements.sessionPickerContent.appendChild(ul);
+        } catch (error) {
+            console.error('Failed to load sessions:', error);
+            this.elements.sessionPickerContent.innerHTML = '<div class="session-picker-empty">Failed to load sessions.</div>';
+        }
+    }
+
+    hideSessionPicker(showCancelledMessage = false) {
+        this.elements.sessionPickerModal.style.display = 'none';
+
+        if (showCancelledMessage) {
+            this.addMessage('system', 'Resume cancelled.');
+        }
+    }
+
+    _formatSessionTime(isoTime) {
+        if (!isoTime) return 'unknown';
+
+        try {
+            const dt = new Date(isoTime);
+            const now = new Date();
+            const delta = now - dt;
+            const seconds = Math.floor(delta / 1000);
+
+            const minutes = Math.floor(seconds / 60);
+            const hours = Math.floor(seconds / 3600);
+            const days = Math.floor(seconds / 86400);
+            const weeks = Math.floor(seconds / 604800);
+
+            if (seconds < 60) return 'just now';
+            if (minutes < 60) return `${minutes}m ago`;
+            if (hours < 24) return `${hours}h ago`;
+            if (days < 7) return `${days}d ago`;
+            return `${weeks}w ago`;
+        } catch {
+            return 'unknown';
+        }
+    }
+
+    async resumeSession(sessionId) {
+        this.hideSessionPicker();
+
+        try {
+            const result = await this.apiClient.resumeSession(sessionId);
+
+            if (!result.success) {
+                this.addMessage('system', `Failed to resume session: ${result.error}`);
+            }
+            // If successful, TUI will handle the resume and broadcast MessageResetEvent
+            // WebUI will update via websocket event
+        } catch (error) {
+            console.error('Failed to resume session:', error);
+            this.addMessage('system', `Failed to resume session: ${error.message}`);
+        }
+    }
+
+    bindSessionPickerEvents() {
+        this._on(this.elements.sessionPickerClose, 'click', () => this.hideSessionPicker(true));
+
+        const overlay = this.elements.sessionPickerModal.querySelector('.modal-overlay');
+        this._on(overlay, 'click', () => this.hideSessionPicker(true));
+
+        this._escapeHandler = (e) => {
+            if (e.key === 'Escape' && this.elements.sessionPickerModal?.style.display === 'flex') {
+                this.hideSessionPicker(true);
+            }
+        };
+        document.addEventListener('keydown', this._escapeHandler);
+    }
+
+    // =========================================================================
+    // Prompt History
+    // =========================================================================
+
+    _promptHistoryEntries = [];
+    _filteredPromptHistoryEntries = [];
+
+    async showPromptHistory() {
+        this.elements.promptHistoryModal.style.display = 'flex';
+        this.elements.promptHistoryContent.innerHTML = '<div class="prompt-history-loading">Loading history...</div>';
+        this.elements.promptHistorySearch.value = '';
+
+        try {
+            const result = await this.apiClient.getPromptHistory();
+            this._promptHistoryEntries = result.entries || [];
+            this._filteredPromptHistoryEntries = [...this._promptHistoryEntries];
+            this._renderPromptHistoryList();
+        } catch (error) {
+            console.error('Failed to load prompt history:', error);
+            this.elements.promptHistoryContent.innerHTML = '<div class="prompt-history-empty">Failed to load history.</div>';
+        }
+    }
+
+    hidePromptHistory() {
+        this.elements.promptHistoryModal.style.display = 'none';
+    }
+
+    _renderPromptHistoryList() {
+        if (this._filteredPromptHistoryEntries.length === 0) {
+            this.elements.promptHistoryContent.innerHTML = '<div class="prompt-history-no-results">No matching prompts.</div>';
+            return;
+        }
+
+        const ul = document.createElement('ul');
+        ul.className = 'prompt-history-list';
+
+        this._filteredPromptHistoryEntries.forEach(prompt => {
+            const li = document.createElement('li');
+            li.className = 'modal-list-item prompt-history-item';
+            li.innerHTML = `<div class="prompt-history-item-text">${this.escapeHtml(prompt)}</div>`;
+            li.addEventListener('click', () => this.insertPromptAtCursor(prompt));
+            ul.appendChild(li);
+        });
+
+        this.elements.promptHistoryContent.innerHTML = '';
+        this.elements.promptHistoryContent.appendChild(ul);
+    }
+
+    _filterPromptHistory(query) {
+        const lowerQuery = query.toLowerCase();
+        this._filteredPromptHistoryEntries = this._promptHistoryEntries.filter(prompt =>
+            prompt.toLowerCase().includes(lowerQuery)
+        );
+        this._renderPromptHistoryList();
+    }
+
+    insertPromptAtCursor(prompt) {
+        const textarea = this.elements.input;
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const text = textarea.value;
+
+        // Insert prompt at cursor position
+        const newText = text.substring(0, start) + prompt + text.substring(end);
+        textarea.value = newText;
+
+        // Move cursor to end of inserted text
+        const newCursorPos = start + prompt.length;
+        textarea.setSelectionRange(newCursorPos, newCursorPos);
+        textarea.focus();
+
+        this.hidePromptHistory();
+    }
+
+    bindPromptHistoryEvents() {
+        this._on(this.elements.promptHistoryBtn, 'click', () => this.showPromptHistory());
+        this._on(this.elements.gitStatusBtn, 'click', () => this.executeGitCommand('git status'));
+        this._on(this.elements.gitDiffBtn, 'click', () => this.executeGitCommand('git diff'));
+        this._on(this.elements.promptHistoryClose, 'click', () => this.hidePromptHistory());
+
+        const overlay = this.elements.promptHistoryModal.querySelector('.modal-overlay');
+        this._on(overlay, 'click', () => this.hidePromptHistory());
+
+        this._on(this.elements.promptHistorySearch, 'input', (e) => {
+            this._filterPromptHistory(e.target.value);
+        });
+
+        const phEscapeHandler = (e) => {
+            if (e.key === 'Escape' && this.elements.promptHistoryModal?.style.display === 'flex') {
+                this.hidePromptHistory();
+            }
+        };
+        this._on(document, 'keydown', phEscapeHandler);
+    }
+
+    bindModelPickerEvents() {
+        this._bindModalClose(this.elements.modelPickerModal, this.elements.modelPickerClose, () => this.hideModelPicker());
+    }
+
+    bindThinkingPickerEvents() {
+        this._bindModalClose(this.elements.thinkingPickerModal, this.elements.thinkingPickerClose, () => this.hideThinkingPicker());
+    }
+
+    bindConfigModalEvents() {
+        this._bindModalClose(this.elements.configModal, this.elements.configModalClose, () => this.hideConfigModal());
+    }
+
+    bindMcpModalEvents() {
+        this._bindModalClose(this.elements.mcpModal, this.elements.mcpModalClose, () => this.hideMcpModal());
+    }
+
+    bindRewindModalEvents() {
+        this._bindModalClose(this.elements.rewindModal, this.elements.rewindModalClose, () => this.hideRewindModal());
+    }
+
+    _bindModalClose(modalEl, closeBtnEl, hideFn) {
+        this._on(closeBtnEl, 'click', hideFn);
+        const overlay = modalEl?.querySelector('.modal-overlay');
+        this._on(overlay, 'click', hideFn);
+        const escapeHandler = (e) => {
+            if (e.key === 'Escape' && modalEl?.style.display === 'flex') {
+                hideFn();
+            }
+        };
+        this._on(document, 'keydown', escapeHandler);
+    }
+
+    /**
+     * Register an event listener for cleanup
+     * @param {HTMLElement|null} el - Element to attach listener to
+     * @param {string} event - Event name
+     * @param {Function} handler - Event handler
+     */
+    _on(el, event, handler) {
+        if (el) {
+            el.addEventListener(event, handler);
+            this._listeners.push({ el, event, handler });
+        }
+    }
+
+    /**
+     * Destroy client and cleanup all resources
+     */
+    destroy() {
+        // Clear status polling interval
+        if (this.statusPollInterval) {
+            clearInterval(this.statusPollInterval);
+            this.statusPollInterval = null;
+        }
+
+        // Clean up elapsed timers to prevent leaks
+        for (const [, timer] of this._toolCallTimers) {
+            clearInterval(timer.intervalId);
+        }
+        this._toolCallTimers.clear();
+
+        // Clear FAB hide timer
+        if (this._fabHideTimer) {
+            clearTimeout(this._fabHideTimer);
+            this._fabHideTimer = null;
+        }
+
+        // Remove all registered event listeners
+        for (const { el, event, handler } of this._listeners) {
+            el?.removeEventListener?.(event, handler);
+        }
+        this._listeners = [];
+
+         // Clean up document-level listeners
+        document.removeEventListener('keydown', this._escapeHandler);
+        window.removeEventListener('resize', this._placeholderResizeHandler);
+        window.removeEventListener('resize', this._resizeHandler);
+
+        // Destroy WebSocket client
+        this.wsClient?.destroy();
+
+        // Clear DOM references
+        this.elements = {};
+        this.currentPopupId = null;
+        this.currentPopupElement = null;
+        this.currentReasoningMessage = null;
+        this.currentAssistantMessage = null;
+        this.currentToolCall = null;
+        this.currentToolCallId = null;
+        this.toolCallMap.clear();
+
+        // Hide code modal if open
+        if (this.codeModal) {
+            this.hideCodeFullscreen();
+        }
+    }
+
+    executeGitCommand(command) {
+        if (!this.wsClient.isConnected()) return;
+
+        const message = { type: 'user_message', content: `!!${command}` };
+        this.wsClient.send(message);
+    }
+
+    _renderGitStatusResult(event) {
+        const { command, output, exit_code: exitCode } = event;
+        const isSuccess = exitCode === 0;
+
+        const previousScrollHeight = this.elements.messages.scrollHeight;
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message bash-command';
+        this.elements.messages.appendChild(messageDiv);
+
+        const header = document.createElement('div');
+        header.className = 'bash-card-header';
+        header.innerHTML = `
+            <div class="bash-card-title">
+                <span class="material-symbols-rounded">${isSuccess ? 'terminal' : 'error'}</span>
+                <span>Git Status</span>
+            </div>
+            <div class="bash-exit-code ${isSuccess ? 'success' : 'failure'}">
+                ${isSuccess ? 'OK' : `Exit ${exitCode}`}
+            </div>
+        `;
+
+        const commandDiv = document.createElement('div');
+        commandDiv.className = 'bash-command-line';
+        commandDiv.textContent = this.escapeHtml(command);
+
+        const outputDiv = document.createElement('div');
+        outputDiv.className = 'bash-output';
+        const pre = document.createElement('pre');
+        pre.textContent = output || '(clean working tree)';
+        outputDiv.appendChild(pre);
+
+        messageDiv.appendChild(header);
+        messageDiv.appendChild(commandDiv);
+        messageDiv.appendChild(outputDiv);
+
+        this._scrollAfterUpdate(previousScrollHeight);
+    }
+
+    _renderGitDiffResult(event) {
+        const { command, output, exit_code: exitCode } = event;
+        const isSuccess = exitCode === 0;
+
+        const previousScrollHeight = this.elements.messages.scrollHeight;
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message bash-command';
+        this.elements.messages.appendChild(messageDiv);
+
+        const header = document.createElement('div');
+        header.className = 'bash-card-header';
+        header.innerHTML = `
+            <div class="bash-card-title">
+                <span class="material-symbols-rounded">${isSuccess ? 'terminal' : 'error'}</span>
+                <span>Git Diff</span>
+            </div>
+            <div class="bash-exit-code ${isSuccess ? 'success' : 'failure'}">
+                ${isSuccess ? 'OK' : `Exit ${exitCode}`}
+            </div>
+        `;
+
+        const commandDiv = document.createElement('div');
+        commandDiv.className = 'bash-command-line';
+        commandDiv.textContent = this.escapeHtml(command);
+
+        const outputDiv = document.createElement('div');
+        outputDiv.className = 'bash-output';
+
+        if (output && output.trim()) {
+            const codeBlock = document.createElement('pre');
+            codeBlock.className = 'tool-formatter-code-block diff-block';
+            codeBlock.style.margin = '0';
+            codeBlock.style.padding = '0';
+
+            const code = document.createElement('code');
+            code.className = 'language-diff';
+            code.textContent = output;
+
+            codeBlock.appendChild(code);
+            outputDiv.appendChild(codeBlock);
+
+            if (window.hljs) {
+                window.hljs.highlightElement(codeBlock);
+            }
+        } else {
+            const pre = document.createElement('pre');
+            pre.textContent = '(no changes)';
+            outputDiv.appendChild(pre);
+        }
+
+        messageDiv.appendChild(header);
+        messageDiv.appendChild(commandDiv);
+        messageDiv.appendChild(outputDiv);
+
+        this._scrollAfterUpdate(previousScrollHeight);
+    }
+
+    // =========================================================================
+    // Model Picker
+    // =========================================================================
+
+    async showModelPicker() {
+        this.elements.modelPickerModal.style.display = 'flex';
+        this.elements.modelPickerContent.innerHTML = '<div class="session-picker-loading">Loading models...</div>';
+
+        try {
+            const data = await this.apiClient.getModels();
+            const models = data.models || [];
+            const activeModel = data.active_model || '';
+
+            if (models.length === 0) {
+                this.elements.modelPickerContent.innerHTML = '<div class="session-picker-empty">No models configured.</div>';
+                return;
+            }
+
+            this.elements.modelPickerContent.innerHTML = '';
+            models.forEach(model => {
+                const div = document.createElement('div');
+                div.className = 'modal-list-item model-picker-item' + (model.alias === activeModel ? ' active' : '');
+                div.innerHTML = `
+                    <div>
+                        <div class="model-picker-alias">${this.escapeHtml(model.alias)}</div>
+                        <div class="model-picker-name">${this.escapeHtml(model.name)} (${this.escapeHtml(model.provider)})</div>
+                    </div>
+                    ${model.alias === activeModel ? '<div class="model-picker-active-badge"><span class="material-symbols-rounded">check</span> Active</div>' : ''}
+                `;
+                div.addEventListener('click', () => this.switchModel(model.alias));
+                this.elements.modelPickerContent.appendChild(div);
+            });
+        } catch (error) {
+            console.error('Failed to load models:', error);
+            this.elements.modelPickerContent.innerHTML = '<div class="session-picker-empty">Failed to load models.</div>';
+        }
+    }
+
+    hideModelPicker() {
+        this.elements.modelPickerModal.style.display = 'none';
+    }
+
+    async switchModel(alias) {
+        try {
+            const result = await this.apiClient.switchModel(alias);
+            if (result.success) {
+                this.hideModelPicker();
+                this.addMessage('system', `Model switched to ${this.escapeHtml(result.active_model)}`);
+            } else {
+                this.addMessage('system', `Failed to switch model: ${result.error}`);
+            }
+        } catch (error) {
+            console.error('Failed to switch model:', error);
+            this.addMessage('system', `Failed to switch model: ${error.message}`);
+        }
+    }
+
+    // =========================================================================
+    // Thinking Picker
+    // =========================================================================
+
+    async showThinkingPicker() {
+        this.elements.thinkingPickerModal.style.display = 'flex';
+        this.elements.thinkingPickerContent.innerHTML = '<div class="session-picker-loading">Loading levels...</div>';
+
+        try {
+            const config = await this.apiClient.getConfig();
+            const levels = ['off', 'low', 'medium', 'high', 'max'];
+            const current = config.thinking || 'off';
+
+            this.elements.thinkingPickerContent.innerHTML = '';
+            levels.forEach(level => {
+                const div = document.createElement('div');
+                div.className = 'modal-list-item thinking-picker-item' + (level === current ? ' active' : '');
+                div.innerHTML = `
+                    <div class="thinking-picker-level">${this.escapeHtml(level)}</div>
+                    ${level === current ? '<div class="thinking-picker-active-badge"><span class="material-symbols-rounded">check</span> Active</div>' : ''}
+                `;
+                div.addEventListener('click', () => this.switchThinking(level));
+                this.elements.thinkingPickerContent.appendChild(div);
+            });
+        } catch (error) {
+            console.error('Failed to load thinking levels:', error);
+            this.elements.thinkingPickerContent.innerHTML = '<div class="session-picker-empty">Failed to load levels.</div>';
+        }
+    }
+
+    hideThinkingPicker() {
+        this.elements.thinkingPickerModal.style.display = 'none';
+    }
+
+    async switchThinking(level) {
+        try {
+            const result = await this.apiClient.switchThinking(level);
+            if (result.success) {
+                this.hideThinkingPicker();
+                this.addMessage('system', `Thinking level set to ${this.escapeHtml(level)}`);
+            } else {
+                this.addMessage('system', `Failed to set thinking level: ${result.error}`);
+            }
+        } catch (error) {
+            console.error('Failed to switch thinking:', error);
+            this.addMessage('system', `Failed to set thinking level: ${error.message}`);
+        }
+    }
+
+    // =========================================================================
+    // Config Modal
+    // =========================================================================
+
+    async showConfigModal() {
+        this.elements.configModal.style.display = 'flex';
+        this.elements.configModalContent.innerHTML = '<div class="session-picker-loading">Loading settings...</div>';
+
+        try {
+            const config = await this.apiClient.getConfig();
+            this.elements.configModalContent.innerHTML = '';
+
+            // Model & Thinking section
+            const modelSection = document.createElement('div');
+            modelSection.className = 'config-section';
+            modelSection.innerHTML = '<div class="config-section-title">Model</div>';
+
+            const modelRow = document.createElement('div');
+            modelRow.className = 'config-row';
+            const modelActionBtn = document.createElement('div');
+            modelActionBtn.className = 'config-row-action';
+            modelActionBtn.textContent = 'Change';
+            modelRow.innerHTML = `
+                <div>
+                    <div class="config-row-label">Model</div>
+                    <div class="config-row-sublabel">${this.escapeHtml(config.active_model || '')}</div>
+                </div>
+            `;
+            modelRow.appendChild(modelActionBtn);
+            modelSection.appendChild(modelRow);
+
+            const thinkingRow = document.createElement('div');
+            thinkingRow.className = 'config-row';
+            const thinkingActionBtn = document.createElement('div');
+            thinkingActionBtn.className = 'config-row-action';
+            thinkingActionBtn.textContent = 'Change';
+            thinkingRow.innerHTML = `
+                <div>
+                    <div class="config-row-label">Thinking</div>
+                    <div class="config-row-sublabel">${this.escapeHtml(config.thinking || 'off')}</div>
+                </div>
+            `;
+            thinkingRow.appendChild(thinkingActionBtn);
+            modelSection.appendChild(thinkingRow);
+            this.elements.configModalContent.appendChild(modelSection);
+
+            // Toggles section
+            const togglesSection = document.createElement('div');
+            togglesSection.className = 'config-section';
+            togglesSection.innerHTML = '<div class="config-section-title">Preferences</div>';
+
+            const toggles = [
+                { key: 'autocopy_to_clipboard', label: 'Auto-copy to clipboard' },
+                { key: 'file_watcher_for_autocomplete', label: 'Autocomplete file watcher' },
+                { key: 'voice_mode_enabled', label: 'Voice mode' },
+                { key: 'narrator_enabled', label: 'Narrator' },
+                { key: 'auto_approve', label: 'Auto-approve tools' },
+                { key: 'enable_notifications', label: 'Desktop notifications' },
+                { key: 'enable_web_notifications', label: 'Web notifications' },
+                { key: 'loop_detection_enabled', label: 'Loop detection' },
+                { key: 'context_warnings', label: 'Context warnings' },
+            ];
+
+            toggles.forEach(t => {
+                const row = document.createElement('div');
+                row.className = 'config-row';
+                row.innerHTML = `
+                    <div class="config-row-label">${this.escapeHtml(t.label)}</div>
+                    <label class="config-toggle">
+                        <input type="checkbox" data-config-key="${this.escapeHtml(t.key)}" ${config[t.key] ? 'checked' : ''}>
+                        <span class="config-toggle-slider"></span>
+                    </label>
+                `;
+                togglesSection.appendChild(row);
+            });
+
+            this.elements.configModalContent.appendChild(togglesSection);
+
+            // Bind events using direct references
+            modelActionBtn.addEventListener('click', () => {
+                this.hideConfigModal();
+                this.showModelPicker();
+            });
+            thinkingActionBtn.addEventListener('click', () => {
+                this.hideConfigModal();
+                this.showThinkingPicker();
+            });
+
+            // Bind toggle changes
+            this.elements.configModalContent.querySelectorAll('.config-toggle input').forEach(input => {
+                input.addEventListener('change', (e) => {
+                    const key = e.target.dataset.configKey;
+                    const value = e.target.checked;
+                    this.saveConfigValue(key, value);
+                });
+            });
+
+        } catch (error) {
+            console.error('Failed to load config:', error);
+            this.elements.configModalContent.innerHTML = '<div class="session-picker-empty">Failed to load settings.</div>';
+        }
+    }
+
+    hideConfigModal() {
+        this.elements.configModal.style.display = 'none';
+    }
+
+    async saveConfigValue(key, value) {
+        try {
+            const result = await this.apiClient.saveConfig({ [key]: value });
+            if (!result.success) {
+                this.addMessage('system', `Failed to save config: ${result.error}`);
+            }
+        } catch (error) {
+            console.error('Failed to save config:', error);
+        }
+    }
+
+    // =========================================================================
+    // MCP Modal
+    // =========================================================================
+
+    async showMcpModal() {
+        this.elements.mcpModal.style.display = 'flex';
+        this.elements.mcpModalContent.innerHTML = '<div class="session-picker-loading">Loading MCP servers...</div>';
+
+        try {
+            const data = await this.apiClient.listMcp();
+            const servers = data.servers || [];
+            const connectors = data.connectors || [];
+
+            this.elements.mcpModalContent.innerHTML = '';
+
+            if (servers.length === 0 && connectors.length === 0) {
+                this.elements.mcpModalContent.innerHTML = '<div class="session-picker-empty">No MCP servers or connectors configured.</div>';
+                return;
+            }
+
+            if (servers.length > 0) {
+                this.elements.mcpModalContent.appendChild(this._renderMcpGroup('Local MCP Servers', servers, false, true));
+            }
+            if (connectors.length > 0) {
+                this.elements.mcpModalContent.appendChild(this._renderMcpGroup('Workspace Connectors', connectors, true, false));
+            }
+
+            // Bind toggle button events
+            this.elements.mcpModalContent.querySelectorAll('.mcp-toggle-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.toggleMcp(
+                        btn.dataset.name,
+                        btn.dataset.isConnector === 'true',
+                        btn.dataset.disabled === 'true',
+                        btn.dataset.tool || null
+                    );
+                });
+            });
+
+        } catch (error) {
+            console.error('Failed to load MCP data:', error);
+            this.elements.mcpModalContent.innerHTML = '<div class="session-picker-empty">Failed to load MCP servers.</div>';
+        }
+    }
+
+    _renderMcpGroup(header, items, isConnector, showTransport) {
+        const section = document.createElement('div');
+        section.className = 'mcp-section';
+        section.innerHTML = `<div class="mcp-section-header">${this.escapeHtml(header)}</div>`;
+
+        items.forEach(entry => {
+            const item = document.createElement('div');
+            item.className = 'mcp-server-item';
+            const transportBadge = showTransport ? `<span class="mcp-server-transport">${this.escapeHtml(entry.transport || 'stdio')}</span>` : '';
+            const statusLabel = isConnector
+                ? (entry.disabled ? 'Disconnected' : 'Connected')
+                : (entry.disabled ? 'Disabled' : '');
+            const toggleLabel = isConnector
+                ? (entry.disabled ? 'Connect' : 'Disconnect')
+                : (entry.disabled ? 'Enable' : 'Disable');
+            const statusBadge = statusLabel ? `<span class="mcp-toggle-btn ${entry.disabled ? 'disabled' : 'enabled'}">${statusLabel}</span>` : '';
+
+            item.innerHTML = `
+                <div class="mcp-server-header">
+                    <div>
+                        <span class="mcp-server-name">${this.escapeHtml(entry.name)}</span>
+                        ${transportBadge}
+                        <span class="mcp-server-tool-count">${entry.tool_count} tools</span>
+                        ${statusBadge}
+                    </div>
+                    <button class="mcp-toggle-btn ${entry.disabled ? 'disabled' : 'enabled'}" data-name="${this.escapeHtml(entry.name)}" data-is-connector="${isConnector}" data-disabled="${!entry.disabled}">
+                        ${toggleLabel}
+                    </button>
+                </div>
+                ${entry.tools && entry.tools.length > 0 ? `
+                    <ul class="mcp-tools-list">
+                        ${entry.tools.map(tool => `
+                            <li class="mcp-tool-item">
+                                <span class="mcp-tool-name ${tool.enabled ? '' : 'disabled'}">${this.escapeHtml(tool.name)}</span>
+                                <button class="mcp-toggle-btn tool-toggle ${tool.enabled ? 'enabled' : 'disabled'}" data-name="${this.escapeHtml(entry.name)}" data-is-connector="${isConnector}" data-tool="${this.escapeHtml(tool.name)}" data-disabled="${!tool.enabled}">
+                                    ${tool.enabled ? 'Disable' : 'Enable'}
+                                </button>
+                            </li>
+                        `).join('')}
+                    </ul>
+                ` : ''}
+            `;
+            section.appendChild(item);
+        });
+
+        return section;
+    }
+
+    hideMcpModal() {
+        this.elements.mcpModal.style.display = 'none';
+    }
+
+    async toggleMcp(name, isConnector, disabled, toolName) {
+        try {
+            const result = await this.apiClient.toggleMcp({ name, is_connector: isConnector, disabled, tool_name: toolName });
+            if (result.success) {
+                this.showMcpModal();
+            } else {
+                this.addMessage('system', `Failed to toggle MCP: ${result.error}`);
+            }
+        } catch (error) {
+            console.error('Failed to toggle MCP:', error);
+            this.addMessage('system', `Failed to toggle MCP: ${error.message}`);
+        }
+    }
+
+    // =========================================================================
+    // Rewind Modal
+    // =========================================================================
+
+    _rewindSelectedIndex = null;
+    _rewindMessages = [];
+
+    async showRewindModal() {
+        this.elements.rewindModal.style.display = 'flex';
+        this.elements.rewindMessagesList.innerHTML = '<li class="rewind-loading">Loading messages...</li>';
+        this.elements.rewindActions.style.display = 'none';
+        this._rewindSelectedIndex = null;
+        this._rewindMessages = [];
+
+        try {
+            const data = await this.apiClient.getRewindState();
+
+            if (!data.success) {
+                this.elements.rewindMessagesList.innerHTML = `<li class="rewind-empty">${this.escapeHtml(data.error || 'No messages to rewind to')}</li>`;
+                return;
+            }
+
+            const messages = data.messages || [];
+            if (messages.length === 0) {
+                this.elements.rewindMessagesList.innerHTML = '<li class="rewind-empty">No user messages to rewind to.</li>';
+                return;
+            }
+
+            this._rewindMessages = messages;
+            this.elements.rewindMessagesList.innerHTML = '';
+            this._rewindSelectedIndex = messages.length - 1;
+
+            messages.forEach((msg, idx) => {
+                const li = document.createElement('li');
+                li.className = 'rewind-message-item' + (idx === this._rewindSelectedIndex ? ' selected' : '');
+                li.innerHTML = `
+                    <div class="rewind-message-content">${this.escapeHtml(msg.content || '(empty message)')}</div>
+                    <div class="rewind-message-meta">
+                        <span>Message #${msg.message_index ?? '?'}</span>
+                        ${msg.has_file_changes ? '<span class="rewind-file-badge"><span class="material-symbols-rounded">description</span> Files changed</span>' : ''}
+                    </div>
+                `;
+                li.addEventListener('click', () => {
+                    this._rewindSelectedIndex = idx;
+                    this.elements.rewindMessagesList.querySelectorAll('.rewind-message-item').forEach((item, i) => {
+                        item.classList.toggle('selected', i === idx);
+                    });
+                    const hasFiles = messages[idx].has_file_changes;
+                    this.elements.rewindRestoreBtn.style.display = hasFiles ? 'flex' : 'none';
+                });
+                this.elements.rewindMessagesList.appendChild(li);
+            });
+
+            this.elements.rewindActions.style.display = 'flex';
+            const hasFiles = messages[this._rewindSelectedIndex].has_file_changes;
+            this.elements.rewindRestoreBtn.style.display = hasFiles ? 'flex' : 'none';
+
+            this.elements.rewindRestoreBtn.onclick = () => this.executeRewind(true);
+            this.elements.rewindEditBtn.onclick = () => this.executeRewind(false);
+
+        } catch (error) {
+            console.error('Failed to load rewind state:', error);
+            this.elements.rewindMessagesList.innerHTML = '<li class="rewind-empty">Failed to load rewind state.</li>';
+        }
+    }
+
+    hideRewindModal() {
+        this.elements.rewindModal.style.display = 'none';
+        this._rewindSelectedIndex = null;
+        this._rewindMessages = [];
+    }
+
+    _highlightRewindTarget(messageIndex) {
+        this._clearRewindHighlight();
+        const target = this.elements.messages.querySelector(
+            `.message.user[data-message-index="${messageIndex}"]`
+        );
+        if (!target) return;
+
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        target.classList.add('message-highlight');
+    }
+
+    _clearRewindHighlight() {
+        const highlighted = this.elements.messages.querySelector('.message.message-highlight');
+        if (highlighted) {
+            highlighted.classList.remove('message-highlight');
+        }
+    }
+
+    async executeRewind(restoreFiles) {
+        if (this._rewindSelectedIndex === null || this._rewindMessages.length === 0) return;
+
+        const msg = this._rewindMessages[this._rewindSelectedIndex];
+        if (!msg || msg.message_index === undefined) {
+            this.addMessage('system', 'Invalid message selection.');
+            return;
+        }
+
+        try {
+            const result = await this.apiClient.executeRewind({
+                message_index: msg.message_index,
+                restore_files: restoreFiles
+            });
+
+            if (result.success) {
+                this.hideRewindModal();
+                if (result.message_content) {
+                    this.elements.input.value = result.message_content;
+                    this.autoResizeTextarea();
+                    this.updateSendButtonState();
+                    this.elements.input.focus();
+                }
+            } else {
+                this.addMessage('system', `Rewind failed: ${result.error}`);
+            }
+        } catch (error) {
+            console.error('Failed to execute rewind:', error);
+            this.addMessage('system', `Rewind failed: ${error.message}`);
+        }
+    }
+
+    _scrollAfterUpdate(previousScrollHeight) {
+        this.scrollToBottomIfWasAtBottom(previousScrollHeight);
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    window.vibeClient = new VibeClient();
+});
+
+export { VibeClient };
+export { formatDuration } from './format-utils.js';
+;

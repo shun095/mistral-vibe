@@ -74,7 +74,14 @@ class CommandCompleter(Completer):
 
         aliases, _ = self._build_lookup()
         search_str = "/" + self._head_word(text, cursor_pos)
-        return [alias for alias in aliases if alias.lower().startswith(search_str)]
+        head = text.split(" ", 1)[0]
+        is_cursor_in_head = cursor_pos < len(head)
+        return [
+            alias
+            for alias in aliases
+            if alias.lower().startswith(search_str)
+            and not (alias.lower() == search_str and not is_cursor_in_head)
+        ]
 
     def get_completion_items(self, text: str, cursor_pos: int) -> list[tuple[str, str]]:
         if not text.startswith("/"):
@@ -82,10 +89,13 @@ class CommandCompleter(Completer):
 
         aliases, descriptions = self._build_lookup()
         search_str = "/" + self._head_word(text, cursor_pos)
+        head = text.split(" ", 1)[0]
+        is_cursor_in_head = cursor_pos < len(head)
         items = [
             (alias, descriptions.get(alias, ""))
             for alias in aliases
             if alias.lower().startswith(search_str)
+            and not (alias.lower() == search_str and not is_cursor_in_head)
         ]
         return _prioritize_help_config_slash_menu(items)
 

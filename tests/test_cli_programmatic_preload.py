@@ -8,12 +8,12 @@ from tests.mock.utils import mock_llm_chunk
 from tests.stubs.fake_backend import FakeBackend
 from vibe.core import run_programmatic
 from vibe.core.agents.models import BuiltinAgentName
-from vibe.core.types import Backend, LLMMessage, OutputFormat, Role
+from vibe.core.types import Backend, Content, LLMMessage, OutputFormat, Role
 
 
 class SpyStreamingFormatter:
     def __init__(self) -> None:
-        self.emitted: list[tuple[Role, str | None]] = []
+        self.emitted: list[tuple[Role, Content | None]] = []
 
     def on_message_added(self, message: LLMMessage) -> None:
         self.emitted.append((message.role, message.content))
@@ -142,13 +142,20 @@ def test_run_programmatic_ignores_system_messages_in_previous(
         )
 
         roles = [r for r, _ in spy.emitted]
-        assert roles == [Role.system, Role.user, Role.user, Role.assistant]
+        assert roles == [
+            Role.system,
+            Role.user,
+            Role.assistant,
+            Role.user,
+            Role.assistant,
+        ]
         assert (
             spy.emitted[0][1] == "You are Vibe, a super useful programming assistant."
         )
         assert spy.emitted[1][1] == "Continue our previous discussion."
-        assert spy.emitted[2][1] == "Let's move on to practical examples."
-        assert spy.emitted[3][1] == "Understood."
+        assert spy.emitted[2][1] == "Understood."
+        assert spy.emitted[3][1] == "Let's move on to practical examples."
+        assert spy.emitted[4][1] == "Understood."
 
 
 def test_run_programmatic_teleport_ignored_when_nuage_disabled(

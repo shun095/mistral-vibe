@@ -125,6 +125,25 @@ def parse_arguments() -> argparse.Namespace:
     # Feature flag for teleport, not exposed to the user yet
     parser.add_argument("--teleport", action="store_true", help=argparse.SUPPRESS)
 
+    # Web UI options
+    parser.add_argument(
+        "--web", action="store_true", help="Start web UI server alongside TUI"
+    )
+    parser.add_argument(
+        "--web-port",
+        type=int,
+        default=9092,
+        metavar="PORT",
+        help="Port for web UI server (default: 9092)",
+    )
+    parser.add_argument(
+        "--web-base-path",
+        type=str,
+        default="/",
+        metavar="PATH",
+        help="Base URL path for web UI (default: /). Use /vibe/ to serve under a subpath.",
+    )
+
     continuation_group = parser.add_mutually_exclusive_group()
     continuation_group.add_argument(
         "-c",

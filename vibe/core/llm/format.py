@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
+import json_repair
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from vibe.core.tools.base import BaseTool
@@ -107,10 +108,7 @@ class APIToolFormatHandler:
         for tc in api_tool_calls:
             if not (function_call := tc.function):
                 continue
-            try:
-                args = json.loads(function_call.arguments or "{}")
-            except json.JSONDecodeError:
-                args = {}
+            args = self._parse_tool_call_args(function_call.arguments or "{}")
 
             tool_calls.append(
                 ParsedToolCall(
@@ -121,6 +119,21 @@ class APIToolFormatHandler:
             )
 
         return ParsedMessage(tool_calls=tool_calls)
+
+    def _parse_tool_call_args(self, args_str: str) -> dict[str, Any]:
+        """Parse tool call arguments, attempting to repair malformed JSON."""
+        if not args_str:
+            return {}
+        try:
+            return json.loads(args_str)
+        except json.JSONDecodeError:
+            try:
+                repaired = json_repair.loads(args_str)
+                if isinstance(repaired, dict):
+                    return repaired
+            except Exception:
+                pass
+            return {}
 
     def resolve_tool_calls(
         self, parsed: ParsedMessage, tool_manager: ToolManager
@@ -183,3 +196,22 @@ class APIToolFormatHandler:
             name=failed.tool_name,
             content=error_content,
         )
+
+    def create_special_tool_response_message(
+        self, tool_call: ResolvedToolCall, result_model: Any
+    ) -> LLMMessage | list[LLMMessage] | None:
+        """Create additional LLM messages for tools with special handling.
+
+        Returns None if no additional message is needed.
+        Returns a single LLMMessage or a list of LLMMessage objects.
+        """
+        # Check if the tool class implements get_llm_message_constructor
+        get_constructor_method = getattr(
+            tool_call.tool_class, "get_llm_message_constructor", None
+        )
+        if get_constructor_method:
+            message_constructor = get_constructor_method()
+            if message_constructor:
+                return message_constructor(tool_call, result_model)
+
+        return None

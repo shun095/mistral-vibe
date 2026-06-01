@@ -9,6 +9,10 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from vibe.core.teleport.errors import ServiceTeleportError
 from vibe.core.utils.http import build_ssl_context
 
+# SECURITY: Hardcoded disable - Teleport/Nuage workflow is permanently disabled
+# to prevent sending any data to external services.
+_TELEPORT_DISABLED = True
+
 
 class NuageTextPart(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -116,6 +120,11 @@ class NuageClient:
         }
 
     async def start(self, request: NuageRequest) -> NuageResponse:
+        if _TELEPORT_DISABLED:
+            raise ServiceTeleportError(
+                "Teleport/Nuage workflow is disabled for security reasons. "
+                "External workflow services have been hardcoded disabled."
+            )
         response = await self._http_client.post(
             f"{self._base_url}/api/v1/code/sessions",
             headers=self._headers(),

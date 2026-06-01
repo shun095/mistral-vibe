@@ -47,7 +47,9 @@ class TestFileToolScratchpadPermissions:
         tool = ReadFile(
             config_getter=lambda: ReadFileToolConfig(), state=ReadFileState()
         )
-        result = tool.resolve_permission(ReadFileArgs(path=str(sp / "notes.txt")))
+        result = tool.resolve_permission(
+            ReadFileArgs(path=str(sp / "notes.txt"), offset=0)
+        )
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.ALWAYS
 
@@ -86,7 +88,9 @@ class TestBashScratchpadPermissions:
         sp = scratchpad_mod.get_scratchpad_dir("test-session")
         assert sp is not None
         bash = Bash(config_getter=lambda: BashToolConfig(), state=BaseToolState())
-        result = bash.resolve_permission(BashArgs(command=f"mkdir {sp}/subdir"))
+        result = bash.resolve_permission(
+            BashArgs(command=f"mkdir {sp}/subdir", timeout=10)
+        )
         assert isinstance(result, PermissionContext)
         outside = [
             rp

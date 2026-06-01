@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import cast
+from unittest.mock import patch
 
 from textual.app import App, ComposeResult
 from textual.containers import VerticalScroll
@@ -45,15 +46,16 @@ class ParallelToolCallsApp(App):
         if self._handler is None:
             return
         for i in range(3):
-            await self._handler.handle_event(
+            self._handler.handle_event(
                 ToolCallEvent(
                     tool_call_id=f"tc_{i}",
                     tool_call_index=i,
                     tool_name="read_file",
                     tool_class=ReadFile,
-                    args=ReadFileArgs(path=f"/src/file_{i}.py"),
+                    args=ReadFileArgs(path=f"/src/file_{i}.py", offset=0),
                 )
             )
+        await self._handler._await_pending_command()
 
     def freeze_spinners(self) -> None:
         for widget in self.query(ToolCallMessage):
@@ -64,12 +66,14 @@ class ParallelToolCallsApp(App):
             widget._spinner.reset()
             if widget._indicator_widget:
                 widget._indicator_widget.update(widget._spinner.current_frame())
+            if widget._text_widget:
+                widget._text_widget.update(widget.get_content())
 
     async def resolve_all_results(self) -> None:
         if self._handler is None:
             return
         for i in range(3):
-            await self._handler.handle_event(
+            self._handler.handle_event(
                 ToolResultEvent(
                     tool_name="read_file",
                     tool_class=ReadFile,
@@ -82,6 +86,7 @@ class ParallelToolCallsApp(App):
                     tool_call_id=f"tc_{i}",
                 )
             )
+        await self._handler._await_pending_command()
 
 
 def test_snapshot_parallel_tool_calls_pending(snap_compare: SnapCompare) -> None:
@@ -104,8 +109,13 @@ def test_snapshot_parallel_tool_calls_resolved(snap_compare: SnapCompare) -> Non
         app = cast(ParallelToolCallsApp, pilot.app)
         await app.emit_all_tool_calls()
         await pilot.pause(0.3)
-        await app.resolve_all_results()
-        await pilot.pause(0.3)
+        # Normalize _start_time and patch wall_now before resolving results
+        # so on_mount sees deterministic elapsed (0.5s)
+        for widget in app.query(ToolCallMessage):
+            widget._start_time = 1000.0
+        with patch("vibe.cli.textual_ui.widgets.tools.wall_now", return_value=1000.5):
+            await app.resolve_all_results()
+            await pilot.pause(0.3)
 
     assert snap_compare(
         "test_ui_snapshot_parallel_tool_calls.py:ParallelToolCallsApp",

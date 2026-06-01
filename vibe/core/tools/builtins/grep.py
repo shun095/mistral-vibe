@@ -132,6 +132,8 @@ class GrepMatch(BaseModel):
 
 
 class GrepResult(BaseModel):
+    pattern: str
+    path: str = "."
     matches: str
     match_count: int
     was_truncated: bool = Field(
@@ -187,7 +189,10 @@ class Grep(
         stdout = await self._execute_search(cmd)
 
         yield self._parse_output(
-            stdout, args.max_matches or self.config.default_max_matches
+            stdout,
+            args.pattern,
+            args.path,
+            args.max_matches or self.config.default_max_matches,
         )
 
     def _validate_args(self, args: GrepArgs) -> None:
@@ -312,7 +317,9 @@ class Grep(
         except Exception as exc:
             raise ToolError(f"Error running grep: {exc}") from exc
 
-    def _parse_output(self, stdout: str, max_matches: int) -> GrepResult:
+    def _parse_output(
+        self, stdout: str, pattern: str, path: str, max_matches: int
+    ) -> GrepResult:
         output_lines = stdout.splitlines() if stdout else []
 
         truncated_lines = output_lines[:max_matches]
@@ -326,6 +333,8 @@ class Grep(
         final_output = truncated_output[: self.config.max_output_bytes]
 
         return GrepResult(
+            pattern=pattern,
+            path=path,
             matches=final_output,
             match_count=len(truncated_lines),
             was_truncated=was_truncated,

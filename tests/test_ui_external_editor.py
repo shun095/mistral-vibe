@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from vibe.cli.textual_ui.app import VibeApp
+from vibe.cli.textual_ui.external_editor import ExternalEditor
 from vibe.cli.textual_ui.widgets.chat_input.container import ChatInputContainer
 
 
@@ -67,3 +69,40 @@ async def test_ctrl_g_works_with_empty_input(vibe_app: VibeApp) -> None:
 
             mock_instance.edit.assert_called_once_with("")
             assert chat_input.value == "new content"
+
+
+class TestExternalEditorOpenFile:
+    """Tests for ExternalEditor.open_file() method."""
+
+    def test_open_file_returns_true_on_success(self, tmp_path: Path) -> None:
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("content")
+
+        with patch("subprocess.run", return_value=MagicMock(returncode=0)):
+            result = ExternalEditor().open_file(test_file)
+
+        assert result is True
+
+    def test_open_file_returns_false_on_os_error(self, tmp_path: Path) -> None:
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("content")
+
+        with patch("subprocess.run", side_effect=OSError("editor not found")):
+            result = ExternalEditor().open_file(test_file)
+
+        assert result is False
+
+    def test_open_file_returns_false_on_called_process_error(
+        self, tmp_path: Path
+    ) -> None:
+        import subprocess
+
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("content")
+
+        with patch(
+            "subprocess.run", side_effect=subprocess.CalledProcessError(1, "editor")
+        ):
+            result = ExternalEditor().open_file(test_file)
+
+        assert result is False

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import patch
 
@@ -14,14 +15,15 @@ from vibe.core.types import LLMMessage, Role
 
 
 @pytest.fixture
-def acp_agent_loop(backend) -> VibeAcpAgentLoop:
-    config = build_test_vibe_config(
+def acp_agent_loop(backend) -> Generator[VibeAcpAgentLoop, None, None]:
+    base_config = build_test_vibe_config(
         active_model="devstral-latest",
         models=[
             ModelConfig(
                 name="devstral-latest",
                 provider="mistral",
                 alias="devstral-latest",
+                temperature=0.2,
                 input_price=0.4,
                 output_price=2.0,
             ),
@@ -29,29 +31,36 @@ def acp_agent_loop(backend) -> VibeAcpAgentLoop:
                 name="devstral-small",
                 provider="mistral",
                 alias="devstral-small",
+                temperature=0.2,
                 input_price=0.1,
                 output_price=0.3,
             ),
         ],
     )
 
-    VibeConfig.dump_config(config.model_dump())
+    original_load = VibeConfig.load
+
+    def mock_load(*args, **kwargs) -> VibeConfig:
+        loaded = original_load(*args, **kwargs)
+        return loaded.model_copy(update={"models": base_config.models})
 
     class PatchedAgentLoop(AgentLoop):
         def __init__(self, *args, **kwargs) -> None:
             super().__init__(*args, **{**kwargs, "backend": backend})
-            self._base_config = config
+            self._base_config = base_config
             self.agent_manager.invalidate_config()
             try:
-                active_model = config.get_active_model()
+                active_model = base_config.get_active_model()
                 self.stats.input_price_per_million = active_model.input_price
                 self.stats.output_price_per_million = active_model.output_price
             except ValueError:
                 pass
 
-    patch("vibe.acp.acp_agent_loop.AgentLoop", side_effect=PatchedAgentLoop).start()
-
-    return _create_acp_agent()
+    with (
+        patch("vibe.acp.acp_agent_loop.VibeConfig.load", side_effect=mock_load),
+        patch("vibe.acp.acp_agent_loop.AgentLoop", side_effect=PatchedAgentLoop),
+    ):
+        yield _create_acp_agent()
 
 
 class TestACPSetModel:

@@ -1,0 +1,289 @@
+/* ===== Structured Renderer ===== */
+
+.structured-renderer,
+.structured-args,
+.structured-result {
+    position: relative;
+}
+
+/* Table layout */
+.struct-table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 0.85rem;
+}
+
+.struct-table th.struct-key {
+    text-align: left;
+    padding: 4px 12px 4px 4px;
+    font-weight: 600;
+    color: var(--blue);
+    vertical-align: top;
+    white-space: nowrap;
+    width: 1%;
+    min-width: 80px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.struct-table td.struct-value {
+    padding: 4px 4px 4px 12px;
+    vertical-align: middle;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-color);
+    word-break: break-word;
+    position: relative;
+}
+
+/* Nested object indentation */
+.struct-value .struct-table th.struct-key {
+    padding-left: 0;
+    padding-top: 2px;
+    padding-bottom: 2px;
+    color: var(--purple);
+}
+
+.struct-value .struct-table td.struct-value {
+    padding-top: 2px;
+    padding-bottom: 2px;
+}
+
+/* Value types */
+.struct-string {
+    color: var(--green);
+}
+
+.struct-number {
+    color: var(--cyan);
+    font-variant-numeric: tabular-nums;
+}
+
+.struct-path {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--yellow);
+    font-family: var(--font-mono, monospace);
+    font-size: 0.85em;
+}
+
+.struct-path .struct-icon {
+    color: var(--text-muted);
+}
+
+.struct-url a {
+    color: var(--blue);
+    text-decoration: none;
+}
+
+.struct-url a:hover {
+    text-decoration: underline;
+}
+
+/* Badges */
+.struct-badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    font-family: var(--font-mono, monospace);
+}
+
+.null-badge {
+    background-color: var(--bg-tertiary);
+    color: var(--text-muted);
+}
+
+.bool-badge {
+    font-weight: 600;
+}
+
+.true-badge {
+    background-color: var(--success-bg);
+    color: var(--green);
+}
+
+.false-badge {
+    background-color: var(--error-bg);
+    color: var(--red);
+}
+
+.empty-badge {
+    background-color: var(--bg-code);
+    color: var(--text-muted);
+}
+
+/* Arrays */
+.struct-list {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 0 16px;
+}
+
+.struct-list li {
+    position: relative;
+    padding: 2px 0;
+    color: var(--text-primary);
+}
+
+.struct-list li::before {
+    content: '–';
+    position: absolute;
+    left: -12px;
+    color: var(--text-muted);
+}
+
+.struct-array-item {
+    display: flex;
+    gap: 8px;
+    margin: 2px 0;
+}
+
+.struct-idx {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--bg-tertiary);
+    border-radius: 4px;
+    font-size: 0.75em;
+    font-family: var(--font-mono, monospace);
+    color: var(--text-muted);
+}
+
+.struct-array-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.struct-more {
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: 0.85em;
+    padding: 4px 0;
+}
+
+/* Truncated strings */
+.struct-truncated {
+    cursor: pointer;
+    border-bottom: 1px dashed var(--text-muted);
+}
+
+.struct-truncated:hover {
+    color: var(--cyan);
+}
+
+/* Multiline strings */
+.struct-multiline {
+    cursor: pointer;
+    display: inline;
+}
+
+.struct-multiline:hover .struct-multiline-preview {
+    color: var(--cyan);
+}
+
+.struct-multiline-preview {
+    border-bottom: 1px dashed var(--text-muted);
+    white-space: nowrap;
+}
+
+.struct-multiline-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 6px;
+    font-size: 0.7em;
+    font-family: var(--font-mono, monospace);
+    color: var(--text-muted);
+    background-color: var(--bg-tertiary);
+    border-radius: 3px;
+    vertical-align: middle;
+}
+
+.struct-multiline-expanded {
+    display: block;
+    margin: 4px 0 0 0;
+    padding: 8px;
+    background-color: var(--bg-code);
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-family: var(--font-mono, monospace);
+    color: var(--text-secondary);
+    overflow-x: auto;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    max-height: 300px;
+    border: 1px solid var(--border-color);
+}
+
+/* Copy button */
+.struct-copy-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: var(--bg-tertiary);
+    border: none;
+    border-radius: 4px;
+    padding: 4px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    color: var(--text-muted);
+}
+
+.struct-copy-btn:hover {
+    opacity: 1 !important;
+    color: var(--cyan);
+    background: var(--hover-bg);
+}
+
+.structured-renderer:hover .struct-copy-btn,
+.structured-args:hover .struct-copy-btn,
+.structured-result:hover .struct-copy-btn {
+    opacity: 0.6;
+}
+
+/* Fallback raw JSON */
+.struct-fallback {
+    margin: 0;
+    padding: 8px;
+    background-color: var(--bg-code);
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-family: var(--font-mono, monospace);
+    color: var(--text-secondary);
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+/* Structured args inside tool calls */
+.message.tool-call .structured-args {
+    background-color: var(--bg-primary);
+    padding: 12px;
+    margin: 0;
+    border-radius: 4px;
+    overflow-x: auto;
+    font-size: 0.85rem;
+}
+
+.message.tool-call.collapsed .structured-args {
+    display: none;
+}
+
+/* Structured result in card content */
+.tool-result-card .card-content .structured-result {
+    padding: 4px 0;
+}
+
+/* Popup structured args */
+.popup-structured-args {
+    background-color: var(--bg-primary);
+    padding: 12px;
+    border-radius: 4px;
+    margin: 0;
+    max-height: 300px;
+    overflow-y: auto;
+}

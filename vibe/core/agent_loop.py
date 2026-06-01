@@ -8,12 +8,16 @@ from enum import StrEnum, auto
 from functools import wraps
 from http import HTTPStatus
 import inspect
+import json
 import os
 from pathlib import Path
 import threading
 from threading import Thread
 import time
 from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from vibe.core.types import Content
 from uuid import uuid4
 
 from opentelemetry import trace
@@ -21,9 +25,15 @@ from pydantic import BaseModel
 
 from vibe.cli.terminal_detect import detect_terminal
 from vibe.core.agents.manager import AgentManager
-from vibe.core.agents.models import AgentProfile, BuiltinAgentName
+from vibe.core.agents.models import (
+    AgentProfile,
+    AgentSafety,
+    AgentType,
+    BuiltinAgentName,
+)
 from vibe.core.compaction import collect_prior_user_messages
 from vibe.core.config import ModelConfig, ProviderConfig, VibeConfig
+from vibe.core.event_bus import EventBus
 from vibe.core.experiments import ExperimentManager
 from vibe.core.experiments.client import RemoteEvalClient
 from vibe.core.experiments.session import (
@@ -41,6 +51,7 @@ from vibe.core.llm.format import (
     ResolvedToolCall,
 )
 from vibe.core.llm.types import BackendLike
+from vibe.core.loop_detection import ToolCallLoopHandler
 from vibe.core.middleware import (
     CHAT_AGENT_EXIT,
     CHAT_AGENT_REMINDER,
@@ -80,6 +91,7 @@ from vibe.core.teleport.types import TeleportCompleteEvent
 from vibe.core.tools.base import (
     BaseTool,
     InvokeContext,
+    SpecialToolBehavior,
     ToolError,
     ToolPermission,
     ToolPermissionError,
@@ -106,12 +118,15 @@ from vibe.core.types import (
     CompactEndEvent,
     CompactStartEvent,
     ContextTooLongError,
+    ContinueableUserMessageEvent,
     LLMChunk,
     LLMMessage,
+    LLMRetryEvent,
     LLMUsage,
     MessageList,
     PlanReviewEndedEvent,
     PlanReviewRequestedEvent,
+    PromptProgressEvent,
     RateLimitError,
     ReasoningEvent,
     Role,
@@ -123,6 +138,7 @@ from vibe.core.types import (
     UserInputCallback,
     UserMessageEvent,
 )
+from vibe.core.ui_events import MessageResetEvent, SystemPromptRegeneratedEvent
 from vibe.core.utils import (
     CANCELLATION_TAG,
     TOOL_ERROR_TAG,
@@ -134,6 +150,7 @@ from vibe.core.utils import (
     get_user_cancellation_message,
     is_user_cancellation_event,
 )
+from vibe.core.utils.time import wall_now
 
 try:
     from vibe.core.teleport.teleport import TeleportService as _TeleportService
@@ -177,6 +194,9 @@ class TeleportError(AgentLoopError):
 
 def _should_raise_rate_limit_error(e: Exception) -> bool:
     return isinstance(e, BackendError) and e.status == HTTPStatus.TOO_MANY_REQUESTS
+
+
+# ruff: noqa: PLR0913, PLR0904
 
 
 def _is_context_too_long_error(e: Exception) -> bool:
@@ -230,8 +250,8 @@ def requires_init(fn: Callable[..., Any]) -> Callable[..., Any]:
     return wrapper
 
 
-class AgentLoop:  # noqa: PLR0904
-    def __init__(  # noqa: PLR0913, PLR0915
+class AgentLoop:
+    def __init__(
         self,
         config: VibeConfig,
         *,
@@ -243,12 +263,13 @@ class AgentLoop:  # noqa: PLR0904
         backend: BackendLike | None = None,
         enable_streaming: bool = False,
         entrypoint_metadata: EntrypointMetadata | None = None,
+        event_listeners: list[Callable[[BaseEvent], None]] | None = None,
         is_subagent: bool = False,
+        mcp_registry: MCPRegistry | None = None,
         defer_heavy_init: bool = False,
         headless: bool = False,
         hook_config_result: HookConfigResult | None = None,
         permission_store: PermissionStore | None = None,
-        mcp_registry: MCPRegistry | None = None,
     ) -> None:
         self._base_config = config
         self._headless = headless
@@ -258,6 +279,8 @@ class AgentLoop:  # noqa: PLR0904
         self._deferred_init_lock = threading.Lock()
         self._init_error: Exception | None = None
         self._init_start_time = time.monotonic()
+        self._init_duration_ms: int | None = None
+        self._resume_system_prompt: str | None = None
         self._experiments_task: asyncio.Task[None] | None = None
         self._pending_new_session_telemetry: bool = False
         self._ready_telemetry_pending: bool = defer_heavy_init
@@ -299,6 +322,10 @@ class AgentLoop:  # noqa: PLR0904
         )
 
         self.enable_streaming = enable_streaming
+        self._event_bus = EventBus()
+        # Add initial listeners if provided
+        for listener in event_listeners or []:
+            self._event_bus.add_listener(listener)
         self.middleware_pipeline = MiddlewarePipeline()
         self._setup_middleware()
 
@@ -321,6 +348,9 @@ class AgentLoop:  # noqa: PLR0904
         self.messages = MessageList(initial=[system_message], observer=message_observer)
 
         self.stats = AgentStats()
+
+        # Initialize loop handler for tool call loop detection (only if enabled)
+        self._loop_handler = ToolCallLoopHandler(config)
         self.approval_callback: ApprovalCallback | None = None
         self.user_input_callback: UserInputCallback | None = None
         self.entrypoint_metadata = entrypoint_metadata
@@ -375,6 +405,23 @@ class AgentLoop:  # noqa: PLR0904
         if defer_heavy_init:
             self._start_deferred_init()
 
+    def _notify_event_listeners(self, event: BaseEvent) -> None:
+        """Notify all event listeners of an event.
+
+        Args:
+            event: The event to broadcast.
+        """
+        # Use sync dispatch for backward compatibility
+        self._event_bus.dispatch_sync(event)
+
+    def add_event_listener(self, listener: Callable[[BaseEvent], None]) -> None:
+        """Add an event listener.
+
+        Args:
+            listener: Callback function to be called when events are broadcast.
+        """
+        self._event_bus.add_listener(listener)
+
     def _start_deferred_init(self) -> threading.Thread:
         """Spawn a daemon thread that finishes deferred heavy I/O once."""
         with self._deferred_init_lock:
@@ -404,16 +451,22 @@ class AgentLoop:  # noqa: PLR0904
         """
         try:
             self.tool_manager.integrate_all(raise_on_mcp_failure=True)
-            system_prompt = get_universal_system_prompt(
-                self.tool_manager,
-                self.config,
-                self.skill_manager,
-                self.agent_manager,
-                scratchpad_dir=self.scratchpad_dir,
-                headless=self._headless,
-                experiment_manager=self.experiment_manager,
+            if self._resume_system_prompt is not None:
+                self.messages.update_system_prompt(self._resume_system_prompt)
+            else:
+                system_prompt = get_universal_system_prompt(
+                    self.tool_manager,
+                    self.config,
+                    self.skill_manager,
+                    self.agent_manager,
+                    scratchpad_dir=self.scratchpad_dir,
+                    headless=self._headless,
+                    experiment_manager=self.experiment_manager,
+                )
+                self.messages.update_system_prompt(system_prompt)
+            self._init_duration_ms = int(
+                (time.monotonic() - self._init_start_time) * 1000
             )
-            self.messages.update_system_prompt(system_prompt)
         except Exception as exc:
             self._init_error = exc
 
@@ -613,11 +666,30 @@ class AgentLoop:  # noqa: PLR0904
             experiment_manager=self.experiment_manager,
         )
         self.messages.update_system_prompt(system_prompt)
+        self._notify_event_listeners(SystemPromptRegeneratedEvent())
 
     def _select_backend(self) -> BackendLike:
+        # Use mock backend for E2E tests
+        if os.environ.get("VIBE_E2E_TEST") == "true":
+            from vibe.core.llm.backend.mock import MockBackend
+
+            active_model = self.config.get_active_model()
+            provider = self.config.get_provider_for_model(active_model)
+            return MockBackend(provider=provider)
+
+        # Use configured backend for production
         provider = self.config.get_active_provider()
         timeout = self.config.api_timeout
-        return BACKEND_FACTORY[provider.backend](provider=provider, timeout=timeout)
+        return BACKEND_FACTORY[provider.backend](
+            provider=provider, timeout=timeout, on_retry=self._on_llm_retry
+        )
+
+    def _on_llm_retry(self, event: LLMRetryEvent) -> None:
+        """Handle LLM retry event by notifying event listeners."""
+        from vibe.core.logger import logger
+
+        logger.debug("on_retry called: " + str(event))
+        self._notify_event_listeners(event)
 
     async def _save_messages(self) -> None:
         await self.session_logger.save_interaction(
@@ -645,11 +717,17 @@ class AgentLoop:  # noqa: PLR0904
     @requires_init
     async def act(
         self,
-        msg: str,
+        msg: Content,
         client_message_id: str | None = None,
         *,
         auto_title: str | None = None,
     ) -> AsyncGenerator[BaseEvent, None]:
+        """Run a conversation turn.
+
+        Args:
+            msg: User message content to append.
+            client_message_id: Optional client-side message identifier.
+        """
         self._clean_message_history()
         self.rewind_manager.create_checkpoint()
         try:
@@ -827,12 +905,24 @@ class AgentLoop:  # noqa: PLR0904
                         parent_session_id=old_parent_session_id,
                     )
 
-                yield CompactEndEvent(
-                    tool_call_id=tool_call_id,
-                    summary_length=len(summary),
-                    old_session_id=old_session_id,
-                    new_session_id=self.session_id,
-                )
+                try:
+                    yield CompactEndEvent(
+                        tool_call_id=tool_call_id,
+                        summary_length=len(summary),
+                        summary_content=summary,
+                        old_session_id=old_session_id,
+                        new_session_id=self.session_id,
+                    )
+                except Exception as e:
+                    yield CompactEndEvent(
+                        tool_call_id=tool_call_id,
+                        summary_length=0,
+                        summary_content=None,
+                        error=str(e),
+                        old_session_id=old_session_id,
+                        new_session_id=self.session_id,
+                    )
+                    raise
 
             case MiddlewareAction.CONTINUE:
                 pass
@@ -868,7 +958,7 @@ class AgentLoop:  # noqa: PLR0904
 
     async def _conversation_loop(  # noqa: PLR0912
         self,
-        user_msg: str,
+        user_msg: Content,
         client_message_id: str | None = None,
         *,
         auto_title: str | None = None,
@@ -877,13 +967,19 @@ class AgentLoop:  # noqa: PLR0904
             role=Role.user, content=user_msg, message_id=client_message_id
         )
         self.messages.append(user_message)
-        self.stats.steps += 1
-        self._current_user_message_id = user_message.message_id
-
         if user_message.message_id is None:
             raise AgentLoopError("User message must have a message_id")
+        content, message_id = user_msg, user_message.message_id
+        msg_index = len(self.messages) - 1
+        self.stats.steps += 1
+        self._current_user_message_id = message_id
 
-        yield UserMessageEvent(content=user_msg, message_id=user_message.message_id)
+        # Yield a UserMessageEvent
+        user_msg_event = UserMessageEvent(
+            content=content, message_id=message_id, message_index=msg_index
+        )
+        self._notify_event_listeners(user_msg_event)
+        yield user_msg_event
 
         if auto_title is not None and self.session_logger.set_initial_auto_title(
             auto_title
@@ -902,6 +998,7 @@ class AgentLoop:  # noqa: PLR0904
                     self._get_context()
                 )
                 async for event in self._handle_middleware_result(result):
+                    self._notify_event_listeners(event)
                     yield event
 
                 if result.action == MiddlewareAction.STOP:
@@ -909,18 +1006,29 @@ class AgentLoop:  # noqa: PLR0904
 
                 self.stats.steps += 1
                 user_cancelled = False
+
+                # Track if we yielded a ContinueableUserMessageEvent (e.g., for image messages)
+                yielded_continueable_event = False
+
                 if first_llm_turn:
                     self._is_user_prompt_call = True
                     first_llm_turn = False
                 async for event in self._perform_llm_turn():
                     if is_user_cancellation_event(event):
                         user_cancelled = True
+                    if isinstance(event, ContinueableUserMessageEvent):
+                        yielded_continueable_event = True
+                    self._notify_event_listeners(event)
                     yield event
                     await self._save_messages()
                 self._is_user_prompt_call = False
 
                 last_message = self.messages[-1]
-                should_break_loop = last_message.role != Role.tool
+
+                # Special handling for tools that yield ContinueableUserMessageEvent
+                should_break_loop = (
+                    not yielded_continueable_event and last_message.role != Role.tool
+                )
 
                 if self._drain_pending_injections():
                     should_break_loop = False
@@ -981,13 +1089,39 @@ class AgentLoop:  # noqa: PLR0904
         return None
 
     async def _perform_llm_turn(self) -> AsyncGenerator[BaseEvent, None]:
-        if self.enable_streaming:
-            async for event in self._stream_assistant_events():
-                yield event
-        else:
-            assistant_event = await self._get_assistant_event()
-            if assistant_event.content:
-                yield assistant_event
+        max_attempts = 3
+        active_model = self.config.get_active_model()
+        provider = self.config.get_provider_for_model(active_model)
+
+        turn_start_time = wall_now()
+        for attempt in range(max_attempts):
+            if self.enable_streaming:
+                async for event in self._stream_assistant_events(turn_start_time):
+                    yield event
+            else:
+                assistant_event = await self._get_assistant_event()
+                if assistant_event.content:
+                    yield assistant_event
+
+            last_message = self.messages[-1]
+
+            if last_message.is_reasoning_only and attempt < max_attempts - 1:
+                # Retry: remove the reasoning-only message and try again
+                self.messages.pop()
+                delay_seconds = 0.5 * (2**attempt)
+                yield LLMRetryEvent(
+                    attempt=attempt + 1,
+                    max_attempts=max_attempts,
+                    error_message="LLM returned reasoning content but no text or tool calls",
+                    delay_seconds=delay_seconds,
+                    provider=provider.name,
+                    model=active_model.name,
+                )
+                await asyncio.sleep(delay_seconds)
+                continue
+
+            # Final attempt or successful response — proceed normally
+            break
 
         last_message = self.messages[-1]
 
@@ -998,7 +1132,7 @@ class AgentLoop:  # noqa: PLR0904
             return
 
         profile_before = self.agent_profile.name
-        async for event in self._handle_tool_calls(resolved):
+        async for event in self._handle_tool_calls(resolved, turn_start_time):
             yield event
 
             if session_plan_event := self._handle_session_plan_events(event):
@@ -1008,7 +1142,10 @@ class AgentLoop:  # noqa: PLR0904
             yield AgentProfileChangedEvent(agent_name=self.agent_profile.name)
 
     def _build_tool_call_events(
-        self, tool_calls: list[ToolCall] | None, emitted_ids: set[str]
+        self,
+        tool_calls: list[ToolCall] | None,
+        emitted_ids: set[str],
+        start_time: float | None = None,
     ) -> Generator[ToolCallEvent, None, None]:
         for tc in tool_calls or []:
             if tc.id is None or not tc.function.name:
@@ -1025,11 +1162,14 @@ class AgentLoop:  # noqa: PLR0904
                 tool_call_index=tc.index,
                 tool_name=tc.function.name,
                 tool_class=tool_class,
+                start_time=start_time,
             )
 
     async def _stream_assistant_events(
-        self,
-    ) -> AsyncGenerator[AssistantEvent | ReasoningEvent | ToolCallEvent]:
+        self, start_time: float | None = None
+    ) -> AsyncGenerator[
+        AssistantEvent | ReasoningEvent | ToolCallEvent | PromptProgressEvent
+    ]:
         message_id: str | None = None
         reasoning_message_id: str | None = None
         emitted_tool_call_ids = set[str]()
@@ -1040,29 +1180,45 @@ class AgentLoop:  # noqa: PLR0904
             if reasoning_message_id is None:
                 reasoning_message_id = chunk.message.reasoning_message_id
 
+            # Yield prompt progress event if available
+            if chunk.prompt_progress:
+                yield PromptProgressEvent(
+                    total=chunk.prompt_progress.total,
+                    cache=chunk.prompt_progress.cache,
+                    processed=chunk.prompt_progress.processed,
+                    time_ms=chunk.prompt_progress.time_ms,
+                )
+
             for event in self._build_tool_call_events(
-                chunk.message.tool_calls, emitted_tool_call_ids
+                chunk.message.tool_calls, emitted_tool_call_ids, start_time
             ):
                 emitted_tool_call_ids.add(event.tool_call_id)
                 yield event
 
             if chunk.message.reasoning_content:
+                reasoning_content = (
+                    chunk.message.reasoning_content
+                    if isinstance(chunk.message.reasoning_content, str)
+                    else ""
+                )
                 yield ReasoningEvent(
-                    content=chunk.message.reasoning_content,
-                    message_id=reasoning_message_id,
+                    content=reasoning_content, message_id=reasoning_message_id
                 )
 
             if chunk.message.content:
-                yield AssistantEvent(
-                    content=chunk.message.content, message_id=message_id
+                content = (
+                    chunk.message.content
+                    if isinstance(chunk.message.content, str)
+                    else ""
                 )
+                yield AssistantEvent(content=content, message_id=message_id)
 
     async def _get_assistant_event(self) -> AssistantEvent:
         llm_result = await self._chat()
-        return AssistantEvent(
-            content=llm_result.message.content or "",
-            message_id=llm_result.message.message_id,
-        )
+        content = llm_result.message.content or ""
+        if isinstance(content, list):
+            content = "".join(str(item) for item in content)
+        return AssistantEvent(content=content, message_id=llm_result.message.message_id)
 
     async def _emit_failed_tool_events(
         self, failed_calls: list[FailedToolCall]
@@ -1084,7 +1240,12 @@ class AgentLoop:  # noqa: PLR0904
 
     async def _process_one_tool_call(
         self, tool_call: ResolvedToolCall
-    ) -> AsyncGenerator[ToolResultEvent | ToolStreamEvent]:
+    ) -> AsyncGenerator[
+        ToolResultEvent
+        | ToolStreamEvent
+        | AssistantEvent
+        | ContinueableUserMessageEvent
+    ]:
         async with tool_span(
             tool_name=tool_call.tool_name,
             call_id=tool_call.call_id,
@@ -1093,9 +1254,15 @@ class AgentLoop:  # noqa: PLR0904
             async for event in self._execute_tool_call(span, tool_call):
                 yield event
 
+    # ruff: noqa: PLR0915
     async def _execute_tool_call(
         self, span: trace.Span, tool_call: ResolvedToolCall
-    ) -> AsyncGenerator[ToolResultEvent | ToolStreamEvent]:
+    ) -> AsyncGenerator[
+        ToolResultEvent
+        | ToolStreamEvent
+        | AssistantEvent
+        | ContinueableUserMessageEvent
+    ]:
         try:
             tool_instance = self.tool_manager.get(tool_call.tool_name)
         except Exception as exc:
@@ -1104,6 +1271,7 @@ class AgentLoop:  # noqa: PLR0904
             return
 
         decision: ToolDecision | None = None
+        start_time = time.perf_counter()
         try:
             decision = await self._should_execute_tool(
                 tool_instance, tool_call.validated_args, tool_call.call_id
@@ -1163,8 +1331,9 @@ class AgentLoop:  # noqa: PLR0904
             if result_model is None:
                 raise ToolError("Tool did not yield a result")
 
-            result_dict = result_model.model_dump()
-            text = "\n".join(f"{k}: {v}" for k, v in result_dict.items())
+            result_dict = result_model.model_dump(mode="json")
+            # Store as JSON for proper serialization of complex types (lists, nested dicts)
+            text = json.dumps(result_dict)
             extra = tool_instance.get_result_extra(result_model)
             if extra:
                 text += "\n\n" + extra
@@ -1179,6 +1348,17 @@ class AgentLoop:  # noqa: PLR0904
                 duration=duration,
                 tool_call_id=tool_call.call_id,
             )
+            # Check if tool implements SpecialToolBehavior for custom events
+            if isinstance(tool_instance, SpecialToolBehavior):
+                event_constructor = tool_instance.get_event_constructor()
+                if event_constructor:
+                    # Yield custom events (AssistantEvent, ContinueableUserMessageEvent, etc.)
+                    events = event_constructor(tool_call, result_model)
+                    for event in events:
+                        yield event
+
+                    # Add additional context to LLM messages (e.g., images)
+                    self._append_special_tool_response(tool_call, result_model)
             self.stats.tool_calls_succeeded += 1
 
         except asyncio.CancelledError:
@@ -1186,8 +1366,14 @@ class AgentLoop:  # noqa: PLR0904
                 get_user_cancellation_message(CancellationReason.TOOL_INTERRUPTED)
             )
             self.stats.tool_calls_failed += 1
+            duration = time.perf_counter() - start_time
             yield self._tool_failure_event(
-                tool_call, cancel, decision, cancelled=True, span=span
+                tool_call,
+                cancel,
+                decision,
+                cancelled=True,
+                span=span,
+                duration=duration,
             )
             raise
 
@@ -1198,15 +1384,52 @@ class AgentLoop:  # noqa: PLR0904
                 self.stats.tool_calls_rejected += 1
             else:
                 self.stats.tool_calls_failed += 1
-            yield self._tool_failure_event(tool_call, error_msg, decision, span=span)
+            duration = time.perf_counter() - start_time
+            yield self._tool_failure_event(
+                tool_call, error_msg, decision, span=span, duration=duration
+            )
 
     async def _handle_tool_calls(
-        self, resolved: ResolvedMessage
-    ) -> AsyncGenerator[ToolCallEvent | ToolResultEvent | ToolStreamEvent]:
+        self, resolved: ResolvedMessage, start_time: float | None = None
+    ) -> AsyncGenerator[
+        ToolCallEvent
+        | ToolResultEvent
+        | ToolStreamEvent
+        | AssistantEvent
+        | ContinueableUserMessageEvent
+    ]:
         async for event in self._emit_failed_tool_events(resolved.failed_calls):
             yield event
         if not resolved.tool_calls:
             return
+
+        # Check for loop on the first tool call of this turn
+        first_tool_call = resolved.tool_calls[0]
+        if self._loop_handler is not None:
+            is_loop, error_msg = self._loop_handler.check_first_call(
+                first_tool_call, TOOL_ERROR_TAG
+            )
+            if is_loop:
+                from vibe.core.llm.format import FailedToolCall
+
+                yield ToolResultEvent(
+                    tool_name=first_tool_call.tool_name,
+                    tool_class=first_tool_call.tool_class,
+                    error=error_msg,
+                    tool_call_id=first_tool_call.call_id,
+                )
+                self.stats.tool_calls_failed += 1
+                failed_call = FailedToolCall(
+                    tool_name=first_tool_call.tool_name,
+                    call_id=first_tool_call.call_id,
+                    error=error_msg or "",
+                )
+                self.messages.append(
+                    self.format_handler.create_failed_tool_response_message(
+                        failed_call, error_msg or ""
+                    )
+                )
+                return
 
         for tool_call in resolved.tool_calls:
             yield ToolCallEvent(
@@ -1214,15 +1437,28 @@ class AgentLoop:  # noqa: PLR0904
                 tool_class=tool_call.tool_class,
                 args=tool_call.validated_args,
                 tool_call_id=tool_call.call_id,
+                start_time=start_time,
             )
 
         async for event in self._run_tools_concurrently(resolved.tool_calls):
             yield event
 
+        # Record the last tool call of this turn for future loop detection
+        last_tool_call = resolved.tool_calls[-1]
+        if self._loop_handler is not None:
+            self._loop_handler.record_last_call(last_tool_call)
+
     async def _execute_tool_to_queue(
         self,
         tc: ResolvedToolCall,
-        queue: asyncio.Queue[ToolCallEvent | ToolResultEvent | ToolStreamEvent | None],
+        queue: asyncio.Queue[
+            ToolCallEvent
+            | ToolResultEvent
+            | ToolStreamEvent
+            | AssistantEvent
+            | ContinueableUserMessageEvent
+            | None
+        ],
     ) -> None:
         """Run a single tool call, sending events to the queue."""
         async for event in self._process_one_tool_call(tc):
@@ -1230,10 +1466,21 @@ class AgentLoop:  # noqa: PLR0904
 
     async def _run_tools_concurrently(
         self, tool_calls: list[ResolvedToolCall]
-    ) -> AsyncGenerator[ToolCallEvent | ToolResultEvent | ToolStreamEvent]:
+    ) -> AsyncGenerator[
+        ToolCallEvent
+        | ToolResultEvent
+        | ToolStreamEvent
+        | AssistantEvent
+        | ContinueableUserMessageEvent
+    ]:
         """Execute multiple tool calls concurrently, yielding events as they arrive."""
         queue: asyncio.Queue[
-            ToolCallEvent | ToolResultEvent | ToolStreamEvent | None
+            ToolCallEvent
+            | ToolResultEvent
+            | ToolStreamEvent
+            | AssistantEvent
+            | ContinueableUserMessageEvent
+            | None
         ] = asyncio.Queue()
 
         tasks = [
@@ -1299,6 +1546,24 @@ class AgentLoop:  # noqa: PLR0904
             message_id=self._current_user_message_id,
         )
 
+    def _append_special_tool_response(
+        self, tool_call: ResolvedToolCall, result_model: BaseModel
+    ) -> None:
+        """Append additional LLM messages for tools with special handling.
+
+        This is called after yielding custom events and is used to add
+        context to the LLM that isn't part of the standard tool response.
+        For example, read_image adds the actual image to the conversation.
+        """
+        special_message = self.format_handler.create_special_tool_response_message(
+            tool_call, result_model
+        )
+        if special_message:
+            if isinstance(special_message, list):
+                self.messages.extend(special_message)
+            else:
+                self.messages.append(special_message)
+
     def _tool_failure_event(
         self,
         tool_call: ResolvedToolCall,
@@ -1306,6 +1571,7 @@ class AgentLoop:  # noqa: PLR0904
         decision: ToolDecision | None = None,
         cancelled: bool = False,
         span: trace.Span | None = None,
+        duration: float | None = None,
     ) -> ToolResultEvent:
         """Create a ToolResultEvent for a failed tool and record the failure."""
         self._handle_tool_response(tool_call, error_msg, "failure", decision, span=span)
@@ -1314,6 +1580,7 @@ class AgentLoop:  # noqa: PLR0904
             tool_class=tool_call.tool_class,
             error=error_msg,
             cancelled=cancelled,
+            duration=duration,
             tool_call_id=tool_call.call_id,
         )
 
@@ -1381,9 +1648,9 @@ class AgentLoop:  # noqa: PLR0904
             ) from e
 
     async def _chat_streaming(
-        self, max_tokens: int | None = None
+        self, max_tokens: int | None = None, model_override: ModelConfig | None = None
     ) -> AsyncGenerator[LLMChunk]:
-        active_model = self.config.get_active_model()
+        active_model = model_override or self.config.get_active_model()
         provider = self.config.get_active_provider()
         backend_metadata = self._build_backend_metadata()
 
@@ -1415,13 +1682,18 @@ class AgentLoop:  # noqa: PLR0904
                 extra_headers=self._get_extra_headers(),
                 max_tokens=max_tokens,
                 metadata=backend_metadata.model_dump(exclude_none=True),
+                return_progress=True,
             ):
                 if chunk.correlation_id:
                     self.telemetry_client.last_correlation_id = chunk.correlation_id
                 processed_message = self.format_handler.process_api_response_message(
                     chunk.message
                 )
-                processed_chunk = LLMChunk(message=processed_message, usage=chunk.usage)
+                processed_chunk = LLMChunk(
+                    message=processed_message,
+                    usage=chunk.usage,
+                    prompt_progress=chunk.prompt_progress,
+                )
                 chunk_agg = (
                     processed_chunk
                     if chunk_agg is None
@@ -1502,9 +1774,36 @@ class AgentLoop:  # noqa: PLR0904
                             verdict=ToolExecutionResponse.EXECUTE,
                             approval_type=ToolPermission.ALWAYS,
                         )
+                    if decision := self._should_block_safe_subagent(tool):
+                        return decision
                     return await self._ask_approval(
                         tool_name, args, tool_call_id, uncovered
                     )
+
+    def _should_block_safe_subagent(self, tool: BaseTool) -> ToolDecision | None:
+        """Return SKIP decision for SAFE subagents attempting ASK tools."""
+        if (
+            self.agent_profile.agent_type != AgentType.SUBAGENT
+            or self.agent_profile.safety != AgentSafety.SAFE
+        ):
+            return None
+        allowlist = tool.config.allowlist
+        if allowlist:
+            cmds = ", ".join(allowlist)
+            feedback = (
+                f"Subagent does not have permission to execute this tool. "
+                f"Only allowlisted commands are permitted: {cmds}."
+            )
+        else:
+            feedback = (
+                "Subagent does not have permission to execute this tool. "
+                "Only allowlisted commands are permitted."
+            )
+        return ToolDecision(
+            verdict=ToolExecutionResponse.SKIP,
+            approval_type=ToolPermission.NEVER,
+            feedback=feedback,
+        )
 
     async def _ask_approval(
         self,
@@ -1538,6 +1837,7 @@ class AgentLoop:  # noqa: PLR0904
         if len(self.messages) < ACCEPTABLE_HISTORY_SIZE:
             return
         self._fill_missing_tool_responses()
+        self._ensure_assistant_after_tools_or_user()
 
     def _fill_missing_tool_responses(self) -> None:
         i = 1
@@ -1585,6 +1885,16 @@ class AgentLoop:  # noqa: PLR0904
                     continue
 
             i += 1
+
+    def _ensure_assistant_after_tools_or_user(self) -> None:
+        MIN_MESSAGE_SIZE = 2
+        if len(self.messages) < MIN_MESSAGE_SIZE:
+            return
+
+        last_msg = self.messages[-1]
+        if last_msg.role is Role.tool or last_msg.role is Role.user:
+            empty_assistant_msg = LLMMessage(role=Role.assistant, content="Understood.")
+            self.messages.append(empty_assistant_msg)
 
     async def _reset_session(self, keep_parent: bool = True) -> None:
         old_session_id = self.session_id
@@ -1660,7 +1970,17 @@ class AgentLoop:  # noqa: PLR0904
             self.tool_manager,
             self.agent_profile,
         )
-        self.messages.reset(self.messages[:1])
+        self._resume_system_prompt = None
+        new_system_prompt = get_universal_system_prompt(
+            self.tool_manager,
+            self.config,
+            self.skill_manager,
+            self.agent_manager,
+            scratchpad_dir=self.scratchpad_dir,
+            headless=self._headless,
+        )
+        self.messages.reset([LLMMessage(role=Role.system, content=new_system_prompt)])
+        self._notify_event_listeners(SystemPromptRegeneratedEvent())
 
         self.stats = AgentStats.create_fresh(self.stats)
         self.stats.trigger_listeners()
@@ -1677,10 +1997,47 @@ class AgentLoop:  # noqa: PLR0904
         self.tool_manager.reset_all()
         await self._reset_session(keep_parent=False)
 
+        # Notify listeners that history was cleared
+        self._notify_event_listeners(MessageResetEvent(reason="clear"))
+
+    async def truncate_last_turn(self) -> None:
+        """Remove the last user message and its preceding assistant message.
+
+        Truncates history to enable re-sending a new message via normal flow.
+
+        Raises:
+            AgentLoopStateError: If no user message exists to truncate.
+        """
+        last_user_index = None
+        for i in range(len(self.messages) - 1, 0, -1):
+            if self.messages[i].role == Role.user:
+                last_user_index = i
+                break
+
+        if last_user_index is None:
+            raise AgentLoopStateError(
+                "No user message found to truncate. Start a conversation first."
+            )
+
+        with self.messages.silent():
+            self.messages.reset(self.messages[:last_user_index])
+
+        await self.session_logger.save_interaction(
+            self.messages,
+            self.stats,
+            self._base_config,
+            self.tool_manager,
+            self.agent_profile,
+        )
+
+        self._notify_event_listeners(MessageResetEvent(reason="clear"))
+
     @requires_init
     async def compact(self, extra_instructions: str = "") -> str:
         try:
-            self._clean_message_history()
+            with self.messages.silent():
+                self._clean_message_history()
+
             await self.session_logger.save_interaction(
                 self.messages,
                 self.stats,
@@ -1705,24 +2062,52 @@ class AgentLoop:  # noqa: PLR0904
                 self.messages.append(
                     LLMMessage(role=Role.user, content=summary_request)
                 )
-                summary_result = await self._chat(
+                # Sleep to prevent the Llama.cpp server from becoming busy and crashing
+                await asyncio.sleep(1)
+
+                # Use streaming for compaction
+                summary_content: str = ""
+                chunk_agg: LLMChunk | None = None
+                async for chunk in self._chat_streaming(
                     model_override=self.config.get_compaction_model()
-                )
+                ):
+                    if chunk.message.content:
+                        content = (
+                            chunk.message.content
+                            if isinstance(chunk.message.content, str)
+                            else "".join(str(item) for item in chunk.message.content)
+                        )
+                        summary_content += content
+                    chunk_agg = chunk if chunk_agg is None else chunk_agg + chunk
 
-            if summary_result.usage is None:
-                raise AgentLoopLLMResponseError(
-                    "Usage data missing in compaction summary response"
-                )
-            summary_content = (summary_result.message.content or "").strip()
-            if not summary_content:
-                summary_content = "(no summary available)"
+                if chunk_agg is None or chunk_agg.usage is None:
+                    raise AgentLoopLLMResponseError(
+                        "Usage data missing in compaction summary response"
+                    )
+                summary_content = summary_content.strip()
+                if not summary_content:
+                    summary_content = "(no summary available)"
 
-            system_message = self.messages[0]
+            self._resume_system_prompt = None
+            new_system_prompt = get_universal_system_prompt(
+                self.tool_manager,
+                self.config,
+                self.skill_manager,
+                self.agent_manager,
+                scratchpad_dir=self.scratchpad_dir,
+                headless=self._headless,
+            )
+            new_system_message = LLMMessage(role=Role.system, content=new_system_prompt)
             wrapped_summary = f"{summary_prefix}\n{summary_content}"
             summary_message = LLMMessage(
                 role=Role.user, content=wrapped_summary, injected=True
             )
-            self.messages.reset([system_message, *prior_user_messages, summary_message])
+            self.messages.reset([
+                new_system_message,
+                *prior_user_messages,
+                summary_message,
+            ])
+            self._notify_event_listeners(SystemPromptRegeneratedEvent())
 
             await self._reset_session()
 
@@ -1739,7 +2124,9 @@ class AgentLoop:  # noqa: PLR0904
 
             self.middleware_pipeline.reset(reset_reason=ResetReason.COMPACT)
 
-            return summary_content
+            self._notify_event_listeners(MessageResetEvent(reason="compact"))
+
+            return summary_content or ""
 
         except Exception:
             await self.session_logger.save_interaction(
@@ -1799,17 +2186,19 @@ class AgentLoop:  # noqa: PLR0904
         )
         self.skill_manager = SkillManager(lambda: self.config)
 
-        new_system_prompt = get_universal_system_prompt(
-            self.tool_manager,
-            self.config,
-            self.skill_manager,
-            self.agent_manager,
-            scratchpad_dir=self.scratchpad_dir,
-            headless=self._headless,
-            experiment_manager=self.experiment_manager,
-        )
-
-        self.messages.update_system_prompt(new_system_prompt)
+        if self._resume_system_prompt is not None:
+            self.messages.update_system_prompt(self._resume_system_prompt)
+        else:
+            new_system_prompt = get_universal_system_prompt(
+                self.tool_manager,
+                self.config,
+                self.skill_manager,
+                self.agent_manager,
+                scratchpad_dir=self.scratchpad_dir,
+                headless=self._headless,
+                experiment_manager=self.experiment_manager,
+            )
+            self.messages.update_system_prompt(new_system_prompt)
 
         if len(self.messages) == 1:
             self.stats.reset_context_state()

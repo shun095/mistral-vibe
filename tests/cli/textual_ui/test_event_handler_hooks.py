@@ -41,8 +41,8 @@ async def test_hook_run_end_removes_empty_container(
         mount_callback=mount_callback, get_tools_collapsed=lambda: False
     )
 
-    await handler.handle_event(HookRunStartEvent())
-    await handler.handle_event(HookRunEndEvent())
+    await handler._process_event(HookRunStartEvent())
+    await handler._process_event(HookRunEndEvent())
 
     assert len(created_containers) == 1
     created_containers[0].remove.assert_awaited_once()
@@ -67,13 +67,13 @@ async def test_hook_run_end_keeps_container_with_messages(
         mount_callback=mount_callback, get_tools_collapsed=lambda: False
     )
 
-    await handler.handle_event(HookRunStartEvent())
-    await handler.handle_event(
+    await handler._process_event(HookRunStartEvent())
+    await handler._process_event(
         HookEndEvent(
             hook_name="post-turn", status=HookMessageSeverity.OK, content="Hook output"
         )
     )
-    await handler.handle_event(HookRunEndEvent())
+    await handler._process_event(HookRunEndEvent())
 
     assert len(created_containers) == 1
     created_containers[0].remove.assert_not_awaited()

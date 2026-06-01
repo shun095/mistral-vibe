@@ -4,14 +4,20 @@ import difflib
 from pathlib import Path
 
 from pydantic import BaseModel
+
+# Constants
+STRING_PREVIEW_LENGTH = 200
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Markdown, Static
 
 from vibe.cli.textual_ui.widgets.no_markup_static import NoMarkupStatic
+from vibe.core.lsp import LSPDiagnosticFormatter
 from vibe.core.tools.builtins.ask_user_question import AskUserQuestionResult
 from vibe.core.tools.builtins.bash import BashArgs, BashResult
+from vibe.core.tools.builtins.edit_file import EditFileArgs, EditFileResult
 from vibe.core.tools.builtins.grep import GrepArgs, GrepResult
+from vibe.core.tools.builtins.lsp import LSPToolResult
 from vibe.core.tools.builtins.read_file import ReadFileArgs, ReadFileResult
 from vibe.core.tools.builtins.search_replace import (
     SEARCH_REPLACE_BLOCK_RE,
@@ -36,6 +42,11 @@ def parse_search_replace_to_diff(content: str) -> list[str]:
     all_diff_lines: list[str] = []
     matches = SEARCH_REPLACE_BLOCK_RE.findall(content)
     if not matches:
+        # If no SEARCH/REPLACE blocks found, treat as unified diff
+        # Check if content looks like a unified diff
+        if content and ("---" in content or "+++" in content or "@@" in content):
+            # It's a unified diff, split into lines
+            return content.split("\n")
         return [content[:500]] if content else []
 
     for i, (search_text, replace_text) in enumerate(matches):
@@ -112,6 +123,18 @@ class ToolResultWidget[TResult: BaseModel](Static):
         if extra:
             yield NoMarkupStatic(extra, classes="tool-result-hint")
 
+    def _lsp_diagnostics_widgets(self) -> ComposeResult:
+        """Yield LSP diagnostics widgets if available on the result."""
+        lsp_diagnostics = (
+            getattr(self.result, "lsp_diagnostics", None) if self.result else None
+        )
+        if lsp_diagnostics:
+            yield NoMarkupStatic("")
+            markdown_content = LSPDiagnosticFormatter.format_json_to_markdown(
+                lsp_diagnostics
+            )
+            yield Markdown(markdown_content)
+
     def compose(self) -> ComposeResult:
         """Default: show result fields."""
         if not self.collapsed and self.result:
@@ -127,6 +150,10 @@ class ToolResultWidget[TResult: BaseModel](Static):
 class BashApprovalWidget(ToolApprovalWidget[BashArgs]):
     def compose(self) -> ComposeResult:
         yield Markdown(f"```bash\n{self.args.command}\n```")
+        if self.args.timeout is not None:
+            yield NoMarkupStatic(
+                f"timeout: {self.args.timeout}s", classes="approval-description"
+            )
 
 
 class BashResultWidget(ToolResultWidget[BashResult]):
@@ -186,10 +213,53 @@ class WriteFileResultWidget(ToolResultWidget[WriteFileResult]):
         yield NoMarkupStatic(
             f"Bytes: {self.result.bytes_written}", classes="tool-result-detail"
         )
+        yield from self._lsp_diagnostics_widgets()
+
         if self.result.content:
             yield NoMarkupStatic("")
-            content, _ = _truncate_lines(self.result.content, 10)
-            yield Markdown(f"```{ext}\n{content}\n```")
+            yield Markdown(f"```{ext}\n{self.result.content}\n```")
+        yield from self._footer()
+
+
+class EditFileApprovalWidget(ToolApprovalWidget[EditFileArgs]):
+    def compose(self) -> ComposeResult:
+        yield NoMarkupStatic(
+            f"File: {self.args.file_path}", classes="approval-description"
+        )
+        yield NoMarkupStatic("")
+        old_string = self.args.old_string[:STRING_PREVIEW_LENGTH]
+        if len(self.args.old_string) > STRING_PREVIEW_LENGTH:
+            old_string += "…"
+        yield NoMarkupStatic(
+            f"old_string: {old_string}", classes="approval-description"
+        )
+        yield NoMarkupStatic("")
+        new_string = self.args.new_string[:STRING_PREVIEW_LENGTH]
+        if len(self.args.new_string) > STRING_PREVIEW_LENGTH:
+            new_string += "…"
+        yield NoMarkupStatic(
+            f"new_string: {new_string}", classes="approval-description"
+        )
+
+
+class EditFileResultWidget(ToolResultWidget[EditFileResult]):
+    def compose(self) -> ComposeResult:
+        if not self.result:
+            yield from self._footer()
+            return
+        for warning in self.warnings:
+            yield NoMarkupStatic(f"⚠ {warning}", classes="tool-result-warning")
+
+        if not self.collapsed:
+            yield NoMarkupStatic(
+                f"Path: {self.result.file}", classes="tool-result-detail"
+            )
+            yield from self._lsp_diagnostics_widgets()
+
+        if self.result.content:
+            # Parse and render the unified diff
+            for line in parse_search_replace_to_diff(self.result.content):
+                yield render_diff_line(line)
         yield from self._footer()
 
 
@@ -212,6 +282,13 @@ class SearchReplaceResultWidget(ToolResultWidget[SearchReplaceResult]):
             return
         for warning in self.warnings:
             yield NoMarkupStatic(f"⚠ {warning}", classes="tool-result-warning")
+
+        if not self.collapsed:
+            yield NoMarkupStatic(
+                f"Path: {self.result.file}", classes="tool-result-detail"
+            )
+            yield from self._lsp_diagnostics_widgets()
+
         if self.result.content:
             for line in parse_search_replace_to_diff(self.result.content):
                 yield render_diff_line(line)
@@ -284,13 +361,13 @@ class ReadFileResultWidget(ToolResultWidget[ReadFileResult]):
             )
         for warning in self.warnings:
             yield NoMarkupStatic(f"⚠ {warning}", classes="tool-result-warning")
-        truncation_info = None
+        yield from self._lsp_diagnostics_widgets()
+
         if self.result and self.result.content:
             yield NoMarkupStatic("")
             ext = Path(self.result.path).suffix.lstrip(".") or "text"
-            content, truncation_info = _truncate_lines(self.result.content, 10)
-            yield Markdown(f"```{ext}\n{content}\n```")
-        yield from self._footer(truncation_info)
+            yield Markdown(f"```{ext}\n{self.result.content}\n```")
+        yield from self._footer()
 
 
 class GrepApprovalWidget(ToolApprovalWidget[GrepArgs]):
@@ -309,7 +386,17 @@ class GrepResultWidget(ToolResultWidget[GrepResult]):
     def compose(self) -> ComposeResult:
         for warning in self.warnings:
             yield NoMarkupStatic(f"⚠ {warning}", classes="tool-result-warning")
-        if not self.result or not self.result.matches:
+        if not self.result:
+            yield from self._footer()
+            return
+        if not self.collapsed:
+            yield NoMarkupStatic(
+                f"Path: {self.result.path}", classes="tool-result-detail"
+            )
+            yield NoMarkupStatic(
+                f"Pattern: {self.result.pattern}", classes="tool-result-detail"
+            )
+        if not self.result.matches:
             yield from self._footer()
             return
         max_lines = 10 if self.collapsed else None
@@ -319,6 +406,17 @@ class GrepResultWidget(ToolResultWidget[GrepResult]):
             content, truncation_info = self.result.matches, None
         yield NoMarkupStatic(content, classes="tool-result-detail")
         yield from self._footer(truncation_info)
+
+
+class LSPResultWidget(ToolResultWidget[LSPToolResult]):
+    def compose(self) -> ComposeResult:
+        if self.collapsed or not self.result:
+            return
+
+        # Display diagnostics in a readable format
+        if self.result.formatted_output:
+            yield NoMarkupStatic("")
+            yield Markdown(self.result.formatted_output)
 
 
 class AskUserQuestionResultWidget(ToolResultWidget[AskUserQuestionResult]):
@@ -340,6 +438,7 @@ APPROVAL_WIDGETS: dict[str, type[ToolApprovalWidget]] = {
     "read_file": ReadFileApprovalWidget,
     "write_file": WriteFileApprovalWidget,
     "search_replace": SearchReplaceApprovalWidget,
+    "edit_file": EditFileApprovalWidget,
     "grep": GrepApprovalWidget,
     "todo": TodoApprovalWidget,
 }
@@ -349,9 +448,11 @@ RESULT_WIDGETS: dict[str, type[ToolResultWidget]] = {
     "read_file": ReadFileResultWidget,
     "write_file": WriteFileResultWidget,
     "search_replace": SearchReplaceResultWidget,
+    "edit_file": EditFileResultWidget,
     "grep": GrepResultWidget,
     "todo": TodoResultWidget,
     "ask_user_question": AskUserQuestionResultWidget,
+    "lsp": LSPResultWidget,
 }
 
 

@@ -1,13 +1,17 @@
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, Iterable
-from typing import cast
+from collections.abc import AsyncGenerator, Iterable, Sequence
+from typing import TYPE_CHECKING, cast
 
 from tests.mock.utils import mock_llm_chunk
-from vibe.core.types import LLMChunk, LLMMessage, Role
+from vibe.core.llm.types import BackendLike
+from vibe.core.types import AvailableTool, LLMChunk, LLMMessage, Role, StrToolChoice
+
+if TYPE_CHECKING:
+    from vibe.core.config import ModelConfig
 
 
-class FakeBackend:
+class FakeBackend(BackendLike):
     """Minimal async backend stub to drive Agent.act without network.
 
     Provide a finite sequence of LLMResult objects to be returned by
@@ -76,53 +80,74 @@ class FakeBackend:
     async def complete(
         self,
         *,
-        model,
-        messages,
-        temperature,
-        tools,
-        tool_choice,
-        extra_headers,
-        max_tokens,
-        metadata=None,
+        model: ModelConfig,
+        messages: Sequence[LLMMessage],
+        temperature: float | None = None,
+        tools: list[AvailableTool] | None = None,
+        max_tokens: int | None = None,
+        tool_choice: StrToolChoice | AvailableTool | None = None,
+        extra_headers: dict[str, str] | None = None,
+        metadata: dict[str, str] | None = None,
     ) -> LLMChunk:
         if self._exception_to_raise:
             raise self._exception_to_raise
 
-        self._requests_messages.append(list(messages))
-        self._requests_extra_headers.append(extra_headers)
-        self._requests_metadata.append(metadata)
+        import sys
 
-        if self._streams:
-            stream = self._streams.pop(0)
-            chunk_agg = LLMChunk(message=LLMMessage(role=Role.assistant))
-            for chunk in stream:
-                chunk_agg += chunk
-            return chunk_agg
+        try:
+            self._requests_messages.append(list(messages))
+            self._requests_extra_headers.append(extra_headers)
+            self._requests_metadata.append(metadata)
 
-        return mock_llm_chunk(content="")
+            if self._streams:
+                stream = self._streams.pop(0)
+                chunk_agg = LLMChunk(message=LLMMessage(role=Role.assistant))
+                for chunk in stream:
+                    chunk_agg += chunk
+                return chunk_agg
+
+            return mock_llm_chunk(content="")
+        except Exception as e:
+            print(
+                f"[FAKE] complete ERROR: {type(e).__name__}: {e}",
+                file=sys.stderr,
+                flush=True,
+            )
+            raise
 
     async def complete_streaming(
         self,
         *,
-        model,
-        messages,
-        temperature,
-        tools,
-        tool_choice,
-        extra_headers,
-        max_tokens,
-        metadata=None,
+        model: ModelConfig,
+        messages: Sequence[LLMMessage],
+        temperature: float | None = None,
+        tools: list[AvailableTool] | None = None,
+        max_tokens: int | None = None,
+        tool_choice: StrToolChoice | AvailableTool | None = None,
+        extra_headers: dict[str, str] | None = None,
+        metadata: dict[str, str] | None = None,
+        return_progress: bool = False,
     ) -> AsyncGenerator[LLMChunk]:
         if self._exception_to_raise:
             raise self._exception_to_raise
 
-        self._requests_messages.append(list(messages))
-        self._requests_extra_headers.append(extra_headers)
-        self._requests_metadata.append(metadata)
+        import sys
 
-        if self._streams:
-            stream = list(self._streams.pop(0))
-        else:
-            stream = [mock_llm_chunk(content="")]
-        for chunk in stream:
-            yield chunk
+        try:
+            self._requests_messages.append(list(messages))
+            self._requests_extra_headers.append(extra_headers)
+            self._requests_metadata.append(metadata)
+
+            if self._streams:
+                stream = list(self._streams.pop(0))
+            else:
+                stream = [mock_llm_chunk(content="")]
+            for chunk in stream:
+                yield chunk
+        except Exception as e:
+            print(
+                f"[FAKE] complete_streaming ERROR: {type(e).__name__}: {e}",
+                file=sys.stderr,
+                flush=True,
+            )
+            raise

@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mistral Vibe Web UI</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
+    <link rel="stylesheet" href="{{ base_path }}static/css/style.css?v=2026050503">
+    <link rel="stylesheet" href="{{ base_path }}static/css/bash-command.css">
+    <link rel="stylesheet" href="{{ base_path }}static/css/download-card.css">
+    <link rel="stylesheet" href="{{ base_path }}static/css/structured-renderer.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="header-actions">
+                <div id="context-progress" class="context-progress" title="Context token usage"></div>
+                <button id="git-status-btn" class="theme-toggle-btn" title="Git status">
+                    <span class="material-symbols-rounded">visibility</span>
+                </button>
+                <button id="git-diff-btn" class="theme-toggle-btn" title="Git diff">
+                    <span class="material-symbols-rounded">compare_arrows</span>
+                </button>
+                <button id="toggle-cards-btn" class="theme-toggle-btn" title="Toggle all cards">
+                    <span class="material-symbols-rounded">remove</span>
+                </button>
+                <button id="vscode-btn" class="theme-toggle-btn" title="Open in VS Code" style="display:none">
+                    <span class="material-symbols-rounded">code</span>
+                </button>
+                <button id="theme-toggle" class="theme-toggle-btn" title="Toggle dark mode">
+                    <span class="material-symbols-rounded">dark_mode</span>
+                </button>
+                <button id="logout-btn" class="theme-toggle-btn" title="Logout">
+                    <span class="material-symbols-rounded">logout</span>
+                </button>
+                <div class="status-dot" id="status-dot"></div>
+            </div>
+        </header>
+
+        <main class="chat-container">
+            <div class="messages" id="messages">
+                <div class="message system">
+                    <p>Welcome to Mistral Vibe! Connect to start chatting.</p>
+                </div>
+            </div>
+            <div class="fab-container">
+                <button class="fab-btn" id="scroll-top-btn" title="Scroll to top"><span class="material-symbols-rounded">keyboard_arrow_up</span></button>
+                <button class="fab-btn" id="scroll-prev-user-btn" title="Scroll to previous user message"><span class="material-symbols-rounded">keyboard_arrow_left</span></button>
+                <button class="fab-btn" id="scroll-next-user-btn" title="Scroll to next user message"><span class="material-symbols-rounded">keyboard_arrow_right</span></button>
+                <button class="fab-btn" id="scroll-bottom-btn" title="Scroll to bottom"><span class="material-symbols-rounded">keyboard_arrow_down</span></button>
+            </div>
+
+            <div class="input-area">
+                <div id="processing-indicator" class="processing-indicator" style="display: none;">
+                    <div class="processing-spinner">
+                        <span class="processing-percentage"></span>
+                    </div>
+                </div>
+                <div id="image-preview-container" class="image-preview-container" style="display: none;">
+                    <div class="image-preview">
+                        <img id="image-preview-img" src="" alt="Image preview">
+                        <button id="image-preview-remove" class="image-preview-remove" title="Remove image">
+                            <span class="material-symbols-rounded">close</span>
+                        </button>
+                    </div>
+                </div>
+                <textarea
+                    id="message-input"
+                    placeholder="Type your message... (Ctrl+Enter/Cmd+Enter to send, Ctrl+V to paste image)"
+                    rows="1"
+                ></textarea>
+                <input type="file" id="image-file-input" accept="image/png,image/jpeg,image/webp" style="display: none;">
+                <div class="input-actions">
+                    <button id="attach-image-btn" class="input-action-btn" title="Attach image from file"><span class="material-symbols-rounded">add_photo_alternate</span></button>
+                    <button id="prompt-history-btn" class="input-action-btn" title="Prompt history"><span class="material-symbols-rounded">history</span></button>
+                </div>
+                <button id="send-btn" disabled title="Send"><span class="material-symbols-rounded">send</span></button>
+                <button id="interrupt-btn" class="interrupt-btn" title="Interrupt" style="display: none;">
+                    <span class="material-symbols-rounded">stop</span>
+                </button>
+            </div>
+        </main>
+    </div>
+
+    <!-- Session Picker Modal -->
+    <div id="session-picker-modal" class="modal" style="display: none;">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Resume Session</h2>
+                <button id="session-picker-close" class="modal-close" title="Close">
+                    <span class="material-symbols-rounded">close</span>
+                </button>
+            </div>
+            <div id="session-picker-content" class="modal-body">
+                <div class="session-picker-loading">Loading sessions...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Prompt History Modal -->
+    <div id="prompt-history-modal" class="modal" style="display: none;">
+        <div class="modal-overlay"></div>
+        <div class="modal-content prompt-history-modal-content">
+            <div class="modal-header">
+                <h2>Prompt History</h2>
+                <button id="prompt-history-close" class="modal-close" title="Close">
+                    <span class="material-symbols-rounded">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="prompt-history-search-container">
+                    <input type="text" id="prompt-history-search" class="prompt-history-search" placeholder="Search prompts...">
+                </div>
+                <div id="prompt-history-content" class="prompt-history-list">
+                    <div class="prompt-history-loading">Loading history...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Model Picker Modal -->
+    <div id="model-picker-modal" class="modal" style="display: none;">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Select Model</h2>
+                <button id="model-picker-close" class="modal-close" title="Close">
+                    <span class="material-symbols-rounded">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div id="model-picker-content" class="model-picker-list">
+                    <div class="session-picker-loading">Loading models...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Thinking Picker Modal -->
+    <div id="thinking-picker-modal" class="modal" style="display: none;">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Select Thinking Level</h2>
+                <button id="thinking-picker-close" class="modal-close" title="Close">
+                    <span class="material-symbols-rounded">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div id="thinking-picker-content" class="thinking-picker-list">
+                    <div class="session-picker-loading">Loading levels...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Config Modal -->
+    <div id="config-modal" class="modal" style="display: none;">
+        <div class="modal-overlay"></div>
+        <div class="modal-content config-modal-content">
+            <div class="modal-header">
+                <h2>Settings</h2>
+                <button id="config-modal-close" class="modal-close" title="Close">
+                    <span class="material-symbols-rounded">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div id="config-modal-content">
+                    <div class="session-picker-loading">Loading settings...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MCP Modal -->
+    <div id="mcp-modal" class="modal" style="display: none;">
+        <div class="modal-overlay"></div>
+        <div class="modal-content mcp-modal-content">
+            <div class="modal-header">
+                <h2>MCP Servers & Connectors</h2>
+                <button id="mcp-modal-close" class="modal-close" title="Close">
+                    <span class="material-symbols-rounded">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div id="mcp-modal-content">
+                    <div class="session-picker-loading">Loading MCP servers...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rewind Modal -->
+    <div id="rewind-modal" class="modal" style="display: none;">
+        <div class="modal-overlay"></div>
+        <div class="modal-content rewind-modal-content">
+            <div class="modal-header">
+                <h2>Rewind</h2>
+                <button id="rewind-modal-close" class="modal-close" title="Close">
+                    <span class="material-symbols-rounded">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div id="rewind-modal-content">
+                    <ul id="rewind-messages-list" class="rewind-messages-list">
+                        <li class="rewind-loading">Loading messages...</li>
+                    </ul>
+                </div>
+                <div id="rewind-actions" class="rewind-actions" style="display: none;">
+                    <button id="rewind-restore-btn" class="rewind-action-btn primary">
+                        <span class="material-symbols-rounded">restore</span>
+                        Edit & Restore Files
+                    </button>
+                    <button id="rewind-edit-btn" class="rewind-action-btn secondary">
+                        <span class="material-symbols-rounded">edit</span>
+                        Edit Message
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/diff.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+    <script>
+        // Configure Monaco Editor AMD loader
+        require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' }});
+        // Base path for API and static asset URLs
+        window.__VIBE_BASE_PATH__ = "{{ base_path }}";
+    </script>
+    <script type="module" src="{{ base_path }}static/js/app.js?v=20260321k"></script>
+</body>
+</html>

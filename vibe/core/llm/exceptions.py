@@ -6,9 +6,9 @@ import json
 from typing import Any
 
 import httpx
-from mistralai.client.errors import SDKError
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from vibe.core.llm._mistralai_stub import SDKError
 from vibe.core.types import AvailableTool, LLMMessage, StrToolChoice
 
 type HttpError = SDKError | httpx.HTTPStatusError
@@ -31,7 +31,7 @@ class PayloadSummary(BaseModel):
     model: str
     message_count: int
     approx_chars: int
-    temperature: float
+    temperature: float | None
     has_tools: bool
     tool_choice: StrToolChoice | AvailableTool | None
 
@@ -136,7 +136,7 @@ class BackendErrorBuilder:
         error: HttpError,
         model: str,
         messages: Sequence[LLMMessage],
-        temperature: float,
+        temperature: float | None,
         has_tools: bool,
         tool_choice: StrToolChoice | AvailableTool | None,
     ) -> BackendError:
@@ -166,7 +166,7 @@ class BackendErrorBuilder:
         error: httpx.RequestError,
         model: str,
         messages: Sequence[LLMMessage],
-        temperature: float,
+        temperature: float | None,
         has_tools: bool,
         tool_choice: StrToolChoice | AvailableTool | None,
     ) -> BackendError:
@@ -210,7 +210,7 @@ class BackendErrorBuilder:
     def _payload_summary(
         model_name: str,
         messages: Sequence[LLMMessage],
-        temperature: float,
+        temperature: float | None,
         has_tools: bool,
         tool_choice: StrToolChoice | AvailableTool | None,
     ) -> PayloadSummary:

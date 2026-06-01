@@ -90,6 +90,7 @@ class LoadingWidget(SpinnerMixin, Static):
         self._last_elapsed: int = -1
         self._paused_total: float = 0.0
         self._pause_start: float | None = None
+        self._progress_percentage: float | None = None
 
     def _get_easter_egg(self) -> str | None:
         EASTER_EGG_PROBABILITY = 0.10
@@ -136,6 +137,29 @@ class LoadingWidget(SpinnerMixin, Static):
         self.status = self._apply_easter_egg(status)
         if self._status_widget:
             self._status_widget.update(self._build_status_text())
+
+    def set_progress(self, percentage: float) -> None:
+        """Set the prompt processing progress percentage.
+
+        Args:
+            percentage: Progress percentage (0.0 to 100.0)
+        """
+        self._progress_percentage = min(100.0, max(0.0, percentage))
+        # Only update animation if widget is mounted
+        if self.is_mounted:
+            self._update_hint_with_progress()
+
+    def _update_hint_with_progress(self) -> None:
+        """Update the hint widget with the current progress percentage."""
+        if self.hint_widget and self.start_time is not None:
+            paused = self._paused_total + (
+                time() - self._pause_start if self._pause_start else 0
+            )
+            elapsed = int(time() - self.start_time - paused)
+            hint_text = f"{_format_elapsed(elapsed)} Esc/Ctrl+C to interrupt"
+            if self._progress_percentage is not None:
+                hint_text = f"{self._progress_percentage:.0f}% {hint_text}"
+            self.hint_widget.update(f"({hint_text})")
 
     def compose(self) -> ComposeResult:
         with Horizontal(classes="loading-container"):
@@ -215,9 +239,10 @@ class LoadingWidget(SpinnerMixin, Static):
             elapsed = int(time() - self.start_time - paused)
             if elapsed != self._last_elapsed:
                 self._last_elapsed = elapsed
-                self.hint_widget.update(
-                    f"({_format_elapsed(elapsed)} Esc/Ctrl+C to interrupt)"
-                )
+                hint_text = f"{_format_elapsed(elapsed)} Esc/Ctrl+C to interrupt"
+                if self._progress_percentage is not None:
+                    hint_text = f"{self._progress_percentage:.0f}% {hint_text}"
+                self.hint_widget.update(f"({hint_text})")
 
 
 @contextmanager

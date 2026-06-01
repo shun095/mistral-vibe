@@ -45,8 +45,10 @@ def _search_replace_tool_call(
     )
 
 
-def _bash_tool_call(command: str, *, call_id: str = "call_1") -> ToolCall:
-    args = json.dumps({"command": command})
+def _bash_tool_call(
+    command: str, *, call_id: str = "call_1", timeout: int = 30
+) -> ToolCall:
+    args = json.dumps({"command": command, "timeout": timeout})
     return ToolCall(
         id=call_id, index=0, function=FunctionCall(name="bash", arguments=args)
     )

@@ -9,7 +9,7 @@ from vibe.core.utils.io import read_safe
 
 
 class HistoryManager:
-    def __init__(self, history_file: Path, max_entries: int = 100) -> None:
+    def __init__(self, history_file: Path, max_entries: int = 5000) -> None:
         self.history_file = history_file
         self.max_entries = max_entries
         self._entries: list[str] = []
@@ -62,6 +62,15 @@ class HistoryManager:
         if not text:
             return
 
+        # For slash commands, save only the arguments (e.g., "/edit foo" → "foo")
+        if text.startswith("/"):
+            parts = text.split(maxsplit=1)
+            if len(parts) > 1:
+                text = parts[1]
+            else:
+                return  # Command with no arguments
+
+        # Reload history from disk to ensure consistency across processes
         self._load_history()
 
         if self._entries and self._entries[-1] == text:

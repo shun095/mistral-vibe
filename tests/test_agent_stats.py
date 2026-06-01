@@ -25,6 +25,7 @@ from vibe.core.types import (
     Backend,
     CompactEndEvent,
     CompactStartEvent,
+    Content,
     FunctionCall,
     LLMMessage,
     Role,
@@ -502,7 +503,7 @@ class TestCompactStatsHandling:
 class TestAutoCompactIntegration:
     @pytest.mark.asyncio
     async def test_auto_compact_triggers_and_preserves_stats(self) -> None:
-        observed: list[tuple[Role, str | None]] = []
+        observed: list[tuple[Role, Content | None]] = []
 
         def observer(msg: LLMMessage) -> None:
             observed.append((msg.role, msg.content))
@@ -656,6 +657,88 @@ class TestClearHistoryObserverBugfix:
         roles = [msg.role for msg in observed]
         assert Role.user in roles
         assert Role.assistant in roles
+
+    @pytest.mark.asyncio
+    async def test_clear_history_resets_resume_system_prompt(self) -> None:
+        """After clear, _resume_system_prompt is cleared so mode cycles
+        recalculate the system prompt.
+        """
+        agent = build_test_agent_loop(backend=FakeBackend())
+        agent._resume_system_prompt = "saved prompt"
+
+        await agent.clear_history()
+
+        assert agent._resume_system_prompt is None
+
+    @pytest.mark.asyncio
+    async def test_clear_history_recalculates_system_prompt(self) -> None:
+        """After clear, the system prompt is freshly calculated."""
+        agent = build_test_agent_loop(backend=FakeBackend())
+        agent._resume_system_prompt = "saved prompt"
+
+        await agent.clear_history()
+
+        assert agent.messages[0].role == Role.system
+        assert agent.messages[0].content is not None
+        assert len(agent.messages) == 1
+
+    @pytest.mark.asyncio
+    async def test_clear_history_emits_system_prompt_regenerated_event(self) -> None:
+        """clear_history emits SystemPromptRegeneratedEvent and MessageResetEvent."""
+        from vibe.core.ui_events import MessageResetEvent, SystemPromptRegeneratedEvent
+
+        agent = build_test_agent_loop(backend=FakeBackend())
+        events_received: list[object] = []
+        agent.add_event_listener(events_received.append)
+
+        await agent.clear_history()
+
+        assert any(isinstance(e, SystemPromptRegeneratedEvent) for e in events_received)
+        reset_events = [e for e in events_received if isinstance(e, MessageResetEvent)]
+        assert len(reset_events) == 1
+        assert reset_events[0].reason == "clear"
+
+
+class TestEditLastMessageEvents:
+    @pytest.mark.asyncio
+    async def test_truncate_last_turn_emits_message_reset_event(self) -> None:
+        """truncate_last_turn emits MessageResetEvent with reason='clear'."""
+        from vibe.core.ui_events import MessageResetEvent
+
+        agent = build_test_agent_loop(backend=FakeBackend())
+        events_received: list[object] = []
+        agent.add_event_listener(events_received.append)
+
+        agent.messages.append(LLMMessage(role=Role.user, content="Original message"))
+
+        await agent.truncate_last_turn()
+
+        reset_events = [e for e in events_received if isinstance(e, MessageResetEvent)]
+        assert len(reset_events) == 1
+        assert reset_events[0].reason == "clear"
+
+    @pytest.mark.asyncio
+    async def test_truncate_last_turn_removes_user_and_assistant(self) -> None:
+        """truncate_last_turn removes last user message and preceding assistant."""
+        agent = build_test_agent_loop(backend=FakeBackend())
+
+        # Build: system + user + assistant + user + assistant
+        agent.messages.append(LLMMessage(role=Role.user, content="First user message"))
+        agent.messages.append(
+            LLMMessage(role=Role.assistant, content="First assistant response")
+        )
+        agent.messages.append(LLMMessage(role=Role.user, content="Second user message"))
+        agent.messages.append(
+            LLMMessage(role=Role.assistant, content="Second assistant response")
+        )
+
+        await agent.truncate_last_turn()
+
+        # Last user + subsequent messages removed, leaving: system + user1 + assistant1
+        assert len(agent.messages) == 3
+        assert agent.messages[0].role == Role.system
+        assert agent.messages[1].role == Role.user
+        assert agent.messages[2].role == Role.assistant
 
 
 class TestStatsEdgeCases:

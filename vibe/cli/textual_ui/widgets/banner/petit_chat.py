@@ -182,6 +182,12 @@ class PetitChat(Static):
 
     def freeze_animation(self) -> None:
         self._freeze_requested = True
+        if self._timer:
+            self._timer.stop()
+            self._timer = None
+        self._transition_index = 0
+        self._dots = {1j * y + x for y, row in enumerate(STARTING_DOTS) for x in row}
+        self._inner.update(render_braille(self._dots, WIDTH, HEIGHT))
 
     def _apply_next_transition(self) -> None:
         if self._freeze_requested and self._transition_index == 0:

@@ -187,10 +187,26 @@ class ToolCall(BaseModel):
     type: Literal["function"] = "function"
 
 
-def _content_before(v: Any) -> str:
+def _content_before(v: Any) -> str | list:
+    """Convert content to a format suitable for LLM messages.
+
+    Handles:
+    - Strings: returned as-is
+    - Lists with text dicts: extracts text and joins with newlines
+    - Lists with image_url dicts: preserves the list format for API compatibility
+    """
     if isinstance(v, str):
         return v
     if isinstance(v, list):
+        # Check if this is a multi-part content with image_url
+        has_image_url = any(
+            isinstance(p, dict) and p.get("type") == "image_url" for p in v
+        )
+        if has_image_url:
+            # Preserve the list format for multi-part content with images
+            return v
+
+        # Handle simple lists of text dicts
         parts: list[str] = []
         for p in v:
             if isinstance(p, dict) and isinstance(p.get("text"), str):
@@ -201,7 +217,7 @@ def _content_before(v: Any) -> str:
     return str(v)
 
 
-Content = Annotated[str, BeforeValidator(_content_before)]
+Content = Annotated[str | list[dict | str], BeforeValidator(_content_before)]
 
 
 class Role(StrEnum):
@@ -270,13 +286,21 @@ class LLMMessage(BaseModel):
         if self.tool_call_id != other.tool_call_id:
             raise ValueError("Can't accumulate messages with different tool_call_ids")
 
-        content = (self.content or "") + (other.content or "")
+        # Handle content concatenation with type guards
+        self_content = self.content if isinstance(self.content, str) else ""
+        other_content = other.content if isinstance(other.content, str) else ""
+        content = self_content + other_content
         if not content:
             content = None
 
-        reasoning_content = (self.reasoning_content or "") + (
-            other.reasoning_content or ""
+        # Handle reasoning_content concatenation with type guards
+        self_reasoning = (
+            self.reasoning_content if isinstance(self.reasoning_content, str) else ""
         )
+        other_reasoning = (
+            other.reasoning_content if isinstance(other.reasoning_content, str) else ""
+        )
+        reasoning_content = self_reasoning + other_reasoning
         if not reasoning_content:
             reasoning_content = None
 
@@ -328,6 +352,11 @@ class LLMMessage(BaseModel):
             message_id=self.message_id,
         )
 
+    @property
+    def is_reasoning_only(self) -> bool:
+        """True if this message has reasoning_content but no text content and no tool calls."""
+        return bool(self.reasoning_content) and not self.content and not self.tool_calls
+
 
 class LLMUsage(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -345,6 +374,7 @@ class LLMChunk(BaseModel):
     model_config = ConfigDict(frozen=True)
     message: LLMMessage
     usage: LLMUsage | None = None
+    prompt_progress: PromptProgress | None = None
     correlation_id: str | None = None
 
     def __add__(self, other: LLMChunk) -> LLMChunk:
@@ -352,9 +382,12 @@ class LLMChunk(BaseModel):
             new_usage = None
         else:
             new_usage = (self.usage or LLMUsage()) + (other.usage or LLMUsage())
+        # Keep the latest prompt_progress if available
+        latest_progress = other.prompt_progress or self.prompt_progress
         return LLMChunk(
             message=self.message + other.message,
             usage=new_usage,
+            prompt_progress=latest_progress,
             correlation_id=other.correlation_id or self.correlation_id,
         )
 
@@ -363,8 +396,14 @@ class BaseEvent(BaseModel, ABC):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-class UserMessageEvent(BaseEvent):
-    content: str
+class _IndexedMessage(BaseEvent):
+    """Mixin: user message events carry a position in the message list."""
+
+    message_index: int | None = None
+
+
+class UserMessageEvent(_IndexedMessage):
+    content: Content
     message_id: str
 
 
@@ -393,6 +432,7 @@ class ToolCallEvent(BaseEvent):
     tool_class: type[BaseTool]
     tool_call_index: int | None = None
     args: BaseModel | None = None
+    start_time: float | None = None
 
 
 class ToolResultEvent(BaseEvent):
@@ -431,6 +471,8 @@ class CompactStartEvent(BaseEvent):
 
 class CompactEndEvent(BaseEvent):
     summary_length: int
+    summary_content: str | None = None
+    error: str | None = None
     old_session_id: str | None = None
     new_session_id: str | None = None
     # WORKAROUND: Using tool_call to communicate compact events to the client.
@@ -497,8 +539,15 @@ class MessageList(Sequence[LLMMessage]):
         self._data.append(msg)
         self._notify(msg)
 
+    def pop(self, index: int = -1) -> LLMMessage:
+        return self._data.pop(index)
+
     def insert(self, i: int, msg: LLMMessage) -> None:
         self._data.insert(i, msg)
+
+    def __setitem__(self, index: int, msg: LLMMessage) -> None:
+        self._data[index] = msg
+        self._notify(msg)
 
     def extend(self, msgs: list[LLMMessage]) -> None:
         for msg in msgs:
@@ -560,6 +609,118 @@ class RateLimitError(Exception):
         self.model = model
         super().__init__(
             "Rate limits exceeded. Please wait a moment before trying again."
+        )
+
+
+# New event classes for extended functionality
+
+
+class ContinueableUserMessageEvent(_IndexedMessage):
+    """Event for user messages that require the conversation to continue."""
+
+    content: Content
+    message_id: str | None = None
+
+
+class BashCommandEvent(BaseEvent):
+    """Event for bash command execution results."""
+
+    command: str
+    exit_code: int
+    output: str
+    message_id: str | None = None
+
+
+class PromptProgressEvent(BaseEvent):
+    """Event for prompt processing progress from LLM backends that support it.
+
+    Fields represent:
+    - total: total tokens in the prompt
+    - cache: tokens that were cached (not re-processed)
+    - processed: tokens processed so far
+    - time_ms: elapsed time in milliseconds since prompt processing started
+
+    The overall progress is processed/total, while the actual timed progress
+    is (processed-cache)/(total-cache).
+    """
+
+    total: int
+    cache: int
+    processed: int
+    time_ms: int
+
+    @property
+    def progress_percentage(self) -> float:
+        """Calculate the overall progress percentage (processed/total)."""
+        if self.total == 0:
+            return 0.0
+        return (self.processed / self.total) * 100
+
+
+class LLMErrorEvent(BaseEvent):
+    """Event broadcast when agent loop fails to get result from LLM backend.
+
+    Triggered when LLM backend errors occur (BackendError, AgentLoopLLMResponseError, etc.).
+    """
+
+    error_message: str
+    error_type: str
+    provider: str | None = None
+    model: str | None = None
+
+
+class LLMRetryEvent(BaseEvent):
+    """Event broadcast when LLM backend request fails and is being retried.
+
+    Triggered by async_retry/async_generator_retry decorators when a retryable
+    error occurs and a retry attempt is about to be made.
+    """
+
+    attempt: int
+    max_attempts: int
+    error_message: str
+    delay_seconds: float
+    provider: str | None = None
+    model: str | None = None
+
+
+class TaskCompletedEvent(BaseEvent):
+    """Event fired when an agent task completes, carrying the elapsed time."""
+
+    elapsed_text: str
+
+
+# New model classes
+
+
+class PromptProgress(BaseModel):
+    """Prompt processing progress data from LLM backends that support it (e.g., llama-server)."""
+
+    total: int
+    cache: int
+    processed: int
+    time_ms: int
+
+
+class ToolCallSignature(BaseModel):
+    """Signature for a tool call used in loop detection.
+
+    This immutable dataclass represents a tool call's identifying
+    characteristics for comparison purposes.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    tool_name: str
+    normalized_args: dict[str, Any]
+    call_id: str
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, ToolCallSignature):
+            return False
+        return (
+            self.tool_name == other.tool_name
+            and self.normalized_args == other.normalized_args
         )
 
 

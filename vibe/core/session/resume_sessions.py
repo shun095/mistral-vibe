@@ -11,6 +11,10 @@ from vibe.core.nuage.workflow import WorkflowExecutionStatus
 from vibe.core.session.session_id import shorten_session_id
 from vibe.core.session.session_loader import SessionLoader
 
+# SECURITY: Hardcoded disable - Nuage remote sessions are permanently disabled
+# to prevent sending any data to external services.
+_NUAGE_REMOTE_SESSIONS_DISABLED = True
+
 ResumeSessionSource = Literal["local", "remote"]
 
 
@@ -54,6 +58,9 @@ def list_local_resume_sessions(
 
 
 async def list_remote_resume_sessions(config: VibeConfig) -> list[ResumeSessionInfo]:
+    if _NUAGE_REMOTE_SESSIONS_DISABLED:
+        logger.debug("Remote resume listing skipped: permanently disabled for security")
+        return []
     if not config.vibe_code_enabled or not config.vibe_code_api_key:
         logger.debug("Remote resume listing skipped: missing Vibe Code configuration")
         return []

@@ -69,6 +69,7 @@ def test_successfully_completes(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(sys, "exit", _exit_raiser)
+    monkeypatch.setenv("NO_COLOR", "1")
 
     onboarding.run_onboarding(StubApp("completed"))
 

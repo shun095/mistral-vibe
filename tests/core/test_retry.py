@@ -29,3 +29,9 @@ class TestIsRetryableHttpError:
 
     def test_generic_exception_returns_false(self) -> None:
         assert _is_retryable_http_error(RuntimeError("boom")) is False
+
+    def test_read_error_is_retryable(self) -> None:
+        assert _is_retryable_http_error(httpx.ReadError("Network error")) is True
+
+    def test_read_error_with_empty_message_is_retryable(self) -> None:
+        assert _is_retryable_http_error(httpx.ReadError("")) is True

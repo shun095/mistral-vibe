@@ -23,7 +23,7 @@ class ApprovalApp(Container):
     can_focus = True
     can_focus_children = False
 
-    NUM_OPTIONS = 4
+    NUM_OPTIONS = 5
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("up", "move_up", "Up", show=False),
@@ -32,9 +32,10 @@ class ApprovalApp(Container):
         Binding("1", "select_1", "Yes", show=False),
         Binding("y", "select_1", "Yes", show=False),
         Binding("2", "select_2", "Always Tool Session", show=False),
-        Binding("3", "select_3", "Always Permanent", show=False),
-        Binding("4", "select_4", "No", show=False),
-        Binding("n", "select_4", "No", show=False),
+        Binding("3", "select_3", "Enable Auto-Approve", show=False),
+        Binding("4", "select_4", "Always Permanent", show=False),
+        Binding("5", "select_5", "No", show=False),
+        Binding("n", "select_5", "No", show=False),
     ]
 
     class ApprovalGranted(Message):
@@ -68,6 +69,12 @@ class ApprovalApp(Container):
             self.required_permissions = required_permissions
 
     class ApprovalRejected(Message):
+        def __init__(self, tool_name: str, tool_args: BaseModel) -> None:
+            super().__init__()
+            self.tool_name = tool_name
+            self.tool_args = tool_args
+
+    class ApprovalEnableAutoApprove(Message):
         def __init__(self, tool_name: str, tool_args: BaseModel) -> None:
             super().__init__()
             self.tool_name = tool_name
@@ -143,6 +150,7 @@ class ApprovalApp(Container):
         options = [
             ("Allow once", "yes"),
             ("Allow for remainder of this session", "yes"),
+            ("Enable auto-approve mode", "yes"),
             ("Always allow", "yes"),
             ("Deny", "no"),
         ]
@@ -204,8 +212,13 @@ class ApprovalApp(Container):
     def action_select_4(self) -> None:
         self._select_if_unguarded(3)
 
+    def action_select_5(self) -> None:
+        self.selected_option = 4
+        self._handle_selection(4)
+
     def action_reject(self) -> None:
-        self._select_if_unguarded(3)
+        self.selected_option = 4
+        self._handle_selection(4)
 
     def _handle_selection(self, option: int) -> None:
         match option:
@@ -225,13 +238,19 @@ class ApprovalApp(Container):
                 )
             case 2:
                 self.post_message(
+                    self.ApprovalEnableAutoApprove(
+                        tool_name=self.tool_name, tool_args=self.tool_args
+                    )
+                )
+            case 3:
+                self.post_message(
                     self.ApprovalGrantedAlwaysPermanent(
                         tool_name=self.tool_name,
                         tool_args=self.tool_args,
                         required_permissions=self.required_permissions,
                     )
                 )
-            case 3:
+            case 4:
                 self.post_message(
                     self.ApprovalRejected(
                         tool_name=self.tool_name, tool_args=self.tool_args

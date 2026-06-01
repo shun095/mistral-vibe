@@ -10,7 +10,6 @@ import tomli_w
 
 from tests.cli.plan_offer.adapters.fake_whoami_gateway import FakeWhoAmIGateway
 from tests.stubs.fake_backend import FakeBackend
-from tests.stubs.fake_mcp_registry import FakeMCPRegistry
 from tests.stubs.fake_voice_manager import FakeVoiceManager
 from tests.update_notifier.adapters.fake_update_cache_repository import (
     FakeUpdateCacheRepository,
@@ -32,6 +31,7 @@ from vibe.core.config.harness_files import (
     reset_harness_files_manager,
 )
 from vibe.core.llm.types import BackendLike
+from vibe.core.tools.mcp import MCPRegistry
 
 
 def get_base_config() -> dict[str, Any]:
@@ -109,7 +109,12 @@ def _reset_trusted_folders_manager(config_dir: Path) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _init_harness_files_manager():
+def _init_harness_files_manager(config_dir: Path):
+    """Initialize harness files manager after config_dir monkeypatch takes effect.
+
+    This fixture depends on config_dir to ensure the harness manager uses the
+    test's temporary config directory instead of the real ~/.vibe.
+    """
     reset_harness_files_manager()
     init_harness_files_manager("user", "project")
     yield
@@ -127,10 +132,12 @@ def _scratchpad_dir(
     scratchpad_root = tmp_path_factory.mktemp("scratchpad")
     _counter = 0
 
-    def _fake_mkdtemp(prefix: str = "") -> str:
+    def _fake_mkdtemp(
+        suffix: str = "", prefix: str = "", dir: str | None = None
+    ) -> str:
         nonlocal _counter
         _counter += 1
-        d = scratchpad_root / f"{prefix}{_counter}"
+        d = scratchpad_root / f"{prefix}{_counter}{suffix}"
         d.mkdir(parents=True, exist_ok=True)
         return str(d)
 
@@ -261,11 +268,13 @@ def build_test_vibe_config(**kwargs) -> VibeConfig:
     resolved_enable_update_checks = (
         False if enable_update_checks is None else enable_update_checks
     )
+    lsp_servers = kwargs.pop("lsp_servers", [])
     if kwargs.get("models"):
         kwargs.setdefault("active_model", kwargs["models"][0].alias)
     return VibeConfig(
         session_logging=resolved_session_logging,
         enable_update_checks=resolved_enable_update_checks,
+        lsp_servers=lsp_servers,
         **kwargs,
     )
 
@@ -276,9 +285,9 @@ def build_test_agent_loop(
     agent_name: str = BuiltinAgentName.DEFAULT,
     backend: BackendLike | None = None,
     enable_streaming: bool = False,
+    mcp_registry: MCPRegistry | None = None,
     **kwargs,
 ) -> AgentLoop:
-
     resolved_config = config or build_test_vibe_config()
 
     return AgentLoop(
@@ -286,7 +295,7 @@ def build_test_agent_loop(
         agent_name=agent_name,
         backend=backend or FakeBackend(),
         enable_streaming=enable_streaming,
-        mcp_registry=kwargs.pop("mcp_registry", FakeMCPRegistry()),
+        mcp_registry=mcp_registry,
         **kwargs,
     )
 
@@ -336,3 +345,38 @@ def build_test_vibe_app(
         voice_manager=voice_manager,
         **kwargs,
     )
+
+
+@pytest.fixture(autouse=True)
+def _cleanup_lsp_client_manager() -> Generator[None]:
+    """Clean up LSPClientManager state between tests and disable LSP diagnostics.
+
+    This fixture ensures that the class-level state of LSPClientManager
+    is reset between tests to prevent test pollution.
+    It also disables LSP diagnostics by default to speed up tests.
+    LSP-specific tests can re-enable diagnostics using LSPClientManager.enable_diagnostics().
+    """
+    from vibe.core.lsp.client_manager import LSPClientManager
+
+    # Disable LSP diagnostics by default to speed up tests
+    LSPClientManager.disable_diagnostics()
+
+    # Store the current state
+    clients_before = LSPClientManager._clients.copy()
+    handles_before = LSPClientManager._handles.copy()
+    config_before = LSPClientManager._config.copy()
+
+    yield
+
+    # Clean up any clients that were created during the test
+    for server_name in list(LSPClientManager._clients.keys()):
+        if server_name not in clients_before:
+            del LSPClientManager._clients[server_name]
+
+    for server_name in list(LSPClientManager._handles.keys()):
+        if server_name not in handles_before:
+            del LSPClientManager._handles[server_name]
+
+    for server_name in list(LSPClientManager._config.keys()):
+        if server_name not in config_before:
+            del LSPClientManager._config[server_name]

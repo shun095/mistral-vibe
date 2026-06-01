@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 import json
 import re
-from typing import Any, ClassVar
+from typing import Any, ClassVar, override
 
 from vibe.core.config import ProviderConfig
 from vibe.core.llm.backend.base import APIAdapter, PreparedRequest
@@ -31,10 +31,13 @@ class AnthropicMapper:
         for msg in messages:
             match msg.role:
                 case Role.system:
-                    system_prompt = msg.content or ""
+                    if isinstance(msg.content, str):
+                        system_prompt = msg.content or None
+                    else:
+                        system_prompt = None
                 case Role.user:
                     user_content: list[dict[str, Any]] = []
-                    if msg.content:
+                    if isinstance(msg.content, str):
                         user_content.append({"type": "text", "text": msg.content})
                     converted.append({"role": "user", "content": user_content or ""})
                 case Role.assistant:
@@ -430,12 +433,13 @@ class AnthropicAdapter(APIAdapter):
 
         return payload
 
+    @override
     def prepare_request(
         self,
         *,
         model_name: str,
         messages: Sequence[LLMMessage],
-        temperature: float,
+        temperature: float | None,
         tools: list[AvailableTool] | None,
         max_tokens: int | None,
         tool_choice: StrToolChoice | AvailableTool | None,
@@ -443,6 +447,7 @@ class AnthropicAdapter(APIAdapter):
         provider: ProviderConfig,
         api_key: str | None = None,
         thinking: str = "off",
+        return_progress: bool = False,
     ) -> PreparedRequest:
         system_prompt, converted_messages = self._mapper.prepare_messages(messages)
         converted_tools = self._mapper.prepare_tools(tools)

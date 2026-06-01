@@ -45,6 +45,7 @@ class TestShortSessionId:
         assert short_session_id("") == ""
 
 
+@pytest.mark.skip(reason="Nuage remote sessions disabled in this branch")
 class TestListRemoteResumeSessions:
     @pytest.mark.asyncio
     async def test_returns_empty_when_vibe_code_disabled(self) -> None:
@@ -71,6 +72,9 @@ class TestListRemoteResumeSessions:
         assert result == []
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(
+        reason="Nuage remote sessions disabled for security - prevents external workflow calls"
+    )
     async def test_passes_active_statuses_to_api(self) -> None:
         from datetime import datetime
 

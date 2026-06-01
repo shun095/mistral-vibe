@@ -7,15 +7,71 @@ from contextlib import aclosing
 from dataclasses import dataclass
 from enum import StrEnum, auto
 import gc
+import json
 import os
 from pathlib import Path
 import signal
+import sys
 import time
-from typing import Any, ClassVar, assert_never, cast
+from typing import Any, ClassVar, Literal, assert_never, cast
+
+SYSTEM_PROMPT_RECALCULATED_MSG = (
+    "System prompt was recalculated (not found in session metadata). "
+    "Tools or config may differ from the original session."
+)
+SYSTEM_PROMPT_REGENERATED_MSG = (
+    "System prompt regenerated. Tools or config may differ from the original session."
+)
 from uuid import uuid4
 from weakref import WeakKeyDictionary
 
-from pydantic import BaseModel
+
+@dataclass
+class PopupMetadata:
+    """Holds metadata for a pending approval/question popup."""
+
+    future: asyncio.Future | None = None
+    popup_id: str | None = None
+    tool_name: str | None = None
+    args: dict | None = None
+    required_permissions: list[RequiredPermission] | None = None
+
+    def is_active(self) -> bool:
+        """Check if there's an active pending popup."""
+        return self.future is not None and not self.future.done()
+
+    def clear(self) -> None:
+        """Clear all pending state."""
+        self.future = None
+        self.popup_id = None
+        self.tool_name = None
+        self.args = None
+        self.required_permissions = None
+
+
+from pydantic import BaseModel, ValidationError
+
+# Constants
+MESSAGE_PREVIEW_LENGTH = 50
+QUEUE_PREVIEW_LENGTH = 120
+NON_INTERRUPT_COMMANDS = (
+    "/queue",
+    "!!",
+    "/history",
+    "/help",
+    "/log",
+    "/log-edit",
+    "/debug",
+    "/status",
+    "/mcp",
+    "/translate",
+)
+
+# Web notification constants
+WEB_NOTIFICATION_ACTION_TITLE = "Action Required"
+WEB_NOTIFICATION_COMPLETE_TITLE = "Task Complete"
+WEB_NOTIFICATION_COMPLETE_MESSAGE = "Assistant has finished processing"
+
 from rich import print as rprint
 from textual.app import WINDOWS, App, ComposeResult
 from textual.binding import Binding, BindingType
@@ -29,6 +85,7 @@ from textual.widgets import Static
 from vibe import __version__ as CORE_VERSION
 from vibe.cli.clipboard import copy_selection_to_clipboard, copy_text_to_clipboard
 from vibe.cli.commands import CommandAvailabilityContext, CommandRegistry
+from vibe.cli.history_manager import HistoryManager
 from vibe.cli.narrator_manager import (
     NarratorManager,
     NarratorManagerPort,
@@ -43,7 +100,9 @@ from vibe.cli.plan_offer.decide_plan_offer import (
     resolve_api_key_for_plan,
 )
 from vibe.cli.plan_offer.ports.whoami_gateway import WhoAmIGateway, WhoAmIPlanType
+from vibe.cli.queue_manager import QueueManager
 from vibe.cli.terminal_detect import Terminal, detect_terminal
+from vibe.cli.textual_ui.external_editor import ExternalEditor
 from vibe.cli.textual_ui.handlers.event_handler import EventHandler
 from vibe.cli.textual_ui.notifications import (
     NotificationContext,
@@ -54,6 +113,7 @@ from vibe.cli.textual_ui.quit_manager import QuitManager
 from vibe.cli.textual_ui.remote import RemoteSessionManager, is_progress_event
 from vibe.cli.textual_ui.scheduled_loop_runner import ScheduledLoopRunner
 from vibe.cli.textual_ui.session_exit import print_session_resume_message
+from vibe.cli.textual_ui.web_broadcast_manager import WebBroadcastManager
 from vibe.cli.textual_ui.widgets.approval_app import ApprovalApp
 from vibe.cli.textual_ui.widgets.banner.banner import Banner
 from vibe.cli.textual_ui.widgets.chat_input import ChatInputContainer
@@ -65,10 +125,12 @@ from vibe.cli.textual_ui.widgets.context_progress import ContextProgress, TokenS
 from vibe.cli.textual_ui.widgets.debug_console import DebugConsole
 from vibe.cli.textual_ui.widgets.feedback_bar import FeedbackBar
 from vibe.cli.textual_ui.widgets.feedback_bar_manager import FeedbackBarManager
+from vibe.cli.textual_ui.widgets.history_picker import HistoryPickerApp
 from vibe.cli.textual_ui.widgets.load_more import HistoryLoadMoreRequested
 from vibe.cli.textual_ui.widgets.loading import (
     DEFAULT_LOADING_STATUS,
     LoadingWidget,
+    _format_elapsed,
     paused_timer,
 )
 from vibe.cli.textual_ui.widgets.mcp_app import MCPApp, MCPSourceKind
@@ -98,7 +160,7 @@ from vibe.cli.textual_ui.widgets.session_picker import SessionPickerApp
 from vibe.cli.textual_ui.widgets.teleport_message import TeleportMessage
 from vibe.cli.textual_ui.widgets.theme_picker import ThemePickerApp, sorted_theme_names
 from vibe.cli.textual_ui.widgets.thinking_picker import ThinkingPickerApp
-from vibe.cli.textual_ui.widgets.tools import ToolResultMessage
+from vibe.cli.textual_ui.widgets.tools import ToolCallMessage, ToolResultMessage
 from vibe.cli.textual_ui.widgets.voice_app import VoiceApp
 from vibe.cli.textual_ui.windowing import (
     HISTORY_RESUME_TAIL_MESSAGES,
@@ -132,7 +194,7 @@ from vibe.cli.vscode_extension_promo import (
     should_show_promo,
 )
 from vibe.core.agent_loop import AgentLoop, TeleportError
-from vibe.core.agents import AgentProfile
+from vibe.core.agents import AgentProfile, BuiltinAgentName
 from vibe.core.audio_player.audio_player import AudioPlayer
 from vibe.core.audio_recorder import AudioRecorder
 from vibe.core.autocompletion.path_prompt import (
@@ -142,6 +204,7 @@ from vibe.core.autocompletion.path_prompt import (
 from vibe.core.autocompletion.path_prompt_adapter import render_path_prompt
 from vibe.core.config import DEFAULT_THEME, VibeConfig
 from vibe.core.data_retention import DATA_RETENTION_MESSAGE
+from vibe.core.fuzzy import using_cython
 from vibe.core.hooks.models import HookStartEvent
 from vibe.core.log_reader import LogReader
 from vibe.core.logger import logger
@@ -167,6 +230,7 @@ from vibe.core.teleport.types import (
     TeleportStartingWorkflowEvent,
 )
 from vibe.core.tools.builtins.ask_user_question import (
+    Answer,
     AskUserQuestionArgs,
     AskUserQuestionResult,
     Choice,
@@ -180,17 +244,23 @@ from vibe.core.types import (
     AgentStats,
     ApprovalResponse,
     BaseEvent,
+    BashCommandEvent,
+    Content,
     ContextTooLongError,
     LLMMessage,
     RateLimitError,
     Role,
+    TaskCompletedEvent,
+    UserMessageEvent,
     WaitingForInputEvent,
 )
+from vibe.core.ui_events import MessageResetEvent, SystemPromptRegeneratedEvent
 from vibe.core.utils import (
     CancellationReason,
     get_user_cancellation_message,
     is_dangerous_directory,
 )
+from vibe.core.utils.io import read_safe
 
 _VSCODE_FAMILY_TERMINALS = {Terminal.VSCODE, Terminal.VSCODE_INSIDERS, Terminal.CURSOR}
 
@@ -224,6 +294,7 @@ class BottomApp(StrEnum):
     Approval = auto()
     Config = auto()
     ConnectorAuth = auto()
+    HistoryPicker = auto()
     Input = auto()
     MCP = auto()
     ModelPicker = auto()
@@ -333,6 +404,7 @@ class StartupOptions:
     teleport_on_start: bool = False
     show_resume_picker: bool = False
     is_resuming_session: bool = False
+    system_prompt_recalculated: bool = False
 
 
 class VibeApp(App):  # noqa: PLR0904
@@ -349,9 +421,13 @@ class VibeApp(App):  # noqa: PLR0904
         Binding("ctrl+y", "copy_selection", "Copy", show=False, priority=True),
         Binding("ctrl+shift+c", "copy_selection", "Copy", show=False, priority=True),
         Binding("shift+tab", "cycle_mode", "Cycle Mode", show=False, priority=True),
-        Binding("shift+up", "scroll_chat_up", "Scroll Up", show=False, priority=True),
+        Binding("pageup", "scroll_chat_up", "Scroll Up", show=False, priority=True),
         Binding(
-            "shift+down", "scroll_chat_down", "Scroll Down", show=False, priority=True
+            "pagedown", "scroll_chat_down", "Scroll Down", show=False, priority=True
+        ),
+        Binding("home", "scroll_chat_home", "Scroll to Top", show=False, priority=True),
+        Binding(
+            "end", "scroll_chat_end", "Scroll to Bottom", show=False, priority=True
         ),
         Binding(
             "ctrl+g", "open_plan_in_editor", "Edit Plan", show=False, priority=False
@@ -391,6 +467,8 @@ class VibeApp(App):  # noqa: PLR0904
         self._agent_running = False
         self._interrupt_requested = False
         self._agent_task: asyncio.Task | None = None
+        self._translation_running = False
+        self._translation_task: asyncio.Task | None = None
         self._bash_task: asyncio.Task | None = None
         self._remote_manager = RemoteSessionManager()
 
@@ -398,6 +476,11 @@ class VibeApp(App):  # noqa: PLR0904
         self._pending_approval: asyncio.Future | None = None
         self._pending_question: asyncio.Future | None = None
         self._user_interaction_lock = asyncio.Lock()
+        self._initialize_web_broadcast_state()
+        self._initialize_queue_state()
+        self._web_broadcast_manager = WebBroadcastManager(
+            self.agent_loop, self.config, self.notify
+        )
 
         self.event_handler: EventHandler | None = None
 
@@ -441,6 +524,7 @@ class VibeApp(App):  # noqa: PLR0904
         self._rewind_mode = False
         self._rewind_highlighted_widget: UserMessage | None = None
         self._fatal_init_error = False
+        self._restart_pending = False
         self._force_quit_task: asyncio.Task[None] | None = None
         self.commands = self._build_command_registry()
         self._loop_runner = ScheduledLoopRunner(
@@ -453,6 +537,34 @@ class VibeApp(App):  # noqa: PLR0904
             tools_collapsed=lambda: self._tools_collapsed,
         )
 
+    def _initialize_web_broadcast_state(self) -> None:
+        """Initialize web UI broadcast-related state."""
+        self._tui_ready = False
+        self._web_message_queue: list[dict[str, str | dict[str, str] | None]] = []
+        self._pending_approval_meta: PopupMetadata | None = None
+        self._pending_question_meta: PopupMetadata | None = None
+        self._queued_message: str | None = None
+
+    def _initialize_queue_state(self) -> None:
+        """Initialize queue auto-submit state."""
+        self._queue_mgr = QueueManager()
+
+    def get_pending_approval_state(self) -> PopupMetadata | None:
+        """Get the pending approval popup metadata if active.
+
+        Returns:
+            PopupMetadata if there's a pending approval, None otherwise.
+        """
+        return self._pending_approval_meta if self._pending_approval_meta else None
+
+    def get_pending_question_state(self) -> PopupMetadata | None:
+        """Get the pending question popup metadata if active.
+
+        Returns:
+            PopupMetadata if there's a pending question, None otherwise.
+        """
+        return self._pending_question_meta if self._pending_question_meta else None
+
     def _configure_startup_options(self, startup: StartupOptions | None) -> None:
         opts = startup or StartupOptions()
         self._initial_prompt = opts.initial_prompt
@@ -461,6 +573,7 @@ class VibeApp(App):  # noqa: PLR0904
         )
         self._show_resume_picker = opts.show_resume_picker
         self._is_resuming_session = opts.is_resuming_session
+        self._system_prompt_recalculated = opts.system_prompt_recalculated
 
     @property
     def config(self) -> VibeConfig:
@@ -541,6 +654,12 @@ class VibeApp(App):  # noqa: PLR0904
         self._chat_input_container = self.query_one(ChatInputContainer)
         context_progress = self.query_one(ContextProgress)
 
+        # Mark TUI as ready to accept messages from web UI
+        self._tui_ready = True
+
+        # Start timer to process web messages
+        self.set_interval(0.1, self._process_web_messages)
+
         def update_context_progress(stats: AgentStats) -> None:
             context_progress.tokens = TokenState(
                 max_tokens=self.config.get_active_model().auto_compact_threshold,
@@ -552,6 +671,10 @@ class VibeApp(App):  # noqa: PLR0904
 
         self.agent_loop.set_approval_callback(self._approval_callback)
         self.agent_loop.set_user_input_callback(self._user_input_callback)
+        self.agent_loop.add_event_listener(
+            self._web_broadcast_manager._handle_retry_event
+        )
+        self.agent_loop.add_event_listener(self._on_system_prompt_event)
         self._refresh_profile_widgets()
 
         chat_input_container = self.query_one(ChatInputContainer)
@@ -578,6 +701,9 @@ class VibeApp(App):  # noqa: PLR0904
         elif self._initial_prompt or self._teleport_on_start:
             self.call_after_refresh(self._process_initial_prompt)
 
+        if self._system_prompt_recalculated:
+            self.notify(SYSTEM_PROMPT_RECALCULATED_MSG, severity="warning", timeout=10)
+
         gc.collect()
         gc.freeze()
 
@@ -589,6 +715,11 @@ class VibeApp(App):  # noqa: PLR0904
                 markup=False,
                 timeout=10,
             )
+
+    def _on_system_prompt_event(self, event: object) -> None:
+        if not isinstance(event, SystemPromptRegeneratedEvent):
+            return
+        self.notify(SYSTEM_PROMPT_REGENERATED_MSG, severity="warning", timeout=10)
 
     async def _watch_init_completion(self) -> None:
         """Show 'Initializing' loading indicator until background init finishes."""
@@ -655,18 +786,39 @@ class VibeApp(App):  # noqa: PLR0904
         input_widget = self.query_one(ChatInputContainer)
         input_widget.value = ""
 
+        # Queue message during compaction without interrupting it
+        if self.event_handler and await self.event_handler.get_current_compact():
+            label = (
+                "Queued message updated"
+                if self._queued_message is not None
+                else "Message queued"
+            )
+            self._queued_message = value
+            await self._mount_and_scroll(
+                UserMessage(
+                    f"{label}: {value[:MESSAGE_PREVIEW_LENGTH]}{'...' if len(value) > MESSAGE_PREVIEW_LENGTH else ''}"
+                )
+            )
+            return
+
         if self._bash_task and not self._bash_task.done():
             self._bash_task.cancel()
             self._bash_task = None
 
-        if self._agent_running:
+        if self._agent_running and not value.startswith(NON_INTERRUPT_COMMANDS):
             await self._interrupt_agent_loop()
+
+        if value.startswith("!!"):
+            await self._handle_bash_command(value[2:], inject_context=False)
+            return
 
         await self._dispatch_submitted_input(value)
 
     async def _dispatch_submitted_input(self, value: str) -> None:
         if value.startswith("!"):
-            self._bash_task = asyncio.create_task(self._handle_bash_command(value[1:]))
+            self._bash_task = asyncio.create_task(
+                self._handle_bash_command(value[1:], inject_context=True)
+            )
             return
 
         if value.startswith("&") and self.commands.has_command("teleport"):
@@ -694,6 +846,18 @@ class VibeApp(App):  # noqa: PLR0904
 
         if self._pending_approval and not self._pending_approval.done():
             self._pending_approval.set_result((ApprovalResponse.YES, None))
+
+    async def on_approval_app_approval_enable_auto_approve(
+        self, message: ApprovalApp.ApprovalEnableAutoApprove
+    ) -> None:
+        # Approve the current tool
+        if self._pending_approval and not self._pending_approval.done():
+            self._pending_approval.set_result((ApprovalResponse.YES, None))
+
+        # Switch to auto-approve mode
+        if self.agent_loop:
+            await self.agent_loop.switch_agent(BuiltinAgentName.AUTO_APPROVE)
+            self._update_profile_widgets(self.agent_loop.agent_profile)
 
     async def on_approval_app_approval_granted_always_permanent(
         self, message: ApprovalApp.ApprovalGrantedAlwaysPermanent
@@ -966,11 +1130,14 @@ class VibeApp(App):  # noqa: PLR0904
             return
 
         if compact_index == 0:
+            await self._flush_queued_message()
             return
 
         with self.batch_update():
             for widget in children[:compact_index]:
                 await widget.remove()
+
+        await self._flush_queued_message()
 
     async def _handle_command(self, user_input: str) -> bool:
         if resolved := self.commands.parse_command(user_input):
@@ -978,6 +1145,7 @@ class VibeApp(App):  # noqa: PLR0904
             self.agent_loop.telemetry_client.send_slash_command_used(
                 cmd_name, "builtin"
             )
+            self._last_command_input = user_input
             await self._mount_and_scroll(SlashCommandMessage(user_input[1:]))
             handler = getattr(self, command.handler)
             if asyncio.iscoroutinefunction(handler):
@@ -1044,7 +1212,9 @@ class VibeApp(App):  # noqa: PLR0904
             pass
         await proc.wait()
 
-    async def _handle_bash_command(self, command: str) -> None:
+    async def _handle_bash_command(
+        self, command: str, inject_context: bool = True
+    ) -> None:
         if not command:
             await self._mount_and_scroll(
                 ErrorMessage(
@@ -1086,61 +1256,82 @@ class VibeApp(App):  # noqa: PLR0904
                         collapsed=self._tools_collapsed,
                     )
                 )
-                await self.agent_loop.inject_user_context(
-                    self._format_manual_command_context(
-                        command=command,
-                        cwd=str(Path.cwd()),
-                        stdout=stdout,
-                        stderr=stderr,
-                        status="timed out after 30 seconds",
+                if inject_context:
+                    await self.agent_loop.inject_user_context(
+                        self._format_manual_command_context(
+                            command=command,
+                            cwd=str(Path.cwd()),
+                            stdout=stdout,
+                            stderr=stderr,
+                            status="timed out after 30 seconds",
+                        )
                     )
-                )
                 return
 
             stdout = "".join(stdout_parts)
             stderr = "".join(stderr_parts)
             exit_code = proc.returncode or 0
             await bash_msg.finish(exit_code)
-            await self.agent_loop.inject_user_context(
-                self._format_manual_command_context(
-                    command=command,
-                    cwd=str(Path.cwd()),
-                    exit_code=exit_code,
-                    stdout=stdout,
-                    stderr=stderr,
-                )
+
+            # Emit events to agent_loop for web UI broadcasting
+            user_event = UserMessageEvent(content=f"!{command}", message_id="")
+            self.agent_loop._notify_event_listeners(user_event)
+
+            bash_event = BashCommandEvent(
+                command=command,
+                exit_code=exit_code,
+                output=stdout + stderr,
+                message_id=None,
             )
+            self.agent_loop._notify_event_listeners(bash_event)
+
+            # Inject user context for agent awareness (unless disabled with !!)
+            if inject_context:
+                await self.agent_loop.inject_user_context(
+                    self._format_manual_command_context(
+                        command=command,
+                        cwd=str(Path.cwd()),
+                        exit_code=exit_code,
+                        stdout=stdout,
+                        stderr=stderr,
+                    )
+                )
+            self._spawn_queue_task()
+
         except asyncio.CancelledError:
             await self._kill_running_process(proc)
             await bash_msg.finish(1, interrupted=True)
             stdout = "".join(stdout_parts)
             stderr = "".join(stderr_parts)
-            await self.agent_loop.inject_user_context(
-                self._format_manual_command_context(
-                    command=command,
-                    cwd=str(Path.cwd()),
-                    stdout=stdout,
-                    stderr=stderr,
-                    status="interrupted by user",
+            if inject_context:
+                await self.agent_loop.inject_user_context(
+                    self._format_manual_command_context(
+                        command=command,
+                        cwd=str(Path.cwd()),
+                        stdout=stdout,
+                        stderr=stderr,
+                        status="interrupted by user",
+                    )
                 )
-            )
         except Exception as e:
+            error_msg = f"Command failed: {e}"
             await self._kill_running_process(proc)
             await bash_msg.finish(1)
             stdout = "".join(stdout_parts)
             stderr = "".join(stderr_parts)
             await self._mount_and_scroll(
-                ErrorMessage(f"Command failed: {e}", collapsed=self._tools_collapsed)
+                ErrorMessage(error_msg, collapsed=self._tools_collapsed)
             )
-            await self.agent_loop.inject_user_context(
-                self._format_manual_command_context(
-                    command=command,
-                    cwd=str(Path.cwd()),
-                    stdout=stdout,
-                    stderr=stderr,
-                    status=f"failed before completion: {e}",
+            if inject_context:
+                await self.agent_loop.inject_user_context(
+                    self._format_manual_command_context(
+                        command=command,
+                        cwd=str(Path.cwd()),
+                        stdout=stdout,
+                        stderr=stderr,
+                        status=f"failed before completion: {e}",
+                    )
                 )
-            )
         finally:
             if self._loading_widget is bash_loading_widget:
                 await self._remove_loading_widget()
@@ -1196,6 +1387,12 @@ class VibeApp(App):  # noqa: PLR0904
 
         return "\n\n".join(sections)
 
+    async def _flush_queued_message(self) -> None:
+        """Process and clear any queued user message."""
+        if self._queued_message:
+            await self._handle_user_message(self._queued_message)
+            self._queued_message = None
+
     async def _handle_user_message(
         self, message: str, *, title_source: str | None = None
     ) -> None:
@@ -1213,12 +1410,213 @@ class VibeApp(App):  # noqa: PLR0904
             self._feedback_bar.show()
             self._feedback_bar_manager.record_feedback_asked()
 
+        # Save to history if available
+        if self._chat_input_container and self._chat_input_container.history:
+            self._chat_input_container.history.add(message)
+
         if not self._agent_running:
             await self._remote_manager.stop_stream()
             await self._remove_loading_widget()
             self._agent_task = asyncio.create_task(
                 self._handle_agent_loop_turn(message, title_source=title_source)
             )
+
+    async def _handle_user_message_with_image(
+        self, message: str, image_data: dict
+    ) -> bool:
+        """Handle a user message with an attached image from web UI.
+
+        Args:
+            message: The user text message.
+            image_data: Dictionary with 'data' (base64) and 'mime_type' keys.
+
+        Returns:
+            True if an agent task was spawned.
+        """
+        # Build multi-part content for LLM
+        base64_data = image_data.get("data", "")
+        mime_type = image_data.get("mime_type", "image/png")
+
+        # Create content list with text and image
+        content: list[dict] = []
+        if message:
+            content.append({"type": "text", "text": message})
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:{mime_type};base64,{base64_data}"},
+        })
+
+        # Add combined message with image placeholder to the display
+        from vibe.cli.textual_ui.widgets.messages import ImageMessage
+
+        image_message = ImageMessage(message if message else "")
+        await self._mount_and_scroll(image_message)
+
+        # Save to history if available
+        if self._chat_input_container and self._chat_input_container.history:
+            self._chat_input_container.history.add(message)
+
+        # Add message with image to agent loop history and process
+        if not self._agent_running:
+            self._agent_task = asyncio.create_task(
+                self._handle_agent_loop_turn(content)
+            )
+            return True
+        return False
+
+    # =========================================================================
+    # Thin wrappers for WebBroadcastManager (kept for backward compatibility)
+    # =========================================================================
+
+    def submit_message_from_web(
+        self, message: str, image_data: dict | None = None
+    ) -> None:
+        """Submit a message from the web UI to the TUI.
+
+        Messages are queued even if the TUI isn't ready yet, so they're not
+        dropped during the startup window between WebSocket connect and
+        TUI mount (e.g., while the trust-folder dialog is showing).
+        """
+        self._web_message_queue.append({"message": message, "image": image_data})
+
+    def resume_session_from_web(self, session_id: str) -> None:
+        """Resume a session by ID from the web UI.
+
+        This is a dedicated method for direct session resumption, separate from
+        the /resume slash command which shows the session picker.
+
+        Args:
+            session_id: The session ID to resume.
+        """
+        if not self._tui_ready:
+            return
+        self.run_worker(self._resume_session_by_id(session_id), exclusive=False)
+
+    def is_agent_running(self) -> bool:
+        """Check if the agent is currently running/processing."""
+        return self._agent_running
+
+    def request_interrupt_from_web(self) -> None:
+        """Request an interrupt from the web UI."""
+        if not self._tui_ready:
+            return
+        self._interrupt_requested = True
+
+    def handle_web_approval_response(
+        self,
+        popup_id: str,
+        response: ApprovalResponse,
+        feedback: str | None,
+        approval_type: Literal["once", "session", "auto-approve"] = "once",
+    ) -> None:
+        """Handle approval response from web UI."""
+        self._web_broadcast_manager.handle_web_approval_response(
+            popup_id=popup_id,
+            response=response,
+            feedback=feedback,
+            approval_type=approval_type,
+            pending_approval=self._pending_approval_meta,
+            switch_to_input_callback=self._switch_to_input_app,
+            call_later_callback=self.call_later,
+        )
+
+    def handle_web_question_response(
+        self, popup_id: str, answers: list[Answer], cancelled: bool
+    ) -> None:
+        """Handle question response from web UI."""
+        self._web_broadcast_manager.handle_web_question_response(
+            popup_id=popup_id,
+            answers=answers,
+            cancelled=cancelled,
+            pending_question=self._pending_question_meta,
+            switch_to_input_callback=self._switch_to_input_app,
+            call_later_callback=self.call_later,
+        )
+
+    async def _route_message(self, message: str) -> bool:
+        """Route a message through the same flow as TUI input.
+
+        Handles bash commands (!, !!), teleport (&), slash commands, skills,
+        and regular user messages. Shared by both _process_web_messages and
+        _route_queue_message to avoid duplicating routing logic.
+
+        Returns:
+            True if the message spawned an agent task that needs to be awaited.
+        """
+        if message.startswith("!!"):
+            await self._handle_bash_command(message[2:], inject_context=False)
+            return False
+        if message.startswith("!"):
+            await self._handle_bash_command(message[1:], inject_context=True)
+            return False
+        if await self._handle_command(message):
+            return False
+        if await self._handle_skill(message):
+            return self._agent_task is not None
+        await self._handle_user_message(message)
+        return self._agent_task is not None
+
+    async def _process_web_messages(self) -> None:
+        """Process messages from the web UI queue and interrupt requests."""
+        if self._interrupt_requested and self._agent_running:
+            await self._interrupt_agent_loop()
+            return
+
+        # Process at most one message per tick when no agent is running.
+        # The await after routing yields to the event loop so the agent
+        # task can start and set _agent_running = True, preventing the
+        # next tick from processing another message until the agent finishes.
+        if not self._web_message_queue or self._agent_running:
+            return
+
+        item = self._web_message_queue.pop(0)
+        message = item.get("message", "")
+        image_data = item.get("image")
+
+        if not isinstance(message, str):
+            message = str(message) if message is not None else ""
+
+        if image_data and isinstance(image_data, dict):
+            spawned = await self._handle_user_message_with_image(message, image_data)
+        else:
+            spawned = await self._route_message(message)
+
+        if spawned:
+            await asyncio.sleep(0)
+
+    def _spawn_queue_task(self) -> None:
+        """Spawn _process_queue as a fire-and-forget task."""
+        asyncio.create_task(self._process_queue())
+
+    async def _process_queue(self) -> None:
+        """Process the first queued message from (cwd)/.vibe/queue.jsonl.
+
+        Reads one entry, routes it through the normal message flow, and removes
+        it. For agent messages, the next entry is chained by _spawn_queue_task
+        called after the agent task completes successfully. For non-agent
+        messages (bash, slash commands), chains immediately. Stops on first
+        agent task failure.
+        """
+        entries = self._queue_mgr.read_entries()
+        if not entries:
+            return
+
+        message = entries[0]
+        if not message:
+            self._queue_mgr.remove_entry(0)
+            await self._process_queue()
+            return
+
+        logger.info("Queue entry: %s", message[:QUEUE_PREVIEW_LENGTH])
+        try:
+            await self._route_message(message)
+        except Exception:
+            logger.error("Queue processing stopped: routing failed for entry")
+            return
+
+        if not self._queue_mgr.remove_entry(0):
+            logger.warning("Failed to remove queue entry")
+            return
 
     async def _handle_remote_user_message(self, message: str) -> None:
         warning = self._remote_manager.validate_input()
@@ -1301,6 +1699,7 @@ class VibeApp(App):  # noqa: PLR0904
             start_index=start_index,
             tools_collapsed=self._tools_collapsed,
             history_widget_indices=self._history_widget_indices,
+            tool_manager=self.agent_loop.tool_manager,
         )
 
         with self.batch_update():
@@ -1357,39 +1756,91 @@ class VibeApp(App):  # noqa: PLR0904
                 return (ApprovalResponse.YES, None)
 
         async with self._user_interaction_lock:
+            # Generate unique popup ID
+            popup_id = f"approval_{tool_call_id}_{time.time()}"
+
+            # Broadcast approval popup event to web UI
+            self._web_broadcast_manager._broadcast_approval_popup(popup_id, tool, args)
+
             await self._wait_for_typing_pause()
             self._pending_approval = asyncio.Future()
+            self._pending_approval_meta = PopupMetadata(
+                future=self._pending_approval,
+                popup_id=popup_id,
+                tool_name=tool,
+                args=args.model_dump(mode="json", exclude_none=True),
+                required_permissions=required_permissions,
+            )
             self._terminal_notifier.notify(NotificationContext.ACTION_REQUIRED)
+            self._web_broadcast_manager._broadcast_web_notification(
+                "action_required",
+                WEB_NOTIFICATION_ACTION_TITLE,
+                f"Tool '{tool}' needs approval",
+            )
             try:
                 with paused_timer(self._loading_widget):
                     await self._switch_to_approval_app(tool, args, required_permissions)
                     result = await self._pending_approval
+
+                # Broadcast approval response event
+                self._web_broadcast_manager._broadcast_approval_response(
+                    popup_id, result
+                )
+
                 return result
+            except asyncio.CancelledError:
+                raise
             finally:
                 self._pending_approval = None
+                self._pending_approval_meta = None
                 await self._switch_to_input_app()
 
     async def _user_input_callback(self, args: BaseModel) -> BaseModel:
         question_args = cast(AskUserQuestionArgs, args)
 
         async with self._user_interaction_lock:
+            # Generate unique popup ID
+            popup_id = f"question_{time.time()}_{uuid4()}"
+
+            # Broadcast question popup event to web UI
+            self._web_broadcast_manager._broadcast_question_popup(
+                popup_id, question_args
+            )
+
             await self._wait_for_typing_pause()
             self._pending_question = asyncio.Future()
+            self._pending_question_meta = PopupMetadata(
+                future=self._pending_question,
+                popup_id=popup_id,
+                args=question_args.model_dump(mode="json", exclude_none=True),
+            )
             self._terminal_notifier.notify(NotificationContext.ACTION_REQUIRED)
+            self._web_broadcast_manager._broadcast_web_notification(
+                "action_required",
+                WEB_NOTIFICATION_ACTION_TITLE,
+                "Assistant has a question for you",
+            )
             try:
                 with paused_timer(self._loading_widget):
                     await self._switch_to_question_app(question_args)
                     result = await self._pending_question
+
+                # Broadcast question response event
+                self._web_broadcast_manager._broadcast_question_response(
+                    popup_id, result
+                )
+
                 return result
             finally:
                 self._pending_question = None
+                self._pending_question_meta = None
                 await self._switch_to_input_app()
 
     async def _handle_turn_error(self) -> None:
         if self._loading_widget and self._loading_widget.parent:
             await self._loading_widget.remove()
         if self.event_handler:
-            self.event_handler.stop_current_tool_call(success=False)
+            await self.event_handler.stop_current_tool_call(success=False)
 
     async def _handle_agent_loop_init(self) -> None:
         show_init_spinner = not self.agent_loop.is_initialized
@@ -1414,22 +1865,37 @@ class VibeApp(App):  # noqa: PLR0904
             elif self._loading_widget is None and is_progress_event(event):
                 await self._ensure_loading_widget()
             if self.event_handler:
-                await self.event_handler.handle_event(
+                self.event_handler.handle_event(
                     event, loading_widget=self._loading_widget
                 )
 
     async def _handle_agent_loop_turn(
-        self, prompt: str, *, title_source: str | None = None
+        self, content: str | list[dict], *, title_source: str | None = None
     ) -> None:
         self._agent_running = True
 
         await self._remove_loading_widget()
 
+        start_time = time.monotonic()
+        is_text = isinstance(content, str)
+
         try:
             await self._handle_agent_loop_init()
             await self._ensure_loading_widget()
             message_id = str(uuid4())
-            prompt_payload = build_path_prompt_payload(prompt, base_dir=Path.cwd())
+            prompt_payload = (
+                build_path_prompt_payload(content, base_dir=Path.cwd())
+                if is_text
+                else build_path_prompt_payload(
+                    " ".join(
+                        item["text"]
+                        for item in content
+                        if item.get("type") == "text"
+                        and isinstance(item.get("text"), str)
+                    ),
+                    base_dir=Path.cwd(),
+                )
+            )
             if prompt_payload.all_resources:
                 context_types: dict[str, int] = {}
                 for r in prompt_payload.all_resources:
@@ -1446,25 +1912,52 @@ class VibeApp(App):  # noqa: PLR0904
                     file_extensions=file_ext_counts or None,
                     message_id=message_id,
                 )
-            rendered_prompt = render_path_prompt(prompt, base_dir=Path.cwd())
+            rendered_content: Content = cast(
+                Content,
+                render_path_prompt(content, base_dir=Path.cwd())
+                if is_text
+                else [
+                    {
+                        **item,
+                        "text": render_path_prompt(item["text"], base_dir=Path.cwd()),
+                    }
+                    if item.get("type") == "text" and isinstance(item.get("text"), str)
+                    else item
+                    for item in content
+                ],
+            )
             auto_title: str | None = None
             if self.agent_loop.session_logger.needs_initial_auto_title():
                 auto_title = (
                     format_session_title(
                         build_title_segments(
-                            title_source or prompt, base_dir=Path.cwd()
+                            title_source or (content if is_text else ""),
+                            base_dir=Path.cwd(),
                         )
                     )
                     or None
                 )
             self._narrator_manager.cancel()
-            self._narrator_manager.on_turn_start(rendered_prompt)
+            self._narrator_manager.on_turn_start(
+                rendered_content if isinstance(rendered_content, str) else ""
+            )
             async with aclosing(
                 self.agent_loop.act(
-                    rendered_prompt, client_message_id=message_id, auto_title=auto_title
+                    rendered_content,
+                    client_message_id=message_id,
+                    auto_title=auto_title,
                 )
             ) as events:
                 await self._handle_agent_loop_events(events)
+
+            self._spawn_queue_task()
+            if self.event_handler:
+                self.event_handler.handle_event(
+                    TaskCompletedEvent(
+                        elapsed_text=f"Task completed in {_format_elapsed(int(time.monotonic() - start_time))}."
+                    )
+                )
+
         except asyncio.CancelledError:
             await self._handle_turn_error()
             self._narrator_manager.on_turn_cancel()
@@ -1472,8 +1965,6 @@ class VibeApp(App):  # noqa: PLR0904
         except Exception as e:
             await self._handle_turn_error()
 
-            # _watch_init_completion already rendered the fatal startup error
-            # and told the user to exit -- don't duplicate the message.
             if self._fatal_init_error:
                 return
 
@@ -1483,6 +1974,8 @@ class VibeApp(App):  # noqa: PLR0904
             await self._mount_and_scroll(
                 ErrorMessage(message, collapsed=self._tools_collapsed)
             )
+
+            self._web_broadcast_manager._broadcast_llm_error_event(e)
         finally:
             self._narrator_manager.on_turn_end()
             self._agent_running = False
@@ -1492,9 +1985,14 @@ class VibeApp(App):  # noqa: PLR0904
                 await self._loading_widget.remove()
             self._loading_widget = None
             if self.event_handler:
-                await self.event_handler.finalize_streaming()
+                self.event_handler.finalize_streaming()
             await self._refresh_windowing_from_history()
             self._terminal_notifier.notify(NotificationContext.COMPLETE)
+            self._web_broadcast_manager._broadcast_web_notification(
+                "complete",
+                WEB_NOTIFICATION_COMPLETE_TITLE,
+                WEB_NOTIFICATION_COMPLETE_MESSAGE,
+            )
 
     def _resolve_turn_error_message(self, e: Exception) -> str:
         if isinstance(e, RateLimitError):
@@ -1639,21 +2137,66 @@ class VibeApp(App):  # noqa: PLR0904
         )
         return TeleportPushResponseEvent(approved=ok)
 
+    # ruff: noqa: PLR0915
     async def _interrupt_agent_loop(self) -> None:
-        if not self._agent_running or self._interrupt_requested:
+        if not self._agent_running:
             return
 
-        self._interrupt_requested = True
+        # Re-entrancy is guarded by _agent_running check above -
+        # once we start processing, _agent_running becomes False,
+        # so subsequent calls return early.
+        # _interrupt_requested is set by request_interrupt_from_web()
+        # (web UI) or cleared at the end of this method.
 
+        # Clean up pending approvals/questions
         if self._pending_approval and not self._pending_approval.done():
             feedback = str(
                 get_user_cancellation_message(CancellationReason.TOOL_INTERRUPTED)
             )
-            self._pending_approval.set_result((ApprovalResponse.NO, feedback))
+            # Cancel and set result - handle race condition
+            try:
+                self._pending_approval.cancel()
+            except Exception:
+                pass
+            try:
+                self._pending_approval.set_result((ApprovalResponse.NO, feedback))
+            except asyncio.InvalidStateError:
+                pass
+            # Remove approval app widget if present
+            try:
+                approval_app = self.query_one("#approval-app")
+                if approval_app.parent:
+                    await approval_app.remove()
+            except Exception:
+                pass
+            # Restore input form (also removes all popup widgets)
+            await self._switch_to_input_app()
+            self._pending_approval = None
+            self._pending_approval_meta = None
+
         if self._pending_question and not self._pending_question.done():
-            self._pending_question.set_result(
-                AskUserQuestionResult(answers=[], cancelled=True)
-            )
+            # Cancel and set result - handle race condition
+            try:
+                self._pending_question.cancel()
+            except Exception:
+                pass
+            try:
+                self._pending_question.set_result(
+                    AskUserQuestionResult(answers=[], cancelled=True)
+                )
+            except asyncio.InvalidStateError:
+                pass
+            # Remove question app widget if present
+            try:
+                question_app = self.query_one("#question-app")
+                if question_app.parent:
+                    await question_app.remove()
+            except Exception:
+                pass
+            # Restore input form (also removes all popup widgets)
+            await self._switch_to_input_app()
+            self._pending_question = None
+            self._pending_question_meta = None
 
         if self._agent_task and not self._agent_task.done():
             self._agent_task.cancel()
@@ -1663,9 +2206,9 @@ class VibeApp(App):  # noqa: PLR0904
                 pass
 
         if self.event_handler:
-            self.event_handler.stop_current_tool_call(success=False)
-            self.event_handler.stop_current_compact()
-            await self.event_handler.finalize_streaming()
+            await self.event_handler.stop_current_tool_call(success=False)
+            await self.event_handler.stop_current_compact()
+            self.event_handler.finalize_streaming()
 
         self._agent_running = False
         loading_area = self._cached_loading_area or self.query_one(
@@ -1678,9 +2221,166 @@ class VibeApp(App):  # noqa: PLR0904
 
         self._interrupt_requested = False
 
+    async def do_translation(self, original_text: str) -> str | None:
+        """Core translation logic shared by TUI handler and Web endpoint."""
+        if not self.agent_loop.messages:
+            return None
+
+        try:
+            from vibe.core.prompts import UtilityPrompt
+
+            translation_template = UtilityPrompt.TRANSLATION.read()
+        except Exception as e:
+            logger.warning(f"Failed to load translation template: {e}")
+            # Fallback matches vibe/core/prompts/translation.md
+            translation_template = (
+                "Translate the following text to English. "
+                "Output only the translated text, nothing else.\n\n"
+                "Text to translate:\n{text}"
+            )
+
+        user_message = translation_template.format(text=original_text)
+        system_prompt = self.agent_loop.messages[0].content
+        active_model = self.config.get_active_model()
+
+        translated_text = ""
+        async for chunk in self.agent_loop.backend.complete_streaming(
+            model=active_model,
+            messages=[
+                LLMMessage(role=Role.system, content=system_prompt),
+                LLMMessage(role=Role.user, content=user_message),
+            ],
+            temperature=0.2,
+            tools=None,
+            max_tokens=None,
+            tool_choice=None,
+            extra_headers=None,
+        ):
+            if chunk.message.content:
+                content_str = (
+                    chunk.message.content
+                    if isinstance(chunk.message.content, str)
+                    else str(chunk.message.content)
+                )
+                translated_text += content_str
+        return translated_text.strip() or None
+
+    async def _translate_prompt(self, cmd_args: str = "", **kwargs: Any) -> None:
+        """Translate the user's input text to English using the LLM."""
+        if self._translation_running:
+            return
+
+        self._translation_running = True
+
+        loading_area = self.query_one("#loading-area-content")
+
+        if self._loading_widget and self._loading_widget.parent:
+            await self._loading_widget.remove()
+
+        loading = LoadingWidget()
+        self._loading_widget = loading
+        await loading_area.mount(loading)
+
+        try:
+            original_text = cmd_args.strip()
+
+            if not original_text:
+                await self._mount_and_scroll(
+                    UserCommandMessage("Usage: /translate <text to translate>")
+                )
+                return
+
+            # Save original text to history
+            history = HistoryManager(self.history_file)
+            history.add(original_text)
+
+            translated_text = await self.do_translation(original_text)
+
+            if translated_text:
+                # Replace the input with the translated text (no chat message)
+                input_widget = self.query_one(ChatInputContainer)
+                input_widget.value = translated_text
+                # Save translated text to vibehistory for later restoration
+                history.add(translated_text)
+                await self._mount_and_scroll(
+                    UserCommandMessage("Text translated to English.")
+                )
+
+        except asyncio.CancelledError:
+            if self._loading_widget and self._loading_widget.parent:
+                await self._loading_widget.remove()
+            raise
+        except Exception as e:
+            if self._loading_widget and self._loading_widget.parent:
+                await self._loading_widget.remove()
+            await self._mount_and_scroll(
+                ErrorMessage(str(e), collapsed=self._tools_collapsed)
+            )
+        finally:
+            self._translation_running = False
+            if self._loading_widget:
+                await self._loading_widget.remove()
+            self._loading_widget = None
+            self._translation_task = None
+
     async def _show_help(self, **kwargs: Any) -> None:
         help_text = self.commands.get_help_text()
         await self._mount_and_scroll(UserCommandMessage(help_text))
+
+    async def _show_history_picker(self, **kwargs: Any) -> None:
+        history_file = HISTORY_FILE.path
+        if not history_file.exists():
+            await self._mount_and_scroll(UserCommandMessage("No history found."))
+            return
+
+        try:
+            text = read_safe(history_file).text
+        except OSError:
+            await self._mount_and_scroll(UserCommandMessage("Failed to read history."))
+            return
+
+        entries: list[str] = []
+        for raw_line in text.splitlines():
+            if not raw_line:
+                continue
+            try:
+                entry = json.loads(raw_line)
+            except json.JSONDecodeError:
+                entry = raw_line
+            entries.append(entry if isinstance(entry, str) else str(entry))
+
+        # Show the last 5000 entries, newest first
+        entries = entries[-5000:][::-1]
+
+        if not entries:
+            await self._mount_and_scroll(
+                UserCommandMessage("No history entries found.")
+            )
+            return
+
+        if not using_cython:
+            self.notify(
+                "History search using pure Python fallback (Cython not compiled). "
+                "Search may be slower for large histories.",
+                severity="warning",
+                timeout=8,
+            )
+
+        await self._mount_and_scroll(UserCommandMessage("History picker opened..."))
+        await self._switch_from_input(HistoryPickerApp(entries=entries))
+
+    async def on_history_picker_app_history_selected(
+        self, event: HistoryPickerApp.HistorySelected
+    ) -> None:
+        await self._switch_to_input_app()
+        if self._chat_input_container:
+            self._chat_input_container.value = event.text
+            self._chat_input_container.focus_input()
+
+    async def on_history_picker_app_cancelled(
+        self, event: HistoryPickerApp.Cancelled
+    ) -> None:
+        await self._switch_to_input_app()
 
     def _get_last_assistant_message_text(self) -> str | None:
         messages_area = self._cached_messages_area or self.query_one("#messages")
@@ -1924,7 +2624,7 @@ class VibeApp(App):  # noqa: PLR0904
                 await self._resume_remote_session(session)
             else:
                 raise ValueError(f"Unknown session source: {event.source}")
-        except Exception as e:
+        except (ValueError, ValidationError) as e:
             await self._mount_and_scroll(
                 ErrorMessage(
                     f"Failed to load session: {e}", collapsed=self._tools_collapsed
@@ -1956,9 +2656,26 @@ class VibeApp(App):  # noqa: PLR0904
         if self._chat_input_container:
             self._chat_input_container.set_custom_border(None)
 
-        non_system_messages = [
-            msg for msg in loaded_messages if msg.role != Role.system
-        ]
+        # Reuse system prompt from saved session metadata (fallback to calculated)
+        saved_system_prompt = metadata.get("system_prompt")
+        use_saved = saved_system_prompt is not None
+        saved_msg: LLMMessage | None = None
+        if use_saved:
+            try:
+                saved_msg = LLMMessage.model_validate(saved_system_prompt)
+                content = saved_msg.content
+                if not isinstance(content, str) or not content:
+                    raise ValueError("empty or invalid system prompt content")
+            except (TypeError, ValueError, KeyError):
+                use_saved = False
+        if use_saved:
+            assert saved_msg is not None
+            system_messages = [saved_msg]
+        else:
+            system_messages = [
+                msg for msg in self.agent_loop.messages if msg.role == Role.system
+            ]
+        [msg for msg in loaded_messages if msg.role != Role.system]
 
         self.agent_loop.session_id = session.session_id
         self.agent_loop.parent_session_id = metadata.get("parent_session_id")
@@ -1966,10 +2683,11 @@ class VibeApp(App):  # noqa: PLR0904
             session.session_id, session_path
         )
         await self.agent_loop.hydrate_experiments_from_session()
-        current_system_messages = [
-            msg for msg in self.agent_loop.messages if msg.role == Role.system
-        ]
-        self.agent_loop.messages.reset(current_system_messages + non_system_messages)
+        self.agent_loop.messages.reset(system_messages + loaded_messages)
+        if use_saved:
+            self.agent_loop._resume_system_prompt = cast(
+                str, system_messages[0].content
+            )
         self._refresh_profile_widgets()
 
         self._reset_ui_state()
@@ -1979,14 +2697,18 @@ class VibeApp(App):  # noqa: PLR0904
         await messages_area.remove_children()
 
         if self.event_handler:
-            self.event_handler.is_remote = False
+            self.event_handler.set_is_remote(False)
         await self._resume_history_from_messages()
+        # Notify listeners that history was reset (resume)
+        self.agent_loop._notify_event_listeners(MessageResetEvent(reason="resume"))
         self._loop_runner.restore_from_session()
         await self._mount_and_scroll(
             UserCommandMessage(
                 f"Resumed session `{short_session_id(session.session_id)}`"
             )
         )
+        if not use_saved:
+            self.notify(SYSTEM_PROMPT_RECALCULATED_MSG, severity="warning", timeout=10)
 
     async def _resume_remote_session(self, session: ResumeSessionInfo) -> None:
         await self._remote_manager.attach(
@@ -2005,12 +2727,49 @@ class VibeApp(App):  # noqa: PLR0904
         await messages_area.remove_children()
 
         if self.event_handler:
-            self.event_handler.is_remote = True
+            self.event_handler.set_is_remote(True)
         self._remote_manager.start_stream(self)
+
+    async def _resume_session_by_id(self, session_id: str) -> None:
+        """Resume a session by its ID directly, without showing the picker.
+
+        This method is called from the web UI when a user clicks on a session
+        in the session picker modal. It handles both local and remote sessions.
+
+        Args:
+            session_id: The session ID to resume.
+        """
+        session_config = self.config.session_logging
+        session_path = SessionLoader.find_session_by_id(session_id, session_config)
+
+        source = "local" if session_path else "remote"
+        session = ResumeSessionInfo(
+            session_id=session_id, source=source, cwd="", title=None, end_time=None
+        )
+
+        await self._resume_session_with_error_handling(session)
+
+    async def _resume_session_with_error_handling(
+        self, session: ResumeSessionInfo
+    ) -> None:
+        """Resume a session with unified error handling.
+
+        Args:
+            session: The session info to resume.
+        """
+        try:
+            if session.source == "local":
+                await self._resume_local_session(session)
+            else:
+                await self._resume_remote_session(session)
+        except Exception as e:
+            await self._mount_and_scroll(
+                ErrorMessage(str(e), collapsed=self._tools_collapsed)
+            )
 
     async def on_remote_event(self, event: BaseEvent, loading_widget: Any) -> None:
         if self.event_handler:
-            await self.event_handler.handle_event(event, loading_widget=loading_widget)
+            self.event_handler.handle_event(event, loading_widget=loading_widget)
 
     async def on_remote_waiting_input(self, event: WaitingForInputEvent) -> None:
         await self._handle_remote_waiting_input(event)
@@ -2036,7 +2795,7 @@ class VibeApp(App):  # noqa: PLR0904
 
     async def on_remote_finalize_streaming(self) -> None:
         if self.event_handler:
-            await self.event_handler.finalize_streaming()
+            self.event_handler.finalize_streaming()
 
     async def remove_loading(self) -> None:
         await self._remove_loading_widget()
@@ -2081,6 +2840,54 @@ class VibeApp(App):  # noqa: PLR0904
                 )
             )
 
+    def reload_config(self) -> None:
+        """Reload config from file. Called from sync web UI routes on another thread."""
+        import asyncio
+
+        def _schedule() -> None:
+            asyncio.create_task(self._reload_config())
+
+        self.call_from_thread(_schedule)
+
+    async def get_rewind_state_info(self) -> dict | None:
+        """Gather rewind state for web UI. Returns None if no user messages."""
+        from vibe.cli.textual_ui.widgets.messages import UserMessage
+
+        try:
+            messages_area = self.query_one("#messages")
+            user_widgets = list(messages_area.query(UserMessage))
+        except Exception:
+            return None
+
+        if not user_widgets:
+            return None
+
+        agent_loop_ref = getattr(self, "agent_loop", None)
+        rewind_mgr = (
+            getattr(agent_loop_ref, "rewind_manager", None) if agent_loop_ref else None
+        )
+
+        widgets: list[dict[str, Any]] = []
+        for w in user_widgets:
+            msg_index = getattr(w, "message_index", None)
+            content = w.get_content() if isinstance(w, UserMessage) else ""
+            has_files = False
+            if msg_index is not None and rewind_mgr is not None:
+                has_files = rewind_mgr.has_file_changes_at(msg_index)
+            widgets.append({
+                "message_index": msg_index,
+                "content": content[:200] if content else "",
+                "has_file_changes": has_files,
+            })
+
+        current = widgets[-1] if widgets else None
+        return {
+            "success": True,
+            "messages": widgets,
+            "current": current,
+            "count": len(widgets),
+        }
+
     async def _install_lean(self, **kwargs: Any) -> None:
         current = list(self.agent_loop.base_config.installed_agents)
         if "lean" in current:
@@ -2110,12 +2917,12 @@ class VibeApp(App):  # noqa: PLR0904
                 await self._remote_manager.detach()
                 self._refresh_profile_widgets()
                 if self.event_handler:
-                    self.event_handler.is_remote = False
+                    self.event_handler.set_is_remote(False)
             if self._chat_input_container:
                 self._chat_input_container.set_custom_border(None)
             await self.agent_loop.clear_history()
             if self.event_handler:
-                await self.event_handler.finalize_streaming()
+                self.event_handler.finalize_streaming()
             messages_area = self._cached_messages_area or self.query_one("#messages")
             await messages_area.remove_children()
 
@@ -2132,6 +2939,7 @@ class VibeApp(App):  # noqa: PLR0904
                     f"Failed to clear history: {e}", collapsed=self._tools_collapsed
                 )
             )
+        self._spawn_queue_task()
 
     async def _show_log_path(self, **kwargs: Any) -> None:
         if not self.agent_loop.session_logger.enabled:
@@ -2156,6 +2964,157 @@ class VibeApp(App):  # noqa: PLR0904
                     f"Failed to get log path: {e}", collapsed=self._tools_collapsed
                 )
             )
+
+    async def _log_edit(self, **kwargs: Any) -> None:
+        if not self.agent_loop.session_logger.enabled:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    "Session logging is disabled in configuration.",
+                    collapsed=self._tools_collapsed,
+                )
+            )
+            return
+
+        messages_file = self.agent_loop.session_logger.messages_filepath
+        if not messages_file or not messages_file.exists():
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    "Session log file not found.", collapsed=self._tools_collapsed
+                )
+            )
+            return
+
+        with self.app.suspend():
+            ok = ExternalEditor().open_file(messages_file)
+        if not ok:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    "Failed to open external editor.", collapsed=self._tools_collapsed
+                )
+            )
+
+    async def _queue_command(self, cmd_args: str = "", **kwargs: Any) -> None:
+        """Queue a message for auto-submit, or show current queue status.
+
+        Usage:
+            /queue <message>  — Add message to queue
+            /queue clear      — Clear the queue
+            /queue            — Show current queue contents
+        """
+        stripped = cmd_args.strip()
+
+        match stripped:
+            case "clear":
+                if self._queue_mgr.clear():
+                    await self._mount_and_scroll(
+                        UserCommandMessage("## Queue\n\nQueue cleared.")
+                    )
+                else:
+                    await self._mount_and_scroll(
+                        ErrorMessage(
+                            "Failed to clear queue.", collapsed=self._tools_collapsed
+                        )
+                    )
+                return
+
+            case "":
+                entries = self._queue_mgr.read_entries()
+                if not entries:
+                    await self._mount_and_scroll(
+                        UserCommandMessage("## Queue\n\nQueue is empty.")
+                    )
+                else:
+                    lines = "\n".join(
+                        f"{i + 1}. `{msg[:QUEUE_PREVIEW_LENGTH]}{'...' if len(msg) > QUEUE_PREVIEW_LENGTH else ''}`"
+                        for i, msg in enumerate(entries)
+                    )
+                    await self._mount_and_scroll(
+                        UserCommandMessage(
+                            f"## Queue ({len(entries)} message(s))\n\n{lines}"
+                        )
+                    )
+                return
+
+            case _:
+                total = self._queue_mgr.append(stripped)
+                if total is not None:
+                    await self._mount_and_scroll(
+                        UserCommandMessage(
+                            f"## Queue\n\nMessage added. Total: {total} message(s)."
+                        )
+                    )
+                else:
+                    await self._mount_and_scroll(
+                        ErrorMessage(
+                            "Failed to add message to queue.",
+                            collapsed=self._tools_collapsed,
+                        )
+                    )
+
+    async def _edit_last_message(self, **kwargs: Any) -> None:
+        """Edit the last user message and restart the conversation."""
+        messages = self.agent_loop.messages
+
+        # Validate preconditions
+        if self._agent_running:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    "Cannot edit while agent is processing. Please wait.",
+                    collapsed=self._tools_collapsed,
+                )
+            )
+            return
+
+        if len(messages) <= 1:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    "No messages to edit. Start a conversation first.",
+                    collapsed=self._tools_collapsed,
+                )
+            )
+            return
+
+        # Find last user message
+        if not any(msg.role == Role.user for msg in reversed(messages)):
+            await self._mount_and_scroll(
+                ErrorMessage("No user message found.", collapsed=self._tools_collapsed)
+            )
+            return
+
+        # Extract new content from command (stored in _last_command_input)
+        user_input = getattr(self, "_last_command_input", None)
+        if not isinstance(user_input, str) or not user_input.startswith("/edit "):
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    "Invalid edit command. Use /edit <new content>",
+                    collapsed=self._tools_collapsed,
+                )
+            )
+            return
+
+        new_content = user_input[6:].strip()
+        if not new_content:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    "No content provided for edit.", collapsed=self._tools_collapsed
+                )
+            )
+            return
+
+        # Spawn task so UI remains responsive during edit
+        self._agent_task = asyncio.create_task(self._handle_edit_turn(new_content))
+
+    async def _handle_edit_turn(self, new_content: str) -> None:
+        """Truncate last turn, rebuild UI, then run normal agent turn."""
+        await self.agent_loop.truncate_last_turn()
+        self._reset_ui_state()
+
+        messages_area = self._cached_messages_area or self.query_one("#messages")
+        await messages_area.remove_children()
+        await self._resume_history_from_messages()
+
+        await self._mount_and_scroll(UserMessage(new_content))
+        await self._handle_agent_loop_turn(new_content)
 
     async def _loop_command(self, cmd_args: str = "", **kwargs: Any) -> None:
         widget = await self._loop_runner.handle_command(cmd_args)
@@ -2185,7 +3144,7 @@ class VibeApp(App):  # noqa: PLR0904
 
         old_session_id = self.agent_loop.session_id
         compact_msg = CompactMessage()
-        self.event_handler.current_compact = compact_msg
+        self.event_handler.set_current_compact(compact_msg)
         await self._mount_and_scroll(compact_msg)
 
         self._agent_task = asyncio.create_task(
@@ -2200,10 +3159,21 @@ class VibeApp(App):  # noqa: PLR0904
     ) -> None:
         self._agent_running = True
         try:
-            await self.agent_loop.compact(extra_instructions=extra_instructions)
+            summary = await self.agent_loop.compact(
+                extra_instructions=extra_instructions
+            )
             compact_msg.set_complete(
                 old_session_id=old_session_id, new_session_id=self.agent_loop.session_id
             )
+
+            self._spawn_queue_task()
+
+            # Mount summary widget if there's content
+            if summary and self.event_handler:
+                from vibe.cli.textual_ui.widgets.messages import CompactSummaryMessage
+
+                summary_widget = CompactSummaryMessage(summary)
+                await self._mount_and_scroll(summary_widget)
 
         except asyncio.CancelledError:
             compact_msg.set_error("Compaction interrupted")
@@ -2213,8 +3183,9 @@ class VibeApp(App):  # noqa: PLR0904
         finally:
             self._agent_running = False
             self._agent_task = None
+            self._queued_message = None
             if self.event_handler:
-                self.event_handler.current_compact = None
+                self.event_handler.set_current_compact(None)
 
     def _get_session_resume_info(self) -> str | None:
         if self._remote_manager.is_active:
@@ -2244,6 +3215,10 @@ class VibeApp(App):  # noqa: PLR0904
             logger.error("Failed to close telemetry client during exit", exc_info=exc)
         finally:
             self.exit(result=self._get_session_resume_info())
+
+    async def _restart_app(self, **kwargs: Any) -> None:
+        self._restart_pending = True
+        await self._exit_app()
 
     def _make_default_voice_manager(self) -> VoiceManager:
         try:
@@ -2385,7 +3360,7 @@ class VibeApp(App):  # noqa: PLR0904
             if chat.is_at_bottom:
                 self.call_after_refresh(chat.anchor)
 
-    def _focus_current_bottom_app(self) -> None:
+    def _focus_current_bottom_app(self) -> None:  # noqa: PLR0912
         try:
             match self._current_bottom_app:
                 case BottomApp.Input:
@@ -2404,6 +3379,8 @@ class VibeApp(App):  # noqa: PLR0904
                     self.query_one(ApprovalApp).focus()
                 case BottomApp.Question:
                     self.query_one(QuestionApp).focus()
+                case BottomApp.HistoryPicker:
+                    self.query_one(HistoryPickerApp).focus()
                 case BottomApp.SessionPicker:
                     self.query_one(SessionPickerApp).focus()
                 case BottomApp.MCP:
@@ -2463,6 +3440,14 @@ class VibeApp(App):  # noqa: PLR0904
         try:
             model_picker = self.query_one(ModelPickerApp)
             model_picker.post_message(ModelPickerApp.Cancelled())
+        except Exception:
+            pass
+        self._last_escape_time = None
+
+    def _handle_history_picker_app_escape(self) -> None:
+        try:
+            history_picker = self.query_one(HistoryPickerApp)
+            history_picker.post_message(HistoryPickerApp.Cancelled())
         except Exception:
             pass
         self._last_escape_time = None
@@ -2644,6 +3629,12 @@ class VibeApp(App):  # noqa: PLR0904
     ) -> None:
         await self._execute_rewind(restore_files=False)
 
+    def on_rewind_app_rewind_prev(self, message: RewindApp.RewindPrev) -> None:
+        self.action_rewind_prev()
+
+    def on_rewind_app_rewind_next(self, message: RewindApp.RewindNext) -> None:
+        self.action_rewind_next()
+
     async def _execute_rewind(self, *, restore_files: bool) -> None:
         """Fork the session at the selected user message."""
         if not self._rewind_mode or self._rewind_highlighted_widget is None:
@@ -2680,6 +3671,9 @@ class VibeApp(App):  # noqa: PLR0904
         if to_remove:
             await messages_area.remove_children(to_remove)
 
+        # Notify listeners that history was truncated (for WebUI sync)
+        self.agent_loop._notify_event_listeners(MessageResetEvent(reason="clear"))
+
         self._clear_rewind_state()
 
         # Switch back to input and pre-fill with the original message
@@ -2710,7 +3704,7 @@ class VibeApp(App):  # noqa: PLR0904
             pass
         self._last_escape_time = None
 
-    def _try_interrupt_bottom_app_escape(self) -> bool:
+    def _try_interrupt_bottom_app_escape(self) -> bool:  # noqa: PLR0912
         if self._current_bottom_app == BottomApp.Config:
             self._handle_config_app_escape()
         elif self._current_bottom_app == BottomApp.Voice:
@@ -2727,12 +3721,29 @@ class VibeApp(App):  # noqa: PLR0904
             self._handle_question_app_escape()
         elif self._current_bottom_app == BottomApp.ModelPicker:
             self._handle_model_picker_app_escape()
+        elif self._current_bottom_app == BottomApp.HistoryPicker:
+            self._handle_history_picker_app_escape()
         elif self._current_bottom_app == BottomApp.ThemePicker:
             self._handle_theme_picker_app_escape()
         elif self._current_bottom_app == BottomApp.ThinkingPicker:
             self._handle_thinking_picker_app_escape()
         elif self._current_bottom_app == BottomApp.SessionPicker:
             self._handle_session_picker_app_escape()
+        # Handle ESC key for queued message during compaction
+        if (
+            self._current_bottom_app == BottomApp.Input
+            and self._queued_message is not None
+            and self.event_handler
+            and self.event_handler.current_compact
+        ):
+            # Clear the queued message
+            self._queued_message = None
+            self.run_worker(
+                self._mount_and_scroll(ErrorMessage("Queued message cleared")),
+                exclusive=False,
+            )
+            return True
+
         elif self._current_bottom_app == BottomApp.Rewind:
             self.run_worker(self._exit_rewind_mode(), exclusive=False)
             self._last_escape_time = None
@@ -2777,6 +3788,9 @@ class VibeApp(App):  # noqa: PLR0904
         if self._agent_running:
             self._handle_agent_running_escape()
             interrupted = True
+
+        if self._translation_running and self._translation_task:
+            self._translation_task.cancel()
 
         self._last_escape_time = time.monotonic()
         chat = self._cached_chat or self.query_one("#chat", ChatScroll)
@@ -2990,6 +4004,22 @@ class VibeApp(App):  # noqa: PLR0904
         except Exception:
             pass
 
+    def action_scroll_chat_home(self) -> None:
+        try:
+            chat = self.query_one("#chat", VerticalScroll)
+            chat.scroll_home(animate=False)
+            self._auto_scroll = False
+        except Exception:
+            pass
+
+    def action_scroll_chat_end(self) -> None:
+        try:
+            chat = self.query_one("#chat", VerticalScroll)
+            chat.scroll_end(animate=False)
+            self._auto_scroll = True
+        except Exception:
+            pass
+
     async def _show_dangerous_directory_warning(self) -> None:
         is_dangerous, reason = is_dangerous_directory()
         if is_dangerous:
@@ -3094,6 +4124,32 @@ class VibeApp(App):  # noqa: PLR0904
         messages_area = self._cached_messages_area or self.query_one("#messages")
         chat = self._cached_chat or self.query_one("#chat", ChatScroll)
 
+        # Record history index for indexable widgets
+        history = non_system_history_messages(self.agent_loop.messages)
+        if history:
+            match widget:
+                case UserMessage():
+                    self._history_widget_indices[widget] = (
+                        widget.message_index
+                        if widget.message_index is not None
+                        else len(history) - 1
+                    )
+                case AssistantMessage():
+                    self._history_widget_indices[widget] = len(history) - 1
+                case ToolCallMessage():
+                    for w in reversed(list(messages_area.children)):
+                        if isinstance(w, AssistantMessage):
+                            idx = self._history_widget_indices.get(w)
+                            if idx is not None:
+                                self._history_widget_indices[widget] = idx
+                                break
+                    else:
+                        self._history_widget_indices[widget] = len(history) - 1
+                case ToolResultMessage():
+                    self._history_widget_indices[widget] = len(history) - 1
+                case _:
+                    pass
+
         is_user_initiated = isinstance(widget, (UserMessage, UserCommandMessage))
         should_anchor = is_user_initiated or chat.is_at_bottom
 
@@ -3110,6 +4166,9 @@ class VibeApp(App):  # noqa: PLR0904
             chat.anchor()
 
     async def _try_prune(self) -> None:
+        chat = self._cached_chat or self.query_one("#chat", ChatScroll)
+        if not chat.is_at_bottom:
+            return  # User is reading — don't remove widgets
         messages_area = self._cached_messages_area or self.query_one("#messages")
         pruned = await prune_oldest_children(
             messages_area, PRUNE_LOW_MARK, PRUNE_HIGH_MARK
@@ -3117,6 +4176,17 @@ class VibeApp(App):  # noqa: PLR0904
         if self._load_more.widget and not self._load_more.widget.parent:
             self._load_more.widget = None
         if pruned:
+            # Refresh backfill after prune (bypass widget guard — indices are reliable)
+            has_bf, tc_map = sync_backfill_state(
+                history_messages=non_system_history_messages(self.agent_loop.messages),
+                messages_children=list(messages_area.children),
+                history_widget_indices=self._history_widget_indices,
+                windowing=self._windowing,
+            )
+            self._tool_call_map = tc_map
+            await self._load_more.set_visible(
+                messages_area, visible=has_bf, remaining=self._windowing.remaining
+            )
             chat = self._cached_chat or self.query_one("#chat", ChatScroll)
             if chat.is_at_bottom:
                 self.call_later(chat.anchor)
@@ -3264,3 +4334,8 @@ def run_textual_ui(
     print_session_resume_message(
         session_id, agent_loop.stats, agent_loop.config.session_logging
     )
+
+    if app._restart_pending:
+        os.execv(
+            sys.executable, [sys.executable, "-m", "vibe.cli.entrypoint"] + sys.argv[1:]
+        )

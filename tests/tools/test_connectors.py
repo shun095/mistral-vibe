@@ -272,6 +272,8 @@ class TestUnwrapHttpStatusError:
 
 
 class TestConnectorProxyToolRun:
+    pytestmark = pytest.mark.skip(reason="Connectors are disabled")
+
     @staticmethod
     def _make_tool_class() -> type[MCPTool]:
         remote = RemoteTool(name="search", description="Search docs")
@@ -508,6 +510,8 @@ def _make_tool_payload(
 
 
 class TestBootstrapDiscovery:
+    pytestmark = pytest.mark.skip(reason="Connectors are disabled")
+
     @respx.mock
     @pytest.mark.asyncio
     async def test_discovers_tools_from_bootstrap(self) -> None:
@@ -673,6 +677,7 @@ class TestBootstrapDiscovery:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skip(reason="Connectors are hardcoded-disabled in custom-fix branch")
 class TestAuthActionablediscovery:
     @respx.mock
     @pytest.mark.asyncio

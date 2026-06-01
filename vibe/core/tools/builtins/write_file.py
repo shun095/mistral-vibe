@@ -7,6 +7,7 @@ from typing import ClassVar, final
 import anyio
 from pydantic import BaseModel, Field
 
+from vibe.core.lsp.utils import get_lsp_diagnostics
 from vibe.core.rewind.manager import FileSnapshot
 from vibe.core.scratchpad import is_scratchpad_path
 from vibe.core.tools.base import (
@@ -36,6 +37,10 @@ class WriteFileResult(BaseModel):
     bytes_written: int
     file_existed: bool
     content: str
+    lsp_diagnostics: str | None = Field(
+        default=None,
+        description="Formatted LSP diagnostics for the written file, if available",
+    )
 
 
 class WriteFileConfig(BaseToolConfig):
@@ -100,11 +105,14 @@ class WriteFile(
 
         await self._write_file(args, file_path)
 
+        diagnostics = await get_lsp_diagnostics(str(file_path))
+
         yield WriteFileResult(
             path=str(file_path),
             bytes_written=content_bytes,
             file_existed=file_existed,
             content=args.content,
+            lsp_diagnostics=diagnostics,
         )
 
     def _prepare_and_validate_path(self, args: WriteFileArgs) -> tuple[Path, bool, int]:

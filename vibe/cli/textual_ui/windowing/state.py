@@ -8,7 +8,7 @@ from vibe.cli.textual_ui.widgets.load_more import HistoryLoadMoreMessage
 from vibe.core.types import LLMMessage
 
 HISTORY_RESUME_TAIL_MESSAGES = 20
-LOAD_MORE_BATCH_SIZE = 10
+LOAD_MORE_BATCH_SIZE = 20
 
 
 @dataclass(frozen=True)
@@ -87,10 +87,20 @@ class HistoryLoadMoreManager:
         self.widget: HistoryLoadMoreMessage | None = None
 
     async def show(self, messages_area: Widget, remaining: int) -> None:
-        if self.widget is None:
-            widget = HistoryLoadMoreMessage()
-            await messages_area.mount(widget, before=0)
-            self.widget = widget
+        if self.widget is not None:
+            if self.widget.parent is None:
+                self.widget = None
+            else:
+                self.set_remaining(remaining)
+                return
+        # Guard: don't mount if a LoadMore widget already exists in DOM
+        existing = messages_area.query(HistoryLoadMoreMessage)
+        if existing:
+            self.set_remaining(remaining)
+            return
+        widget = HistoryLoadMoreMessage()
+        await messages_area.mount(widget, before=0)
+        self.widget = widget
         self.set_remaining(remaining)
 
     async def hide(self) -> None:

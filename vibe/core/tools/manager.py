@@ -9,7 +9,7 @@ from pathlib import Path
 import re
 import sys
 import threading
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from vibe.core.config.harness_files import get_harness_files_manager
 from vibe.core.logger import logger
@@ -68,6 +68,10 @@ class ToolManager:
     Discovers available tools from the provided search paths. Each Agent
     should have its own ToolManager instance.
     """
+
+    # Class-level MCP cache shared across all instances
+    # This cache persists across ToolManager instance creations and mode switches
+    _mcp_cache: ClassVar[dict[str, dict[str, type[BaseTool]]]] = {}
 
     def __init__(
         self,
@@ -430,7 +434,21 @@ class ToolManager:
         if user_overrides is None and permission_override is None:
             return config_class()
 
-        merged_dict = {**default_config.model_dump(), **(user_overrides or {})}
+        # user_overrides is dict[str, Any], not a BaseModel
+        default_dict = default_config.model_dump()
+        merged_dict = default_dict.copy()
+
+        if user_overrides is not None:
+            for key, value in user_overrides.items():
+                if key in default_dict:
+                    if isinstance(value, list) and isinstance(default_dict[key], list):
+                        if value:  # Empty list means "use default"
+                            merged_dict[key] = value
+                    elif value != default_dict[key]:
+                        merged_dict[key] = value
+                else:
+                    merged_dict[key] = value
+
         if permission_override is not None:
             merged_dict["permission"] = permission_override.value
         return config_class.model_validate(merged_dict)

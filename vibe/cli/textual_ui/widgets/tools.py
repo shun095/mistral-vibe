@@ -4,12 +4,18 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Static
 
-from vibe.cli.textual_ui.widgets.messages import ExpandingBorder, NonSelectableStatic
+from vibe.cli.textual_ui.widgets.messages import (
+    _COLLAPSED_TRIANGLE,
+    _EXPANDED_TRIANGLE,
+    ExpandingBorder,
+    NonSelectableStatic,
+)
 from vibe.cli.textual_ui.widgets.no_markup_static import NoMarkupStatic
 from vibe.cli.textual_ui.widgets.status_message import StatusMessage
 from vibe.cli.textual_ui.widgets.tool_widgets import get_result_widget
 from vibe.core.tools.ui import ToolUIDataAdapter
 from vibe.core.types import ToolCallEvent, ToolResultEvent
+from vibe.core.utils.time import format_duration, wall_now
 
 
 class ToolCallMessage(StatusMessage):
@@ -22,7 +28,10 @@ class ToolCallMessage(StatusMessage):
         self._event = event
         self._tool_name = tool_name or (event.tool_name if event else None) or "unknown"
         self._is_history = event is None
+        self._display_text: str | None = None
         self._stream_widget: NoMarkupStatic | None = None
+        self._result_widget: ToolResultMessage | None = None
+        self._start_time: float = wall_now() if not self._is_history else 0.0
 
         super().__init__()
         self.add_class("tool-call")
@@ -32,7 +41,7 @@ class ToolCallMessage(StatusMessage):
 
     def compose(self) -> ComposeResult:
         with Vertical(classes="tool-call-container"):
-            with Horizontal():
+            with Horizontal(classes="tool-call-header"):
                 self._indicator_widget = NonSelectableStatic(
                     self._spinner.current_frame(), classes="status-indicator-icon"
                 )
@@ -56,18 +65,33 @@ class ToolCallMessage(StatusMessage):
     def tool_call_id(self) -> str | None:
         return self._event.tool_call_id if self._event else None
 
+    def _ensure_triangle(self, text: str) -> str:
+        if text and text[-1] in {_COLLAPSED_TRIANGLE, _EXPANDED_TRIANGLE}:
+            return text
+        if self._is_spinning:
+            return text
+        collapsed = self._result_widget.collapsed if self._result_widget else True
+        triangle = _COLLAPSED_TRIANGLE if collapsed else _EXPANDED_TRIANGLE
+        return f"{text} {triangle}"
+
     def get_content(self) -> str:
         if self._event:
+            if self._is_spinning:
+                adapter = ToolUIDataAdapter(self._event.tool_class)
+                display = adapter.get_call_display(self._event)
+                elapsed = wall_now() - self._start_time
+                return f"{display.summary} {format_duration(elapsed)}"
+            if self._display_text:
+                return self._display_text
             adapter = ToolUIDataAdapter(self._event.tool_class)
-            display = adapter.get_call_display(self._event)
-            return display.summary
-        return self._tool_name
+            return adapter.get_call_display(self._event).summary
+        return self._ensure_triangle(self._tool_name)
 
     def update_event(self, event: ToolCallEvent) -> None:
         self._event = event
         self._tool_name = event.tool_name
         if self._text_widget:
-            self._text_widget.update(self.get_content())
+            self._text_widget.update(self._ensure_triangle(self.get_content()))
 
     def set_stream_message(self, message: str) -> None:
         """Update the stream message displayed below the tool call indicator."""
@@ -77,11 +101,34 @@ class ToolCallMessage(StatusMessage):
 
     def stop_spinning(self, success: bool = True) -> None:
         """Stop the spinner while keeping stream row stable to avoid layout jumps."""
-        super().stop_spinning(success)
+        self._is_spinning = False
+        self.success = success
+        if self._spinner_timer:
+            self._spinner_timer.stop()
+            self._spinner_timer = None
+        if self._display_text and self._text_widget:
+            self._text_widget.update(self._ensure_triangle(self._display_text))
+        else:
+            self.update_display()
 
     def set_result_text(self, text: str) -> None:
         if self._text_widget:
-            self._text_widget.update(text)
+            if self._event:
+                self._display_text = text
+            self._text_widget.update(self._ensure_triangle(text))
+
+    def set_result_widget(self, result_widget: ToolResultMessage) -> None:
+        self._result_widget = result_widget
+        self._update_triangle()
+
+    def _update_triangle(self) -> None:
+        if self._text_widget:
+            self._text_widget.update(self._ensure_triangle(self.get_content()))
+
+    async def on_click(self) -> None:
+        if self._result_widget is not None:
+            await self._result_widget.toggle_collapsed()
+            self._update_triangle()
 
 
 class ToolResultMessage(Static):
@@ -119,6 +166,7 @@ class ToolResultMessage(Static):
 
     async def on_mount(self) -> None:
         if self._call_widget:
+            self._call_widget.set_result_widget(self)
             success = self._determine_success()
             self._call_widget.stop_spinning(success=success)
             result_text = self._get_result_text()
@@ -136,22 +184,24 @@ class ToolResultMessage(Static):
             return display.success
         return True
 
-    def _get_result_text(self) -> str:
+    def _base_result_text(self) -> str:
         if self._event is None:
             return f"{self._tool_name} completed"
-
         if self._event.error:
             return f"{self._tool_name}: error"
-
         if self._event.skipped:
             return f"{self._tool_name}: skipped"
-
         if self._event.tool_class:
             adapter = ToolUIDataAdapter(self._event.tool_class)
-            display = adapter.get_result_display(self._event)
-            return display.message
-
+            return adapter.get_result_display(self._event).message
         return f"{self._tool_name} completed"
+
+    def _get_result_text(self) -> str:
+        text = self._base_result_text()
+        if self._call_widget is not None and not self._call_widget._is_history:
+            elapsed = wall_now() - self._call_widget._start_time
+            text = f"{text} ({format_duration(elapsed)})"
+        return text
 
     async def _render_result(self) -> None:
         if self._content_container is None:
@@ -210,6 +260,11 @@ class ToolResultMessage(Static):
             return
         self.collapsed = collapsed
         await self._render_result()
+
+    async def on_click(self) -> None:
+        await self.toggle_collapsed()
+        if self._call_widget:
+            self._call_widget._update_triangle()
 
     async def toggle_collapsed(self) -> None:
         self.collapsed = not self.collapsed

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+import time
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from vibe.core.hooks.models import HookMessageSeverity
@@ -23,6 +24,9 @@ from watchfiles import awatch
 
 from vibe.cli.textual_ui.widgets.no_markup_static import NoMarkupStatic
 from vibe.cli.textual_ui.widgets.spinner import SpinnerMixin, SpinnerType
+
+_COLLAPSED_TRIANGLE = "\u25b6"
+_EXPANDED_TRIANGLE = "\u25bc"
 
 
 class NonSelectableStatic(NoMarkupStatic):
@@ -98,6 +102,22 @@ class UserMessage(Static):
         self.remove_class("pending")
 
 
+class ImageMessage(Static):
+    """Widget for displaying image messages with [image] placeholder."""
+
+    def __init__(self, text_content: str) -> None:
+        super().__init__()
+        self.add_class("user-message")
+        self._text_content = text_content
+
+    def compose(self) -> ComposeResult:
+        with Horizontal(classes="user-message-container"):
+            content = (
+                f"{self._text_content}\n[image]" if self._text_content else "[image]"
+            )
+            yield NoMarkupStatic(content, classes="user-message-content")
+
+
 class SlashCommandMessage(UserMessage):
     PROMPT_CHAR = "/"
     SHOW_SEPARATOR = False
@@ -118,6 +138,9 @@ class StreamingMessageBase(Static):
         self._markdown: Markdown | None = None
         self._stream: MarkdownStream | None = None
         self._content_initialized = False
+        # Time-based batching fields
+        self._batch_buffer: list[str] = []
+        self._flush_task: asyncio.Task | None = None
         self._to_write_buffer = ""
 
     def _get_markdown(self) -> Markdown:
@@ -144,18 +167,32 @@ class StreamingMessageBase(Static):
             return
 
         self._content += content
+        self._batch_buffer.append(content)
+        if self._flush_task is None or self._flush_task.done():
+            current_ms = time.perf_counter() * 1000
+            next_flush_time = ((current_ms // 500) + 1) * 500
+            self._flush_task = asyncio.create_task(
+                self._periodic_flush(next_flush_time)
+            )
 
-        if not self._should_write_content():
-            return
+    async def _periodic_flush(self, next_flush_time: float) -> None:
+        """Flush buffer once at next 500ms interval."""
+        try:
+            current_ms = time.perf_counter() * 1000
+            wait_time = next_flush_time - current_ms
+            if wait_time > 0:
+                await asyncio.sleep(wait_time / 1000.0)
+            await self._flush_batch()
+        finally:
+            self._flush_task = None
 
-        if self._is_chat_at_bottom():
-            to_write = self._to_write_buffer + content
-            self._to_write_buffer = ""
+    async def _flush_batch(self) -> None:
+        """Flush batch buffer to stream."""
+        if self._batch_buffer and self._markdown is not None:
+            batch_content = "".join(self._batch_buffer)
+            self._batch_buffer = []
             stream = self._ensure_stream()
-            await stream.write(to_write)
-            return
-
-        self._to_write_buffer += content
+            await stream.write(batch_content)
 
     async def write_initial_content(self) -> None:
         if self._content_initialized:
@@ -167,6 +204,18 @@ class StreamingMessageBase(Static):
             self._to_write_buffer = ""
 
     async def stop_stream(self) -> None:
+        # Cancel periodic flush and flush any remaining batch content
+        if self._flush_task and not self._flush_task.done():
+            self._flush_task.cancel()
+            try:
+                await self._flush_task
+            except asyncio.CancelledError:
+                pass
+
+        # Immediate flush of remaining batch content
+        await self._flush_batch()
+
+        # Write any remaining to_write_buffer content (for backward compatibility)
         if self._to_write_buffer and self._should_write_content():
             stream = self._ensure_stream()
             await stream.write(self._to_write_buffer)
@@ -177,6 +226,7 @@ class StreamingMessageBase(Static):
 
         await self._stream.stop()
         self._stream = None
+        self._flush_task = None
 
     def _should_write_content(self) -> bool:
         return True
@@ -224,7 +274,8 @@ class ReasoningMessage(SpinnerMixin, StreamingMessageBase):
                 )
                 yield self._status_text_widget
                 self._triangle_widget = NonSelectableStatic(
-                    "▶" if self.collapsed else "▼", classes="reasoning-triangle"
+                    _COLLAPSED_TRIANGLE if self.collapsed else _EXPANDED_TRIANGLE,
+                    classes="reasoning-triangle",
                 )
                 yield self._triangle_widget
             markdown = Markdown("", classes="reasoning-message-content")
@@ -253,7 +304,9 @@ class ReasoningMessage(SpinnerMixin, StreamingMessageBase):
 
         self.collapsed = collapsed
         if self._triangle_widget:
-            self._triangle_widget.update("▶" if collapsed else "▼")
+            self._triangle_widget.update(
+                _COLLAPSED_TRIANGLE if collapsed else _EXPANDED_TRIANGLE
+            )
         if self._markdown:
             self._markdown.display = not collapsed
             if not collapsed and self._content:
@@ -502,6 +555,17 @@ class WarningMessage(Static):
             if self._show_border:
                 yield ExpandingBorder(classes="warning-border")
             yield NoMarkupStatic(self._message, classes="warning-content")
+
+
+class CompactSummaryMessage(Static):
+    def __init__(self, content: str) -> None:
+        super().__init__()
+        self.add_class("compact-summary-message")
+        self._content = content
+
+    def compose(self) -> ComposeResult:
+        with Horizontal(classes="compact-summary-container"):
+            yield NoMarkupStatic(self._content, classes="compact-summary-content")
 
 
 class PlanFileMessage(Widget):

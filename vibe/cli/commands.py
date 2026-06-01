@@ -86,10 +86,20 @@ class CommandRegistry:
                 description="Copy the last agent message to the clipboard",
                 handler="_copy_last_agent_message",
             ),
+            "history": Command(
+                aliases=frozenset(["/history"]),
+                description="Search and select from chat history",
+                handler="_show_history_picker",
+            ),
             "log": Command(
                 aliases=frozenset(["/log"]),
                 description="Show path to current interaction log file",
                 handler="_show_log_path",
+            ),
+            "log-edit": Command(
+                aliases=frozenset(["/log-edit"]),
+                description="Open session log file in external editor",
+                handler="_log_edit",
             ),
             "debug": Command(
                 aliases=frozenset(["/debug"]),
@@ -105,6 +115,12 @@ class CommandRegistry:
                 aliases=frozenset(["/exit"]),
                 description="Exit the application",
                 handler="_exit_app",
+                exits=True,
+            ),
+            "restart": Command(
+                aliases=frozenset(["/restart"]),
+                description="Restart the application",
+                handler="_restart_app",
                 exits=True,
             ),
             "status": Command(
@@ -128,6 +144,11 @@ class CommandRegistry:
                 description="Browse and resume past sessions",
                 handler="_show_session_picker",
             ),
+            "edit": Command(
+                aliases=frozenset(["/edit"]),
+                description="Edit the last submitted message and restart conversation",
+                handler="_edit_last_message",
+            ),
             "rename": Command(
                 aliases=frozenset(["/rename"]),
                 description="Rename the current session",
@@ -145,6 +166,11 @@ class CommandRegistry:
                 aliases=frozenset(["/voice"]),
                 description="Configure voice settings",
                 handler="_show_voice_settings",
+            ),
+            "translate": Command(
+                aliases=frozenset(["/translate"]),
+                description="Translate input text to English",
+                handler="_translate_prompt",
             ),
             "leanstall": Command(
                 aliases=frozenset(["/leanstall"]),
@@ -173,6 +199,11 @@ class CommandRegistry:
                 aliases=frozenset(["/data-retention"]),
                 description="Show data retention information",
                 handler="_show_data_retention",
+            ),
+            "queue": Command(
+                aliases=frozenset(["/queue"]),
+                description="Queue messages for auto-submit after task completion",
+                handler="_queue_command",
             ),
             "theme": Command(
                 aliases=frozenset(["/theme"]),
@@ -244,7 +275,7 @@ class CommandRegistry:
             "- `Ctrl+G` Edit input in external editor",
             "- `Ctrl+O` Toggle tool output view",
             "- `Shift+Tab` Cycle through agents (default, plan, ...)",
-            f"- `{ALT_KEY}+↑↓` / `Ctrl+P/N` Rewind to previous/next message",
+            f"- `{ALT_KEY}+↑↓` / `Ctrl+P/N` / `←→` Rewind to previous/next message",
             "",
             "### Special Features",
             "",

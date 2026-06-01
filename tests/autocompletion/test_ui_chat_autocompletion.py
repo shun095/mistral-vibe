@@ -42,7 +42,36 @@ async def test_popup_hides_when_input_cleared(vibe_app: VibeApp) -> None:
 
 
 @pytest.mark.asyncio
-async def test_pressing_tab_writes_selected_command_and_leaves_popup_visible(
+async def test_popup_hides_when_only_slash_is_backspaced(vibe_app: VibeApp) -> None:
+    async with vibe_app.run_test() as pilot:
+        popup = vibe_app.query_one(CompletionPopup)
+
+        await pilot.press("/")
+
+        assert popup.styles.display == "block"
+
+        await pilot.press("backspace")
+
+        assert popup.styles.display == "none"
+
+
+@pytest.mark.asyncio
+async def test_popup_hides_after_exact_match_then_backspace_to_empty(
+    vibe_app: VibeApp,
+) -> None:
+    async with vibe_app.run_test() as pilot:
+        popup = vibe_app.query_one(CompletionPopup)
+
+        await pilot.press(*"/compact")
+
+        assert popup.styles.display == "none"
+
+        # Popup should already be hidden (exact match), verify it stays hidden
+        assert popup.styles.display == "none"
+
+
+@pytest.mark.asyncio
+async def test_pressing_tab_writes_selected_command_and_closes_popup_on_exact_match(
     vibe_app: VibeApp,
 ) -> None:
     async with vibe_app.run_test() as pilot:
@@ -53,7 +82,7 @@ async def test_pressing_tab_writes_selected_command_and_leaves_popup_visible(
         await pilot.press("tab")
 
         assert chat_input.value == "/config"
-        assert popup.styles.display == "block"
+        assert popup.styles.display == "none"
 
 
 def ensure_selected_command(popup: CompletionPopup, expected_alias: str) -> None:

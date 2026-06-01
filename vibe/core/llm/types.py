@@ -30,7 +30,7 @@ class BackendLike(Protocol):
         *,
         model: ModelConfig,
         messages: Sequence[LLMMessage],
-        temperature: float,
+        temperature: float | None = None,
         tools: list[AvailableTool] | None,
         max_tokens: int | None,
         tool_choice: StrToolChoice | AvailableTool | None,
@@ -42,7 +42,7 @@ class BackendLike(Protocol):
         Args:
             model: Model configuration
             messages: List of conversation messages
-            temperature: Sampling temperature (0.0 to 1.0)
+            temperature: Sampling temperature (0.0 to 1.0), None to use backend default
             tools: Optional list of available tools
             max_tokens: Maximum tokens to generate
             tool_choice: How to choose tools (auto, none, or specific tool)
@@ -65,12 +65,13 @@ class BackendLike(Protocol):
         *,
         model: ModelConfig,
         messages: Sequence[LLMMessage],
-        temperature: float,
+        temperature: float | None = None,
         tools: list[AvailableTool] | None,
         max_tokens: int | None,
         tool_choice: StrToolChoice | AvailableTool | None,
         extra_headers: dict[str, str] | None,
         metadata: dict[str, str] | None = None,
+        return_progress: bool = False,
     ) -> AsyncGenerator[LLMChunk, None]:
         """Equivalent of the complete method, but yields LLMEvent objects
         instead of a single LLMEvent.
@@ -78,7 +79,7 @@ class BackendLike(Protocol):
         Args:
             model: Model configuration
             messages: List of conversation messages
-            temperature: Sampling temperature (0.0 to 1.0)
+            temperature: Sampling temperature (0.0 to 1.0), None to use backend default
             tools: Optional list of available tools
             max_tokens: Maximum tokens to generate
             tool_choice: How to choose tools (auto, none, or specific tool)

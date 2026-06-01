@@ -43,7 +43,7 @@ class ToolCallStreamingUpdateTest(App):
             tool_call_index=0,
             tool_name="read_file",
             tool_class=ReadFile,
-            args=ReadFileArgs(path="/test/example.py"),
+            args=ReadFileArgs(path="/test/example.py", offset=0),
         )
         self._widget.update_event(full_event)
 
@@ -52,7 +52,10 @@ def test_snapshot_tool_call_partial(snap_compare: SnapCompare) -> None:
     async def run_before(pilot: Pilot) -> None:
         await pilot.pause(0.1)
 
-    with patch.object(StatusMessage, "start_spinner_timer"):
+    with (
+        patch.object(StatusMessage, "start_spinner_timer"),
+        patch("vibe.cli.textual_ui.widgets.tools.wall_now", return_value=0.0),
+    ):
         assert snap_compare(
             "test_ui_snapshot_streaming_tool_call.py:ToolCallStreamingUpdateTest",
             terminal_size=(80, 10),
@@ -67,7 +70,10 @@ def test_snapshot_tool_call_updated(snap_compare: SnapCompare) -> None:
         app.update_with_full_event()
         await pilot.pause(0.1)
 
-    with patch.object(StatusMessage, "start_spinner_timer"):
+    with (
+        patch.object(StatusMessage, "start_spinner_timer"),
+        patch("vibe.cli.textual_ui.widgets.tools.wall_now", return_value=0.0),
+    ):
         assert snap_compare(
             "test_ui_snapshot_streaming_tool_call.py:ToolCallStreamingUpdateTest",
             terminal_size=(80, 10),

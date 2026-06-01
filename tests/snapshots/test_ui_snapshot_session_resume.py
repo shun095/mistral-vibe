@@ -27,7 +27,7 @@ class SnapshotTestAppWithResumedSession(BaseSnapshotTestApp):
         )
         tool_result_msg = LLMMessage(
             role=Role.tool,
-            content="File content: This is a test file with some content.",
+            content='{"path": "test.txt", "content": "This is a test file with some content.", "lines_read": 1, "was_truncated": false}',
             name="read_file",
             tool_call_id="tool_call_1",
         )

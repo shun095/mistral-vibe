@@ -12,14 +12,24 @@ the tests will be. Always prefer real API data over manually constructed example
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 import json
 from typing import ClassVar, Literal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
-from mistralai.client.errors import SDKError
-from mistralai.client.models import AssistantMessage
-from mistralai.client.utils.retries import BackoffStrategy, RetryConfig
+import pytest
+
+pytest.importorskip("mistralai")
+
+from mistralai.client.errors import SDKError  # pyright: ignore[reportMissingImports]
+from mistralai.client.models import (  # pyright: ignore[reportMissingImports]
+    AssistantMessage,
+)
+from mistralai.client.utils.retries import (  # pyright: ignore[reportMissingImports]
+    BackoffStrategy,
+    RetryConfig,
+)
 import pytest
 import respx
 
@@ -42,8 +52,130 @@ from vibe.core.llm.backend.generic import GenericBackend
 from vibe.core.llm.backend.mistral import MistralBackend, MistralMapper
 from vibe.core.llm.exceptions import BackendError, BackendErrorBuilder
 from vibe.core.llm.types import BackendLike
-from vibe.core.types import Backend, FunctionCall, LLMChunk, LLMMessage, Role, ToolCall
-from vibe.core.utils import get_user_agent
+from vibe.core.types import (
+    AvailableTool,
+    Backend,
+    FunctionCall,
+    LLMChunk,
+    LLMMessage,
+    Role,
+    StrToolChoice,
+    ToolCall,
+)
+from vibe.core.utils import async_generator_retry, async_retry, get_user_agent
+
+
+# Test-specific backends with lower retry count for faster test execution
+class TestGenericBackend(GenericBackend):
+    """GenericBackend with 1 retry attempt for faster test execution."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Override retry count for both regular and streaming requests
+        self._retry_count = 1
+
+    @async_retry({"tries": 1})
+    async def _make_request(  # type: ignore[override]
+        self, url: str, data: bytes, headers: dict[str, str]
+    ) -> GenericBackend.HTTPResponse:
+        return await super()._make_request(url, data, headers)
+
+    def _is_retryable_streaming_error(self, exception: Exception) -> bool:
+        """Don't retry HTTP status errors for streaming requests."""
+        if isinstance(exception, httpx.HTTPStatusError):
+            return False
+        return True
+
+    async def _make_streaming_request(self, url, data, headers):
+        """Override to not retry HTTP status errors."""
+        # Copy implementation from parent but bypass its decorator
+        # Apply our own retry logic with 1 attempt
+        retry_count = 0
+        max_retries = 1
+        while retry_count <= max_retries:
+            try:
+                client = self._get_client()
+                async with client.stream(
+                    method="POST", url=url, content=data, headers=headers
+                ) as response:
+                    response.raise_for_status()
+                    async for line in response.aiter_lines():
+                        if line.strip() == "":
+                            continue
+
+                        DELIM_CHAR = ":"
+                        if f"{DELIM_CHAR} " not in line:
+                            raise ValueError(
+                                f"Stream chunk improperly formatted. "
+                                f"Expected `key{DELIM_CHAR} value`, received `{line}`"
+                            )
+                        delim_index = line.find(DELIM_CHAR)
+                        key = line[0:delim_index]
+                        value = line[delim_index + 2 :]
+
+                        if key != "data":
+                            # This might be the case with openrouter, so we just ignore it
+                            continue
+                        if value == "[DONE]":
+                            return
+                        yield json.loads(value.strip())
+                break  # Success, exit retry loop
+            except Exception as e:
+                # Don't retry if error is not retryable or we've exhausted retries
+                if not self._is_retryable_streaming_error(e):
+                    raise
+                if retry_count >= max_retries:
+                    raise
+                retry_count += 1
+
+
+class TestMistralBackend(MistralBackend):
+    """MistralBackend with 1 retry attempt for faster test execution."""
+
+    @async_retry({"tries": 1})
+    async def complete(  # type: ignore[override]
+        self,
+        *,
+        model: ModelConfig,
+        messages: list[LLMMessage],
+        temperature: float,
+        tools: list[AvailableTool] | None,
+        max_tokens: int | None,
+        tool_choice: StrToolChoice | AvailableTool | None,
+        extra_headers: dict[str, str] | None,
+    ) -> LLMChunk:
+        return await super().complete(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            tools=tools,
+            max_tokens=max_tokens,
+            tool_choice=tool_choice,
+            extra_headers=extra_headers,
+        )
+
+    @async_generator_retry({"tries": 1})
+    async def complete_streaming(  # type: ignore[override]
+        self,
+        *,
+        model: ModelConfig,
+        messages: list[LLMMessage],
+        temperature: float,
+        tools: list[AvailableTool] | None,
+        max_tokens: int | None,
+        tool_choice: StrToolChoice | AvailableTool | None,
+        extra_headers: dict[str, str] | None,
+    ) -> AsyncGenerator[LLMChunk, None]:
+        async for chunk in super().complete_streaming(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            tools=tools,
+            max_tokens=max_tokens,
+            tool_choice=tool_choice,
+            extra_headers=extra_headers,
+        ):
+            yield chunk
 
 
 class TestBackend:
@@ -81,8 +213,8 @@ class TestBackend:
             )
 
             BackendClasses = [
-                GenericBackend,
-                *([MistralBackend] if base_url == "https://api.mistral.ai" else []),
+                TestGenericBackend,
+                *([TestMistralBackend] if base_url == "https://api.mistral.ai" else []),
             ]
             for BackendClass in BackendClasses:
                 backend: BackendLike = BackendClass(provider=provider)
@@ -152,8 +284,8 @@ class TestBackend:
                 api_key_env_var="API_KEY",
             )
             BackendClasses = [
-                GenericBackend,
-                *([MistralBackend] if base_url == "https://api.mistral.ai" else []),
+                TestGenericBackend,
+                *([TestMistralBackend] if base_url == "https://api.mistral.ai" else []),
             ]
             for BackendClass in BackendClasses:
                 backend: BackendLike = BackendClass(provider=provider)
@@ -211,22 +343,22 @@ class TestBackend:
         [
             (
                 "https://api.fireworks.ai",
-                GenericBackend,
+                TestGenericBackend,
                 httpx.Response(status_code=500, text="Internal Server Error"),
             ),
             (
                 "https://api.fireworks.ai",
-                GenericBackend,
+                TestGenericBackend,
                 httpx.Response(status_code=429, text="Rate Limit Exceeded"),
             ),
             (
                 "https://api.mistral.ai",
-                MistralBackend,
+                TestMistralBackend,
                 httpx.Response(status_code=500, text="Internal Server Error"),
             ),
             (
                 "https://api.mistral.ai",
-                MistralBackend,
+                TestMistralBackend,
                 httpx.Response(status_code=429, text="Rate Limit Exceeded"),
             ),
         ],

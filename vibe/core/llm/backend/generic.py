@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Callable, Sequence
 import json
 import os
 import types
@@ -13,16 +13,19 @@ from vibe.core.llm.backend.base import APIAdapter, PreparedRequest
 from vibe.core.llm.backend.openai_responses import OpenAIResponsesAdapter
 from vibe.core.llm.backend.reasoning_adapter import ReasoningAdapter
 from vibe.core.llm.exceptions import BackendErrorBuilder
+from vibe.core.logger import logger
 from vibe.core.types import (
     AvailableTool,
     LLMChunk,
     LLMMessage,
+    LLMRetryEvent,
     LLMUsage,
+    PromptProgress,
     Role,
     StrToolChoice,
 )
-from vibe.core.utils import async_generator_retry, async_retry
 from vibe.core.utils.http import build_ssl_context
+from vibe.core.utils.retry import apply_retry_decorator
 
 if TYPE_CHECKING:
     from vibe.core.config import ModelConfig, ProviderConfig
@@ -35,17 +38,16 @@ class OpenAIAdapter(APIAdapter):
         self,
         model_name: str,
         converted_messages: list[dict[str, Any]],
-        temperature: float,
+        temperature: float | None,
         tools: list[AvailableTool] | None,
         max_tokens: int | None,
         tool_choice: StrToolChoice | AvailableTool | None,
+        return_progress: bool = False,
     ) -> dict[str, Any]:
-        payload = {
-            "model": model_name,
-            "messages": converted_messages,
-            "temperature": temperature,
-        }
+        payload = {"model": model_name, "messages": converted_messages}
 
+        if temperature is not None:
+            payload["temperature"] = temperature
         if tools:
             payload["tools"] = [tool.model_dump(exclude_none=True) for tool in tools]
         if tool_choice:
@@ -56,6 +58,8 @@ class OpenAIAdapter(APIAdapter):
             )
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
+        if return_progress:
+            payload["return_progress"] = True
 
         return payload
 
@@ -79,12 +83,12 @@ class OpenAIAdapter(APIAdapter):
             msg_dict["reasoning_content"] = msg_dict.pop(field_name)
         return msg_dict
 
-    def prepare_request(
+    def prepare_request(  # noqa: PLR0913
         self,
         *,
         model_name: str,
         messages: Sequence[LLMMessage],
-        temperature: float,
+        temperature: float | None = None,
         tools: list[AvailableTool] | None,
         max_tokens: int | None,
         tool_choice: StrToolChoice | AvailableTool | None,
@@ -92,6 +96,7 @@ class OpenAIAdapter(APIAdapter):
         provider: ProviderConfig,
         api_key: str | None = None,
         thinking: str = "off",
+        return_progress: bool = False,
     ) -> PreparedRequest:
         field_name = provider.reasoning_field_name
         converted_messages = [
@@ -110,8 +115,18 @@ class OpenAIAdapter(APIAdapter):
             for msg in messages
         ]
 
+        # Enable return_progress for OpenAI-compatible providers (e.g., llama-server)
+        # but not for Mistral API which doesn't support this parameter
+        should_request_progress = return_progress and provider.name != "mistral"
+
         payload = self.build_payload(
-            model_name, converted_messages, temperature, tools, max_tokens, tool_choice
+            model_name,
+            converted_messages,
+            temperature,
+            tools,
+            max_tokens,
+            tool_choice,
+            return_progress=should_request_progress,
         )
 
         if enable_streaming:
@@ -161,7 +176,18 @@ class OpenAIAdapter(APIAdapter):
             completion_tokens=usage_data.get("completion_tokens", 0),
         )
 
-        return LLMChunk(message=message, usage=usage)
+        # Extract prompt_progress if present (llama-server feature)
+        prompt_progress = None
+        if "prompt_progress" in data:
+            progress_data = data["prompt_progress"]
+            prompt_progress = PromptProgress(
+                total=progress_data.get("total", 0),
+                cache=progress_data.get("cache", 0),
+                processed=progress_data.get("processed", 0),
+                time_ms=progress_data.get("time_ms", 0),
+            )
+
+        return LLMChunk(message=message, usage=usage, prompt_progress=prompt_progress)
 
 
 _ADAPTERS: dict[str, APIAdapter] = {
@@ -192,16 +218,39 @@ class GenericBackend:
         client: httpx.AsyncClient | None = None,
         provider: ProviderConfig,
         timeout: float = 720.0,
+        on_retry: Callable[[LLMRetryEvent], None] | None = None,
     ) -> None:
         """Initialize the backend.
 
         Args:
             client: Optional httpx client to use. If not provided, one will be created.
+            provider: Provider configuration
+            timeout: Request timeout in seconds
+            on_retry: Optional callback invoked before each retry with LLMRetryEvent
         """
         self._client = client
         self._owns_client = client is None
         self._provider = provider
         self._timeout = timeout
+        self._on_retry = on_retry
+
+        # Apply retry decorators dynamically with callback if provided
+        if on_retry is not None:
+            self._apply_retry_decorators()
+
+    def _apply_retry_decorators(self) -> None:
+        """Apply retry decorators with the on_retry callback to request methods."""
+        retry_config: dict[str, Any] = {
+            "tries": 10,
+            "on_retry": self._on_retry,
+            "provider": self._provider.name,
+            "model": None,
+        }
+
+        apply_retry_decorator(self, "_make_request", retry_config, is_streaming=False)
+        apply_retry_decorator(
+            self, "_make_streaming_request", retry_config, is_streaming=True
+        )
 
     async def __aenter__(self) -> GenericBackend:
         if self._client is None:
@@ -237,7 +286,7 @@ class GenericBackend:
         *,
         model: ModelConfig,
         messages: Sequence[LLMMessage],
-        temperature: float = 0.2,
+        temperature: float | None = None,
         tools: list[AvailableTool] | None = None,
         max_tokens: int | None = None,
         tool_choice: StrToolChoice | AvailableTool | None = None,
@@ -253,10 +302,15 @@ class GenericBackend:
         api_style = getattr(self._provider, "api_style", "openai")
         adapter = _get_adapter(api_style)
 
+        # Use model's temperature if not explicitly provided
+        effective_temperature = (
+            temperature if temperature is not None else model.temperature
+        )
+
         req = adapter.prepare_request(
             model_name=model.name,
             messages=messages,
-            temperature=temperature,
+            temperature=effective_temperature,
             tools=tools,
             max_tokens=max_tokens,
             tool_choice=tool_choice,
@@ -264,6 +318,7 @@ class GenericBackend:
             provider=self._provider,
             api_key=api_key,
             thinking=model.thinking,
+            return_progress=True,
         )
 
         headers = req.headers
@@ -284,7 +339,7 @@ class GenericBackend:
                 error=e,
                 model=model.name,
                 messages=messages,
-                temperature=temperature,
+                temperature=effective_temperature,
                 has_tools=bool(tools),
                 tool_choice=tool_choice,
             ) from e
@@ -295,7 +350,7 @@ class GenericBackend:
                 error=e,
                 model=model.name,
                 messages=messages,
-                temperature=temperature,
+                temperature=effective_temperature,
                 has_tools=bool(tools),
                 tool_choice=tool_choice,
             ) from e
@@ -305,12 +360,13 @@ class GenericBackend:
         *,
         model: ModelConfig,
         messages: Sequence[LLMMessage],
-        temperature: float = 0.2,
+        temperature: float | None = None,
         tools: list[AvailableTool] | None = None,
         max_tokens: int | None = None,
         tool_choice: StrToolChoice | AvailableTool | None = None,
         extra_headers: dict[str, str] | None = None,
         metadata: dict[str, str] | None = None,
+        return_progress: bool = False,
     ) -> AsyncGenerator[LLMChunk, None]:
         api_key = (
             os.getenv(self._provider.api_key_env_var)
@@ -321,10 +377,15 @@ class GenericBackend:
         api_style = getattr(self._provider, "api_style", "openai")
         adapter = _get_adapter(api_style)
 
+        # Use model's temperature if not explicitly provided
+        effective_temperature = (
+            temperature if temperature is not None else model.temperature
+        )
+
         req = adapter.prepare_request(
             model_name=model.name,
             messages=messages,
-            temperature=temperature,
+            temperature=effective_temperature,
             tools=tools,
             max_tokens=max_tokens,
             tool_choice=tool_choice,
@@ -332,6 +393,7 @@ class GenericBackend:
             provider=self._provider,
             api_key=api_key,
             thinking=model.thinking,
+            return_progress=return_progress,
         )
 
         headers = req.headers
@@ -352,7 +414,7 @@ class GenericBackend:
                 error=e,
                 model=model.name,
                 messages=messages,
-                temperature=temperature,
+                temperature=effective_temperature,
                 has_tools=bool(tools),
                 tool_choice=tool_choice,
             ) from e
@@ -363,7 +425,7 @@ class GenericBackend:
                 error=e,
                 model=model.name,
                 messages=messages,
-                temperature=temperature,
+                temperature=effective_temperature,
                 has_tools=bool(tools),
                 tool_choice=tool_choice,
             ) from e
@@ -372,22 +434,40 @@ class GenericBackend:
         data: dict[str, Any]
         headers: dict[str, str]
 
-    @async_retry(tries=3)
     async def _make_request(
         self, url: str, data: bytes, headers: dict[str, str]
     ) -> HTTPResponse:
+
+        logger.debug(
+            "LLM Backend Request: %s",
+            json.dumps(
+                {"url": url, "headers": headers, "body": json.loads(data)},
+                ensure_ascii=False,
+            ),
+        )
+
         client = self._get_client()
         response = await client.post(url, content=data, headers=headers)
         response.raise_for_status()
 
         response_headers = dict(response.headers.items())
         response_body = response.json()
+        logger.debug(
+            "LLM Backend Response: %s", json.dumps(response_body, ensure_ascii=False)
+        )
         return self.HTTPResponse(response_body, response_headers)
 
-    @async_generator_retry(tries=3)
     async def _make_streaming_request(
         self, url: str, data: bytes, headers: dict[str, str]
     ) -> AsyncGenerator[dict[str, Any]]:
+        logger.debug(
+            "LLM Backend Streaming Request: %s",
+            json.dumps(
+                {"url": url, "headers": headers, "body": json.loads(data)},
+                ensure_ascii=False,
+            ),
+        )
+
         client = self._get_client()
         async with client.stream(
             method="POST", url=url, content=data, headers=headers
@@ -395,6 +475,7 @@ class GenericBackend:
             if not response.is_success:
                 await response.aread()
             response.raise_for_status()
+
             async for line in response.aiter_lines():
                 if line.strip() == "":
                     continue
@@ -414,7 +495,12 @@ class GenericBackend:
                     continue
                 if value == "[DONE]":
                     return
-                yield json.loads(value.strip())
+                chunk_data = json.loads(value.strip())
+                logger.debug(
+                    "LLM Backend Streaming Response Chunk: %s",
+                    json.dumps(chunk_data, ensure_ascii=False),
+                )
+                yield chunk_data
 
     async def close(self) -> None:
         if self._owns_client and self._client:

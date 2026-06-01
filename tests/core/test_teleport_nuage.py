@@ -16,6 +16,8 @@ from vibe.core.teleport.nuage import (
     NuageTextPart,
 )
 
+pytestmark = pytest.mark.skip(reason="Teleport is disabled in custom-fix branch")
+
 
 def _request() -> NuageRequest:
     return NuageRequest(

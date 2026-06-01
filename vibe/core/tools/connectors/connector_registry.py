@@ -7,8 +7,8 @@ import re
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import httpx
-from mistralai.client import Mistral
 
+from vibe.core.llm._mistralai_stub import Mistral
 from vibe.core.logger import logger
 from vibe.core.tools.base import (
     BaseTool,
@@ -72,6 +72,10 @@ def _connector_tool_to_remote(tool: dict[str, Any]) -> RemoteTool | None:
 
 
 _DEFAULT_BASE_URL = "https://api.mistral.ai"
+
+# SECURITY: Hardcoded disable - Connectors are permanently disabled
+# to prevent sending any data to external services.
+_CONNECTOR_DISABLED = True
 
 
 def _format_http_status_error(
@@ -180,6 +184,11 @@ def create_connector_proxy_tool_class(
         async def run(
             self, args: _OpenArgs, ctx: InvokeContext | None = None
         ) -> AsyncGenerator[ToolStreamEvent | MCPToolResult, None]:
+            if _CONNECTOR_DISABLED:
+                raise ToolError(
+                    "Connectors are disabled for security reasons. "
+                    "External connector services have been hardcoded disabled."
+                )
             url = f"{self._base_url}/v1/connectors-gateway/{self._connector_id}/mcp"
             headers = {"Authorization": f"Bearer {self._api_key}"}
             payload = args.model_dump(exclude_none=True)
@@ -272,6 +281,8 @@ class ConnectorRegistry:
         return await self._discover_all()
 
     async def _fetch_bootstrap(self) -> dict[str, Any]:
+        if _CONNECTOR_DISABLED:
+            return {}
         base_url = self._server_url or _DEFAULT_BASE_URL
         url = f"{base_url}/v1/connectors/bootstrap"
         headers = {"Authorization": f"Bearer {self._api_key}"}

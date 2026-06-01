@@ -258,3 +258,34 @@ async def test_rewind_option_selection_with_number_keys() -> None:
 
         assert app._rewind_mode is False
         assert app._current_bottom_app == BottomApp.Input
+
+
+@pytest.mark.asyncio
+async def test_rewind_left_right_navigate_messages() -> None:
+    app = _make_app()
+    async with app.run_test() as pilot:
+        await _send_messages(pilot, ["first", "second", "third"])
+
+        # Enter rewind mode — lands on "third"
+        await pilot.press("alt+up")
+        await pilot.app.workers.wait_for_complete()
+        await pilot.pause(0.1)
+
+        assert app._rewind_highlighted_widget is not None
+        assert app._rewind_highlighted_widget.get_content() == "third"
+
+        # Press left to go to previous message
+        await pilot.press("left")
+        await pilot.app.workers.wait_for_complete()
+        await pilot.pause(0.1)
+
+        assert app._rewind_highlighted_widget is not None
+        assert app._rewind_highlighted_widget.get_content() == "second"
+
+        # Press right to go back
+        await pilot.press("right")
+        await pilot.app.workers.wait_for_complete()
+        await pilot.pause(0.1)
+
+        assert app._rewind_highlighted_widget is not None
+        assert app._rewind_highlighted_widget.get_content() == "third"

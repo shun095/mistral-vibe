@@ -130,3 +130,31 @@ async def test_large_bang_command_output_is_capped_in_history() -> None:
         # The injected content should be bounded; allow generous margin for
         # formatting overhead but ensure it's not the full raw output.
         assert len(injected.content) < limit * 3
+
+
+@pytest.mark.asyncio
+async def test_double_bang_command_executes_without_context_injection() -> None:
+    """Integration test: !!command executes but does NOT inject context into history."""
+    backend = FakeBackend(mock_llm_chunk(content="ok"))
+    app = build_test_vibe_app(agent_loop=build_test_agent_loop(backend=backend))
+
+    # Count messages before command
+    messages_before = len(app.agent_loop.messages)
+
+    async with app.run_test() as pilot:
+        cmd = "!!echo test_double_bang"
+
+        chat_input = app.query_one(ChatInputContainer)
+        chat_input.value = cmd
+        await pilot.press("enter")
+
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline:
+            if next(iter(app.query(BashOutputMessage)), None):
+                break
+            await pilot.pause(0.05)
+
+        # Verify no new injected message was added
+        messages_after = app.agent_loop.messages
+        injected_messages = [m for m in messages_after[messages_before:] if m.injected]
+        assert len(injected_messages) == 0, "!!command should not inject context"

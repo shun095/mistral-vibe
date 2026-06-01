@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 import json
-from typing import Any, ClassVar
+from typing import Any, ClassVar, override
 
 from vibe.core.config import ProviderConfig
 from vibe.core.llm.backend.base import APIAdapter, PreparedRequest
@@ -76,7 +76,7 @@ class ReasoningAdapter(APIAdapter):
         *,
         model_name: str,
         messages: list[dict[str, Any]],
-        temperature: float,
+        temperature: float | None,
         tools: list[AvailableTool] | None,
         max_tokens: int | None,
         tool_choice: StrToolChoice | AvailableTool | None,
@@ -106,12 +106,13 @@ class ReasoningAdapter(APIAdapter):
 
         return payload
 
+    @override
     def prepare_request(
         self,
         *,
         model_name: str,
         messages: Sequence[LLMMessage],
-        temperature: float,
+        temperature: float | None,
         tools: list[AvailableTool] | None,
         max_tokens: int | None,
         tool_choice: StrToolChoice | AvailableTool | None,
@@ -119,6 +120,7 @@ class ReasoningAdapter(APIAdapter):
         provider: ProviderConfig,
         api_key: str | None = None,
         thinking: str = "off",
+        return_progress: bool = False,
     ) -> PreparedRequest:
         converted_messages = [self._convert_message(msg) for msg in messages]
 
@@ -131,6 +133,10 @@ class ReasoningAdapter(APIAdapter):
             tool_choice=tool_choice,
             thinking=thinking,
         )
+
+        # Add return_progress for OpenAI-compatible providers (e.g., llama-server)
+        if return_progress and provider.name != "mistral":
+            payload["return_progress"] = True
 
         if enable_streaming:
             payload["stream"] = True

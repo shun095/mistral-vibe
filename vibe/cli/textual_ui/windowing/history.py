@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Any
 from weakref import WeakKeyDictionary
 
 from textual.widget import Widget
@@ -11,7 +12,35 @@ from vibe.cli.textual_ui.widgets.messages import (
     UserMessage,
 )
 from vibe.cli.textual_ui.widgets.tools import ToolCallMessage, ToolResultMessage
-from vibe.core.types import LLMMessage, Role
+from vibe.core.session.reconstruction import (
+    reconstruct_tool_call_event,
+    reconstruct_tool_result_event,
+)
+from vibe.core.types import Content, LLMMessage, Role
+
+
+def _content_to_str(content: Content | None) -> str | None:
+    """Convert Content (str | list) to string for display."""
+    if content is None:
+        return None
+    if isinstance(content, str):
+        return content
+    # Handle list content (e.g., multi-part messages with images)
+    # Content is str | list[str] but we may receive list[dict] for multi-part
+    parts: list[str] = []
+    for item in content:
+        if isinstance(item, dict):
+            if item.get("type") == "image_url":
+                # For image parts, show a simple placeholder (avoid large URLs)
+                parts.append("[image]")
+            elif "text" in item:
+                text_val = item.get("text")
+                parts.append(str(text_val) if text_val is not None else "")
+            else:
+                parts.append(str(item))
+        else:
+            parts.append(str(item))
+    return "\n".join(parts) if parts else None
 
 
 def non_system_history_messages(messages: Sequence[LLMMessage]) -> list[LLMMessage]:
@@ -36,8 +65,10 @@ def build_history_widgets(
     start_index: int,
     tools_collapsed: bool,
     history_widget_indices: WeakKeyDictionary[Widget, int],
+    tool_manager: Any = None,
 ) -> list[Widget]:
     widgets: list[Widget] = []
+    last_tool_call_widget: ToolCallMessage | None = None
 
     for history_index, msg in zip(
         range(start_index, start_index + len(batch)), batch, strict=True
@@ -47,24 +78,39 @@ def build_history_widgets(
         match msg.role:
             case Role.user:
                 if msg.content:
-                    # history_index is 0-based in non-system messages;
-                    # agent_loop.messages index = history_index + 1 (system msg at 0)
-                    widget = UserMessage(msg.content, message_index=history_index + 1)
-                    widgets.append(widget)
-                    history_widget_indices[widget] = history_index
+                    content_str = _content_to_str(msg.content)
+                    if content_str:
+                        # history_index is 0-based in non-system messages;
+                        # agent_loop.messages index = history_index + 1 (system msg at 0)
+                        widget = UserMessage(
+                            content_str, message_index=history_index + 1
+                        )
+                        widgets.append(widget)
+                        history_widget_indices[widget] = history_index
 
             case Role.assistant:
                 if msg.content:
-                    assistant_widget = AssistantMessage(msg.content)
-                    widgets.append(assistant_widget)
-                    history_widget_indices[assistant_widget] = history_index
+                    content_str = _content_to_str(msg.content)
+                    if content_str:
+                        assistant_widget = AssistantMessage(content_str)
+                        widgets.append(assistant_widget)
+                        history_widget_indices[assistant_widget] = history_index
 
                 if msg.tool_calls:
                     for tool_call in msg.tool_calls:
                         tool_name = tool_call.function.name or "unknown"
                         if tool_call.id:
                             tool_call_map[tool_call.id] = tool_name
-                        widget = ToolCallMessage(tool_name=tool_name)
+                        event = None
+                        if tool_manager is not None and tool_call.id:
+                            event = reconstruct_tool_call_event(
+                                tool_name,
+                                tool_call.function.arguments,
+                                tool_call.id,
+                                tool_manager,
+                            )
+                        widget = ToolCallMessage(event, tool_name=tool_name)
+                        last_tool_call_widget = widget
                         widgets.append(widget)
                         history_widget_indices[widget] = history_index
 
@@ -72,8 +118,20 @@ def build_history_widgets(
                 tool_name = msg.name or tool_call_map.get(
                     msg.tool_call_id or "", "tool"
                 )
+                content_str = _content_to_str(msg.content)
+
+                event = None
+                if tool_manager is not None and msg.tool_call_id:
+                    event = reconstruct_tool_result_event(
+                        tool_name, content_str or "", msg.tool_call_id, tool_manager
+                    )
+
                 widget = ToolResultMessage(
-                    tool_name=tool_name, content=msg.content, collapsed=tools_collapsed
+                    event=event,
+                    call_widget=last_tool_call_widget,
+                    tool_name=tool_name,
+                    content=content_str,
+                    collapsed=tools_collapsed,
                 )
                 widgets.append(widget)
                 history_widget_indices[widget] = history_index

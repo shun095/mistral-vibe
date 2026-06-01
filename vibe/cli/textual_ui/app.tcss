@@ -614,10 +614,26 @@ StatusMessage {
 }
 
 .compact-message,
+.compact-summary-message,
 .tool-call {
     width: 100%;
     height: auto;
     margin-top: 1;
+}
+
+.compact-summary-container {
+    width: 100%;
+    height: auto;
+}
+
+.compact-summary-content {
+    width: 1fr;
+    height: auto;
+    margin: 0;
+    padding-left: 1;
+    border-left: heavy $mistral_orange;
+    color: $mistral_orange;
+    text-style: italic;
 }
 
 .tool-call.no-gap {
@@ -857,6 +873,7 @@ StatusMessage {
     text-style: bold;
     pointer: pointer;
     padding: 1;
+    text-wrap: nowrap;
 }
 
 .history-load-more-button:hover {
@@ -1535,6 +1552,53 @@ FeedbackBar {
     width: auto;
     height: auto;
     color: $foreground;
+}
+
+/* History Picker */
+
+#historypicker-app {
+    width: 100%;
+    height: auto;
+    background: transparent;
+    border: solid ansi_bright_black;
+    padding: 0 1;
+    margin: 0;
+}
+
+#historypicker-content {
+    width: 100%;
+    height: auto;
+}
+
+#historypicker-search {
+    width: 100%;
+    height: auto;
+    border: solid ansi_bright_black;
+    margin-bottom: 0;
+}
+
+#historypicker-options {
+    width: 100%;
+    max-height: 50vh;
+    text-wrap: nowrap;
+    text-overflow: ellipsis;
+    border: none;
+    & > .option-list--option-highlighted {
+        color: $block-cursor-foreground;
+        background: $block-cursor-background;
+        text-style: $block-cursor-text-style;
+    }
+}
+
+#historypicker-options:focus {
+    border: none;
+}
+
+.historypicker-help {
+    width: 100%;
+    height: auto;
+    color: ansi_bright_black;
+    margin-top: 1;
 }
 
 .hook-system-message {

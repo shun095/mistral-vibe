@@ -79,7 +79,10 @@ async def test_generic_backend_streaming_uses_ssl_cert_file(
         configure_ssl_context(enable_system_trust_store=False)
         build_ssl_context.cache_clear()
 
-    content = "".join(chunk.message.content or "" for chunk in chunks)
+    content = "".join(
+        (chunk.message.content if isinstance(chunk.message.content, str) else "") or ""
+        for chunk in chunks
+    )
     request_payload = https_streaming_mock_server.server.requests[-1]
     assert content == "Hello from mock server"
     assert request_payload.get("stream") is True

@@ -1,0 +1,709 @@
+/**
+ * Tests for APIClient module.
+ *
+ * TDD: Test-driven development following Kent Beck's workflow.
+ */
+
+const { APIClient } = require('../../vibe/cli/web_ui/static/js/api-client.js');
+
+describe('APIClient', () => {
+    let apiClient;
+    let originalFetch;
+
+    beforeEach(() => {
+        originalFetch = global.fetch;
+        global.fetch = jest.fn();
+        apiClient = new APIClient();
+    });
+
+    afterEach(() => {
+        global.fetch = originalFetch;
+    });
+
+    describe('Status Polling', () => {
+        test('fetches /api/status', async () => {
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ running: true })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.getStatus();
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/status');
+            expect(result).toEqual({ running: true });
+        });
+
+        test('returns null when status endpoint fails', async () => {
+            const mockResponse = {
+                ok: false
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.getStatus();
+
+            expect(result).toBeNull();
+        });
+
+        test('returns null when fetch throws error', async () => {
+            global.fetch.mockRejectedValue(new Error('Network error'));
+
+            const result = await apiClient.getStatus();
+
+            expect(result).toBeNull();
+        });
+    });
+
+    describe('Interrupt', () => {
+        test('sends POST to /api/interrupt', async () => {
+            const mockResponse = {
+                ok: true
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.requestInterrupt();
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/interrupt', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            expect(result).toBe(true);
+        });
+
+        test('returns false when interrupt fails', async () => {
+            const mockResponse = {
+                ok: false
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.requestInterrupt();
+
+            expect(result).toBe(false);
+        });
+
+        test('returns false when fetch throws error', async () => {
+            global.fetch.mockRejectedValue(new Error('Network error'));
+
+            const result = await apiClient.requestInterrupt();
+
+            expect(result).toBe(false);
+        });
+    });
+
+    describe('Messages', () => {
+        test('fetches /api/messages', async () => {
+            const mockEvents = [
+                { __type: 'UserMessageEvent', content: 'Hello' },
+                { __type: 'AssistantEvent', content: 'Hi there' }
+            ];
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ events: mockEvents })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.getMessages();
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/messages');
+            expect(result).toEqual({ events: mockEvents });
+        });
+
+        test('returns null when messages endpoint fails', async () => {
+            const mockResponse = {
+                ok: false
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.getMessages();
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/messages');
+            expect(result).toBeNull();
+        });
+    });
+
+    describe('Commands', () => {
+        test('fetches /api/commands', async () => {
+            const mockCommands = {
+                commands: [
+                    { name: '/help', aliases: [], description: 'Show help' },
+                    { name: '/clean', aliases: ['/clear'], description: 'Clean session' }
+                ]
+            };
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue(mockCommands)
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.getCommands();
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/commands');
+            expect(result).toEqual(mockCommands);
+        });
+
+        test('returns null when commands endpoint fails', async () => {
+            const mockResponse = {
+                ok: false
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.getCommands();
+
+            expect(result).toBeNull();
+        });
+    });
+
+    describe('Command Execution', () => {
+        test('executes command with correct payload', async () => {
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ success: true, output: 'Command executed' })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.executeCommand('/help', '--verbose');
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/command/execute', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    command: '/help',
+                    args: '--verbose'
+                })
+            });
+            expect(result).toEqual({ success: true, output: 'Command executed' });
+        });
+
+        test('executes command without args', async () => {
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ success: true })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            await apiClient.executeCommand('/clean');
+
+            expect(global.fetch).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+                body: JSON.stringify({
+                    command: '/clean',
+                    args: ''
+                })
+            }));
+        });
+
+        test('returns null when command execution fails', async () => {
+            const mockResponse = {
+                ok: false
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.executeCommand('/invalid');
+
+            expect(result).toBeNull();
+        });
+    });
+
+    describe('Session Management', () => {
+        test('fetches /api/sessions', async () => {
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({
+                    sessions: [
+                        {
+                            session_id: 'abc123def456',
+                            short_id: 'abc123de',
+                            end_time: '2024-01-15T10:30:00Z',
+                            first_message: 'Hello, world!'
+                        }
+                    ]
+                })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.listSessions();
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/sessions');
+            expect(result).toHaveLength(1);
+            expect(result[0]).toHaveProperty('session_id', 'abc123def456');
+        });
+
+        test('returns empty array when no sessions available', async () => {
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ sessions: [] })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.listSessions();
+
+            expect(result).toEqual([]);
+        });
+
+        test('returns empty array when session endpoint fails', async () => {
+            const mockResponse = {
+                ok: false
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.listSessions();
+
+            expect(result).toEqual([]);
+        });
+
+        test('returns empty array when fetch throws error', async () => {
+            global.fetch.mockRejectedValue(new Error('Network error'));
+
+            const result = await apiClient.listSessions();
+
+            expect(result).toEqual([]);
+        });
+
+        test('sends POST to /api/sessions/{id}/resume', async () => {
+            const sessionId = 'test-session-123';
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({
+                    success: true,
+                    session_id: sessionId
+                })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.resumeSession(sessionId);
+
+            expect(global.fetch).toHaveBeenCalledWith(
+                `/api/sessions/${sessionId}/resume`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
+            expect(result).toEqual({
+                success: true,
+                session_id: sessionId
+            });
+        });
+
+        test('returns error object when resume fails', async () => {
+            const sessionId = 'invalid-session';
+            const mockResponse = {
+                ok: false
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.resumeSession(sessionId);
+
+            expect(global.fetch).toHaveBeenCalledWith(
+                `/api/sessions/${sessionId}/resume`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                }
+            );
+            expect(result).toEqual({
+                success: false,
+                error: 'Failed to resume session'
+            });
+        });
+
+        test('returns error object when resume fetch throws error', async () => {
+            const sessionId = 'test-session';
+            global.fetch.mockRejectedValue(new Error('Network error'));
+
+            const result = await apiClient.resumeSession(sessionId);
+
+            expect(result).toEqual({
+                success: false,
+                error: 'Network error'
+            });
+        });
+    });
+
+    describe('Prompt History', () => {
+        test('fetches /api/prompt-history', async () => {
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ entries: [{ id: 1, content: 'test' }] })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.getPromptHistory();
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/prompt-history');
+            expect(result).toEqual({ entries: [{ id: 1, content: 'test' }] });
+        });
+
+        test('returns empty entries when endpoint fails', async () => {
+            const mockResponse = {
+                ok: false
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.getPromptHistory();
+
+            expect(result).toEqual({ entries: [] });
+        });
+
+        test('returns empty entries when fetch throws error', async () => {
+            global.fetch.mockRejectedValue(new Error('Network error'));
+
+            const result = await apiClient.getPromptHistory();
+
+            expect(result).toEqual({ entries: [] });
+        });
+    });
+
+    describe('Base Path Support', () => {
+        beforeEach(() => {
+            jest.clearAllMocks();
+        });
+
+        afterEach(() => {
+            delete globalThis.__VIBE_BASE_PATH__;
+        });
+
+        test('uses base path prefix for status when __VIBE_BASE_PATH__ is set', async () => {
+            globalThis.__VIBE_BASE_PATH__ = '/vibe/';
+
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ running: true })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            await apiClient.getStatus();
+
+            expect(global.fetch).toHaveBeenCalledWith('/vibe/api/status');
+        });
+
+        test('uses base path prefix for interrupt when __VIBE_BASE_PATH__ is set', async () => {
+            globalThis.__VIBE_BASE_PATH__ = '/vibe/';
+
+            const mockResponse = { ok: true };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            await apiClient.requestInterrupt();
+
+            expect(global.fetch).toHaveBeenCalledWith('/vibe/api/interrupt', expect.any(Object));
+        });
+
+        test('uses base path prefix for messages when __VIBE_BASE_PATH__ is set', async () => {
+            globalThis.__VIBE_BASE_PATH__ = '/app/';
+
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ events: [] })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            await apiClient.getMessages();
+
+            expect(global.fetch).toHaveBeenCalledWith('/app/api/messages');
+        });
+
+        test('uses base path prefix for commands when __VIBE_BASE_PATH__ is set', async () => {
+            globalThis.__VIBE_BASE_PATH__ = '/app/';
+
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ commands: [] })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            await apiClient.getCommands();
+
+            expect(global.fetch).toHaveBeenCalledWith('/app/api/commands');
+        });
+
+        test('uses base path prefix for command execution when __VIBE_BASE_PATH__ is set', async () => {
+            globalThis.__VIBE_BASE_PATH__ = '/vibe/';
+
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ success: true })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            await apiClient.executeCommand('help');
+
+            expect(global.fetch).toHaveBeenCalledWith('/vibe/api/command/execute', expect.any(Object));
+        });
+
+        test('uses base path prefix for sessions when __VIBE_BASE_PATH__ is set', async () => {
+            globalThis.__VIBE_BASE_PATH__ = '/vibe/';
+
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ sessions: [] })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            await apiClient.listSessions();
+
+            expect(global.fetch).toHaveBeenCalledWith('/vibe/api/sessions');
+        });
+
+        test('uses base path prefix for session resume when __VIBE_BASE_PATH__ is set', async () => {
+            globalThis.__VIBE_BASE_PATH__ = '/vibe/';
+
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ success: true })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            await apiClient.resumeSession('test-session-id');
+
+            expect(global.fetch).toHaveBeenCalledWith(
+                '/vibe/api/sessions/test-session-id/resume',
+                expect.any(Object)
+            );
+        });
+
+        test('uses base path prefix for prompt history when __VIBE_BASE_PATH__ is set', async () => {
+            globalThis.__VIBE_BASE_PATH__ = '/vibe/';
+
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ entries: [] })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            await apiClient.getPromptHistory();
+
+            expect(global.fetch).toHaveBeenCalledWith('/vibe/api/prompt-history');
+        });
+
+        test('falls back to root path when __VIBE_BASE_PATH__ is not set', async () => {
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ running: true })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            await apiClient.getStatus();
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/status');
+        });
+    });
+
+    describe('Models', () => {
+        test('getModels fetches /api/models', async () => {
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({
+                    models: [{ alias: 'mistral-large', name: 'mistral-large-2411', provider: 'mistral' }],
+                    active_model: 'mistral-large'
+                })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.getModels();
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/models');
+            expect(result.models).toHaveLength(1);
+            expect(result.active_model).toBe('mistral-large');
+        });
+
+        test('getModels returns empty on error', async () => {
+            global.fetch.mockRejectedValue(new Error('Network error'));
+
+            const result = await apiClient.getModels();
+
+            expect(result.models).toEqual([]);
+            expect(result.active_model).toBe('');
+        });
+
+        test('getModels returns empty on HTTP 4xx', async () => {
+            global.fetch.mockResolvedValue({ ok: false, status: 401 });
+
+            const result = await apiClient.getModels();
+
+            expect(result.models).toEqual([]);
+        });
+
+        test('switchModel sends POST to /api/models/switch', async () => {
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ success: true, active_model: 'codestral' })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.switchModel('codestral');
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/models/switch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ alias: 'codestral' })
+            });
+            expect(result.success).toBe(true);
+        });
+
+        test('switchModel returns error on failure', async () => {
+            global.fetch.mockRejectedValue(new Error('Network error'));
+
+            const result = await apiClient.switchModel('codestral');
+
+            expect(result.success).toBe(false);
+        });
+    });
+
+    describe('Config', () => {
+        test('getConfig fetches /api/config', async () => {
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({
+                    active_model: 'mistral-large',
+                    thinking: 'off',
+                    autocopy_to_clipboard: true,
+                    voice_mode_enabled: false
+                })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.getConfig();
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/config');
+            expect(result.autocopy_to_clipboard).toBe(true);
+        });
+
+        test('saveConfig sends POST to /api/config', async () => {
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ success: true, updated: ['voice_mode_enabled'] })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.saveConfig({ voice_mode_enabled: true });
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ voice_mode_enabled: true })
+            });
+            expect(result.success).toBe(true);
+        });
+    });
+
+    describe('Thinking', () => {
+        test('switchThinking sends POST to /api/thinking/switch', async () => {
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ success: true, thinking: 'high' })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.switchThinking('high');
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/thinking/switch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ level: 'high' })
+            });
+            expect(result.success).toBe(true);
+        });
+    });
+
+    describe('MCP', () => {
+        test('listMcp fetches /api/mcp', async () => {
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({
+                    servers: [{ name: 'myserver', tool_count: 3 }],
+                    connectors: []
+                })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.listMcp();
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/mcp');
+            expect(result.servers).toHaveLength(1);
+        });
+
+        test('toggleMcp sends POST to /api/mcp/toggle', async () => {
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ success: true })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.toggleMcp({
+                name: 'myserver',
+                is_connector: false,
+                disabled: true,
+                tool_name: null
+            });
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/mcp/toggle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: 'myserver',
+                    is_connector: false,
+                    disabled: true,
+                    tool_name: null
+                })
+            });
+            expect(result.success).toBe(true);
+        });
+    });
+
+    describe('Rewind', () => {
+        test('getRewindState fetches /api/rewind/state', async () => {
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({
+                    success: true,
+                    messages: [{ message_index: 5, content: 'Hello', has_file_changes: false }],
+                    current: { message_index: 5, content: 'Hello', has_file_changes: false },
+                    count: 1
+                })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.getRewindState();
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/rewind/state');
+            expect(result.success).toBe(true);
+            expect(result.messages).toHaveLength(1);
+        });
+
+        test('executeRewind sends POST to /api/rewind/execute', async () => {
+            const mockResponse = {
+                ok: true,
+                json: jest.fn().mockResolvedValue({ success: true, message_content: 'Hello' })
+            };
+            global.fetch.mockResolvedValue(mockResponse);
+
+            const result = await apiClient.executeRewind({
+                message_index: 5,
+                restore_files: true
+            });
+
+            expect(global.fetch).toHaveBeenCalledWith('/api/rewind/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message_index: 5,
+                    restore_files: true
+                })
+            });
+            expect(result.success).toBe(true);
+        });
+
+        test('executeRewind returns error on failure', async () => {
+            global.fetch.mockRejectedValue(new Error('Network error'));
+
+            const result = await apiClient.executeRewind({ message_index: 0 });
+
+            expect(result.success).toBe(false);
+        });
+    });
+});

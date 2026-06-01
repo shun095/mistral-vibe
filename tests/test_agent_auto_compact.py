@@ -19,6 +19,7 @@ from vibe.core.types import (
     AssistantEvent,
     CompactEndEvent,
     CompactStartEvent,
+    Content,
     LLMMessage,
     Role,
     UserMessageEvent,
@@ -130,7 +131,7 @@ async def test_auto_compact_observer_sees_user_msg_not_summary() -> None:
     Compact internals (summary request, LLM summary) are invisible
     to the observer because they happen inside silent() / reset().
     """
-    observed: list[tuple[Role, str | None]] = []
+    observed: list[tuple[Role, Content | None]] = []
 
     def observer(msg: LLMMessage) -> None:
         observed.append((msg.role, msg.content))
@@ -156,7 +157,7 @@ async def test_auto_compact_observer_sees_user_msg_not_summary() -> None:
 @pytest.mark.asyncio
 async def test_auto_compact_observer_does_not_see_summary_request() -> None:
     """The compact summary request and LLM response must not leak to observer."""
-    observed: list[tuple[Role, str | None]] = []
+    observed: list[tuple[Role, Content | None]] = []
 
     def observer(msg: LLMMessage) -> None:
         observed.append((msg.role, msg.content))
@@ -175,7 +176,7 @@ async def test_auto_compact_observer_does_not_see_summary_request() -> None:
 
     contents = [c for _, c in observed]
     assert "<summary>" not in contents
-    assert all("compact" not in (c or "").lower() for c in contents)
+    assert all("compact" not in (str(c) if c else "").lower() for c in contents)
 
 
 @pytest.mark.asyncio
@@ -205,6 +206,11 @@ class _ModelTrackingBackend(FakeBackend):
     async def complete(self, *, model, **kwargs):
         self.requested_models.append(model)
         return await super().complete(model=model, **kwargs)
+
+    async def complete_streaming(self, *, model, **kwargs):
+        self.requested_models.append(model)
+        async for chunk in super().complete_streaming(model=model, **kwargs):
+            yield chunk
 
 
 @pytest.mark.asyncio
@@ -248,6 +254,80 @@ async def test_compact_uses_active_model_when_no_compaction_model() -> None:
     active = cfg.get_active_model()
     assert backend.requested_models[0].name == active.name
     assert backend.requested_models[1].name == active.name
+
+
+class StreamingTrackingBackend(FakeBackend):
+    """Backend that tracks whether streaming or non-streaming was used."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.streaming_calls: int = 0
+        self.non_streaming_calls: int = 0
+
+    async def complete(self, *, model, **kwargs):
+        self.non_streaming_calls += 1
+        return await super().complete(model=model, **kwargs)
+
+    async def complete_streaming(self, *, model, **kwargs):
+        self.streaming_calls += 1
+        async for chunk in super().complete_streaming(model=model, **kwargs):
+            yield chunk
+
+
+@pytest.mark.asyncio
+async def test_compact_uses_streaming() -> None:
+    """Verify that compact() uses streaming instead of non-streaming complete()."""
+    expected_summary = "<summary>"
+    backend = StreamingTrackingBackend([
+        [mock_llm_chunk(content=expected_summary)],
+        [mock_llm_chunk(content="<final>")],
+    ])
+    cfg = build_test_vibe_config(models=make_test_models(auto_compact_threshold=1))
+    agent = build_test_agent_loop(config=cfg, backend=backend)
+    agent.stats.context_tokens = 2
+
+    events = [ev async for ev in agent.act("Hello")]
+
+    # Compact should use streaming (at least 1 streaming call for the summary)
+    assert backend.streaming_calls >= 1, "Compact should use streaming"
+
+    # Verify summary content is correctly aggregated from streaming chunks
+    compact_end = [e for e in events if isinstance(e, CompactEndEvent)][0]
+    assert compact_end.summary_content == expected_summary
+
+
+@pytest.mark.asyncio
+async def test_compact_aggregates_multiple_streaming_chunks() -> None:
+    """Verify that compact() correctly aggregates multiple streaming chunks into summary."""
+    chunk1 = "Summary: "
+    chunk2 = "User asked about "
+    chunk3 = "Python. "
+    chunk4 = "Assistant explained "
+    chunk5 = "the basics."
+    expected_summary = chunk1 + chunk2 + chunk3 + chunk4 + chunk5
+
+    backend = StreamingTrackingBackend([
+        [
+            mock_llm_chunk(content=chunk1),
+            mock_llm_chunk(content=chunk2),
+            mock_llm_chunk(content=chunk3),
+            mock_llm_chunk(content=chunk4),
+            mock_llm_chunk(content=chunk5),
+        ],
+        [mock_llm_chunk(content="<final>")],
+    ])
+    cfg = build_test_vibe_config(models=make_test_models(auto_compact_threshold=1))
+    agent = build_test_agent_loop(config=cfg, backend=backend)
+    agent.stats.context_tokens = 2
+
+    events = [ev async for ev in agent.act("Hello")]
+
+    # Compact should use streaming
+    assert backend.streaming_calls >= 1, "Compact should use streaming"
+
+    # Verify summary content is correctly aggregated from all chunks
+    compact_end = [e for e in events if isinstance(e, CompactEndEvent)][0]
+    assert compact_end.summary_content == expected_summary
 
 
 @pytest.mark.asyncio
@@ -304,6 +384,61 @@ async def test_compact_without_extra_instructions_has_no_additional_section() ->
 
 
 @pytest.mark.asyncio
+async def test_compact_resets_resume_system_prompt() -> None:
+    """After compact, _resume_system_prompt is cleared so mode cycles
+    recalculate the system prompt instead of using the stale saved one.
+    """
+    backend = FakeBackend([[mock_llm_chunk(content="<summary>")]])
+    cfg = build_test_vibe_config(models=make_test_models(auto_compact_threshold=999))
+    agent = build_test_agent_loop(config=cfg, backend=backend)
+    agent._resume_system_prompt = "saved prompt"
+    agent.messages.append(LLMMessage(role=Role.user, content="Hello"))
+    agent.stats.context_tokens = 100
+
+    await agent.compact()
+
+    assert agent._resume_system_prompt is None
+
+
+@pytest.mark.asyncio
+async def test_compact_recalculates_system_prompt() -> None:
+    """After compact, the system prompt is freshly calculated, not reused."""
+    backend = FakeBackend([[mock_llm_chunk(content="<summary>")]])
+    cfg = build_test_vibe_config(models=make_test_models(auto_compact_threshold=999))
+    agent = build_test_agent_loop(config=cfg, backend=backend)
+    old_content = cast(str, agent.messages[0].content)
+    agent._resume_system_prompt = old_content  # Simulate resume state
+    agent.messages.append(LLMMessage(role=Role.user, content="Hello"))
+    agent.stats.context_tokens = 100
+
+    await agent.compact()
+
+    assert agent._resume_system_prompt is None
+    assert agent.messages[0].role == Role.system
+    assert agent.messages[0].content is not None
+    assert agent.messages[0].content != agent._resume_system_prompt
+
+
+@pytest.mark.asyncio
+async def test_compact_emits_system_prompt_regenerated_event() -> None:
+    """compact emits SystemPromptRegeneratedEvent."""
+    from vibe.core.ui_events import SystemPromptRegeneratedEvent
+
+    backend = FakeBackend([[mock_llm_chunk(content="<summary>")]])
+    cfg = build_test_vibe_config(models=make_test_models(auto_compact_threshold=999))
+    agent = build_test_agent_loop(config=cfg, backend=backend)
+    agent.messages.append(LLMMessage(role=Role.user, content="Hello"))
+    agent.stats.context_tokens = 100
+
+    events_received: list[object] = []
+    agent.add_event_listener(events_received.append)
+
+    await agent.compact()
+
+    assert any(isinstance(e, SystemPromptRegeneratedEvent) for e in events_received)
+
+
+@pytest.mark.asyncio
 async def test_compact_message_shape_preserves_prior_user_messages() -> None:
     from vibe.core.prompts import UtilityPrompt
 
@@ -311,7 +446,6 @@ async def test_compact_message_shape_preserves_prior_user_messages() -> None:
     backend = FakeBackend([[mock_llm_chunk(content="fresh summary body")]])
     cfg = build_test_vibe_config(models=make_test_models(auto_compact_threshold=999))
     agent = build_test_agent_loop(config=cfg, backend=backend)
-    system_message_before = agent.messages[0]
 
     agent.messages.append(LLMMessage(role=Role.user, content="first real ask"))
     agent.messages.append(
@@ -328,7 +462,7 @@ async def test_compact_message_shape_preserves_prior_user_messages() -> None:
 
     final = list(agent.messages)
     assert len(final) == 4  # [system, prior_user_1, prior_user_2, wrapped_summary]
-    assert final[0] is system_message_before
+    assert final[0].role == Role.system  # system prompt regenerated on compact
     assert [m.role for m in final[1:]] == [Role.user, Role.user, Role.user]
     assert final[1].content == "first real ask"
     assert final[2].content == "follow-up ask"
@@ -337,3 +471,34 @@ async def test_compact_message_shape_preserves_prior_user_messages() -> None:
     assert sum("prior summary blob" in (m.content or "") for m in final) == 0
     # Final message is the wrapped summary the next agent will read first.
     assert final[-1].content == f"{summary_prefix}\nfresh summary body"
+
+
+@pytest.mark.asyncio
+async def test_compact_emits_error_event_on_construction_failure() -> None:
+    """Verify that if CompactEndEvent construction fails, an error event is emitted."""
+    call_count = 0
+
+    def failing_constructor(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise RuntimeError("simulated construction failure")
+        return CompactEndEvent(*args, **kwargs)
+
+    backend = FakeBackend([[mock_llm_chunk(content="<summary>")]])
+    cfg = build_test_vibe_config(models=make_test_models(auto_compact_threshold=1))
+    agent = build_test_agent_loop(config=cfg, backend=backend)
+    agent.stats.context_tokens = 2
+
+    events = []
+    with patch("vibe.core.agent_loop.CompactEndEvent", side_effect=failing_constructor):
+        with pytest.raises(RuntimeError, match="simulated construction failure"):
+            async for ev in agent.act("Hello"):
+                events.append(ev)
+
+    end_events = [e for e in events if isinstance(e, CompactEndEvent)]
+    assert len(end_events) == 1
+    error_event = end_events[0]
+    assert error_event.error == "simulated construction failure"
+    assert error_event.summary_length == 0
+    assert error_event.summary_content is None

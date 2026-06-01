@@ -10,6 +10,7 @@ from typing import ClassVar, NamedTuple, final
 import anyio
 from pydantic import BaseModel, Field
 
+from vibe.core.lsp.utils import get_lsp_diagnostics
 from vibe.core.rewind.manager import FileSnapshot
 from vibe.core.scratchpad import is_scratchpad_path
 from vibe.core.tools.base import (
@@ -65,6 +66,10 @@ class SearchReplaceResult(BaseModel):
     lines_changed: int
     content: str
     warnings: list[str] = Field(default_factory=list)
+    lsp_diagnostics: str | None = Field(
+        default=None,
+        description="Formatted LSP diagnostics for the modified file, if available",
+    )
 
 
 class SearchReplaceConfig(BaseToolConfig):
@@ -86,6 +91,7 @@ class SearchReplace(
     description: ClassVar[str] = (
         "Replace sections of files using SEARCH/REPLACE blocks. "
         "Supports fuzzy matching and detailed error reporting. "
+        "To use this tool, fill [text] and [replacement] in following format with proper text. "
         "Format: <<<<<<< SEARCH\\n[text]\\n=======\\n[replacement]\\n>>>>>>> REPLACE"
     )
 
@@ -159,6 +165,8 @@ class SearchReplace(
         # Calculate line changes
         if modified_content == original_content:
             lines_changed = 0
+            # No changes were made, no diagnostics needed
+            diagnostics = None
         else:
             original_lines = len(original_content.splitlines())
             new_lines = len(modified_content.splitlines())
@@ -174,12 +182,15 @@ class SearchReplace(
                 file_path, modified_content, decoded.encoding, decoded.newline
             )
 
+            diagnostics = await get_lsp_diagnostics(file_path)
+
         yield SearchReplaceResult(
             file=str(file_path),
             blocks_applied=block_result.applied,
             lines_changed=lines_changed,
             warnings=block_result.warnings,
             content=args.content,
+            lsp_diagnostics=diagnostics,
         )
 
     @final
@@ -217,6 +228,7 @@ class SearchReplace(
         if not search_replace_blocks:
             raise ToolError(
                 "No valid SEARCH/REPLACE blocks found in content.\n"
+                "To use this tool, fill [exact content to find] and [new content to replace with] in following format with proper text.\n"
                 "Expected format:\n"
                 "<<<<<<< SEARCH\n"
                 "[exact content to find]\n"

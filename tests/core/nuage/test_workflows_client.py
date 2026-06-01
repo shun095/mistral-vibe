@@ -151,6 +151,8 @@ def _setup_mock_client(client: WorkflowsClient, mock_response: AsyncMock) -> Non
 
 
 class TestStreamEvents:
+    pytestmark = pytest.mark.skip(reason="Nuage workflows is disabled")
+
     @pytest.mark.asyncio
     async def test_yields_stream_events(self) -> None:
         client = _make_client()
@@ -200,6 +202,8 @@ class TestStreamEvents:
 
 
 class TestGetWorkflowRuns:
+    pytestmark = pytest.mark.skip(reason="Nuage workflows is disabled")
+
     @pytest.mark.asyncio
     async def test_sends_current_user_filter_by_default(self) -> None:
         client = _make_client()

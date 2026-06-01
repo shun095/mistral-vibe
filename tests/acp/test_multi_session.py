@@ -111,7 +111,7 @@ class TestMultiSessionCore:
         )
         assert assistant_message1 is not None
         assert assistant_message2 is not None
-        assert {assistant_message1.content, assistant_message2.content} == {
+        assert {str(assistant_message1.content), str(assistant_message2.content)} == {
             "Response 1",
             "Response 2",
         }

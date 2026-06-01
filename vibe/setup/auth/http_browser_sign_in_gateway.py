@@ -40,6 +40,10 @@ class ExchangePayload(TypedDict, total=False):
 HTTP_GONE = 410
 _DEFAULT_PORTS = {"http": 80, "https": 443}
 
+# SECURITY: Hardcoded disable - Browser sign-in is permanently disabled
+# to prevent sending any data to external services.
+_BROWSER_SIGN_IN_DISABLED = True
+
 
 class HttpBrowserSignInGateway(BrowserSignInGateway):
     def __init__(
@@ -72,6 +76,12 @@ class HttpBrowserSignInGateway(BrowserSignInGateway):
             self._client = None
 
     async def create_process(self, code_challenge: str) -> BrowserSignInProcess:
+        if _BROWSER_SIGN_IN_DISABLED:
+            raise BrowserSignInError(
+                "Browser sign-in is disabled for security reasons. "
+                "External authentication services have been hardcoded disabled.",
+                code=BrowserSignInErrorCode.START_FAILED,
+            )
         message = "Failed to start browser sign-in."
         code = BrowserSignInErrorCode.START_FAILED
         try:
@@ -146,6 +156,12 @@ class HttpBrowserSignInGateway(BrowserSignInGateway):
             raise BrowserSignInError(message, code=code) from err
 
     async def poll(self, poll_url: str) -> BrowserSignInPollResult:
+        if _BROWSER_SIGN_IN_DISABLED:
+            raise BrowserSignInError(
+                "Browser sign-in is disabled for security reasons. "
+                "External authentication services have been hardcoded disabled.",
+                code=BrowserSignInErrorCode.POLL_FAILED,
+            )
         message = "Browser sign-in status could not be retrieved."
         code = BrowserSignInErrorCode.POLL_FAILED
         validated_poll_url = _validate_url_against_base_url(
@@ -180,6 +196,12 @@ class HttpBrowserSignInGateway(BrowserSignInGateway):
     async def exchange(
         self, process_id: str, exchange_token: str, code_verifier: str
     ) -> str:
+        if _BROWSER_SIGN_IN_DISABLED:
+            raise BrowserSignInError(
+                "Browser sign-in is disabled for security reasons. "
+                "External authentication services have been hardcoded disabled.",
+                code=BrowserSignInErrorCode.EXCHANGE_FAILED,
+            )
         message = "Failed to exchange browser sign-in for an API key."
         code = BrowserSignInErrorCode.EXCHANGE_FAILED
         try:

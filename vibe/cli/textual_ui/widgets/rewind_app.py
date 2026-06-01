@@ -31,6 +31,8 @@ class RewindApp(Container):
         Binding("enter", "select", "Select", show=False),
         Binding("1", "select_1", "Option 1", show=False),
         Binding("2", "select_2", "Option 2", show=False),
+        Binding("left", "rewind_prev", "Prev", show=False),
+        Binding("right", "rewind_next", "Next", show=False),
     ]
 
     class RewindWithRestore(Message):
@@ -38,6 +40,12 @@ class RewindApp(Container):
 
     class RewindWithoutRestore(Message):
         """User chose to edit the message without restoring files."""
+
+    class RewindPrev(Message):
+        """User pressed left to navigate to the previous message."""
+
+    class RewindNext(Message):
+        """User pressed right to navigate to the next message."""
 
     def __init__(self, message_preview: str, *, has_file_changes: bool) -> None:
         super().__init__(id="rewind-app")
@@ -85,7 +93,7 @@ class RewindApp(Container):
                 yield widget
             yield NoMarkupStatic("")
             yield NoMarkupStatic(
-                f"{ALT_KEY}+↑↓ or Ctrl+P/N browse messages  ↑↓ pick option  Enter confirm  ESC cancel",
+                f"{ALT_KEY}+↑↓ or Ctrl+P/N or ←→ browse messages  ↑↓ pick option  Enter confirm  ESC cancel",
                 classes="rewind-help",
             )
 
@@ -121,6 +129,12 @@ class RewindApp(Container):
     def action_move_down(self) -> None:
         self.selected_option = (self.selected_option + 1) % self._option_count()
         self._update_options()
+
+    def action_rewind_prev(self) -> None:
+        self.post_message(self.RewindPrev())
+
+    def action_rewind_next(self) -> None:
+        self.post_message(self.RewindNext())
 
     def action_select(self) -> None:
         self._handle_selection(self.selected_option)

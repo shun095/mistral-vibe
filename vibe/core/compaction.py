@@ -22,6 +22,7 @@ def collect_prior_user_messages(
         for m in messages
         if m.role == Role.user
         and not m.injected
+        and isinstance(m.content, str)
         and m.content
         and not m.content.startswith(summary_prefix)
     ]
@@ -31,7 +32,7 @@ def collect_prior_user_messages(
     for m in reversed(candidates):
         if remaining <= 0:
             break
-        content = m.content or ""
+        content = m.content if isinstance(m.content, str) else ""
         cost = approx_token_count(content)
         if cost <= remaining:
             selected.append(LLMMessage(role=Role.user, content=content, injected=True))

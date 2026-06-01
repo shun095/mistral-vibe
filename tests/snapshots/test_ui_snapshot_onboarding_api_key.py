@@ -44,6 +44,7 @@ def test_snapshot_onboarding_api_key_with_valid_input(
 
     async def run_before(pilot: Pilot) -> None:
         await pilot.pause(0.2)
+        pilot.app.screen.query_one(PetitChat).freeze_animation()
         await pilot.press(*"sk-test-api-key")
         await pilot.pause(0.1)
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, cast
 
 from acp import ReadTextFileResponse
 import pytest
@@ -358,13 +359,10 @@ class TestAcpSearchReplaceSessionUpdates:
         assert update.locations[0].path == str(Path("/tmp/test.txt").resolve())
 
     def test_tool_call_session_update_invalid_args(self) -> None:
-        class InvalidArgs:
-            pass
-
         event = ToolCallEvent.model_construct(
             tool_name="search_replace",
             tool_call_id="test_call_123",
-            args=InvalidArgs(),  # type: ignore[arg-type]
+            args=cast(Any, object()),
             tool_class=SearchReplace,
         )
 
@@ -408,13 +406,10 @@ class TestAcpSearchReplaceSessionUpdates:
         assert update.locations[0].path == str(Path("/tmp/test.txt").resolve())
 
     def test_tool_result_session_update_invalid_result(self) -> None:
-        class InvalidResult:
-            pass
-
         event = ToolResultEvent.model_construct(
             tool_name="search_replace",
             tool_call_id="test_call_123",
-            result=InvalidResult(),  # type: ignore[arg-type]
+            result=cast(Any, object()),
             tool_class=SearchReplace,
         )
 

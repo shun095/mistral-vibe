@@ -17,7 +17,7 @@ def bash(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_runs_echo_successfully(bash):
-    result = await collect_result(bash.run(BashArgs(command="echo hello")))
+    result = await collect_result(bash.run(BashArgs(command="echo hello", timeout=10)))
 
     assert result.returncode == 0
     assert result.stdout == "hello\n"
@@ -27,7 +27,9 @@ async def test_runs_echo_successfully(bash):
 @pytest.mark.asyncio
 async def test_fails_cat_command_with_missing_file(bash):
     with pytest.raises(ToolError) as err:
-        await collect_result(bash.run(BashArgs(command="cat missing_file.txt")))
+        await collect_result(
+            bash.run(BashArgs(command="cat missing_file.txt", timeout=10))
+        )
 
     message = str(err.value)
     assert "Command failed" in message
@@ -41,7 +43,7 @@ async def test_uses_effective_workdir(tmp_path, monkeypatch):
     config = BashToolConfig()
     bash_tool = Bash(config_getter=lambda: config, state=BaseToolState())
 
-    result = await collect_result(bash_tool.run(BashArgs(command="pwd")))
+    result = await collect_result(bash_tool.run(BashArgs(command="pwd", timeout=10)))
 
     assert result.stdout.strip() == str(tmp_path)
 
@@ -55,12 +57,41 @@ async def test_handles_timeout(bash):
 
 
 @pytest.mark.asyncio
+async def test_timeout_includes_partial_output(bash):
+    """Test that partial stdout/stderr is captured when command times out."""
+    with pytest.raises(ToolError) as err:
+        await collect_result(
+            bash.run(
+                BashArgs(
+                    command="echo 'line 1' && echo 'line 2' && sleep 2 && echo 'line 3'",
+                    timeout=1,
+                )
+            )
+        )
+
+    error_msg = str(err.value)
+    assert "Command timed out after 1s" in error_msg
+    assert "Partial stdout:" in error_msg
+    assert "line 1" in error_msg
+    assert "line 2" in error_msg
+    # Verify the partial output section contains only line 1 and line 2
+    partial_stdout_start = error_msg.find("Partial stdout:\n")
+    assert partial_stdout_start != -1
+    partial_stdout = error_msg[partial_stdout_start + len("Partial stdout:\n") :]
+    assert "line 1" in partial_stdout
+    assert "line 2" in partial_stdout
+    assert (
+        "line 3" not in partial_stdout
+    )  # This should not appear (printed after timeout)
+
+
+@pytest.mark.asyncio
 async def test_truncates_output_to_max_bytes(bash):
     config = BashToolConfig(max_output_bytes=5)
     bash_tool = Bash(config_getter=lambda: config, state=BaseToolState())
 
     result = await collect_result(
-        bash_tool.run(BashArgs(command="printf 'abcdefghij'"))
+        bash_tool.run(BashArgs(command="printf 'abcdefghij'", timeout=10))
     )
 
     assert result.stdout == "abcde"
@@ -70,11 +101,25 @@ async def test_truncates_output_to_max_bytes(bash):
 
 @pytest.mark.asyncio
 async def test_decodes_non_utf8_bytes(bash):
-    result = await collect_result(bash.run(BashArgs(command="printf '\\xff\\xfe'")))
+    result = await collect_result(
+        bash.run(BashArgs(command="printf '\\xff\\xfe'", timeout=10))
+    )
 
     # accept both possible encodings, as some shells emit escaped bytes as literal strings
     assert result.stdout in {"��", "\xff\xfe", r"\xff\xfe"}
     assert result.stderr == ""
+
+
+def test_find_not_in_default_allowlist():
+    bash_tool = Bash(config_getter=lambda: BashToolConfig(), state=BaseToolState())
+    # find -exec runs arbitrary commands; must not be allowlisted by default
+    permission = bash_tool.resolve_permission(
+        BashArgs(command="find . -exec id \\;", timeout=10)
+    )
+    assert (
+        not isinstance(permission, PermissionContext)
+        or permission.permission is not ToolPermission.ALWAYS
+    )
 
 
 @pytest.mark.parametrize("predicate", ["-exec", "-execdir", "-ok", "-okdir"])
@@ -83,7 +128,7 @@ def test_find_execution_predicates_force_ask(predicate: str):
     bash_tool = Bash(config_getter=lambda: config, state=BaseToolState())
 
     permission = bash_tool.resolve_permission(
-        BashArgs(command=f"find . {predicate} id \\;")
+        BashArgs(command=f"find . {predicate} id \\;", timeout=10)
     )
 
     assert isinstance(permission, PermissionContext)
@@ -98,7 +143,7 @@ def test_find_exec_compound_includes_companion_required_permission():
     bash_tool = Bash(config_getter=lambda: config, state=BaseToolState())
 
     permission = bash_tool.resolve_permission(
-        BashArgs(command='find . -exec id \\; && python3 -c "import os"')
+        BashArgs(command='find . -exec id \\; && python3 -c "import os"', timeout=10)
     )
 
     assert isinstance(permission, PermissionContext)
@@ -117,7 +162,7 @@ def test_find_execution_predicate_does_not_override_denylist():
     bash_tool = Bash(config_getter=lambda: config, state=BaseToolState())
 
     permission = bash_tool.resolve_permission(
-        BashArgs(command="find . -exec id \\; && passwd root")
+        BashArgs(command="find . -exec id \\; && passwd root", timeout=10)
     )
 
     assert isinstance(permission, PermissionContext)
@@ -129,10 +174,12 @@ def test_resolve_permission():
     config = BashToolConfig(allowlist=["echo", "pwd"], denylist=["rm"])
     bash_tool = Bash(config_getter=lambda: config, state=BaseToolState())
 
-    allowlisted = bash_tool.resolve_permission(BashArgs(command="echo hi"))
-    denylisted = bash_tool.resolve_permission(BashArgs(command="rm -rf /tmp"))
-    mixed = bash_tool.resolve_permission(BashArgs(command="pwd && whoami"))
-    empty = bash_tool.resolve_permission(BashArgs(command=""))
+    allowlisted = bash_tool.resolve_permission(BashArgs(command="echo hi", timeout=10))
+    denylisted = bash_tool.resolve_permission(
+        BashArgs(command="rm -rf /tmp", timeout=10)
+    )
+    mixed = bash_tool.resolve_permission(BashArgs(command="pwd && whoami", timeout=10))
+    empty = bash_tool.resolve_permission(BashArgs(command="", timeout=10))
 
     assert isinstance(allowlisted, PermissionContext)
     assert allowlisted.permission is ToolPermission.ALWAYS
@@ -153,96 +200,114 @@ class TestResolvePermissionWindowsSyntax:
 
     def test_dir_with_windows_flags_allowlisted(self):
         bash_tool = self._make_bash(allowlist=["dir"])
-        result = bash_tool.resolve_permission(BashArgs(command="dir /s /b"))
+        result = bash_tool.resolve_permission(BashArgs(command="dir /s /b", timeout=10))
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.ALWAYS
 
     def test_type_command_allowlisted(self):
         bash_tool = self._make_bash(allowlist=["type"])
-        result = bash_tool.resolve_permission(BashArgs(command="type file.txt"))
+        result = bash_tool.resolve_permission(
+            BashArgs(command="type file.txt", timeout=10)
+        )
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.ALWAYS
 
     def test_findstr_allowlisted(self):
         bash_tool = self._make_bash(allowlist=["findstr"])
         result = bash_tool.resolve_permission(
-            BashArgs(command="findstr /s pattern *.txt")
+            BashArgs(command="findstr /s pattern *.txt", timeout=10)
         )
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.ALWAYS
 
     def test_ver_allowlisted(self):
         bash_tool = self._make_bash(allowlist=["ver"])
-        result = bash_tool.resolve_permission(BashArgs(command="ver"))
+        result = bash_tool.resolve_permission(BashArgs(command="ver", timeout=10))
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.ALWAYS
 
     def test_where_allowlisted(self):
         bash_tool = self._make_bash(allowlist=["where"])
-        result = bash_tool.resolve_permission(BashArgs(command="where python"))
+        result = bash_tool.resolve_permission(
+            BashArgs(command="where python", timeout=10)
+        )
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.ALWAYS
 
     def test_cmd_k_denylisted(self):
         bash_tool = self._make_bash(denylist=["cmd /k"])
-        result = bash_tool.resolve_permission(BashArgs(command="cmd /k something"))
+        result = bash_tool.resolve_permission(
+            BashArgs(command="cmd /k something", timeout=10)
+        )
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.NEVER
 
     def test_powershell_noexit_denylisted(self):
         bash_tool = self._make_bash(denylist=["powershell -NoExit"])
-        result = bash_tool.resolve_permission(BashArgs(command="powershell -NoExit"))
+        result = bash_tool.resolve_permission(
+            BashArgs(command="powershell -NoExit", timeout=10)
+        )
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.NEVER
 
     def test_notepad_denylisted(self):
         bash_tool = self._make_bash(denylist=["notepad"])
-        result = bash_tool.resolve_permission(BashArgs(command="notepad file.txt"))
+        result = bash_tool.resolve_permission(
+            BashArgs(command="notepad file.txt", timeout=10)
+        )
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.NEVER
 
     def test_cmd_standalone_denylisted(self):
         bash_tool = self._make_bash(denylist_standalone=["cmd"])
-        result = bash_tool.resolve_permission(BashArgs(command="cmd"))
+        result = bash_tool.resolve_permission(BashArgs(command="cmd", timeout=10))
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.NEVER
 
     def test_powershell_standalone_denylisted(self):
         bash_tool = self._make_bash(denylist_standalone=["powershell"])
-        result = bash_tool.resolve_permission(BashArgs(command="powershell"))
+        result = bash_tool.resolve_permission(
+            BashArgs(command="powershell", timeout=10)
+        )
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.NEVER
 
     def test_powershell_cmdlet_asks(self):
         bash_tool = self._make_bash(allowlist=["dir", "echo"])
-        result = bash_tool.resolve_permission(BashArgs(command="Get-ChildItem -Path ."))
+        result = bash_tool.resolve_permission(
+            BashArgs(command="Get-ChildItem -Path .", timeout=10)
+        )
         assert isinstance(result, PermissionContext)
         assert result.permission == ToolPermission.ASK
 
     def test_mixed_allowed_and_unknown_asks(self):
         bash_tool = self._make_bash(allowlist=["git status"])
         result = bash_tool.resolve_permission(
-            BashArgs(command="git status && npm install")
+            BashArgs(command="git status && npm install", timeout=10)
         )
         assert isinstance(result, PermissionContext)
         assert result.permission == ToolPermission.ASK
 
     def test_chained_windows_commands_all_allowed(self):
         bash_tool = self._make_bash(allowlist=["dir", "echo"])
-        result = bash_tool.resolve_permission(BashArgs(command="dir /s && echo done"))
+        result = bash_tool.resolve_permission(
+            BashArgs(command="dir /s && echo done", timeout=10)
+        )
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.ALWAYS
 
     def test_chained_commands_one_denied(self):
         bash_tool = self._make_bash(allowlist=["dir"], denylist=["rm"])
-        result = bash_tool.resolve_permission(BashArgs(command="dir /s && rm -rf /"))
+        result = bash_tool.resolve_permission(
+            BashArgs(command="dir /s && rm -rf /", timeout=10)
+        )
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.NEVER
 
     def test_piped_windows_commands(self):
         bash_tool = self._make_bash(allowlist=["findstr", "type"])
         result = bash_tool.resolve_permission(
-            BashArgs(command="type file.txt | findstr pattern")
+            BashArgs(command="type file.txt | findstr pattern", timeout=10)
         )
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.ALWAYS
@@ -257,48 +322,58 @@ class TestDenylistWordBoundary:
 
     def test_vi_blocks_vi_exact(self):
         bash_tool = self._make_bash(denylist=["vi"])
-        result = bash_tool.resolve_permission(BashArgs(command="vi"))
+        result = bash_tool.resolve_permission(BashArgs(command="vi", timeout=10))
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.NEVER
 
     def test_vi_blocks_vi_with_args(self):
         bash_tool = self._make_bash(denylist=["vi"])
-        result = bash_tool.resolve_permission(BashArgs(command="vi file.txt"))
+        result = bash_tool.resolve_permission(
+            BashArgs(command="vi file.txt", timeout=10)
+        )
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.NEVER
 
     def test_vi_does_not_block_vibe(self):
         bash_tool = self._make_bash(denylist=["vi"])
-        result = bash_tool.resolve_permission(BashArgs(command="vibe -p hello"))
+        result = bash_tool.resolve_permission(
+            BashArgs(command="vibe -p hello", timeout=10)
+        )
         assert result is None or result.permission is not ToolPermission.NEVER
 
     def test_multiword_pattern_still_works(self):
         bash_tool = self._make_bash(denylist=["bash -i"])
-        result = bash_tool.resolve_permission(BashArgs(command="bash -i"))
+        result = bash_tool.resolve_permission(BashArgs(command="bash -i", timeout=10))
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.NEVER
 
     def test_multiword_pattern_with_trailing_args(self):
         bash_tool = self._make_bash(denylist=["bash -i"])
-        result = bash_tool.resolve_permission(BashArgs(command="bash -i extra"))
+        result = bash_tool.resolve_permission(
+            BashArgs(command="bash -i extra", timeout=10)
+        )
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.NEVER
 
     def test_multiword_pattern_does_not_match_partial(self):
         bash_tool = self._make_bash(denylist=["bash -i"])
-        result = bash_tool.resolve_permission(BashArgs(command="bash -init"))
+        result = bash_tool.resolve_permission(
+            BashArgs(command="bash -init", timeout=10)
+        )
         assert result is None or result.permission is not ToolPermission.NEVER
 
     def test_deny_reason_is_set(self):
         bash_tool = self._make_bash(denylist=["vim"])
-        result = bash_tool.resolve_permission(BashArgs(command="vim file.txt"))
+        result = bash_tool.resolve_permission(
+            BashArgs(command="vim file.txt", timeout=10)
+        )
         assert isinstance(result, PermissionContext)
         assert result.reason is not None
         assert "vim" in result.reason
 
     def test_standalone_deny_reason_is_set(self):
         bash_tool = self._make_bash(denylist_standalone=["python"])
-        result = bash_tool.resolve_permission(BashArgs(command="python"))
+        result = bash_tool.resolve_permission(BashArgs(command="python", timeout=10))
         assert isinstance(result, PermissionContext)
         assert result.reason is not None
         assert result.permission is ToolPermission.NEVER
@@ -307,5 +382,5 @@ class TestDenylistWordBoundary:
 
     def test_allowlist_does_not_match_prefix(self):
         bash_tool = self._make_bash(allowlist=["cat"])
-        result = bash_tool.resolve_permission(BashArgs(command="catalog"))
+        result = bash_tool.resolve_permission(BashArgs(command="catalog", timeout=10))
         assert result is not None and result.permission is not ToolPermission.ALWAYS

@@ -19,12 +19,12 @@ class PreparedRequest(NamedTuple):
 class APIAdapter(Protocol):
     endpoint: ClassVar[str]
 
-    def prepare_request(
+    def prepare_request(  # noqa: PLR0913
         self,
         *,
         model_name: str,
         messages: Sequence[LLMMessage],
-        temperature: float,
+        temperature: float | None,
         tools: list[AvailableTool] | None,
         max_tokens: int | None,
         tool_choice: StrToolChoice | AvailableTool | None,
@@ -32,6 +32,7 @@ class APIAdapter(Protocol):
         provider: ProviderConfig,
         api_key: str | None = None,
         thinking: str = "off",
+        return_progress: bool = False,
     ) -> PreparedRequest: ...
 
     def parse_response(

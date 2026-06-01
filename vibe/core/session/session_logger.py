@@ -239,13 +239,26 @@ class SessionLogger:
 
     @staticmethod
     async def persist_messages(messages: list[dict], session_dir: Path) -> None:
+        """Append messages to the messages file."""
+        await SessionLogger._persist_messages_impl(messages, session_dir, append=True)
+
+    @staticmethod
+    async def rewrite_messages(messages: list[dict], session_dir: Path) -> None:
+        """Rewrite the entire messages file (for edits/deletions)."""
+        await SessionLogger._persist_messages_impl(messages, session_dir, append=False)
+
+    @staticmethod
+    async def _persist_messages_impl(
+        messages: list[dict], session_dir: Path, append: bool = True
+    ) -> None:
         messages_filepath = session_dir / "messages.jsonl"
         try:
-            if not messages_filepath.exists():
+            if not messages_filepath.exists() and not append:
                 messages_filepath.touch()
 
+            mode = "a" if append else "w"
             async with await AsyncPath(messages_filepath).open(
-                "a", encoding="utf-8"
+                mode, encoding="utf-8"
             ) as f:
                 for message in messages:
                     await f.write(json.dumps(message, ensure_ascii=False) + "\n")
@@ -296,14 +309,24 @@ class SessionLogger:
 
         try:
             non_system_messages = [m for m in messages if m.role != Role.system]
-            # Append new messages
-            new_messages = non_system_messages[old_total_messages:]
+            total_messages = len(non_system_messages)
 
-            if len(new_messages) == 0:
-                return
+            # Check if we need to rewrite the file (message count decreased due to edit)
+            if total_messages < old_total_messages and self.session_dir is not None:
+                # Rewrite the entire file with the new message history
+                messages_data = [
+                    m.model_dump(exclude_none=True) for m in non_system_messages
+                ]
+                await SessionLogger.rewrite_messages(messages_data, self.session_dir)
+            else:
+                # Append new messages
+                new_messages = non_system_messages[old_total_messages:]
 
-            messages_data = [m.model_dump(exclude_none=True) for m in new_messages]
-            await SessionLogger.persist_messages(messages_data, session_dir)
+                if len(new_messages) == 0:
+                    return
+
+                messages_data = [m.model_dump(exclude_none=True) for m in new_messages]
+                await SessionLogger.persist_messages(messages_data, session_dir)
 
             # If message update succeeded, write metadata
             tools_available = [
@@ -324,7 +347,6 @@ class SessionLogger:
                 if len(messages) > 0 and messages[0].role == Role.system
                 else None
             )
-            total_messages = len(non_system_messages)
 
             metadata_dump = {
                 **session_metadata.model_dump(),

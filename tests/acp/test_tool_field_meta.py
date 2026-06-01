@@ -74,6 +74,8 @@ class TestGrepFieldMeta:
 
     def test_result_locations_from_parsed_matches(self) -> None:
         result = GrepResult(
+            pattern="match",
+            path="src",
             matches="src/a.py:10:match\nsrc/b.py:20:other",
             match_count=2,
             was_truncated=False,
@@ -113,7 +115,9 @@ class TestReadFileFieldMeta:
         assert update.field_meta == {"tool_name": "read_file"}
 
     def test_call_defaults_offset_zero_limit_none(self) -> None:
-        event = _call_event("read_file", ReadFile, ReadFileArgs(path="/tmp/f.txt"))
+        event = _call_event(
+            "read_file", ReadFile, ReadFileArgs(path="/tmp/f.txt", offset=0)
+        )
         update = tool_call_session_update(event)
 
         assert isinstance(update, ToolCallStart)
@@ -184,6 +188,8 @@ class TestWebFetchFieldMeta:
             url="https://example.com",
             content="hello world",
             content_type="text/html",
+            lines_read=1,
+            total_lines=1,
             was_truncated=True,
         )
         event = _result_event("web_fetch", WebFetch, result)
