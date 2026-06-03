@@ -893,8 +893,16 @@ class AgentLoop:
                 except asyncio.CancelledError:
                     compact_status = "cancelled"
                     raise
-                except Exception:
+                except Exception as e:
                     compact_status = "failure"
+                    yield CompactEndEvent(
+                        tool_call_id=tool_call_id,
+                        summary_length=0,
+                        summary_content=None,
+                        error=str(e),
+                        old_session_id=old_session_id,
+                        new_session_id=self.session_id,
+                    )
                     raise
                 finally:
                     self.telemetry_client.send_auto_compact_triggered(
@@ -905,24 +913,13 @@ class AgentLoop:
                         parent_session_id=old_parent_session_id,
                     )
 
-                try:
-                    yield CompactEndEvent(
-                        tool_call_id=tool_call_id,
-                        summary_length=len(summary),
-                        summary_content=summary,
-                        old_session_id=old_session_id,
-                        new_session_id=self.session_id,
-                    )
-                except Exception as e:
-                    yield CompactEndEvent(
-                        tool_call_id=tool_call_id,
-                        summary_length=0,
-                        summary_content=None,
-                        error=str(e),
-                        old_session_id=old_session_id,
-                        new_session_id=self.session_id,
-                    )
-                    raise
+                yield CompactEndEvent(
+                    tool_call_id=tool_call_id,
+                    summary_length=len(summary),
+                    summary_content=summary,
+                    old_session_id=old_session_id,
+                    new_session_id=self.session_id,
+                )
 
             case MiddlewareAction.CONTINUE:
                 pass

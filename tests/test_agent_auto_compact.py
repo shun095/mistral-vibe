@@ -112,9 +112,14 @@ async def test_auto_compact_emits_terminal_telemetry(
                 async for event in agent.act("Hello"):
                     events.append(event)
 
-    assert len(events) == 2
     assert isinstance(events[0], UserMessageEvent)
     assert isinstance(events[1], CompactStartEvent)
+    if expected_status == "failure":
+        assert len(events) == 3
+        assert isinstance(events[2], CompactEndEvent)
+        assert events[2].error == "boom"
+    else:
+        assert len(events) == 2
 
     properties = _get_auto_compact_properties(telemetry_events)
     assert properties["nb_context_tokens_before"] == 2
@@ -471,34 +476,3 @@ async def test_compact_message_shape_preserves_prior_user_messages() -> None:
     assert sum("prior summary blob" in (m.content or "") for m in final) == 0
     # Final message is the wrapped summary the next agent will read first.
     assert final[-1].content == f"{summary_prefix}\nfresh summary body"
-
-
-@pytest.mark.asyncio
-async def test_compact_emits_error_event_on_construction_failure() -> None:
-    """Verify that if CompactEndEvent construction fails, an error event is emitted."""
-    call_count = 0
-
-    def failing_constructor(*args, **kwargs):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            raise RuntimeError("simulated construction failure")
-        return CompactEndEvent(*args, **kwargs)
-
-    backend = FakeBackend([[mock_llm_chunk(content="<summary>")]])
-    cfg = build_test_vibe_config(models=make_test_models(auto_compact_threshold=1))
-    agent = build_test_agent_loop(config=cfg, backend=backend)
-    agent.stats.context_tokens = 2
-
-    events = []
-    with patch("vibe.core.agent_loop.CompactEndEvent", side_effect=failing_constructor):
-        with pytest.raises(RuntimeError, match="simulated construction failure"):
-            async for ev in agent.act("Hello"):
-                events.append(ev)
-
-    end_events = [e for e in events if isinstance(e, CompactEndEvent)]
-    assert len(end_events) == 1
-    error_event = end_events[0]
-    assert error_event.error == "simulated construction failure"
-    assert error_event.summary_length == 0
-    assert error_event.summary_content is None
