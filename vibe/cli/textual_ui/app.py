@@ -52,7 +52,6 @@ class PopupMetadata:
 from pydantic import BaseModel, ValidationError
 
 # Constants
-MESSAGE_PREVIEW_LENGTH = 50
 QUEUE_PREVIEW_LENGTH = 120
 NON_INTERRUPT_COMMANDS = (
     "/queue",
@@ -543,7 +542,6 @@ class VibeApp(App):  # noqa: PLR0904
         self._web_message_queue: list[dict[str, str | dict[str, str] | None]] = []
         self._pending_approval_meta: PopupMetadata | None = None
         self._pending_question_meta: PopupMetadata | None = None
-        self._queued_message: str | None = None
 
     def _initialize_queue_state(self) -> None:
         """Initialize queue auto-submit state."""
@@ -785,21 +783,6 @@ class VibeApp(App):  # noqa: PLR0904
 
         input_widget = self.query_one(ChatInputContainer)
         input_widget.value = ""
-
-        # Queue message during compaction without interrupting it
-        if self.event_handler and await self.event_handler.get_current_compact():
-            label = (
-                "Queued message updated"
-                if self._queued_message is not None
-                else "Message queued"
-            )
-            self._queued_message = value
-            await self._mount_and_scroll(
-                UserMessage(
-                    f"{label}: {value[:MESSAGE_PREVIEW_LENGTH]}{'...' if len(value) > MESSAGE_PREVIEW_LENGTH else ''}"
-                )
-            )
-            return
 
         if self._bash_task and not self._bash_task.done():
             self._bash_task.cancel()
@@ -1130,14 +1113,11 @@ class VibeApp(App):  # noqa: PLR0904
             return
 
         if compact_index == 0:
-            await self._flush_queued_message()
             return
 
         with self.batch_update():
             for widget in children[:compact_index]:
                 await widget.remove()
-
-        await self._flush_queued_message()
 
     async def _handle_command(self, user_input: str) -> bool:
         if resolved := self.commands.parse_command(user_input):
@@ -1386,12 +1366,6 @@ class VibeApp(App):  # noqa: PLR0904
             sections.append("Output:\n```text\n(no output)\n```")
 
         return "\n\n".join(sections)
-
-    async def _flush_queued_message(self) -> None:
-        """Process and clear any queued user message."""
-        if self._queued_message:
-            await self._handle_user_message(self._queued_message)
-            self._queued_message = None
 
     async def _handle_user_message(
         self, message: str, *, title_source: str | None = None
@@ -3183,7 +3157,6 @@ class VibeApp(App):  # noqa: PLR0904
         finally:
             self._agent_running = False
             self._agent_task = None
-            self._queued_message = None
             if self.event_handler:
                 self.event_handler.set_current_compact(None)
 
@@ -3720,7 +3693,7 @@ class VibeApp(App):  # noqa: PLR0904
             pass
         self._last_escape_time = None
 
-    def _try_interrupt_bottom_app_escape(self) -> bool:  # noqa: PLR0912
+    def _try_interrupt_bottom_app_escape(self) -> bool:
         if self._current_bottom_app == BottomApp.Config:
             self._handle_config_app_escape()
         elif self._current_bottom_app == BottomApp.Voice:
@@ -3745,21 +3718,6 @@ class VibeApp(App):  # noqa: PLR0904
             self._handle_thinking_picker_app_escape()
         elif self._current_bottom_app == BottomApp.SessionPicker:
             self._handle_session_picker_app_escape()
-        # Handle ESC key for queued message during compaction
-        if (
-            self._current_bottom_app == BottomApp.Input
-            and self._queued_message is not None
-            and self.event_handler
-            and self.event_handler.current_compact
-        ):
-            # Clear the queued message
-            self._queued_message = None
-            self.run_worker(
-                self._mount_and_scroll(ErrorMessage("Queued message cleared")),
-                exclusive=False,
-            )
-            return True
-
         elif self._current_bottom_app == BottomApp.Rewind:
             self.run_worker(self._exit_rewind_mode(), exclusive=False)
             self._last_escape_time = None
