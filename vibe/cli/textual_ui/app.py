@@ -3188,19 +3188,35 @@ class VibeApp(App):  # noqa: PLR0904
                 self.event_handler.set_current_compact(None)
 
     def _get_session_resume_info(self) -> str | None:
-        if self._remote_manager.is_active:
-            return None
-        if not self.agent_loop.session_logger.enabled:
-            return None
-        if not self.agent_loop.session_logger.session_id:
+        if (
+            self._remote_manager.is_active
+            or not self.agent_loop.session_logger.enabled
+            or not self.agent_loop.session_logger.session_id
+        ):
             return None
         session_config = self.agent_loop.session_logger.session_config
         session_path = SessionLoader.does_session_exist(
             self.agent_loop.session_logger.session_id, session_config
         )
-        if session_path is None:
-            return None
-        return short_session_id(self.agent_loop.session_logger.session_id)
+        if session_path is not None:
+            return short_session_id(self.agent_loop.session_logger.session_id)
+        # Current session not saved to disk (e.g., /clear then quit without
+        # sending a message). Fall back to the latest saved session so the
+        # pointer is updated rather than retaining a stale value.
+        latest = None
+        try:
+            latest = SessionLoader.find_latest_session(
+                session_config, working_directory=Path.cwd().resolve()
+            )
+        except OSError:
+            pass
+        if latest is not None:
+            try:
+                metadata = SessionLoader.load_metadata(latest)
+                return short_session_id(metadata.session_id)
+            except ValueError:
+                pass
+        return None
 
     async def _exit_app(self, **kwargs: Any) -> None:
         self._emit_session_closed_for_active_session()

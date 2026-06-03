@@ -121,3 +121,150 @@ def test_current_tty_key_falls_back_to_ppid_on_windows(
     monkeypatch.delenv("WT_SESSION", raising=False)
     monkeypatch.setattr(last_session_pointer.os, "getppid", lambda: 4242)
     assert last_session_pointer.current_tty_key() == "ppid-4242"
+
+
+def test_pointer_roundtrip_with_find_session_by_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Simulate the full -c round-trip:
+
+    1. Session exits → _get_session_resume_info() returns short_session_id(full_id)
+    2. last_session_pointer.record() stores the short ID (8 chars)
+    3. User runs `vibe -c` → last_session_pointer.load() reads the short ID
+    4. SessionLoader.find_session_by_id() calls shorten_session_id() (idempotent for 8 chars)
+       and finds the directory via glob prefix_*_8chars.
+    """
+    from datetime import datetime
+    import json
+
+    from vibe.core.session.session_id import shorten_session_id
+    from vibe.core.session.session_loader import SessionLoader
+
+    full_id = "a1b2c3d4-e5f6-789a-bcde-xyz123abc456"
+    short_id = shorten_session_id(full_id)  # "a1b2c3d4"
+
+    save_dir = tmp_path / "sessions"
+    save_dir.mkdir()
+    config = SessionLoggingConfig(
+        save_dir=str(save_dir), session_prefix="session", enabled=True
+    )
+
+    # Create session directory with the real naming convention
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    session_folder = save_dir / f"session_{timestamp}_{short_id}"
+    session_folder.mkdir()
+
+    (session_folder / "messages.jsonl").write_text(
+        '{"role": "user", "content": "hello"}\n', encoding="utf-8"
+    )
+    (session_folder / "meta.json").write_text(
+        json.dumps({
+            "session_id": full_id,
+            "environment": {"working_directory": "/test"},
+        }),
+        encoding="utf-8",
+    )
+
+    _set_tty(monkeypatch, "ttys001")
+
+    # _get_session_resume_info() returns short_session_id(full_id)
+    last_session_pointer.record(config, short_id)
+
+    # Simulate what -c does: load pointer → find_session_by_id
+    loaded = last_session_pointer.load(config)
+    assert loaded is not None
+    assert loaded == short_id
+
+    result = SessionLoader.find_session_by_id(loaded, config)
+    assert result is not None, (
+        f"Pointer round-trip failed: stored {short_id!r}, "
+        f"loaded {loaded!r}, glob uses shorten_session_id({loaded!r}) = {shorten_session_id(loaded)!r}"
+    )
+    assert result == session_folder
+
+
+def test_pointer_fallback_when_current_session_not_saved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Reproduce the bug: /clear → quit without message → -c restores wrong session.
+
+    Scenario:
+    1. Session A exists on disk (saved from a previous run)
+    2. User runs /clear → new session B (not saved, no messages sent)
+    3. User quits → _get_session_resume_info() can't find B on disk
+    4. WITHOUT FIX: returns None → pointer not updated → stale pointer
+    5. WITH FIX: falls back to find_latest_session → returns A's ID → pointer updated
+
+    This test verifies that find_latest_session correctly returns session A
+    when the current session B doesn't exist on disk.
+    """
+    from datetime import datetime
+    import json
+
+    from vibe.core.session.session_id import shorten_session_id
+    from vibe.core.session.session_loader import SessionLoader
+
+    full_id_a = "a1b2c3d4-e5f6-789a-bcde-xyz123abc456"
+    short_id_a = shorten_session_id(full_id_a)  # "a1b2c3d4"
+
+    save_dir = tmp_path / "sessions"
+    save_dir.mkdir()
+    config = SessionLoggingConfig(
+        save_dir=str(save_dir), session_prefix="session", enabled=True
+    )
+
+    # Create session A on disk (the only saved session)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    session_a_folder = save_dir / f"session_{timestamp}_{short_id_a}"
+    session_a_folder.mkdir()
+    (session_a_folder / "messages.jsonl").write_text(
+        '{"role": "user", "content": "hello"}\n', encoding="utf-8"
+    )
+    (session_a_folder / "meta.json").write_text(
+        json.dumps({
+            "session_id": full_id_a,
+            "parent_session_id": None,
+            "start_time": "2024-01-01T00:00:00",
+            "end_time": None,
+            "git_commit": None,
+            "git_branch": None,
+            "environment": {"working_directory": str(tmp_path)},
+            "username": "test",
+        }),
+        encoding="utf-8",
+    )
+
+    # Session B does NOT exist on disk (user did /clear but sent no messages)
+    full_id_b = "b2c3d4e5-f6a7-890b-cdef-abc123def456"
+
+    # Verify: does_session_exist(B) → None (B not saved)
+    assert SessionLoader.does_session_exist(full_id_b, config) is None
+
+    # Verify: find_latest_session → returns A (the only saved session)
+    import pathlib
+
+    latest = SessionLoader.find_latest_session(
+        config, working_directory=pathlib.Path(str(tmp_path)).resolve()
+    )
+    assert latest is not None, "find_latest_session should return session A"
+    assert latest == session_a_folder
+
+    metadata = SessionLoader.load_metadata(latest)
+    assert metadata.session_id == full_id_a
+
+    # Simulate the pointer recording short_session_id of the fallback session
+    _set_tty(monkeypatch, "ttys001")
+    fallback_short_id = shorten_session_id(metadata.session_id)
+    last_session_pointer.record(config, fallback_short_id)
+
+    # Simulate -c: load pointer → find_session_by_id
+    loaded = last_session_pointer.load(config)
+    assert loaded is not None
+    assert loaded == fallback_short_id
+
+    result = SessionLoader.find_session_by_id(loaded, config)
+    assert result is not None, (
+        f"Pointer round-trip failed after fallback: "
+        f"stored {loaded!r}, glob uses {shorten_session_id(loaded)!r}"
+    )
+    assert result == session_a_folder
