@@ -94,6 +94,58 @@ async def test_compact_summary_after_auto_compaction() -> None:
         assert expected_summary in summary_message._content
 
 
+async def _wait_for_compact_error_message(
+    app: VibeApp, pilot, timeout: float = 5.0
+) -> CompactMessage:
+    """Wait for CompactMessage widget with an error to appear."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        for compact in app.query(CompactMessage):
+            content = compact.get_content()
+            if content.startswith("Error:"):
+                return compact
+        await pilot.pause(0.05)
+    raise TimeoutError("CompactMessage with error did not appear within timeout")
+
+
+@pytest.mark.asyncio
+async def test_compact_error_display_on_auto_compaction_failure() -> None:
+    """Test that compaction error is displayed when compact() fails.
+
+    User flow: Submit a message -> auto-compaction triggers and fails ->
+    error message widget appears, no summary widget is shown.
+    """
+    from unittest.mock import AsyncMock, patch
+
+    backend = FakeBackend(  # type: ignore
+        chunks=[[mock_llm_chunk(content="dummy")]]
+    )
+
+    cfg = build_test_vibe_config(models=make_test_models(auto_compact_threshold=1))
+    agent_loop = build_test_agent_loop(config=cfg, backend=backend)  # type: ignore
+    agent_loop.stats.context_tokens = 2
+
+    app = build_test_vibe_app(agent_loop=agent_loop)
+
+    async with app.run_test() as pilot:
+        await pilot.pause(0.1)
+
+        with patch.object(
+            agent_loop, "compact", AsyncMock(side_effect=RuntimeError("compact failed"))
+        ):
+            await pilot.press(*"Hello")
+            await pilot.press("enter")
+
+        compact_message = await _wait_for_compact_error_message(app, pilot)
+        assert isinstance(compact_message, CompactMessage)
+        content = compact_message.get_content()
+        assert content == "Error: compact failed"
+
+        # Verify no summary widget is shown
+        summary_widgets = list(app.query(CompactSummaryMessage))
+        assert len(summary_widgets) == 0
+
+
 @pytest.mark.skip(reason="Flaky after merge - compact timing issue")
 @pytest.mark.asyncio
 async def test_compact_summary_after_manual_compact_command() -> None:

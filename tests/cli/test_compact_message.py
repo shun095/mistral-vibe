@@ -24,3 +24,13 @@ class TestCompactMessage:
             f"{shorten_session_id('22222222-2222-2222-2222-222222222222')} "
             "(after compaction)"
         )
+
+    def test_set_error_displays_error_message(self) -> None:
+        message = CompactMessage()
+        message.post_message = MagicMock()
+
+        message.set_error("Service unavailable")
+
+        assert message.get_content() == "Error: Service unavailable"
+        assert message.error_message == "Service unavailable"
+        assert message._is_spinning is False
