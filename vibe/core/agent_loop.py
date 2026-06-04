@@ -1086,7 +1086,8 @@ class AgentLoop:
         return None
 
     async def _perform_llm_turn(self) -> AsyncGenerator[BaseEvent, None]:
-        max_attempts = 3
+        max_attempts = 6
+        initial_attempts = 3
         active_model = self.config.get_active_model()
         provider = self.config.get_provider_for_model(active_model)
 
@@ -1103,8 +1104,14 @@ class AgentLoop:
             last_message = self.messages[-1]
 
             if last_message.is_reasoning_only and attempt < max_attempts - 1:
-                # Retry: remove the reasoning-only message and try again
                 self.messages.pop()
+
+                if attempt == initial_attempts - 1:
+                    self.messages.append(
+                        LLMMessage(role=Role.assistant, content="Understood.")
+                    )
+                    self.messages.append(LLMMessage(role=Role.user, content="continue"))
+
                 delay_seconds = 0.5 * (2**attempt)
                 yield LLMRetryEvent(
                     attempt=attempt + 1,
@@ -1117,7 +1124,6 @@ class AgentLoop:
                 await asyncio.sleep(delay_seconds)
                 continue
 
-            # Final attempt or successful response — proceed normally
             break
 
         last_message = self.messages[-1]

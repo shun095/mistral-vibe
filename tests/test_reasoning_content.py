@@ -1,21 +1,33 @@
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import httpx
 import pytest
-
-pytest.importorskip("mistralai")
-
-from mistralai.client.models import (  # pyright: ignore[reportMissingImports]
-    AssistantMessage,
-    ContentChunk,
-    TextChunk,
-    ThinkChunk,
-)
-import pytest
 import respx
+
+if TYPE_CHECKING:  # pragma: no cover
+    from mistralai.client.models import (  # pyright: ignore[reportMissingImports]
+        AssistantMessage,
+        ContentChunk,
+        TextChunk,
+        ThinkChunk,
+    )
+
+_mistralai_available = False
+try:
+    from mistralai.client.models import (  # pyright: ignore[reportMissingImports]
+        AssistantMessage,
+        ContentChunk,
+        TextChunk,
+        ThinkChunk,
+    )
+
+    _mistralai_available = True
+except ImportError:
+    pass
 
 from tests.conftest import build_test_agent_loop, build_test_vibe_config
 from tests.mock.utils import mock_llm_chunk
@@ -45,6 +57,7 @@ def make_config() -> VibeConfig:
     )
 
 
+@pytest.mark.skipif(not _mistralai_available, reason="mistralai not installed")
 class TestMistralMapperParseContent:
     def test_parse_content_string_returns_content_only(self):
         mapper = MistralMapper()
@@ -122,6 +135,7 @@ class TestMistralMapperParseContent:
         assert result == ParsedContent(content="", reasoning_content=None)
 
 
+@pytest.mark.skipif(not _mistralai_available, reason="mistralai not installed")
 class TestMistralMapperPrepareMessage:
     def test_prepare_assistant_message_without_reasoning(self):
         mapper = MistralMapper()
@@ -811,7 +825,7 @@ class TestReasoningOnlyAutoRetry:
         retry_events = [e for e in events if isinstance(e, LLMRetryEvent)]
         assert len(retry_events) == 1
         assert retry_events[0].attempt == 1
-        assert retry_events[0].max_attempts == 3
+        assert retry_events[0].max_attempts == 6
 
         assistant_events = [e for e in events if isinstance(e, AssistantEvent)]
         assert len(assistant_events) == 1
@@ -897,6 +911,9 @@ class TestReasoningOnlyAutoRetry:
             [mock_llm_chunk(content="", reasoning_content="Thought 1.")],
             [mock_llm_chunk(content="", reasoning_content="Thought 2.")],
             [mock_llm_chunk(content="", reasoning_content="Thought 3.")],
+            [mock_llm_chunk(content="", reasoning_content="Thought 4.")],
+            [mock_llm_chunk(content="", reasoning_content="Thought 5.")],
+            [mock_llm_chunk(content="", reasoning_content="Thought 6.")],
         ])
         agent = build_test_agent_loop(
             config=make_config(), backend=backend, enable_streaming=True
@@ -906,14 +923,18 @@ class TestReasoningOnlyAutoRetry:
 
         retry_events = [e for e in events if isinstance(e, LLMRetryEvent)]
         assert (
-            len(retry_events) == 2
-        )  # retries on attempt 0 and 1, not on attempt 2 (last)
+            len(retry_events) == 5
+        )  # retries on attempts 0-4, not on attempt 5 (last)
+        for i, evt in enumerate(retry_events):
+            assert evt.attempt == i + 1
+            assert evt.max_attempts == 6
 
-        # Last reasoning-only message is kept
+        # Injected "Understood." + final reasoning-only message are kept
         assistant_msgs = [m for m in agent.messages if m.role == Role.assistant]
-        assert len(assistant_msgs) == 1
-        assert assistant_msgs[0].reasoning_content == "Thought 3."
-        assert not assistant_msgs[0].content
+        assert len(assistant_msgs) == 2
+        assert assistant_msgs[0].content == "Understood."
+        assert assistant_msgs[1].reasoning_content == "Thought 6."
+        assert not assistant_msgs[1].content
 
     @pytest.mark.asyncio
     async def test_retry_sends_same_messages_to_llm(self):
@@ -930,6 +951,33 @@ class TestReasoningOnlyAutoRetry:
         # Both LLM calls received the same messages (just the user prompt)
         assert len(backend.requests_messages) == 2
         assert backend.requests_messages[0] == backend.requests_messages[1]
+
+    @pytest.mark.asyncio
+    async def test_retry_injects_nudge_after_three_failures(self):
+        backend = FakeBackend([
+            [mock_llm_chunk(content="", reasoning_content="R1")],
+            [mock_llm_chunk(content="", reasoning_content="R2")],
+            [mock_llm_chunk(content="", reasoning_content="R3")],
+            [mock_llm_chunk(content="OK")],
+        ])
+        agent = build_test_agent_loop(
+            config=make_config(), backend=backend, enable_streaming=True
+        )
+
+        [_ async for _ in agent.act("Question")]
+
+        assert len(backend.requests_messages) == 4
+        base = backend.requests_messages[0]
+        assert backend.requests_messages[1] == base
+        assert backend.requests_messages[2] == base
+
+        # 4th request has injected messages
+        nudged = backend.requests_messages[3]
+        assert len(nudged) == len(base) + 2
+        assert nudged[-2].role == Role.assistant
+        assert nudged[-2].content == "Understood."
+        assert nudged[-1].role == Role.user
+        assert nudged[-1].content == "continue"
 
     @pytest.mark.asyncio
     async def test_no_retry_on_empty_response(self):
