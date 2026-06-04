@@ -717,7 +717,7 @@ class VibeApp(App):  # noqa: PLR0904
     def _on_system_prompt_event(self, event: object) -> None:
         if not isinstance(event, SystemPromptRegeneratedEvent):
             return
-        self.notify(SYSTEM_PROMPT_REGENERATED_MSG, severity="warning", timeout=10)
+        self.notify(SYSTEM_PROMPT_REGENERATED_MSG, severity="information", timeout=10)
 
     async def _watch_init_completion(self) -> None:
         """Show 'Initializing' loading indicator until background init finishes."""
