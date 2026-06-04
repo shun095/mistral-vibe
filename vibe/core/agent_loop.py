@@ -31,7 +31,7 @@ from vibe.core.agents.models import (
     AgentType,
     BuiltinAgentName,
 )
-from vibe.core.compaction import collect_prior_user_messages
+from vibe.core.compaction import collect_prior_context
 from vibe.core.config import ModelConfig, ProviderConfig, VibeConfig
 from vibe.core.event_bus import EventBus
 from vibe.core.experiments import ExperimentManager
@@ -2044,7 +2044,7 @@ class AgentLoop:
             )
 
             summary_prefix = UtilityPrompt.COMPACT_SUMMARY_PREFIX.read()
-            prior_user_messages = collect_prior_user_messages(
+            prior_context_messages = collect_prior_context(
                 list(self.messages), summary_prefix
             )
 
@@ -2101,7 +2101,7 @@ class AgentLoop:
             )
             self.messages.reset([
                 new_system_message,
-                *prior_user_messages,
+                *prior_context_messages,
                 summary_message,
             ])
             self._notify_event_listeners(SystemPromptRegeneratedEvent())

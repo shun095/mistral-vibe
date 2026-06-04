@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from vibe.core.compaction import collect_prior_user_messages
-from vibe.core.types import LLMMessage, Role
+from vibe.core.compaction import collect_prior_context
+from vibe.core.types import FunctionCall, LLMMessage, Role, ToolCall
 
 _PREFIX = "Another language model started to solve this problem"
 
@@ -10,8 +10,12 @@ def _user(content: str, *, injected: bool = False) -> LLMMessage:
     return LLMMessage(role=Role.user, content=content, injected=injected)
 
 
+def _assistant(content: str, *, injected: bool = False) -> LLMMessage:
+    return LLMMessage(role=Role.assistant, content=content, injected=injected)
+
+
 def test_empty_messages() -> None:
-    assert collect_prior_user_messages([], _PREFIX) == []
+    assert collect_prior_context([], _PREFIX) == []
 
 
 def test_only_non_user_messages() -> None:
@@ -19,18 +23,18 @@ def test_only_non_user_messages() -> None:
         LLMMessage(role=Role.system, content="sys"),
         LLMMessage(role=Role.assistant, content="hi"),
     ]
-    assert collect_prior_user_messages(messages, _PREFIX) == []
+    assert collect_prior_context(messages, _PREFIX) == []
 
 
 def test_single_user_message_preserved() -> None:
     messages = [LLMMessage(role=Role.system, content="sys"), _user("first question")]
-    out = collect_prior_user_messages(messages, _PREFIX)
+    out = collect_prior_context(messages, _PREFIX)
     assert [m.content for m in out] == ["first question"]
 
 
 def test_chronological_order_preserved() -> None:
     messages = [_user("first"), _user("second"), _user("third")]
-    out = collect_prior_user_messages(messages, _PREFIX)
+    out = collect_prior_context(messages, _PREFIX)
     assert [m.content for m in out] == ["first", "second", "third"]
 
 
@@ -40,13 +44,13 @@ def test_injected_messages_filtered_out() -> None:
         _user("middleware reminder", injected=True),
         _user("follow-up"),
     ]
-    out = collect_prior_user_messages(messages, _PREFIX)
+    out = collect_prior_context(messages, _PREFIX)
     assert [m.content for m in out] == ["real ask", "follow-up"]
 
 
 def test_empty_content_filtered_out() -> None:
     messages = [_user(""), _user("real")]
-    out = collect_prior_user_messages(messages, _PREFIX)
+    out = collect_prior_context(messages, _PREFIX)
     assert [m.content for m in out] == ["real"]
 
 
@@ -58,7 +62,7 @@ def test_prior_summary_filtered_out() -> None:
         _user(f"{_PREFIX}\nold summary content"),
         _user("newer ask"),
     ]
-    out = collect_prior_user_messages(messages, _PREFIX)
+    out = collect_prior_context(messages, _PREFIX)
     assert [m.content for m in out] == ["original ask", "newer ask"]
 
 
@@ -69,7 +73,7 @@ def test_budget_drops_oldest_first() -> None:
         _user("abc"),  # 1 token, fits
         _user("def"),  # 1 token, fits
     ]
-    out = collect_prior_user_messages(messages, _PREFIX, max_tokens=2)
+    out = collect_prior_context(messages, _PREFIX, max_tokens=2)
     assert [m.content for m in out] == ["abc", "def"]
 
 
@@ -80,7 +84,7 @@ def test_spillover_message_middle_truncated() -> None:
         _user("MIDDLE_HEAD" + "y" * 1_000 + "MIDDLE_TAIL"),
         _user("recent"),  # ~2 tokens
     ]
-    out = collect_prior_user_messages(messages, _PREFIX, max_tokens=50)
+    out = collect_prior_context(messages, _PREFIX, max_tokens=50)
     assert len(out) == 2  # oldest dropped
     assert out[-1].content == "recent"
     middle = out[0].content
@@ -94,19 +98,90 @@ def test_fresh_message_ids() -> None:
     # Returned messages must have new message_ids — they'll live in a fresh
     # session and reusing the source ids would cause collisions.
     original = _user("hello")
-    out = collect_prior_user_messages([original], _PREFIX)
+    out = collect_prior_context([original], _PREFIX)
     assert len(out) == 1
     assert out[0].message_id != original.message_id
 
 
-def test_only_assistant_and_system_around_users() -> None:
+def test_preceding_assistant_preserved() -> None:
     messages = [
         LLMMessage(role=Role.system, content="sys"),
         _user("u1"),
-        LLMMessage(role=Role.assistant, content="a1"),
+        _assistant("a1"),
         _user("u2"),
-        LLMMessage(role=Role.assistant, content="a2"),
+        _assistant("a2"),
     ]
-    out = collect_prior_user_messages(messages, _PREFIX)
+    out = collect_prior_context(messages, _PREFIX)
+    assert [m.content for m in out] == ["u1", "a1", "u2"]
+    assert [m.role for m in out] == [Role.user, Role.assistant, Role.user]
+
+
+def test_injected_assistant_not_preserved() -> None:
+    messages = [
+        _user("u1"),
+        _assistant("injected assistant", injected=True),
+        _user("u2"),
+    ]
+    out = collect_prior_context(messages, _PREFIX)
     assert [m.content for m in out] == ["u1", "u2"]
-    assert all(m.role == Role.user for m in out)
+    assert [m.role for m in out] == [Role.user, Role.user]
+
+
+def test_assistant_budget_counts() -> None:
+    # Assistant tokens count against the budget; user alone fits when pair doesn't.
+    messages = [
+        _user("old"),
+        _assistant("long assistant response that costs tokens"),
+        _user("recent"),
+    ]
+    out = collect_prior_context(messages, _PREFIX, max_tokens=3)
+    assert [m.content for m in out] == ["old", "recent"]
+    assert [m.role for m in out] == [Role.user, Role.user]
+
+
+def test_pair_fits_in_budget() -> None:
+    messages = [_user("u1"), _assistant("a1"), _user("u2")]
+    out = collect_prior_context(messages, _PREFIX, max_tokens=100)
+    assert [m.content for m in out] == ["u1", "a1", "u2"]
+    assert [m.role for m in out] == [Role.user, Role.assistant, Role.user]
+
+
+def test_tool_messages_skipped_for_assistant() -> None:
+    # _find_preceding_assistant skips the tool-calling assistant (no content)
+    # and tool messages, landing on the text assistant response.
+    messages = [
+        _user("u1"),
+        _assistant("a1"),
+        LLMMessage(
+            role=Role.assistant,
+            content="",
+            tool_calls=[
+                ToolCall(id="tc1", function=FunctionCall(name="bash", arguments="{}"))
+            ],
+        ),
+        LLMMessage(
+            role=Role.tool, content="tool result", tool_call_id="tc1", name="bash"
+        ),
+        _assistant("tool results processed"),
+        _user("u2"),
+    ]
+    out = collect_prior_context(messages, _PREFIX)
+    assert [m.content for m in out] == ["u1", "tool results processed", "u2"]
+    assert [m.role for m in out] == [Role.user, Role.assistant, Role.user]
+
+
+def test_double_compaction_no_stacking() -> None:
+    # Prior summary (injected, starts with prefix) must not be re-injected.
+    messages = [
+        _user("original ask", injected=True),
+        _user(f"{_PREFIX}\nold summary content", injected=True),
+        _assistant("based on the summary, here's my answer"),
+        _user("follow-up question"),
+    ]
+    out = collect_prior_context(messages, _PREFIX)
+    assert [m.content for m in out] == [
+        "based on the summary, here's my answer",
+        "follow-up question",
+    ]
+    assert [m.role for m in out] == [Role.assistant, Role.user]
+    assert not any(_PREFIX in (m.content or "") for m in out)
