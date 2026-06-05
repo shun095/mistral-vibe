@@ -496,7 +496,8 @@ class VibeAcpAgentLoop(AcpAgent):
                 "browser-auth-delegated": {
                     "attemptId": attempt.process_id,
                     "expiresAt": (
-                        attempt.expires_at.astimezone(UTC)
+                        attempt.expires_at
+                        .astimezone(UTC)
                         .isoformat()
                         .replace("+00:00", "Z")
                     ),
@@ -1665,7 +1666,8 @@ class VibeAcpAgentLoop(AcpAgent):
             update=create_compact_start_session_update(start_event),
         )
 
-        await session.agent_loop.compact(extra_instructions=cmd_args.strip())
+        async for _ in session.agent_loop.compact(extra_instructions=cmd_args.strip()):
+            pass
 
         end_event = CompactEndEvent(
             summary_length=0,

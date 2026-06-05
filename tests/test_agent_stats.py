@@ -418,7 +418,8 @@ class TestCompactStatsHandling:
         completions_before = agent.stats.session_completion_tokens
         steps_before = agent.stats.steps
 
-        await agent.compact()
+        async for _ in agent.compact():
+            pass
 
         # Cumulative stats include the compact turn
         assert agent.stats.session_prompt_tokens > tokens_before_compact
@@ -438,7 +439,8 @@ class TestCompactStatsHandling:
 
         context_before = agent.stats.context_tokens
 
-        await agent.compact()
+        async for _ in agent.compact():
+            pass
 
         assert agent.stats.context_tokens < context_before
 
@@ -472,7 +474,8 @@ class TestCompactStatsHandling:
 
         assert agent.stats.tool_calls_succeeded == 1
 
-        await agent.compact()
+        async for _ in agent.compact():
+            pass
 
         assert agent.stats.tool_calls_succeeded == 1
 
@@ -494,7 +497,8 @@ class TestCompactStatsHandling:
         async for _ in agent.act("Do something complex"):
             pass
 
-        await agent.compact()
+        async for _ in agent.compact():
+            pass
 
         assert agent.session_id != original_session_id
         assert agent.session_id == agent.session_logger.session_id
@@ -801,7 +805,8 @@ class TestStatsEdgeCases:
         async for _ in agent.act("Build something"):
             pass
 
-        await agent.compact()
+        async for _ in agent.compact():
+            pass
         tokens_after_compact = agent.stats.session_prompt_tokens
 
         await agent.reload_with_initial_messages()

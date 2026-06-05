@@ -2678,6 +2678,7 @@ class VibeClient {
         try {
             this.elements.sendBtn.disabled = true;
             this.elements.sendBtn.textContent = '⏳';
+            this.elements.processingIndicator.style.display = 'flex';
 
             const response = await fetch(buildUrl('api/translate'), {
                 method: 'POST',
@@ -2700,6 +2701,7 @@ class VibeClient {
         } finally {
             this.elements.sendBtn.disabled = false;
             this.elements.sendBtn.textContent = '➤';
+            this.elements.processingIndicator.style.display = 'none';
         }
     }
 

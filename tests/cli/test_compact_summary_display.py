@@ -115,7 +115,7 @@ async def test_compact_error_display_on_auto_compaction_failure() -> None:
     User flow: Submit a message -> auto-compaction triggers and fails ->
     error message widget appears, no summary widget is shown.
     """
-    from unittest.mock import AsyncMock, patch
+    from unittest.mock import patch
 
     backend = FakeBackend(  # type: ignore
         chunks=[[mock_llm_chunk(content="dummy")]]
@@ -130,9 +130,11 @@ async def test_compact_error_display_on_auto_compaction_failure() -> None:
     async with app.run_test() as pilot:
         await pilot.pause(0.1)
 
-        with patch.object(
-            agent_loop, "compact", AsyncMock(side_effect=RuntimeError("compact failed"))
-        ):
+        async def failing_compact(*args: object, **kwargs: object):
+            raise RuntimeError("compact failed")
+            yield ""
+
+        with patch.object(agent_loop, "compact", side_effect=failing_compact):
             await pilot.press(*"Hello")
             await pilot.press("enter")
 

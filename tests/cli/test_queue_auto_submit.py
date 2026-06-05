@@ -471,8 +471,11 @@ async def test_run_compact_spawns_queue_on_success(tmp_path: Path) -> None:
     def track_spawn() -> None:
         spawn_calls.append(True)
 
+    async def mock_compact_success(*args: object, **kwargs: object):
+        yield "summary"
+
     app._spawn_queue_task = track_spawn
-    app.agent_loop.compact = AsyncMock(return_value="summary")
+    app.agent_loop.compact = mock_compact_success
     app.agent_loop.stats.context_tokens = 100
     app.event_handler = MagicMock()
     app._agent_running = False
@@ -498,8 +501,12 @@ async def test_run_compact_no_spawn_on_error(tmp_path: Path) -> None:
     def track_spawn() -> None:
         spawn_calls.append(True)
 
+    async def mock_compact_failure(*args: object, **kwargs: object):
+        raise RuntimeError("compact failed")
+        yield ""
+
     app._spawn_queue_task = track_spawn
-    app.agent_loop.compact = AsyncMock(side_effect=RuntimeError("compact failed"))
+    app.agent_loop.compact = mock_compact_failure
     app.agent_loop.stats.context_tokens = 100
     app.event_handler = MagicMock()
     app._agent_running = False

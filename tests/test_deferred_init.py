@@ -245,7 +245,10 @@ class TestDeferredInitPublicMethods:
         )
         [_ async for _ in loop.act("Hello")]
 
-        summary = await loop.compact()
+        summary = ""
+        async for item in loop.compact():
+            if isinstance(item, str):
+                summary = item
 
         assert loop.is_initialized
         assert summary == "summary"

@@ -133,12 +133,16 @@ class TestHandleCompact:
     ) -> None:
         session_id = await _new_session_and_clear(acp_agent_loop)
         session = acp_agent_loop.sessions[session_id]
+        compact_called = False
 
-        with patch.object(
-            session.agent_loop, "compact", new_callable=AsyncMock
-        ) as mock_compact:
+        async def tracking_compact(*args: object, **kwargs: object):
+            nonlocal compact_called
+            compact_called = True
+            yield ""
+
+        with patch.object(session.agent_loop, "compact", side_effect=tracking_compact):
             await _prompt(acp_agent_loop, session_id, "/compact")
-            mock_compact.assert_not_called()
+            assert not compact_called
 
     @pytest.mark.asyncio
     async def test_compact_calls_agent_loop_compact(
@@ -151,12 +155,17 @@ class TestHandleCompact:
         _get_client(acp_agent_loop)._session_updates.clear()
 
         session = acp_agent_loop.sessions[session_id]
-        with patch.object(
-            session.agent_loop, "compact", new_callable=AsyncMock
-        ) as mock_compact:
+        compact_called = False
+
+        async def tracking_compact(*args: object, **kwargs: object):
+            nonlocal compact_called
+            compact_called = True
+            yield ""
+
+        with patch.object(session.agent_loop, "compact", side_effect=tracking_compact):
             response = await _prompt(acp_agent_loop, session_id, "/compact")
             assert response.stop_reason == "end_turn"
-            mock_compact.assert_called_once()
+            assert compact_called
 
 
 class TestHandleReload:

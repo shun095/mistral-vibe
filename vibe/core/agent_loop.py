@@ -888,8 +888,13 @@ class AgentLoop:
                 )
 
                 compact_status: Literal["success", "failure", "cancelled"] = "success"
+                summary: str = ""
                 try:
-                    summary = await self.compact()
+                    async for item in self.compact():
+                        if isinstance(item, PromptProgressEvent):
+                            yield item
+                        else:
+                            summary = item
                 except asyncio.CancelledError:
                     compact_status = "cancelled"
                     raise
@@ -2036,7 +2041,9 @@ class AgentLoop:
         self._notify_event_listeners(MessageResetEvent(reason="clear"))
 
     @requires_init
-    async def compact(self, extra_instructions: str = "") -> str:
+    async def compact(
+        self, extra_instructions: str = ""
+    ) -> AsyncGenerator[PromptProgressEvent | str]:
         try:
             with self.messages.silent():
                 self._clean_message_history()
@@ -2074,6 +2081,15 @@ class AgentLoop:
                 async for chunk in self._chat_streaming(
                     model_override=self.config.get_compaction_model()
                 ):
+                    if chunk.prompt_progress:
+                        event = PromptProgressEvent(
+                            total=chunk.prompt_progress.total,
+                            cache=chunk.prompt_progress.cache,
+                            processed=chunk.prompt_progress.processed,
+                            time_ms=chunk.prompt_progress.time_ms,
+                        )
+                        self._notify_event_listeners(event)
+                        yield event
                     if chunk.message.content:
                         content = (
                             chunk.message.content
@@ -2129,7 +2145,7 @@ class AgentLoop:
 
             self._notify_event_listeners(MessageResetEvent(reason="compact"))
 
-            return summary_content or ""
+            yield summary_content or ""
 
         except Exception:
             await self.session_logger.save_interaction(

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from typing import cast
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -101,8 +101,12 @@ async def test_auto_compact_emits_terminal_telemetry(
     agent.stats.context_tokens = 2
     old_session_id = agent.session_id
 
+    async def failing_compact(*args: object, **kwargs: object):
+        raise side_effect
+        yield ""
+
     events = []
-    with patch.object(agent, "compact", AsyncMock(side_effect=side_effect)):
+    with patch.object(agent, "compact", side_effect=failing_compact):
         if match is None:
             with pytest.raises(expected_exception):
                 async for event in agent.act("Hello"):
@@ -343,7 +347,8 @@ async def test_compact_appends_extra_instructions_to_prompt() -> None:
     agent.messages.append(LLMMessage(role=Role.user, content="Hello"))
     agent.stats.context_tokens = 100
 
-    await agent.compact(extra_instructions="focus on auth")
+    async for _ in agent.compact(extra_instructions="focus on auth"):
+        pass
 
     compaction_prompt = backend.requests_messages[0][-1].content
     assert compaction_prompt is not None
@@ -367,7 +372,8 @@ async def test_compact_uses_configured_compaction_prompt(
     agent.messages.append(LLMMessage(role=Role.user, content="Hello"))
     agent.stats.context_tokens = 100
 
-    await agent.compact()
+    async for _ in agent.compact():
+        pass
 
     compaction_prompt = backend.requests_messages[0][-1].content
     assert compaction_prompt == "Summarize theorem progress"
@@ -381,7 +387,8 @@ async def test_compact_without_extra_instructions_has_no_additional_section() ->
     agent.messages.append(LLMMessage(role=Role.user, content="Hello"))
     agent.stats.context_tokens = 100
 
-    await agent.compact()
+    async for _ in agent.compact():
+        pass
 
     compaction_prompt = backend.requests_messages[0][-1].content
     assert compaction_prompt is not None
@@ -400,7 +407,8 @@ async def test_compact_resets_resume_system_prompt() -> None:
     agent.messages.append(LLMMessage(role=Role.user, content="Hello"))
     agent.stats.context_tokens = 100
 
-    await agent.compact()
+    async for _ in agent.compact():
+        pass
 
     assert agent._resume_system_prompt is None
 
@@ -416,7 +424,8 @@ async def test_compact_recalculates_system_prompt() -> None:
     agent.messages.append(LLMMessage(role=Role.user, content="Hello"))
     agent.stats.context_tokens = 100
 
-    await agent.compact()
+    async for _ in agent.compact():
+        pass
 
     assert agent._resume_system_prompt is None
     assert agent.messages[0].role == Role.system
@@ -438,7 +447,8 @@ async def test_compact_emits_system_prompt_regenerated_event() -> None:
     events_received: list[object] = []
     agent.add_event_listener(events_received.append)
 
-    await agent.compact()
+    async for _ in agent.compact():
+        pass
 
     assert any(isinstance(e, SystemPromptRegeneratedEvent) for e in events_received)
 
@@ -463,7 +473,8 @@ async def test_compact_message_shape_preserves_prior_user_messages() -> None:
     agent.messages.append(LLMMessage(role=Role.user, content="follow-up ask"))
     agent.stats.context_tokens = 100
 
-    await agent.compact()
+    async for _ in agent.compact():
+        pass
 
     final = list(agent.messages)
     assert len(final) == 4  # [system, prior_user_1, prior_user_2, wrapped_summary]

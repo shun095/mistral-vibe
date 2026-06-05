@@ -247,6 +247,7 @@ from vibe.core.types import (
     Content,
     ContextTooLongError,
     LLMMessage,
+    PromptProgressEvent,
     RateLimitError,
     Role,
     TaskCompletedEvent,
@@ -2195,7 +2196,9 @@ class VibeApp(App):  # noqa: PLR0904
 
         self._interrupt_requested = False
 
-    async def do_translation(self, original_text: str) -> str | None:
+    async def do_translation(
+        self, original_text: str, *, loading_widget: Any | None = None
+    ) -> str | None:
         """Core translation logic shared by TUI handler and Web endpoint."""
         if not self.agent_loop.messages:
             return None
@@ -2230,6 +2233,18 @@ class VibeApp(App):  # noqa: PLR0904
             tool_choice=None,
             extra_headers=None,
         ):
+            if chunk.prompt_progress:
+                event = PromptProgressEvent(
+                    total=chunk.prompt_progress.total,
+                    cache=chunk.prompt_progress.cache,
+                    processed=chunk.prompt_progress.processed,
+                    time_ms=chunk.prompt_progress.time_ms,
+                )
+                self.agent_loop._notify_event_listeners(event)
+                if self.event_handler:
+                    self.event_handler.handle_event(
+                        event, loading_widget=loading_widget
+                    )
             if chunk.message.content:
                 content_str = (
                     chunk.message.content
@@ -2268,7 +2283,9 @@ class VibeApp(App):  # noqa: PLR0904
             history = HistoryManager(self.history_file)
             history.add(original_text)
 
-            translated_text = await self.do_translation(original_text)
+            translated_text = await self.do_translation(
+                original_text, loading_widget=loading
+            )
 
             if translated_text:
                 # Replace the input with the translated text (no chat message)
@@ -3132,10 +3149,18 @@ class VibeApp(App):  # noqa: PLR0904
         extra_instructions: str = "",
     ) -> None:
         self._agent_running = True
+        summary: str = ""
         try:
-            summary = await self.agent_loop.compact(
+            async for item in self.agent_loop.compact(
                 extra_instructions=extra_instructions
-            )
+            ):
+                if isinstance(item, PromptProgressEvent):
+                    if self.event_handler:
+                        self.event_handler.handle_event(
+                            item, loading_widget=self._loading_widget
+                        )
+                else:
+                    summary = item
             compact_msg.set_complete(
                 old_session_id=old_session_id, new_session_id=self.agent_loop.session_id
             )
