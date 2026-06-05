@@ -94,6 +94,78 @@ async def test_compact_summary_after_auto_compaction() -> None:
         assert expected_summary in summary_message._content
 
 
+@pytest.mark.asyncio
+async def test_compact_shows_loading_widget_with_progress() -> None:
+    from vibe.core.types import LLMMessage, PromptProgress, PromptProgressEvent, Role
+
+    backend = FakeBackend(
+        chunks=[
+            [
+                mock_llm_chunk(
+                    content="",
+                    prompt_progress=PromptProgress(
+                        total=100, cache=0, processed=50, time_ms=100
+                    ),
+                ),
+                mock_llm_chunk(
+                    content="",
+                    prompt_progress=PromptProgress(
+                        total=100, cache=0, processed=100, time_ms=200
+                    ),
+                ),
+                mock_llm_chunk(content="Summary: Test compact summary."),
+            ]
+        ]
+    )
+
+    cfg = build_test_vibe_config(models=make_test_models(auto_compact_threshold=1000))
+    agent_loop = build_test_agent_loop(config=cfg, backend=backend)  # type: ignore
+
+    agent_loop.messages.append(LLMMessage(role=Role.user, content="First message"))
+    agent_loop.messages.append(LLMMessage(role=Role.assistant, content="Reply"))
+
+    app = build_test_vibe_app(agent_loop=agent_loop)
+
+    progress_values = []
+
+    async with app.run_test() as pilot:
+        await pilot.pause(0.1)
+
+        if app.event_handler:
+            original_handler = app.event_handler._handle_prompt_progress
+
+            async def capture_progress(event, *args, **kwargs):
+                if isinstance(event, PromptProgressEvent):
+                    progress_values.append(event.progress_percentage)
+                await original_handler(event, *args, **kwargs)
+
+            app.event_handler._handle_prompt_progress = capture_progress  # type: ignore
+
+        # Verify no loading widget before compact
+        assert app._loading_widget is None
+
+        # Trigger /compact
+        await pilot.press(*"/compact")
+        await pilot.press("enter")
+        await pilot.pause(0.2)
+
+        # Verify loading widget was created
+        assert app._loading_widget is not None
+
+        # Wait for compact to complete
+        if app._agent_task:
+            await app._agent_task
+        await pilot.pause(0.2)
+
+        # Verify progress events were received
+        assert len(progress_values) == 2
+        assert progress_values[0] == 50.0
+        assert progress_values[1] == 100.0
+
+        # Verify loading widget was removed after completion
+        assert app._loading_widget is None
+
+
 async def _wait_for_compact_error_message(
     app: VibeApp, pilot, timeout: float = 5.0
 ) -> CompactMessage:

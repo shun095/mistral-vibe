@@ -2232,6 +2232,7 @@ class VibeApp(App):  # noqa: PLR0904
             max_tokens=None,
             tool_choice=None,
             extra_headers=None,
+            return_progress=True,
         ):
             if chunk.prompt_progress:
                 event = PromptProgressEvent(
@@ -2255,12 +2256,18 @@ class VibeApp(App):  # noqa: PLR0904
         return translated_text.strip() or None
 
     async def _translate_prompt(self, cmd_args: str = "", **kwargs: Any) -> None:
-        """Translate the user's input text to English using the LLM."""
+        """Start translation as a background task, returning immediately."""
         if self._translation_running:
             return
 
-        self._translation_running = True
+        original_text = cmd_args.strip()
+        if not original_text:
+            await self._mount_and_scroll(
+                UserCommandMessage("Usage: /translate <text to translate>")
+            )
+            return
 
+        self._translation_running = True
         loading_area = self.query_one("#loading-area-content")
 
         if self._loading_widget and self._loading_widget.parent:
@@ -2270,16 +2277,15 @@ class VibeApp(App):  # noqa: PLR0904
         self._loading_widget = loading
         await loading_area.mount(loading)
 
+        self._translation_task = asyncio.create_task(
+            self._run_translation(original_text, loading)
+        )
+
+    async def _run_translation(
+        self, original_text: str, loading: LoadingWidget
+    ) -> None:
+        """Background task that performs translation and updates the UI."""
         try:
-            original_text = cmd_args.strip()
-
-            if not original_text:
-                await self._mount_and_scroll(
-                    UserCommandMessage("Usage: /translate <text to translate>")
-                )
-                return
-
-            # Save original text to history
             history = HistoryManager(self.history_file)
             history.add(original_text)
 
@@ -2288,28 +2294,22 @@ class VibeApp(App):  # noqa: PLR0904
             )
 
             if translated_text:
-                # Replace the input with the translated text (no chat message)
                 input_widget = self.query_one(ChatInputContainer)
                 input_widget.value = translated_text
-                # Save translated text to vibehistory for later restoration
                 history.add(translated_text)
                 await self._mount_and_scroll(
                     UserCommandMessage("Text translated to English.")
                 )
 
         except asyncio.CancelledError:
-            if self._loading_widget and self._loading_widget.parent:
-                await self._loading_widget.remove()
             raise
         except Exception as e:
-            if self._loading_widget and self._loading_widget.parent:
-                await self._loading_widget.remove()
             await self._mount_and_scroll(
                 ErrorMessage(str(e), collapsed=self._tools_collapsed)
             )
         finally:
             self._translation_running = False
-            if self._loading_widget:
+            if self._loading_widget and self._loading_widget.parent:
                 await self._loading_widget.remove()
             self._loading_widget = None
             self._translation_task = None
@@ -3138,6 +3138,15 @@ class VibeApp(App):  # noqa: PLR0904
         self.event_handler.set_current_compact(compact_msg)
         await self._mount_and_scroll(compact_msg)
 
+        loading_area = self._cached_loading_area or self.query_one(
+            "#loading-area-content"
+        )
+        if self._loading_widget and self._loading_widget.parent:
+            await self._loading_widget.remove()
+        loading = LoadingWidget()
+        self._loading_widget = loading
+        await loading_area.mount(loading)
+
         self._agent_task = asyncio.create_task(
             self._run_compact(compact_msg, old_session_id, cmd_args.strip())
         )
@@ -3155,7 +3164,7 @@ class VibeApp(App):  # noqa: PLR0904
                 extra_instructions=extra_instructions
             ):
                 if isinstance(item, PromptProgressEvent):
-                    if self.event_handler:
+                    if self.event_handler and self._loading_widget:
                         self.event_handler.handle_event(
                             item, loading_widget=self._loading_widget
                         )
@@ -3182,6 +3191,9 @@ class VibeApp(App):  # noqa: PLR0904
         finally:
             self._agent_running = False
             self._agent_task = None
+            if self._loading_widget and self._loading_widget.parent:
+                await self._loading_widget.remove()
+            self._loading_widget = None
             if self.event_handler:
                 self.event_handler.set_current_compact(None)
 
