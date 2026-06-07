@@ -19,6 +19,8 @@ from vibe.core.llm._mistralai_stub import (
     Function,
     FunctionCall as MistralFunctionCall,
     FunctionName,
+    ImageURL,
+    ImageURLChunk,
     Mistral,
     RetryConfig,
     SDKError,
@@ -32,6 +34,9 @@ from vibe.core.llm._mistralai_stub import (
     ToolMessage,
     UserMessage,
 )
+from mistralai.client.utils.retries import BackoffStrategy, RetryConfig
+
+from vibe.core.llm.backend._image import to_data_uri as _to_data_uri
 from vibe.core.llm.exceptions import BackendErrorBuilder
 from vibe.core.logger import logger
 from vibe.core.types import (
@@ -65,6 +70,18 @@ class MistralMapper:
                 content = msg.content if isinstance(msg.content, str) else ""
                 return SystemMessage(role="system", content=content)
             case Role.user:
+                if msg.images:
+                    user_parts: list[ContentChunk] = []
+                    content = msg.content if isinstance(msg.content, str) else None
+                    if content:
+                        user_parts.append(TextChunk(type="text", text=content))
+                    user_parts.extend(
+                        ImageURLChunk(
+                            type="image_url", image_url=ImageURL(url=_to_data_uri(att))
+                        )
+                        for att in msg.images
+                    )
+                    return UserMessage(role="user", content=user_parts)
                 content = msg.content if isinstance(msg.content, str) else None
                 return UserMessage(role="user", content=content)
             case Role.assistant:

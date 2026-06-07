@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncGenerator, Callable, Generator
+from collections.abc import AsyncGenerator, Callable, Generator, Sequence
 import contextlib
 import copy
 from enum import StrEnum, auto
@@ -119,6 +119,7 @@ from vibe.core.types import (
     CompactStartEvent,
     ContextTooLongError,
     ContinueableUserMessageEvent,
+    ImageAttachment,
     LLMChunk,
     LLMMessage,
     LLMRetryEvent,
@@ -186,6 +187,10 @@ class AgentLoopStateError(AgentLoopError):
 
 class AgentLoopLLMResponseError(AgentLoopError):
     """Raised when LLM response is malformed or missing expected data."""
+
+
+class ImagesNotSupportedError(AgentLoopError):
+    """Raised when the active model does not support image attachments."""
 
 
 class TeleportError(AgentLoopError):
@@ -721,6 +726,7 @@ class AgentLoop:
         client_message_id: str | None = None,
         *,
         auto_title: str | None = None,
+        images: list[ImageAttachment] | None = None,
     ) -> AsyncGenerator[BaseEvent, None]:
         """Run a conversation turn.
 
@@ -728,15 +734,22 @@ class AgentLoop:
             msg: User message content to append.
             client_message_id: Optional client-side message identifier.
         """
+        try:
+            active_model = self.config.get_active_model()
+            model_name = active_model.name
+        except ValueError:
+            active_model = None
+            model_name = None
+        if images and active_model is not None and not active_model.supports_images:
+            raise ImagesNotSupportedError(active_model.alias)
         self._clean_message_history()
         self.rewind_manager.create_checkpoint()
-        try:
-            model_name = self.config.get_active_model().name
-        except ValueError:
-            model_name = None
         async with agent_span(model=model_name, session_id=self.session_id):
             async for event in self._conversation_loop(
-                msg, client_message_id=client_message_id, auto_title=auto_title
+                msg,
+                client_message_id=client_message_id,
+                auto_title=auto_title,
+                images=images,
             ):
                 yield event
 
@@ -964,9 +977,13 @@ class AgentLoop:
         client_message_id: str | None = None,
         *,
         auto_title: str | None = None,
+        images: list[ImageAttachment] | None = None,
     ) -> AsyncGenerator[BaseEvent]:
         user_message = LLMMessage(
-            role=Role.user, content=user_msg, message_id=client_message_id
+            role=Role.user,
+            content=user_msg,
+            message_id=client_message_id,
+            images=images or None,
         )
         self.messages.append(user_message)
         if user_message.message_id is None:
@@ -1592,6 +1609,25 @@ class AgentLoop:
             tool_call_id=tool_call.call_id,
         )
 
+    def _messages_for_backend(self, active_model: ModelConfig) -> Sequence[LLMMessage]:
+        if active_model.supports_images:
+            return self.messages
+        if not any(m.images for m in self.messages):
+            return self.messages
+        return [
+            m.model_copy(update={"images": None}) if m.images else m
+            for m in self.messages
+        ]
+
+    def count_history_images_unsupported_by_active_model(self) -> int:
+        try:
+            active_model = self.config.get_active_model()
+        except ValueError:
+            return 0
+        if active_model.supports_images:
+            return 0
+        return sum(1 for m in self.messages if m.images)
+
     async def _chat(
         self, max_tokens: int | None = None, model_override: ModelConfig | None = None
     ) -> LLMChunk:
@@ -1618,7 +1654,7 @@ class AgentLoop:
             start_time = time.perf_counter()
             result = await self.backend.complete(
                 model=active_model,
-                messages=self.messages,
+                messages=self._messages_for_backend(active_model),
                 temperature=active_model.temperature,
                 tools=available_tools,
                 tool_choice=tool_choice,
@@ -1683,7 +1719,7 @@ class AgentLoop:
             chunk_agg: LLMChunk | None = None
             async for chunk in self.backend.complete_streaming(
                 model=active_model,
-                messages=self.messages,
+                messages=self._messages_for_backend(active_model),
                 temperature=active_model.temperature,
                 tools=available_tools,
                 tool_choice=tool_choice,

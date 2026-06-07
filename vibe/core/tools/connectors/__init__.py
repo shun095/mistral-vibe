@@ -6,6 +6,7 @@ from vibe.core.tools.connectors.connector_registry import (
     ConnectorAuthAction,
     ConnectorRegistry,
 )
+from vibe.core.tools.connectors.counts import compute_connector_counts
 
 CONNECTORS_ENV_VAR = "EXPERIMENTAL_ENABLE_CONNECTORS"
 
@@ -19,4 +20,5 @@ __all__ = [
     "ConnectorAuthAction",
     "ConnectorRegistry",
     "connectors_enabled",
+    "compute_connector_counts",
 ]

@@ -68,6 +68,7 @@ from vibe.core.config.schema import (
     WithShallowMerge,
     WithUnionMerge,
 )
+from vibe.core.config.vibe_schema import VibeConfigSchema
 from vibe.core.prompts import MissingPromptFileError
 
 __all__ = [
@@ -126,6 +127,7 @@ __all__ = [
     "TrustResolutionError",
     "UntrustedLayerError",
     "VibeConfig",
+    "VibeConfigSchema",
     "WithConcatMerge",
     "WithConflictMerge",
     "WithReplaceMerge",

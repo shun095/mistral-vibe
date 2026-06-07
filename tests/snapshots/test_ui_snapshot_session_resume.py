@@ -20,7 +20,7 @@ class SnapshotTestAppWithResumedSession(BaseSnapshotTestApp):
                     id="tool_call_1",
                     index=0,
                     function=FunctionCall(
-                        name="read_file", arguments='{"path": "test.txt"}'
+                        name="read", arguments='{"file_path": "test.txt"}'
                     ),
                 )
             ],
@@ -28,7 +28,7 @@ class SnapshotTestAppWithResumedSession(BaseSnapshotTestApp):
         tool_result_msg = LLMMessage(
             role=Role.tool,
             content='{"path": "test.txt", "content": "This is a test file with some content.", "lines_read": 1, "was_truncated": false}',
-            name="read_file",
+            name="read",
             tool_call_id="tool_call_1",
         )
 

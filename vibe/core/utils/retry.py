@@ -3,9 +3,20 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncGenerator, Awaitable, Callable
 import functools
+import logging
 from typing import Any
 
 import httpx
+
+logger = logging.getLogger("vibe")
+
+_RETRYABLE_REQUEST_ERRORS: tuple[type[httpx.RequestError], ...] = (
+    httpx.TimeoutException,
+    httpx.ConnectError,
+    httpx.ReadError,
+    httpx.WriteError,
+    httpx.RemoteProtocolError,
+)
 
 from vibe.core.types import LLMRetryEvent
 
@@ -58,6 +69,9 @@ def _is_retryable_http_error(e: Exception) -> bool:  # noqa: PLR0911
 
     # Network/transport errors (retry on transient network issues)
     if isinstance(e, httpx.RequestError):
+        # Fast path: known retryable error types
+        if isinstance(e, _RETRYABLE_REQUEST_ERRORS):
+            return True
         # ReadError (e.g., connection dropped mid-read) is always retryable
         # even when the message is empty — string matching alone won't catch it.
         if isinstance(e, httpx.ReadError):
@@ -134,6 +148,14 @@ def async_retry[T, **P](
                             current_delay,
                             provider,
                             model,
+                        )
+                        logger.warning(
+                            "Retrying %s after error attempt=%d/%d delay=%.2fs error=%r",
+                            func.__qualname__,
+                            attempt + 1,
+                            tries,
+                            current_delay,
+                            e,
                         )
                         await asyncio.sleep(current_delay)
                         continue
@@ -212,12 +234,14 @@ def async_generator_retry[T, **P](
             ) = _extract_retry_config(config)
 
             for attempt in range(tries):
+                generator = func(*args, **kwargs)
                 try:
-                    async for item in func(*args, **kwargs):
-                        yield item
+                    first_item = await anext(generator)
+                except StopAsyncIteration:
                     return
                 except Exception as e:
                     last_exc = e
+                    await generator.aclose()
                     if attempt < tries - 1 and is_retryable(e):
                         current_delay = (delay_seconds * (backoff_factor**attempt)) + (
                             0.05 * attempt
@@ -231,9 +255,21 @@ def async_generator_retry[T, **P](
                             provider,
                             model,
                         )
+                        logger.warning(
+                            "Retrying %s after error attempt=%d/%d delay=%.2fs error=%r",
+                            func.__qualname__,
+                            attempt + 1,
+                            tries,
+                            current_delay,
+                            e,
+                        )
                         await asyncio.sleep(current_delay)
                         continue
-                    raise e
+                    raise
+                yield first_item
+                async for item in generator:
+                    yield item
+                return
             raise RuntimeError(
                 f"Retries exhausted. Last error: {last_exc}"
             ) from last_exc

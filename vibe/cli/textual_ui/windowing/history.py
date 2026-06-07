@@ -77,13 +77,15 @@ def build_history_widgets(
             continue
         match msg.role:
             case Role.user:
-                if msg.content:
-                    content_str = _content_to_str(msg.content)
-                    if content_str:
+                if msg.content or msg.images:
+                    content_str = _content_to_str(msg.content) if msg.content else ""
+                    if content_str or msg.images:
                         # history_index is 0-based in non-system messages;
                         # agent_loop.messages index = history_index + 1 (system msg at 0)
                         widget = UserMessage(
-                            content_str, message_index=history_index + 1
+                            content_str,
+                            message_index=history_index + 1,
+                            images=msg.images,
                         )
                         widgets.append(widget)
                         history_widget_indices[widget] = history_index
