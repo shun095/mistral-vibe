@@ -109,7 +109,7 @@ async def test_offset_beyond_file_returns_warning(
 
 
 @pytest.mark.asyncio
-async def test_exceeds_max_bytes_raises(
+async def test_exceeds_max_bytes_truncates(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
@@ -119,8 +119,15 @@ async def test_exceeds_max_bytes_raises(
     (tmp_path / "big.txt").write_text(big_line * lines_needed, encoding="utf-8")
     tool = _make_read()
 
-    with pytest.raises(ToolError, match="exceeds maximum allowed size"):
-        await collect_result(tool.run(ReadArgs(file_path=str(tmp_path / "big.txt"))))
+    result = await collect_result(
+        tool.run(ReadArgs(file_path=str(tmp_path / "big.txt")))
+    )
+
+    assert result.num_lines > 0
+    assert result.was_truncated is True
+    assert VIBE_WARNING_TAG in result.content
+    assert "truncated" in result.content
+    assert "not returned" in result.content
 
 
 @pytest.mark.asyncio
@@ -142,15 +149,21 @@ async def test_truncated_when_more_lines_than_limit(
 
 
 @pytest.mark.asyncio
-async def test_single_oversized_line_raises(
+async def test_single_oversized_line_returns_partial(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
     (tmp_path / "wide.txt").write_text("x" * (MAX_BYTES + 10), encoding="utf-8")
     tool = _make_read()
 
-    with pytest.raises(ToolError, match="exceeds maximum allowed size"):
-        await collect_result(tool.run(ReadArgs(file_path=str(tmp_path / "wide.txt"))))
+    result = await collect_result(
+        tool.run(ReadArgs(file_path=str(tmp_path / "wide.txt")))
+    )
+
+    assert result.num_lines == 1
+    assert result.was_truncated is True
+    assert VIBE_WARNING_TAG in result.content
+    assert "truncated" in result.content
 
 
 @pytest.mark.asyncio

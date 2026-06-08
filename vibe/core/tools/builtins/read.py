@@ -4,7 +4,6 @@ from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, final
 
-from humanize import naturalsize
 from pydantic import BaseModel, Field
 
 from vibe.core.config.harness_files import get_harness_files_manager
@@ -155,22 +154,18 @@ class Read(
 
         if selected:
             content = _add_line_numbers(selected, start=start_line)
+            if was_truncated:
+                content += "\n" + _warning(
+                    "Warning: output truncated due to size limit. "
+                    "The remaining content is not returned. "
+                    "Use offset and limit to read the rest of the file."
+                )
         elif total_lines == 0:
             content = _warning("Warning: the file exists but the contents are empty.")
-        elif total_lines is None:
-            content = _warning(f"Warning: no content returned for offset {start_line}.")
         else:
             content = _warning(
                 f"Warning: the file exists but is shorter than the provided "
                 f"offset ({start_line}). The file has {total_lines} lines."
-            )
-
-        size = len(content.encode("utf-8"))
-        if size > self.config.max_read_bytes:
-            raise ToolError(
-                f"Output ({naturalsize(size, binary=True)}) exceeds maximum "
-                f"allowed size ({naturalsize(self.config.max_read_bytes, binary=True)}). "
-                f"Use offset and limit to read a smaller portion of the file."
             )
 
         yield ReadResult(
