@@ -904,10 +904,11 @@ class AgentLoop:
                 summary: str = ""
                 try:
                     async for item in self.compact():
-                        if isinstance(item, PromptProgressEvent):
-                            yield item
-                        else:
-                            summary = item
+                        match item:
+                            case PromptProgressEvent() | LLMRetryEvent():
+                                yield item
+                            case str():
+                                summary = item
                 except asyncio.CancelledError:
                     compact_status = "cancelled"
                     raise
@@ -2079,7 +2080,7 @@ class AgentLoop:
     @requires_init
     async def compact(
         self, extra_instructions: str = ""
-    ) -> AsyncGenerator[PromptProgressEvent | str]:
+    ) -> AsyncGenerator[PromptProgressEvent | LLMRetryEvent | str]:
         try:
             with self.messages.silent():
                 self._clean_message_history()
@@ -2104,43 +2105,69 @@ class AgentLoop:
                 )
             self.stats.steps += 1
 
+            active_model = self.config.get_compaction_model()
+            provider = self.config.get_provider_for_model(active_model)
+
+            compact_max_attempts = 3
+
             with self.messages.silent():
                 self.messages.append(
                     LLMMessage(role=Role.user, content=summary_request)
                 )
-                # Sleep to prevent the Llama.cpp server from becoming busy and crashing
-                await asyncio.sleep(1)
 
-                # Use streaming for compaction
-                summary_content: str = ""
-                chunk_agg: LLMChunk | None = None
-                async for chunk in self._chat_streaming(
-                    model_override=self.config.get_compaction_model()
-                ):
-                    if chunk.prompt_progress:
-                        event = PromptProgressEvent(
-                            total=chunk.prompt_progress.total,
-                            cache=chunk.prompt_progress.cache,
-                            processed=chunk.prompt_progress.processed,
-                            time_ms=chunk.prompt_progress.time_ms,
-                        )
-                        self._notify_event_listeners(event)
-                        yield event
-                    if chunk.message.content:
-                        content = (
-                            chunk.message.content
-                            if isinstance(chunk.message.content, str)
-                            else "".join(str(item) for item in chunk.message.content)
-                        )
-                        summary_content += content
-                    chunk_agg = chunk if chunk_agg is None else chunk_agg + chunk
+                summary_content = ""
+                for attempt in range(compact_max_attempts):
+                    # Sleep to prevent the Llama.cpp server from becoming busy and crashing
+                    await asyncio.sleep(1)
 
-                if chunk_agg is None or chunk_agg.usage is None:
-                    raise AgentLoopLLMResponseError(
-                        "Usage data missing in compaction summary response"
-                    )
-                summary_content = summary_content.strip()
-                if not summary_content:
+                    # Use streaming for compaction
+                    chunk_agg: LLMChunk | None = None
+                    async for chunk in self._chat_streaming(
+                        model_override=active_model
+                    ):
+                        if chunk.prompt_progress:
+                            event = PromptProgressEvent(
+                                total=chunk.prompt_progress.total,
+                                cache=chunk.prompt_progress.cache,
+                                processed=chunk.prompt_progress.processed,
+                                time_ms=chunk.prompt_progress.time_ms,
+                            )
+                            self._notify_event_listeners(event)
+                            yield event
+                        if chunk.message.content:
+                            content = (
+                                chunk.message.content
+                                if isinstance(chunk.message.content, str)
+                                else "".join(
+                                    str(item) for item in chunk.message.content
+                                )
+                            )
+                            summary_content += content
+                        chunk_agg = chunk if chunk_agg is None else chunk_agg + chunk
+
+                    if chunk_agg is None or chunk_agg.usage is None:
+                        raise AgentLoopLLMResponseError(
+                            "Usage data missing in compaction summary response"
+                        )
+                    summary_content = summary_content.strip()
+                    if summary_content:
+                        break
+
+                    self.messages.pop()
+                    self.stats.steps += 1
+
+                    if attempt < compact_max_attempts - 1:
+                        delay = 0.5 * (2 ** (attempt + 1))
+                        yield LLMRetryEvent(
+                            attempt=attempt + 1,
+                            max_attempts=compact_max_attempts,
+                            error_message="Compaction returned no text content",
+                            delay_seconds=delay,
+                            provider=provider.name,
+                            model=active_model.name,
+                        )
+                        await asyncio.sleep(delay)
+                else:
                     summary_content = "(no summary available)"
 
             self._resume_system_prompt = None

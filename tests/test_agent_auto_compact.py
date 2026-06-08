@@ -21,6 +21,7 @@ from vibe.core.types import (
     CompactStartEvent,
     Content,
     LLMMessage,
+    LLMRetryEvent,
     Role,
     UserMessageEvent,
 )
@@ -487,3 +488,44 @@ async def test_compact_message_shape_preserves_prior_user_messages() -> None:
     assert sum("prior summary blob" in (m.content or "") for m in final) == 0
     # Final message is the wrapped summary the next agent will read first.
     assert final[-1].content == f"{summary_prefix}\nfresh summary body"
+
+
+@pytest.mark.asyncio
+async def test_compact_retries_on_empty_content() -> None:
+    """Verify that compact() retries when LLM returns only reasoning content."""
+    backend = StreamingTrackingBackend([
+        [mock_llm_chunk(content="", reasoning_content="thinking...")],
+        [mock_llm_chunk(content="", reasoning_content="still thinking...")],
+        [mock_llm_chunk(content="<summary>")],
+        [mock_llm_chunk(content="<final>")],
+    ])
+    cfg = build_test_vibe_config(models=make_test_models(auto_compact_threshold=1))
+    agent = build_test_agent_loop(config=cfg, backend=backend)
+    agent.stats.context_tokens = 2
+
+    events = [ev async for ev in agent.act("Hello")]
+
+    retry_events = [e for e in events if isinstance(e, LLMRetryEvent)]
+    assert len(retry_events) == 2
+    assert retry_events[0].attempt == 1
+    assert retry_events[0].max_attempts == 3
+    assert retry_events[1].attempt == 2
+
+    compact_end = [e for e in events if isinstance(e, CompactEndEvent)][0]
+    assert compact_end.summary_content == "<summary>"
+
+    assert agent.stats.steps == 5  # act(1) + compact(1) + retries(2) + llm_turn(1)
+    assert (
+        backend.streaming_calls == 3
+    )  # 3 compact attempts (final turn uses non-streaming)
+
+    # Verify pop() keeps message count stable across retries — each compact
+    # attempt sees the same context (no accumulated assistant responses).
+    compact_requests = backend.requests_messages[:3]
+    assert (
+        len(compact_requests[0]) == len(compact_requests[1]) == len(compact_requests[2])
+    )
+    # Last message in each request is the summary prompt (Role.user).
+    assert compact_requests[0][-1].role == Role.user
+    assert compact_requests[1][-1].role == Role.user
+    assert compact_requests[2][-1].role == Role.user
