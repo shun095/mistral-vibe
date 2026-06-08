@@ -1124,6 +1124,108 @@ describe('VibeClient', () => {
         });
     });
 
+    describe('bash command output dblclick fullscreen', () => {
+        test('generic bash output pre has dblclick handler calling showCodeFullscreen', () => {
+            const showFs = jest.fn();
+            client.showCodeFullscreen = showFs;
+
+            client._renderBashCommandResult({
+                command: 'ls -la',
+                output: 'total 0\n drwxr-xr-x .',
+                exit_code: 0,
+            });
+
+            const pre = client.elements.messages.querySelector('.bash-output pre');
+            expect(pre).toBeTruthy();
+            expect(pre.title).toBe('Double-click to view full screen');
+
+            pre.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+            expect(showFs).toHaveBeenCalledWith('$ ls -la', 'total 0\n drwxr-xr-x .', 'plaintext');
+        });
+
+        test('git status output pre has dblclick handler calling showCodeFullscreen', () => {
+            const showFs = jest.fn();
+            client.showCodeFullscreen = showFs;
+
+            client._renderGitStatusResult({
+                command: 'git status',
+                output: 'On branch main\nnothing to commit',
+                exit_code: 0,
+            });
+
+            const pre = client.elements.messages.querySelector('.bash-output pre');
+            expect(pre.title).toBe('Double-click to view full screen');
+
+            pre.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+            expect(showFs).toHaveBeenCalledWith('git status', 'On branch main\nnothing to commit', 'plaintext');
+        });
+
+        test('git status empty output shows clean working tree on dblclick', () => {
+            const showFs = jest.fn();
+            client.showCodeFullscreen = showFs;
+
+            client._renderGitStatusResult({
+                command: 'git status',
+                output: '',
+                exit_code: 0,
+            });
+
+            const pre = client.elements.messages.querySelector('.bash-output pre');
+            expect(pre.textContent).toBe('(clean working tree)');
+
+            pre.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+            expect(showFs).toHaveBeenCalledWith('git status', '(clean working tree)', 'plaintext');
+        });
+
+        test('git diff output pre has dblclick handler with diff language', () => {
+            const showFs = jest.fn();
+            client.showCodeFullscreen = showFs;
+
+            client._renderGitDiffResult({
+                command: 'git diff',
+                output: '--- a/file.py\n+++ b/file.py',
+                exit_code: 0,
+            });
+
+            const pre = client.elements.messages.querySelector('.bash-output pre');
+            expect(pre.title).toBe('Double-click to view full screen');
+
+            pre.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+            expect(showFs).toHaveBeenCalledWith('git diff', '--- a/file.py\n+++ b/file.py', 'diff');
+        });
+
+        test('git diff no-changes pre has dblclick handler', () => {
+            const showFs = jest.fn();
+            client.showCodeFullscreen = showFs;
+
+            client._renderGitDiffResult({
+                command: 'git diff',
+                output: '',
+                exit_code: 0,
+            });
+
+            const pre = client.elements.messages.querySelector('.bash-output pre');
+            expect(pre.textContent).toBe('(no changes)');
+            expect(pre.title).toBe('Double-click to view full screen');
+
+            pre.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+            expect(showFs).toHaveBeenCalledWith('git diff', '(no changes)', 'plaintext');
+        });
+
+        test('dblclick does not throw when showCodeFullscreen is unavailable', () => {
+            client.showCodeFullscreen = undefined;
+
+            client._renderBashCommandResult({
+                command: 'echo hello',
+                output: 'hello',
+                exit_code: 0,
+            });
+
+            const pre = client.elements.messages.querySelector('.bash-output pre');
+            expect(() => pre.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))).not.toThrow();
+        });
+    });
+
     describe('parallel tool call deduplication', () => {
         test('creates single card when same tool call id emitted twice', () => {
             client._onToolCallStart({ id: 'call-1', name: 'bash', arguments: { command: 'sleep 5' } });

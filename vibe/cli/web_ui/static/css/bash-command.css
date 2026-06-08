@@ -88,6 +88,7 @@
     white-space: pre;
     max-height: 400px;
     overflow-y: auto;
+    cursor: pointer;
 }
 
 .message.bash-command .bash-output pre::-webkit-scrollbar {

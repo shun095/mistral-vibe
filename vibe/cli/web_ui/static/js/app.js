@@ -1002,6 +1002,13 @@ class VibeClient {
         outputDiv.className = 'bash-output';
         const pre = document.createElement('pre');
         pre.textContent = output || '(no output)';
+        pre.title = 'Double-click to view full screen';
+        const outputText = output || '(no output)';
+        pre.addEventListener('dblclick', () => {
+            if (this.showCodeFullscreen) {
+                this.showCodeFullscreen(`$ ${command}`, outputText, 'plaintext');
+            }
+        });
         outputDiv.appendChild(pre);
 
         messageDiv.appendChild(header);
@@ -3032,7 +3039,14 @@ class VibeClient {
         const outputDiv = document.createElement('div');
         outputDiv.className = 'bash-output';
         const pre = document.createElement('pre');
-        pre.textContent = output || '(clean working tree)';
+        const statusText = output || '(clean working tree)';
+        pre.textContent = statusText;
+        pre.title = 'Double-click to view full screen';
+        pre.addEventListener('dblclick', () => {
+            if (this.showCodeFullscreen) {
+                this.showCodeFullscreen(command, statusText, 'plaintext');
+            }
+        });
         outputDiv.appendChild(pre);
 
         messageDiv.appendChild(header);
@@ -3076,12 +3090,18 @@ class VibeClient {
             codeBlock.className = 'tool-formatter-code-block diff-block';
             codeBlock.style.margin = '0';
             codeBlock.style.padding = '0';
+            codeBlock.title = 'Double-click to view full screen';
 
             const code = document.createElement('code');
             code.className = 'language-diff';
             code.textContent = output;
 
             codeBlock.appendChild(code);
+            codeBlock.addEventListener('dblclick', () => {
+                if (this.showCodeFullscreen) {
+                    this.showCodeFullscreen(command, output, 'diff');
+                }
+            });
             outputDiv.appendChild(codeBlock);
 
             if (window.hljs) {
@@ -3090,6 +3110,12 @@ class VibeClient {
         } else {
             const pre = document.createElement('pre');
             pre.textContent = '(no changes)';
+            pre.title = 'Double-click to view full screen';
+            pre.addEventListener('dblclick', () => {
+                if (this.showCodeFullscreen) {
+                    this.showCodeFullscreen(command, '(no changes)', 'plaintext');
+                }
+            });
             outputDiv.appendChild(pre);
         }
 
