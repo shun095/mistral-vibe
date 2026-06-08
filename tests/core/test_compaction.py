@@ -128,15 +128,29 @@ def test_injected_assistant_not_preserved() -> None:
 
 
 def test_assistant_budget_counts() -> None:
-    # Assistant tokens count against the budget; user alone fits when pair doesn't.
+    # When pair doesn't fit, assistant is truncated (not dropped) and older
+    # messages are discarded.
     messages = [
         _user("old"),
         _assistant("long assistant response that costs tokens"),
         _user("recent"),
     ]
-    out = collect_prior_context(messages, _PREFIX, max_tokens=3)
-    assert [m.content for m in out] == ["old", "recent"]
-    assert [m.role for m in out] == [Role.user, Role.user]
+    out = collect_prior_context(messages, _PREFIX, max_tokens=9)
+    assert len(out) == 2
+    assert out[0].role == Role.assistant
+    assert out[0].content == "lo\n\n[... truncated ...]\n\nens"
+    assert out[1].role == Role.user
+    assert out[1].content == "recent"
+
+
+def test_assistant_zero_space() -> None:
+    # When user message exactly fills the budget, assistant is dropped.
+    # user_cost("abcd") = ceil(4/4) = 1, assistant_space = 1 - 1 = 0.
+    messages = [_user("old"), _assistant("assistant response"), _user("abcd")]
+    out = collect_prior_context(messages, _PREFIX, max_tokens=1)
+    assert len(out) == 1
+    assert out[0].role == Role.user
+    assert out[0].content == "abcd"
 
 
 def test_pair_fits_in_budget() -> None:

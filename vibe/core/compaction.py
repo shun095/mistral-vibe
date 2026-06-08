@@ -3,7 +3,7 @@ from __future__ import annotations
 from vibe.core.types import LLMMessage, Role
 from vibe.core.utils.tokens import approx_token_count, truncate_middle_to_tokens
 
-COMPACT_USER_MESSAGE_MAX_TOKENS = 20_000
+COMPACT_USER_MESSAGE_MAX_TOKENS = 50_000
 
 
 def _find_preceding_assistant(
@@ -84,8 +84,28 @@ def collect_prior_context(
             selected = pair + selected
             remaining -= user_cost + assistant_cost
         elif user_cost <= remaining:
-            selected = [_injected_user(content)] + selected
-            remaining -= user_cost
+            assistant_space = remaining - user_cost
+            if assistant_space > 0:
+                assistant_content = (
+                    truncate_middle_to_tokens(assistant.content, assistant_space)
+                    if assistant and isinstance(assistant.content, str)
+                    else ""
+                )
+                if assistant_content:
+                    selected = [
+                        LLMMessage(
+                            role=Role.assistant,
+                            content=assistant_content,
+                            injected=True,
+                        ),
+                        _injected_user(content),
+                    ] + selected
+                else:
+                    selected = [_injected_user(content)] + selected
+                remaining = 0
+            else:
+                selected = [_injected_user(content)] + selected
+                remaining = 0
         else:
             selected = [
                 _injected_user(truncate_middle_to_tokens(content, remaining))
