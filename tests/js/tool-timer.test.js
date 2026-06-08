@@ -290,7 +290,7 @@ describe('VibeClient Elapsed Timer', () => {
 
         client._handleToolResultUpdate({
             toolCallId: 'tool-1',
-            tool_name: 'read_file',
+            tool_name: 'read',
             result: { content: 'file content' },
             duration: 2.3, // server tool-only duration — should NOT be used
         });
@@ -319,7 +319,7 @@ describe('VibeClient Elapsed Timer', () => {
 
         client._handleToolResultUpdate({
             toolCallId: 'tool-1',
-            tool_name: 'read_file',
+            tool_name: 'read',
             error: 'File not found',
             duration: 0.1,
         });
@@ -346,7 +346,7 @@ describe('VibeClient Elapsed Timer', () => {
 
         client._handleToolResultUpdate({
             toolCallId: 'tool-1',
-            tool_name: 'read_file',
+            tool_name: 'read',
             result: { content: 'file content' },
             duration: 2.3,  // should NOT be shown
         });
@@ -371,7 +371,7 @@ describe('VibeClient Elapsed Timer', () => {
 
         client._handleToolResultUpdate({
             toolCallId: 'tool-1',
-            tool_name: 'read_file',
+            tool_name: 'read',
             result: { content: 'file content' },
             // No duration field
         });
@@ -398,7 +398,7 @@ describe('VibeClient Elapsed Timer', () => {
 
         client._handleToolResultUpdate({
             toolCallId: 'tool-1',
-            tool_name: 'read_file',
+            tool_name: 'read',
             skipped: true,
             skip_reason: 'Permission denied',
             duration: 0.0,
@@ -435,7 +435,7 @@ describe('VibeClient Elapsed Timer', () => {
 
     test('_createNewToolCall does not start timer during history replay', () => {
         client.historyLoaded = false;
-        client._createNewToolCall({ id: 'tool-1', name: 'read_file', arguments: null });
+        client._createNewToolCall({ id: 'tool-1', name: 'read', arguments: null });
         expect(client._toolCallTimers.has('tool-1')).toBe(false);
 
         client.historyLoaded = true;
@@ -445,7 +445,7 @@ describe('VibeClient Elapsed Timer', () => {
 
     test('_createNewToolCall starts timer for live tool calls', () => {
         client.historyLoaded = true;
-        client._createNewToolCall({ id: 'tool-1', name: 'read_file', arguments: null });
+        client._createNewToolCall({ id: 'tool-1', name: 'read', arguments: null });
         expect(client._toolCallTimers.has('tool-1')).toBe(true);
     });
 });

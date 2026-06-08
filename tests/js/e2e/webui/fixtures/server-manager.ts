@@ -23,7 +23,7 @@ enable_auto_update = false
 enabled = true
 session_prefix = "session"
 
-[tools.read_file]
+[tools.read]
 max_read_bytes = 64000
 
 [tools.write_file]
@@ -45,7 +45,7 @@ enable_auto_update = false
 enabled = true
 session_prefix = "session"
 
-[tools.read_file]
+[tools.read]
 max_read_bytes = 64000
 
 [tools.write_file]

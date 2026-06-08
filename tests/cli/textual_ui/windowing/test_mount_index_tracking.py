@@ -73,7 +73,7 @@ async def test_mount_tool_call_shares_assistant_index() -> None:
         await app._mount_and_scroll(assistant)
         await pilot.pause()
 
-        tool_call = ToolCallMessage(tool_name="read_file")
+        tool_call = ToolCallMessage(tool_name="read")
         await app._mount_and_scroll(tool_call)
         await pilot.pause()
 
@@ -91,7 +91,7 @@ async def test_mount_tool_result_records_own_index() -> None:
         app.agent_loop.messages.append(_msg(Role.user, content="q"))
         app.agent_loop.messages.append(_msg(Role.assistant, content="a"))
         app.agent_loop.messages.append(_msg(Role.tool, content="result"))
-        widget = ToolResultMessage(tool_name="read_file", content="result")
+        widget = ToolResultMessage(tool_name="read", content="result")
         await app._mount_and_scroll(widget)
         await pilot.pause()
 
@@ -185,7 +185,7 @@ async def test_tool_call_fallback_when_assistant_pruned() -> None:
         await messages_area.remove_children([assistant])
         await pilot.pause()
 
-        tool_call = ToolCallMessage(tool_name="read_file")
+        tool_call = ToolCallMessage(tool_name="read")
         await app._mount_and_scroll(tool_call)
         await pilot.pause()
 

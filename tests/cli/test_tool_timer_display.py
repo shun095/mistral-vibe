@@ -14,7 +14,7 @@ class TestToolCallMessageElapsedTimer:
         event = ToolCallEvent(
             tool_call_id="tc-1",
             tool_call_index=0,
-            tool_name="read_file",
+            tool_name="read",
             tool_class=Read,
             args=self._args,
         )
@@ -32,7 +32,7 @@ class TestToolCallMessageElapsedTimer:
         event = ToolCallEvent(
             tool_call_id="tc-1",
             tool_call_index=0,
-            tool_name="read_file",
+            tool_name="read",
             tool_class=Read,
             args=self._args,
         )
@@ -50,7 +50,7 @@ class TestToolCallMessageElapsedTimer:
         event = ToolCallEvent(
             tool_call_id="tc-1",
             tool_call_index=0,
-            tool_name="read_file",
+            tool_name="read",
             tool_class=Read,
             args=self._args,
         )
@@ -68,7 +68,7 @@ class TestToolCallMessageElapsedTimer:
         event = ToolCallEvent(
             tool_call_id="tc-1",
             tool_call_index=0,
-            tool_name="read_file",
+            tool_name="read",
             tool_class=Read,
             args=self._args,
         )
@@ -88,7 +88,7 @@ class TestToolCallMessageElapsedTimer:
         event = ToolCallEvent(
             tool_call_id="tc-1",
             tool_call_index=0,
-            tool_name="read_file",
+            tool_name="read",
             tool_class=Read,
             args=self._args,
             start_time=100.0,  # server start_time — should be ignored
@@ -99,7 +99,7 @@ class TestToolCallMessageElapsedTimer:
         assert widget._start_time != event.start_time
 
     def test_history_widget_start_time_is_zero(self) -> None:
-        widget = ToolCallMessage(tool_name="read_file")
+        widget = ToolCallMessage(tool_name="read")
         assert widget._start_time == 0.0
 
 
@@ -110,7 +110,7 @@ class TestToolResultMessageDuration:
         call_event = ToolCallEvent(
             tool_call_id="tc-1",
             tool_call_index=0,
-            tool_name="read_file",
+            tool_name="read",
             tool_class=Read,
             args=self._args,
         )
@@ -118,7 +118,7 @@ class TestToolResultMessageDuration:
 
         result_event = ToolResultEvent(
             tool_call_id="tc-1",
-            tool_name="read_file",
+            tool_name="read",
             tool_class=Read,
             error="File not found",
             duration=0.1,
@@ -141,7 +141,7 @@ class TestToolResultMessageDuration:
         call_event = ToolCallEvent(
             tool_call_id="tc-1",
             tool_call_index=0,
-            tool_name="read_file",
+            tool_name="read",
             tool_class=Read,
             args=self._args,
         )
@@ -149,7 +149,7 @@ class TestToolResultMessageDuration:
 
         result_event = ToolResultEvent(
             tool_call_id="tc-1",
-            tool_name="read_file",
+            tool_name="read",
             tool_class=Read,
             result=self._args,
             duration=0.5,  # server tool-only time — should NOT be used
@@ -168,7 +168,7 @@ class TestToolResultMessageDuration:
     def test_get_result_text_shows_no_duration_without_call_widget(self) -> None:
         event = ToolResultEvent(
             tool_call_id="tc-1",
-            tool_name="read_file",
+            tool_name="read",
             tool_class=Read,
             result=self._args,
             duration=2.3,  # should NOT be shown
@@ -181,7 +181,7 @@ class TestToolResultMessageDuration:
     def test_get_result_text_shows_error_without_duration(self) -> None:
         event = ToolResultEvent(
             tool_call_id="tc-1",
-            tool_name="read_file",
+            tool_name="read",
             tool_class=Read,
             error="File not found",
             duration=0.1,
@@ -195,7 +195,7 @@ class TestToolResultMessageDuration:
     def test_get_result_text_shows_skipped_without_duration(self) -> None:
         event = ToolResultEvent(
             tool_call_id="tc-1",
-            tool_name="read_file",
+            tool_name="read",
             tool_class=Read,
             skipped=True,
             skip_reason="Permission denied",
@@ -210,7 +210,7 @@ class TestToolResultMessageDuration:
     def test_get_result_text_no_duration_when_none(self) -> None:
         event = ToolResultEvent(
             tool_call_id="tc-1",
-            tool_name="read_file",
+            tool_name="read",
             tool_class=Read,
             result=None,
             duration=None,
@@ -226,7 +226,7 @@ class TestToolResultMessageDuration:
         call_event = ToolCallEvent(
             tool_call_id="tc-1",
             tool_call_index=0,
-            tool_name="read_file",
+            tool_name="read",
             tool_class=Read,
             args=self._args,
         )
@@ -234,7 +234,7 @@ class TestToolResultMessageDuration:
 
         result_event = ToolResultEvent(
             tool_call_id="tc-1",
-            tool_name="read_file",
+            tool_name="read",
             tool_class=Read,
             result=self._args,
             duration=0.5,  # not used
@@ -250,11 +250,11 @@ class TestToolResultMessageDuration:
         assert "2m 3.4s" in text
 
     def test_get_result_text_shows_no_duration_for_history_call_widget(self) -> None:
-        call_widget = ToolCallMessage(tool_name="read_file")
+        call_widget = ToolCallMessage(tool_name="read")
 
         result_event = ToolResultEvent(
             tool_call_id="tc-1",
-            tool_name="read_file",
+            tool_name="read",
             tool_class=Read,
             result=self._args,
             duration=1.7,  # should NOT be shown
@@ -265,8 +265,8 @@ class TestToolResultMessageDuration:
         assert "(1.7s)" not in text
 
     def test_get_result_text_history_event_no_duration(self) -> None:
-        widget = ToolResultMessage(None, tool_name="read_file", content="File content")
+        widget = ToolResultMessage(None, tool_name="read", content="File content")
         text = widget._get_result_text()
 
-        assert "read_file completed" in text
+        assert "read completed" in text
         assert "(" not in text

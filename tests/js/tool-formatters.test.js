@@ -184,11 +184,21 @@ describe('tool-formatters', () => {
             expect(result.querySelector('.card-content > pre').textContent).toContain('1 matches found');
         });
 
-        test('delegates to read_file formatter', () => {
+        test('delegates to read formatter', () => {
             const result = formatToolResult('read', { file_file_path: '/test.py', content: 'code', lines_read: 5 }, helpers);
             expect(result.className).toBe('tool-result-card');
             expect(result.querySelector('.card-header')).not.toBeNull();
             expect(result.querySelector('.card-content > pre').textContent).toContain('Read 5 lines');
+        });
+
+        test('delegates to edit formatter with diff', () => {
+            const result = formatToolResult('edit', { file: 'test.py', message: 'Replaced text', old_string: 'old\nline', new_string: 'new\nline' }, helpers);
+            expect(result.className).toBe('tool-result-card');
+            expect(result.querySelector('.card-header')).not.toBeNull();
+            expect(result.querySelector('.card-header').textContent).toContain('test.py');
+            const diffBlock = result.querySelector('.diff-block code');
+            expect(diffBlock.textContent).toContain('-old');
+            expect(diffBlock.textContent).toContain('+new');
         });
 
         test('delegates to edit_file formatter', () => {
@@ -293,7 +303,7 @@ describe('tool-formatters', () => {
             expect(result.querySelector('.card-content > pre').textContent).toContain('1 block(s) applied');
         });
 
-        test('handles read_file with lsp diagnostics', () => {
+        test('handles read with lsp diagnostics', () => {
             const result = formatToolResult('read', {
                 file_path: '/test.py',
                 content: 'code',

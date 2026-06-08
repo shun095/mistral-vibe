@@ -85,7 +85,7 @@ def test_messages_to_events_converts_tool_calls() -> None:
     tool_call = ToolCall(
         id="call_123",
         index=0,
-        function=FunctionCall(name="read_file", arguments='{"path": "test.py"}'),
+        function=FunctionCall(name="read", arguments='{"path": "test.py"}'),
     )
     messages = [
         LLMMessage(
@@ -104,7 +104,7 @@ def test_messages_to_events_converts_tool_calls() -> None:
 
     tc_event = tool_call_events[0]
     assert tc_event.tool_call_id == "call_123"
-    assert tc_event.tool_name == "read_file"
+    assert tc_event.tool_name == "read"
     assert tc_event.tool_call_index == 0
     # Check that args were parsed
     assert tc_event.args is not None
@@ -427,7 +427,7 @@ def test_messages_to_events_detects_multiline_tool_errors() -> None:
     tool_call = ToolCall(
         id="call_error_multiline",
         index=0,
-        function=FunctionCall(name="read_file", arguments='{"path": "/test.txt"}'),
+        function=FunctionCall(name="read", arguments='{"path": "/test.txt"}'),
     )
     messages = [
         LLMMessage(role=Role.assistant, tool_calls=[tool_call]),

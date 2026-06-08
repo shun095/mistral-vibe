@@ -40,11 +40,11 @@ def create_sample_conversation() -> list[LLMMessage]:
     Returns:
         A list of LLMMessage objects representing a complete conversation.
     """
-    # Tool call 1: read_file
-    read_file_call = ToolCall(
+    # Tool call 1: read
+    read_call = ToolCall(
         id="call_read_1",
         index=0,
-        function=FunctionCall(name="read_file", arguments='{"path": "test.py"}'),
+        function=FunctionCall(name="read", arguments='{"path": "test.py"}'),
     )
 
     # Tool call 2: bash
@@ -67,7 +67,7 @@ def create_sample_conversation() -> list[LLMMessage]:
         LLMMessage(
             role=Role.assistant,
             content="Let me read that file for you.",
-            tool_calls=[read_file_call],
+            tool_calls=[read_call],
             message_id="msg_assistant_1",
         ),
         # Tool result
@@ -145,14 +145,14 @@ def test_history_replay_generates_correct_event_sequence() -> None:
     # Event 3: ToolCallEvent
     assert isinstance(events[2], ToolCallEvent)
     assert events[2].tool_call_id == "call_read_1"
-    assert events[2].tool_name == "read_file"
+    assert events[2].tool_name == "read"
     assert events[2].args is not None
     assert events[2].args.path == "test.py"  # type: ignore
 
     # Event 4: ToolResultEvent
     assert isinstance(events[3], ToolResultEvent)
     assert events[3].tool_call_id == "call_read_1"
-    assert events[3].tool_name == "read_file"  # Should be looked up
+    assert events[3].tool_name == "read"  # Should be looked up
     assert events[3].result is not None
     assert events[3].result.content == "print(\nHello World\n)"  # type: ignore
     assert events[3].result.size == 23  # type: ignore

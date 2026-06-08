@@ -52,7 +52,7 @@ def _make_tool_call_mixed(idx: int) -> list[ToolCall]:
                 id=f"call-read-{idx}",
                 index=idx,
                 function=FunctionCall(
-                    name="read_file",
+                    name="read",
                     arguments=json.dumps({
                         "path": f"sample_turn_{idx}.md",
                         "offset": 0,

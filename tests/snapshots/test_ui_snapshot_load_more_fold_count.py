@@ -41,14 +41,14 @@ class _VibeAppProtocol:
 
 
 def _make_tool_call(idx: int) -> list[ToolCall]:
-    """Bash + read_file alternating."""
+    """Bash + read alternating."""
     if idx % 2 == 0:
         return [
             ToolCall(
                 id=f"call-read-{idx}",
                 index=idx,
                 function=FunctionCall(
-                    name="read_file",
+                    name="read",
                     arguments=json.dumps({"path": _SAMPLE_FILE, "offset": idx * 3}),
                 ),
             )
@@ -226,7 +226,7 @@ async def _setup_folded(pilot: Pilot) -> None:
     """Setup: submit message with tools collapsed (default), wait for LoadMore."""
     app = pilot.app  # type: ignore[attr-defined]
 
-    # Create sample file in temp CWD for read_file tool
+    # Create sample file in temp CWD for read tool
     from pathlib import Path
 
     Path(_SAMPLE_FILE).write_text(_SAMPLE_CONTENT)
@@ -250,7 +250,7 @@ async def _setup_expanded(pilot: Pilot) -> None:
     """Setup: expand tools (Ctrl+O), then submit message, wait for LoadMore."""
     app = pilot.app  # type: ignore[attr-defined]
 
-    # Create sample file in temp CWD for read_file tool
+    # Create sample file in temp CWD for read tool
     from pathlib import Path
 
     Path(_SAMPLE_FILE).write_text(_SAMPLE_CONTENT)

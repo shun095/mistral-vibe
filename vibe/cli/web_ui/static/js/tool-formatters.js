@@ -189,6 +189,7 @@ export function formatToolResult(toolName, result, helpers) {
         case 'web_fetch': return formatWebFetchResult(card, result, helpers);
         case 'grep': return formatGrepResult(card, result, helpers);
         case 'read': return formatReadFileResult(card, result, helpers);
+        case 'edit': return formatEditResult(card, result, helpers);
         case 'edit_file': return formatEditFileResult(card, result, helpers);
         case 'write_file': return formatWriteFileResult(card, result, helpers);
         case 'lsp': return formatLspResult(card, result, helpers);
@@ -327,6 +328,53 @@ function formatReadFileResult(card, result, helpers = {}) {
     }
 
     return card;
+}
+
+function formatEditResult(card, result, helpers = {}) {
+    const file = result.file || 'unknown';
+    const message = result.message || '';
+    const ch = helpers.createCardHeader || createCardHeader;
+    const escape = helpers.escapeHtml || ESCAPE_HTML_FALLBACK;
+
+    ch(card, `Edit: ${file}`,
+        '<span class="material-symbols-rounded">edit</span>',
+        message || 'Text replaced');
+
+    const content = card.querySelector('.card-content');
+
+    if (result.old_string && result.new_string) {
+        const diffPre = document.createElement('pre');
+        diffPre.className = 'tool-formatter-code-block diff-block';
+        diffPre.title = 'Double-click to view full screen';
+        const codeEl = document.createElement('code');
+        codeEl.className = 'language-diff';
+        codeEl.textContent = buildSimpleDiff(result.old_string, result.new_string);
+        diffPre.appendChild(codeEl);
+        content.appendChild(diffPre);
+        if (window.hljs) {
+            window.hljs.highlightElement(diffPre);
+        }
+    }
+
+    return card;
+}
+
+function buildSimpleDiff(oldText, newText) {
+    const oldLines = oldText.split('\n');
+    const newLines = newText.split('\n');
+    const lines = [];
+    const maxLen = Math.max(oldLines.length, newLines.length);
+    for (let i = 0; i < maxLen; i++) {
+        const oldLine = i < oldLines.length ? oldLines[i] : undefined;
+        const newLine = i < newLines.length ? newLines[i] : undefined;
+        if (oldLine !== newLine) {
+            if (oldLine !== undefined) lines.push(`-${oldLine}`);
+            if (newLine !== undefined) lines.push(`+${newLine}`);
+        } else {
+            lines.push(` ${oldLine}`);
+        }
+    }
+    return lines.join('\n');
 }
 
 function formatEditFileResult(card, result, helpers = {}) {

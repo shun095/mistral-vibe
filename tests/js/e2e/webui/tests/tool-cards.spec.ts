@@ -155,7 +155,7 @@ test.describe("Tool Result Formatting", () => {
     await expect(searchCard).toContainText("The sky is blue");
   });
 
-  test("should format read_file result with code block", async ({ page }) => {
+  test("should format read result with code block", async ({ page }) => {
     const result = {
       file_path: "src/main.py",
       content: "def hello():\n    pass",

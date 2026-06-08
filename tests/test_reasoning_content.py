@@ -339,7 +339,7 @@ class TestAPIToolFormatHandlerJsonRepair:
                     id="call_123",
                     index=0,
                     function=FunctionCall(
-                        name="read_file", arguments='{"path": "test.py", "limit": 100}'
+                        name="read", arguments='{"path": "test.py", "limit": 100}'
                     ),
                 )
             ],
@@ -348,7 +348,7 @@ class TestAPIToolFormatHandlerJsonRepair:
         parsed = handler.parse_message(message)
 
         assert len(parsed.tool_calls) == 1
-        assert parsed.tool_calls[0].tool_name == "read_file"
+        assert parsed.tool_calls[0].tool_name == "read"
         assert parsed.tool_calls[0].raw_args == {"path": "test.py", "limit": 100}
 
     def test_parse_message_with_unclosed_brace(self):
@@ -365,7 +365,7 @@ class TestAPIToolFormatHandlerJsonRepair:
                     id="call_123",
                     index=0,
                     function=FunctionCall(
-                        name="read_file",
+                        name="read",
                         arguments='{"path": "test.py"',  # Missing closing brace
                     ),
                 )
@@ -375,7 +375,7 @@ class TestAPIToolFormatHandlerJsonRepair:
         parsed = handler.parse_message(message)
 
         assert len(parsed.tool_calls) == 1
-        assert parsed.tool_calls[0].tool_name == "read_file"
+        assert parsed.tool_calls[0].tool_name == "read"
         assert parsed.tool_calls[0].raw_args == {"path": "test.py"}
 
     def test_parse_message_with_missing_quotes(self):
@@ -419,7 +419,7 @@ class TestAPIToolFormatHandlerJsonRepair:
                     id="call_789",
                     index=0,
                     function=FunctionCall(
-                        name="read_file",
+                        name="read",
                         arguments='{"path": "test.py",}',  # Trailing comma
                     ),
                 )
@@ -429,7 +429,7 @@ class TestAPIToolFormatHandlerJsonRepair:
         parsed = handler.parse_message(message)
 
         assert len(parsed.tool_calls) == 1
-        assert parsed.tool_calls[0].tool_name == "read_file"
+        assert parsed.tool_calls[0].tool_name == "read"
         assert parsed.tool_calls[0].raw_args == {"path": "test.py"}
 
     def test_parse_message_with_empty_value(self):
@@ -446,7 +446,7 @@ class TestAPIToolFormatHandlerJsonRepair:
                     id="call_999",
                     index=0,
                     function=FunctionCall(
-                        name="read_file",
+                        name="read",
                         arguments='{"path":}',  # Empty value
                     ),
                 )
@@ -456,7 +456,7 @@ class TestAPIToolFormatHandlerJsonRepair:
         parsed = handler.parse_message(message)
 
         assert len(parsed.tool_calls) == 1
-        assert parsed.tool_calls[0].tool_name == "read_file"
+        assert parsed.tool_calls[0].tool_name == "read"
         assert parsed.tool_calls[0].raw_args == {"path": ""}
 
     def test_parse_message_with_empty_args_string(self):
@@ -496,7 +496,7 @@ class TestAPIToolFormatHandlerJsonRepair:
                     id="call_1",
                     index=0,
                     function=FunctionCall(
-                        name="read_file",
+                        name="read",
                         arguments='{"path": "valid.py"}',  # Valid JSON
                     ),
                 ),
@@ -522,7 +522,7 @@ class TestAPIToolFormatHandlerJsonRepair:
         parsed = handler.parse_message(message)
 
         assert len(parsed.tool_calls) == 3
-        assert parsed.tool_calls[0].tool_name == "read_file"
+        assert parsed.tool_calls[0].tool_name == "read"
         assert parsed.tool_calls[0].raw_args == {"path": "valid.py"}
 
         assert parsed.tool_calls[1].tool_name == "write_file"
