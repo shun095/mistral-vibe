@@ -25,8 +25,11 @@ from vibe.core.config._settings import (
     DEFAULT_VIBE_BASE_URL,
     DEFAULT_VIBE_CODE_TASK_QUEUE,
     DEFAULT_VIBE_CODE_WORKFLOW_ID,
+    CodeServerConfig,
     ConnectorConfig,
     ExperimentsConfig,
+    LSPConfig,
+    LSPServerConfig,
     MCPServer,
     ModelConfig,
     ProjectContextConfig,
@@ -213,6 +216,9 @@ class VibeConfigSchema(ConfigSchema):
     voice_mode_enabled: Annotated[bool, WithReplaceMerge()] = False
     narrator_enabled: Annotated[bool, WithReplaceMerge()] = False
     bypass_tool_permissions: Annotated[bool, WithReplaceMerge()] = False
+    auto_approve: Annotated[bool, WithReplaceMerge()] = False
+    loop_detection_enabled: Annotated[bool, WithReplaceMerge()] = True
+    loop_detection_threshold: Annotated[int, WithReplaceMerge()] = 3
     enable_telemetry: Annotated[bool, WithReplaceMerge()] = True
     system_prompt_id: Annotated[str, WithReplaceMerge()] = SystemPrompt.CLI
     compaction_prompt_id: Annotated[str, WithReplaceMerge()] = UtilityPrompt.COMPACT
@@ -223,6 +229,7 @@ class VibeConfigSchema(ConfigSchema):
     enable_update_checks: Annotated[bool, WithReplaceMerge()] = True
     enable_auto_update: Annotated[bool, WithReplaceMerge()] = True
     enable_notifications: Annotated[bool, WithReplaceMerge()] = True
+    enable_web_notifications: Annotated[bool, WithReplaceMerge()] = True
     enable_system_trust_store: Annotated[bool, WithReplaceMerge()] = False
     api_timeout: Annotated[float, WithReplaceMerge()] = DEFAULT_API_TIMEOUT
     vibe_base_url: Annotated[str, WithReplaceMerge()] = DEFAULT_VIBE_BASE_URL
@@ -239,4 +246,21 @@ class VibeConfigSchema(ConfigSchema):
     )
     experiments: Annotated[ExperimentsConfig, WithReplaceMerge()] = Field(
         default_factory=ExperimentsConfig
+    )
+    lsp: Annotated[LSPConfig, WithReplaceMerge()] = Field(
+        default_factory=LSPConfig, description="Global LSP configuration settings."
+    )
+    lsp_servers: Annotated[list[LSPServerConfig], WithConcatMerge()] = Field(
+        default_factory=list,
+        description=(
+            "List of LSP (Language Server Protocol) server configurations. "
+            "Each server can be enabled/disabled and configured with specific options."
+        ),
+    )
+    code_server: Annotated[CodeServerConfig, WithReplaceMerge()] = Field(
+        default_factory=CodeServerConfig,
+        description=(
+            "code-server integration. When enabled, Vibe spawns and reverse-proxies "
+            "code-server so users can browse/edit files from the WebUI."
+        ),
     )

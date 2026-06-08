@@ -7,10 +7,10 @@ test.describe("Structured JSON Rendering", () => {
     mockBackend,
   }) => {
     await mockBackend.registerToolCall(
-      "read_file",
+      "read",
       JSON.stringify({
-        path: "src/main.py",
-        offset: 0,
+        file_path: "src/main.py",
+        offset: 1,
         limit: 50,
       })
     );
@@ -82,9 +82,9 @@ test.describe("Structured JSON Rendering", () => {
     mockBackend,
   }) => {
     await mockBackend.registerToolCall(
-      "read_file",
+      "read",
       JSON.stringify({
-        path: "test.txt",
+        file_path: "test.txt",
         limit: 100,
         offset: 50,
       })

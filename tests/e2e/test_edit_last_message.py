@@ -106,7 +106,7 @@ def edit_test_app_with_tools() -> VibeApp:
     agent_loop = build_test_agent_loop(  # type: ignore
         config=config, agent_name=BuiltinAgentName.AUTO_APPROVE, backend=backend
     )
-    agent_loop.tool_manager._available["stub_tool"] = FakeTool
+    agent_loop.tool_manager._all_tools["stub_tool"] = FakeTool
     app = build_test_vibe_app(agent_loop=agent_loop)
     return app
 

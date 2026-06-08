@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, cast
 
 from acp import ReadTextFileResponse
 import pytest
@@ -270,6 +269,9 @@ class TestAcpEditSessionUpdates:
         assert update.locations[0].path == str(Path("/tmp/test.txt").resolve())
 
     def test_tool_call_session_update_invalid_args(self) -> None:
+        class InvalidArgs:
+            pass
+
         event = ToolCallEvent.model_construct(
             tool_name="edit",
             tool_call_id="test_call_123",
@@ -314,6 +316,9 @@ class TestAcpEditSessionUpdates:
         assert update.locations[0].path == str(Path("/tmp/test.txt").resolve())
 
     def test_tool_result_session_update_invalid_result(self) -> None:
+        class InvalidResult:
+            pass
+
         event = ToolResultEvent.model_construct(
             tool_name="edit",
             tool_call_id="test_call_123",

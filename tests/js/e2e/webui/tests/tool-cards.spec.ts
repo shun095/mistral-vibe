@@ -51,10 +51,10 @@ test.describe("Tool Card Visualization", () => {
   }) => {
     const testPath = path.join(webServer.e2eTestDir!, "test.txt");
     await mockBackend.registerToolCall(
-      "read_file",
+      "read",
       JSON.stringify({
-        path: testPath,
-        offset: 0,
+        file_path: testPath,
+        offset: 1,
         limit: 100,
       })
     );
@@ -157,11 +157,11 @@ test.describe("Tool Result Formatting", () => {
 
   test("should format read_file result with code block", async ({ page }) => {
     const result = {
-      path: "src/main.py",
+      file_path: "src/main.py",
       content: "def hello():\n    pass",
       lines_read: 2,
     };
-    await formatAndAppendToolResult(page, "read_file", result);
+    await formatAndAppendToolResult(page, "read", result);
 
     const readFileCard = page.locator(".tool-result-card");
     await expect(readFileCard).toBeVisible({ timeout: 5000 });
@@ -189,7 +189,6 @@ test.describe("Tool Result Formatting", () => {
     const result = {
       path: "output.txt",
       bytes_written: 1234,
-      file_existed: false,
     };
     await formatAndAppendToolResult(page, "write_file", result);
 

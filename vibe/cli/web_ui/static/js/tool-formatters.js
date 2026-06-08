@@ -188,7 +188,7 @@ export function formatToolResult(toolName, result, helpers) {
         case 'web_search': return formatWebSearchResult(card, result, helpers);
         case 'web_fetch': return formatWebFetchResult(card, result, helpers);
         case 'grep': return formatGrepResult(card, result, helpers);
-        case 'read_file': return formatReadFileResult(card, result, helpers);
+        case 'read': return formatReadFileResult(card, result, helpers);
         case 'edit_file': return formatEditFileResult(card, result, helpers);
         case 'write_file': return formatWriteFileResult(card, result, helpers);
         case 'lsp': return formatLspResult(card, result, helpers);
@@ -302,7 +302,7 @@ function formatGrepResult(card, result, helpers = {}) {
 }
 
 function formatReadFileResult(card, result, helpers = {}) {
-    const path = result.path || 'unknown';
+    const path = result.file_path || result.path || 'unknown';
     const linesRead = result.lines_read || 0;
     const wasTruncated = result.was_truncated ? ' (truncated)' : '';
     const ch = helpers.createCardHeader || createCardHeader;
@@ -534,17 +534,12 @@ function formatGenericResult(card, result, helpers = {}) {
 function formatWriteFileResult(card, result, helpers = {}) {
     const path = result.path || 'unknown';
     const bytesWritten = result.bytes_written || 0;
-    const fileExisted = result.file_existed;
     const ch = helpers.createCardHeader || createCardHeader;
     const ccb = helpers.createCodeBlock || createCodeBlock;
     const escape = helpers.escapeHtml || ESCAPE_HTML_FALLBACK;
 
-    const status = fileExisted ? 'Overwritten' : 'Created';
-    const statusIcon = fileExisted ? 'edit_note' : 'note_add';
-    const statusColor = fileExisted ? 'var(--yellow)' : 'var(--green)';
-
-    ch(card, status,
-        `<span class="material-symbols-rounded" style="color: ${statusColor}">${statusIcon}</span>`,
+    ch(card, 'Created',
+        '<span class="material-symbols-rounded">note_add</span>',
         `${bytesWritten} bytes written`);
 
     const contentDiv = card.querySelector('.card-content');

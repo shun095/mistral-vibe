@@ -1943,7 +1943,7 @@ class VibeClient {
     }
 
     formatReadFileResult(card, result) {
-        const path = result.path || 'unknown';
+        const path = result.file_path || result.path || 'unknown';
         const linesRead = result.lines_read || 0;
         const wasTruncated = result.was_truncated ? ' (truncated)' : '';
 
@@ -2194,14 +2194,9 @@ class VibeClient {
     formatWriteFileResult(card, result) {
         const path = result.path || 'unknown';
         const bytesWritten = result.bytes_written || 0;
-        const fileExisted = result.file_existed;
 
-        const status = fileExisted ? 'Overwritten' : 'Created';
-        const statusIcon = fileExisted ? 'edit_note' : 'note_add';
-        const statusColor = fileExisted ? 'var(--yellow)' : 'var(--green)';
-
-        this.createCardHeader(card, status,
-            `<span class="material-symbols-rounded" style="color: ${statusColor}">${statusIcon}</span>`,
+        this.createCardHeader(card, 'Created',
+            '<span class="material-symbols-rounded">note_add</span>',
             `${bytesWritten} bytes written`);
 
         const contentDiv = card.querySelector('.card-content');

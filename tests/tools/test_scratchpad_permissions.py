@@ -40,7 +40,9 @@ class TestFileToolScratchpadPermissions:
         sp = scratchpad_mod.get_scratchpad_dir("test-session")
         assert sp is not None
         tool = Read(config_getter=lambda: ReadConfig(), state=ReadState())
-        result = tool.resolve_permission(ReadArgs(file_path=str(sp / "notes.txt"), offset=0))
+        result = tool.resolve_permission(
+            ReadArgs(file_path=str(sp / "notes.txt"), offset=1)
+        )
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.ALWAYS
 

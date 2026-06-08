@@ -15,6 +15,8 @@ import pytest
 
 from tests import TESTS_ROOT
 from tests.e2e.common import ansi_tolerant_pattern
+from vibe.core.llm.backend.factory import BACKEND_FACTORY
+from vibe.core.types import Backend
 
 BROWSER_AUTH_NAME = "Sign in through Mistral AI Studio"
 BROWSER_AUTH_DESCRIPTION = (
@@ -169,6 +171,9 @@ async def _connect_and_initialize(
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(
+    Backend.MISTRAL not in BACKEND_FACTORY, reason="mistralai not installed"
+)
 async def test_vibe_acp_initialize_and_new_session(vibe_home_dir: Path) -> None:
     proc, initialize_response, conn = await _connect_and_initialize(
         vibe_home_dir=vibe_home_dir, include_api_key=True
@@ -189,6 +194,9 @@ async def test_vibe_acp_initialize_and_new_session(vibe_home_dir: Path) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(
+    Backend.MISTRAL not in BACKEND_FACTORY, reason="mistralai not installed"
+)
 async def test_vibe_acp_bootstraps_default_files(vibe_home_dir: Path) -> None:
     proc, _initialize_response, conn = await _connect_and_initialize(
         vibe_home_dir=vibe_home_dir, include_api_key=True
@@ -310,6 +318,9 @@ def test_vibe_acp_setup_shows_onboarding_and_exits_on_cancel(
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(
+    Backend.MISTRAL not in BACKEND_FACTORY, reason="mistralai not installed"
+)
 async def test_vibe_acp_survives_broken_config(vibe_home_dir: Path) -> None:
     vibe_home_dir.mkdir(parents=True, exist_ok=True)
     (vibe_home_dir / "config.toml").write_text("{{{{invalid toml content!!")

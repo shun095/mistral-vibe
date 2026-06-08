@@ -185,7 +185,7 @@ describe('tool-formatters', () => {
         });
 
         test('delegates to read_file formatter', () => {
-            const result = formatToolResult('read_file', { path: '/test.py', content: 'code', lines_read: 5 }, helpers);
+            const result = formatToolResult('read', { file_file_path: '/test.py', content: 'code', lines_read: 5 }, helpers);
             expect(result.className).toBe('tool-result-card');
             expect(result.querySelector('.card-header')).not.toBeNull();
             expect(result.querySelector('.card-content > pre').textContent).toContain('Read 5 lines');
@@ -199,7 +199,7 @@ describe('tool-formatters', () => {
         });
 
         test('delegates to write_file formatter', () => {
-            const result = formatToolResult('write_file', { path: '/test.py', content: 'code', bytes_written: 100, file_existed: false }, helpers);
+            const result = formatToolResult('write_file', { file_path: '/test.py', content: 'code', bytes_written: 100 }, helpers);
             expect(result.className).toBe('tool-result-card');
             expect(result.querySelector('.card-header')).not.toBeNull();
             expect(result.querySelector('.card-content > pre').textContent).toContain('100 bytes written');
@@ -294,8 +294,8 @@ describe('tool-formatters', () => {
         });
 
         test('handles read_file with lsp diagnostics', () => {
-            const result = formatToolResult('read_file', {
-                path: '/test.py',
+            const result = formatToolResult('read', {
+                file_path: '/test.py',
                 content: 'code',
                 lines_read: 5,
                 lsp_diagnostics: '1 error, 0 warnings',

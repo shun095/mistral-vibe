@@ -22,16 +22,16 @@ from vibe.core.types import (
 
 
 @pytest.fixture
-def _read_file_tool() -> type[Any]:
-    from vibe.core.tools.builtins.read_file import ReadFile
+def _read_tool() -> type[Any]:
+    from vibe.core.tools.builtins.read import Read
 
-    return ReadFile
+    return Read
 
 
 @pytest.fixture
-def _tool_manager(_read_file_tool: type[Any]) -> MagicMock:
+def _tool_manager(_read_tool: type[Any]) -> MagicMock:
     manager = MagicMock()
-    manager.available_tools = {"read_file": _read_file_tool}
+    manager.available_tools = {"read": _read_tool}
     return manager
 
 
@@ -45,40 +45,38 @@ class TestReconstructToolCallEvent:
         )
 
     def test_returns_none_on_invalid_json(self, _tool_manager: MagicMock) -> None:
-        event = reconstruct_tool_call_event(
-            "read_file", "not-json", "call-1", _tool_manager
-        )
+        event = reconstruct_tool_call_event("read", "not-json", "call-1", _tool_manager)
         assert event is not None
         assert event.args is None
 
     def test_reconstructs_with_args(self, _tool_manager: MagicMock) -> None:
-        from vibe.core.tools.builtins.read_file import ReadFileArgs
+        from vibe.core.tools.builtins.read import ReadArgs
 
         event = reconstruct_tool_call_event(
-            "read_file",
-            '{"path": "/src/file.py", "offset": 0, "limit": 10}',
+            "read",
+            '{"file_path": "/src/file.py", "offset": 1, "limit": 10}',
             "call-1",
             _tool_manager,
         )
         assert event is not None
         assert isinstance(event, ToolCallEvent)
-        assert event.tool_name == "read_file"
+        assert event.tool_name == "read"
         assert event.tool_call_id == "call-1"
         assert event.args is not None
-        assert isinstance(event.args, ReadFileArgs)
-        assert event.args.path == "/src/file.py"
-        assert event.args.offset == 0
+        assert isinstance(event.args, ReadArgs)
+        assert event.args.file_path == "/src/file.py"
+        assert event.args.offset == 1
         assert event.args.limit == 10
 
     def test_reconstructs_with_null_arguments(self, _tool_manager: MagicMock) -> None:
-        event = reconstruct_tool_call_event("read_file", None, "call-1", _tool_manager)
+        event = reconstruct_tool_call_event("read", None, "call-1", _tool_manager)
         assert event is not None
         assert event.args is None
 
     def test_reconstructs_with_empty_string_arguments(
         self, _tool_manager: MagicMock
     ) -> None:
-        event = reconstruct_tool_call_event("read_file", "", "call-1", _tool_manager)
+        event = reconstruct_tool_call_event("read", "", "call-1", _tool_manager)
         assert event is not None
         assert event.args is None
 
@@ -86,7 +84,7 @@ class TestReconstructToolCallEvent:
         self, _tool_manager: MagicMock
     ) -> None:
         event = reconstruct_tool_call_event(
-            "read_file", '{"path": 123, "offset": "bad"}', "call-1", _tool_manager
+            "read", '{"file_path": 123, "offset": "bad"}', "call-1", _tool_manager
         )
         assert event is not None
         assert event.args is not None
@@ -95,22 +93,19 @@ class TestReconstructToolCallEvent:
 class TestReconstructToolResultEvent:
     def test_parses_json_result(self, _tool_manager: MagicMock) -> None:
         event = reconstruct_tool_result_event(
-            "read_file",
-            '{"path": "/src/file.py", "content": "hello", "offset": 0, "lines_read": 1, "was_truncated": false}',
+            "read",
+            '{"file_path": "/src/file.py", "content": "hello", "offset": 1, "lines_read": 1, "was_truncated": false}',
             "call-1",
             _tool_manager,
         )
         assert isinstance(event, ToolResultEvent)
-        assert event.tool_name == "read_file"
+        assert event.tool_name == "read"
         assert event.result is not None
         assert event.error is None
 
     def test_parses_error_tag(self, _tool_manager: MagicMock) -> None:
         event = reconstruct_tool_result_event(
-            "read_file",
-            "<tool_error>File not found</tool_error>",
-            "call-1",
-            _tool_manager,
+            "read", "<tool_error>File not found</tool_error>", "call-1", _tool_manager
         )
         assert event.error == "File not found"
         assert event.result is None
@@ -159,8 +154,8 @@ class TestBuildHistoryWidgets:
                     ToolCall(
                         id="call-1",
                         function=FunctionCall(
-                            name="read_file",
-                            arguments='{"path": "/src/file.py", "offset": 0}',
+                            name="read",
+                            arguments='{"file_path": "/src/file.py", "offset": 1}',
                         ),
                     )
                 ],
@@ -178,7 +173,7 @@ class TestBuildHistoryWidgets:
         widget = widgets[0]
         assert isinstance(widget, ToolCallMessage)
         assert widget._event is not None
-        assert widget._event.tool_name == "read_file"
+        assert widget._event.tool_name == "read"
 
     def test_builds_tool_call_without_event_when_tool_missing(
         self, _tool_manager: MagicMock

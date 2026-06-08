@@ -52,7 +52,7 @@ class ParallelToolCallsApp(App):
                     tool_call_index=i,
                     tool_name="read",
                     tool_class=Read,
-                    args=ReadArgs(file_path=f"/src/file_{i}.py", offset=0),
+                    args=ReadArgs(file_path=f"/src/file_{i}.py", offset=1),
                 )
             )
         await self._handler._await_pending_command()

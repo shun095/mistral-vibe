@@ -286,11 +286,11 @@ class TestReadGranularPermissions:
     def test_in_workdir_normal_file_returns_none(self):
         (self.workdir / "test.py").touch()
         tool = self._read()
-        assert tool.resolve_permission(ReadArgs(file_path="test.py", offset=0)) is None
+        assert tool.resolve_permission(ReadArgs(file_path="test.py", offset=1)) is None
 
     def test_outside_workdir_returns_permission_context(self):
         tool = self._read()
-        result = tool.resolve_permission(ReadArgs(file_path="/tmp/file.txt", offset=0))
+        result = tool.resolve_permission(ReadArgs(file_path="/tmp/file.txt", offset=1))
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.ASK
         outside = [
@@ -303,7 +303,7 @@ class TestReadGranularPermissions:
     def test_sensitive_env_file_returns_permission_context(self):
         (self.workdir / ".env").touch()
         tool = self._read()
-        result = tool.resolve_permission(ReadArgs(file_path=".env", offset=0))
+        result = tool.resolve_permission(ReadArgs(file_path=".env", offset=1))
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.ASK
         sensitive = [
@@ -317,7 +317,7 @@ class TestReadGranularPermissions:
     def test_sensitive_env_local_file(self):
         (self.workdir / ".env.local").touch()
         tool = self._read()
-        result = tool.resolve_permission(ReadArgs(file_path=".env.local", offset=0))
+        result = tool.resolve_permission(ReadArgs(file_path=".env.local", offset=1))
         assert isinstance(result, PermissionContext)
         sensitive = [
             rp
@@ -328,7 +328,7 @@ class TestReadGranularPermissions:
 
     def test_sensitive_outside_both_permissions(self):
         tool = self._read()
-        result = tool.resolve_permission(ReadArgs(file_path="/tmp/.env", offset=0))
+        result = tool.resolve_permission(ReadArgs(file_path="/tmp/.env", offset=1))
         assert isinstance(result, PermissionContext)
         scopes = {rp.scope for rp in result.required_permissions}
         assert PermissionScope.FILE_PATTERN in scopes
@@ -336,14 +336,14 @@ class TestReadGranularPermissions:
 
     def test_denylisted_returns_never(self):
         tool = self._read(denylist=["*/secret*"])
-        result = tool.resolve_permission(ReadArgs(file_path="secret.key", offset=0))
+        result = tool.resolve_permission(ReadArgs(file_path="secret.key", offset=1))
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.NEVER
 
     def test_allowlisted_returns_always(self):
         tool = self._read(allowlist=["*/README*"])
         result = tool.resolve_permission(
-            ReadArgs(file_path=str(self.workdir / "README.md"), offset=0)
+            ReadArgs(file_path=str(self.workdir / "README.md"), offset=1)
         )
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.ALWAYS
@@ -351,7 +351,9 @@ class TestReadGranularPermissions:
     def test_custom_sensitive_patterns(self):
         (self.workdir / "credentials.json").touch()
         tool = self._read(sensitive_patterns=["*/credentials*"])
-        result = tool.resolve_permission(ReadArgs(file_path="credentials.json", offset=0))
+        result = tool.resolve_permission(
+            ReadArgs(file_path="credentials.json", offset=1)
+        )
         assert isinstance(result, PermissionContext)
 
 

@@ -91,7 +91,7 @@ class TestAcpReadExecution:
     ) -> None:
         test_file = tmp_path / "test_file.txt"
         test_file.touch()
-        args = ReadArgs(file_path=str(test_file), offset=0)
+        args = ReadArgs(file_path=str(test_file), offset=1)
         result = await collect_result(acp_read_tool.run(args))
 
         assert isinstance(result, ReadResult)
@@ -102,7 +102,7 @@ class TestAcpReadExecution:
         params = mock_client._last_read_params
         assert params["session_id"] == "test_session_123"
         assert params["path"] == str(test_file)
-        assert params["line"] is None
+        assert params["line"] == 1
         assert params["limit"] == DEFAULT_LINE_LIMIT + 1
 
     @pytest.mark.asyncio
@@ -142,7 +142,7 @@ class TestAcpReadExecution:
             ),
         )
 
-        args = ReadArgs(file_path=str(test_file), offset=0, limit=2)
+        args = ReadArgs(file_path=str(test_file), offset=1, limit=2)
         result = await collect_result(tool.run(args))
 
         assert result.num_lines == 2
@@ -189,7 +189,7 @@ class TestAcpReadExecution:
             ),
         )
 
-        args = ReadArgs(file_path=str(test_file), offset=0)
+        args = ReadArgs(file_path=str(test_file), offset=1)
         with pytest.raises(ToolError) as exc_info:
             await collect_result(tool.run(args))
 
@@ -207,7 +207,7 @@ class TestAcpReadExecution:
             state=AcpReadState.model_construct(client=None, session_id="test_session"),
         )
 
-        args = ReadArgs(file_path=str(test_file), offset=0)
+        args = ReadArgs(file_path=str(test_file), offset=1)
         with pytest.raises(ToolError) as exc_info:
             await collect_result(tool.run(args))
 
@@ -229,7 +229,7 @@ class TestAcpReadExecution:
             state=AcpReadState.model_construct(client=mock_client, session_id=None),
         )
 
-        args = ReadArgs(file_path=str(test_file), offset=0)
+        args = ReadArgs(file_path=str(test_file), offset=1)
         with pytest.raises(ToolError) as exc_info:
             await collect_result(tool.run(args))
 

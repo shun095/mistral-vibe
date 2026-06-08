@@ -34,7 +34,8 @@ from tests import TESTS_ROOT
 from tests.conftest import get_base_config
 from tests.mock.utils import get_mocking_env, mock_llm_chunk
 from vibe.acp.utils import ToolOption
-from vibe.core.types import FunctionCall, ToolCall
+from vibe.core.llm.backend.factory import BACKEND_FACTORY
+from vibe.core.types import Backend, FunctionCall, ToolCall
 
 RESPONSE_TIMEOUT = 2.0
 MOCK_ENTRYPOINT_PATH = "tests/mock/mock_entrypoint.py"
@@ -394,6 +395,9 @@ async def initialize_session(
     return session_response_obj.result.session_id
 
 
+@pytest.mark.skipif(
+    Backend.MISTRAL not in BACKEND_FACTORY, reason="mistralai not installed"
+)
 class TestSessionManagement:
     @pytest.mark.asyncio
     async def test_multiple_sessions_unique_ids(self, vibe_home_dir: Path) -> None:
@@ -433,6 +437,9 @@ class TestSessionManagement:
             assert len(set(session_ids)) == 3
 
 
+@pytest.mark.skipif(
+    Backend.MISTRAL not in BACKEND_FACTORY, reason="mistralai not installed"
+)
 class TestSessionUpdates:
     @pytest.mark.asyncio
     async def test_agent_loop_message_chunk_structure(
@@ -587,6 +594,9 @@ async def start_session_with_request_permission(
     return last_response
 
 
+@pytest.mark.skipif(
+    Backend.MISTRAL not in BACKEND_FACTORY, reason="mistralai not installed"
+)
 class TestToolCallStructure:
     @pytest.mark.asyncio
     async def test_tool_call_request_permission_structure(

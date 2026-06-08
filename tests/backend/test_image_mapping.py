@@ -4,17 +4,22 @@ import base64
 from collections.abc import Sequence
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 from vibe.core.llm.backend.anthropic import AnthropicAdapter
 from vibe.core.llm.backend.base import APIAdapter
+from vibe.core.llm.backend.factory import BACKEND_FACTORY
 from vibe.core.llm.backend.generic import OpenAIAdapter
-from vibe.core.llm.backend.mistral import MistralMapper
 from vibe.core.llm.backend.openai_responses import OpenAIResponsesAdapter
 from vibe.core.llm.backend.reasoning_adapter import ReasoningAdapter
-from vibe.core.types import ImageAttachment, LLMMessage, Role
+from vibe.core.types import Backend, ImageAttachment, LLMMessage, Role
+
+if TYPE_CHECKING:
+    pass
+
+_mistralai_available = Backend.MISTRAL in BACKEND_FACTORY
 
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
 EXPECTED_B64 = base64.b64encode(PNG_BYTES).decode("ascii")
@@ -60,9 +65,12 @@ def _adapter_payload(
     return json.loads(prepared.body.decode("utf-8"))
 
 
+@pytest.mark.skipif(not _mistralai_available, reason="mistralai not installed")
 def test_mistral_mapper_emits_image_url_chunk(
     image_attachment: ImageAttachment,
 ) -> None:
+    from vibe.core.llm.backend.mistral import MistralMapper
+
     mapper = MistralMapper()
     prepared = mapper.prepare_message(_user_message(image_attachment))
 
@@ -131,11 +139,8 @@ def test_reasoning_adapter_emits_image_url_part(
     }
 
 
-def test_text_only_user_message_keeps_string_content() -> None:
+def test_text_only_user_message_keeps_string_content_anthropic() -> None:
     text_msg = LLMMessage(role=Role.user, content="hi")
-
-    mistral_prepared = MistralMapper().prepare_message(text_msg)
-    assert mistral_prepared.model_dump()["content"] == "hi"
 
     anthropic_payload = _adapter_payload(
         AnthropicAdapter(), [text_msg], model="claude-3-5-sonnet"
@@ -144,3 +149,12 @@ def test_text_only_user_message_keeps_string_content() -> None:
     text_block = anthropic_payload["messages"][0]["content"][0]
     assert text_block["type"] == "text"
     assert text_block["text"] == "hi"
+
+
+@pytest.mark.skipif(not _mistralai_available, reason="mistralai not installed")
+def test_text_only_user_message_keeps_string_content_mistral() -> None:
+    from vibe.core.llm.backend.mistral import MistralMapper
+
+    text_msg = LLMMessage(role=Role.user, content="hi")
+    mistral_prepared = MistralMapper().prepare_message(text_msg)
+    assert mistral_prepared.model_dump()["content"] == "hi"

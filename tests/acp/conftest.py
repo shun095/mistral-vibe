@@ -13,6 +13,7 @@ from tests.stubs.fake_client import FakeClient
 from vibe.acp.acp_agent_loop import VibeAcpAgentLoop
 from vibe.core.agent_loop import AgentLoop
 from vibe.core.config import ModelConfig, SessionLoggingConfig
+from vibe.core.session.session_id import extract_suffix, generate_session_id
 from vibe.core.types import LLMChunk, LLMMessage, LLMUsage, Role
 
 
@@ -40,8 +41,37 @@ def _create_acp_agent() -> VibeAcpAgentLoop:
 @pytest.fixture
 def acp_agent_loop(backend: FakeBackend) -> VibeAcpAgentLoop:
     class PatchedAgent(AgentLoop):
+        _shared_backend = backend
+
         def __init__(self, *args, **kwargs) -> None:
-            super().__init__(*args, **kwargs, backend=backend)
+            super().__init__(*args, **kwargs, backend=self._shared_backend)
+
+        async def fork(self, message_id: str | None = None) -> AgentLoop:
+            messages = self._messages_for_fork(message_id)
+            forked = PatchedAgent(
+                config=self.base_config.model_copy(deep=True),
+                agent_name=self.agent_profile.name,
+                enable_streaming=self.enable_streaming,
+                entrypoint_metadata=self.entrypoint_metadata,
+                defer_heavy_init=True,
+                hook_config_result=self._hook_config_result,
+            )
+            forked.session_id = generate_session_id(
+                suffix=extract_suffix(self.session_id)
+            )
+            forked.parent_session_id = self.session_id
+            forked.session_logger.reset_session(
+                forked.session_id, parent_session_id=self.session_id
+            )
+            forked.messages.extend(messages)
+            await forked.session_logger.save_interaction(
+                forked.messages,
+                forked.stats,
+                forked.base_config,
+                forked.tool_manager,
+                forked.agent_profile,
+            )
+            return forked
 
     patch("vibe.acp.acp_agent_loop.AgentLoop", side_effect=PatchedAgent).start()
     return _create_acp_agent()

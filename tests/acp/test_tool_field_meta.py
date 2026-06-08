@@ -115,13 +115,13 @@ class TestReadFieldMeta:
         assert update.field_meta == {"tool_name": "read"}
 
     def test_call_defaults_offset_zero_limit_none(self) -> None:
-        event = _call_event("read", Read, ReadArgs(file_path="/tmp/f.txt", offset=0))
+        event = _call_event("read", Read, ReadArgs(file_path="/tmp/f.txt", offset=1))
         update = tool_call_session_update(event)
 
         assert isinstance(update, ToolCallStart)
         assert update.locations is not None
         loc = update.locations[0]
-        assert loc.field_meta == {"type": "file_range", "offset": None, "limit": 2000}
+        assert loc.field_meta == {"type": "file_range", "offset": 1, "limit": 2000}
 
     def test_result_location_has_start_line_and_num_lines(self) -> None:
         result = ReadResult(

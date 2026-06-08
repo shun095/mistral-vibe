@@ -8,33 +8,36 @@ import httpx
 import pytest
 import respx
 
-if TYPE_CHECKING:  # pragma: no cover
-    from mistralai.client.models import (  # pyright: ignore[reportMissingImports]
-        AssistantMessage,
-        ContentChunk,
-        TextChunk,
-        ThinkChunk,
+from vibe.core.llm._mistralai_stub import (
+    AssistantMessage,
+    ContentChunk,
+    TextChunk,
+    ThinkChunk,
+)
+from vibe.core.llm.backend.factory import BACKEND_FACTORY
+from vibe.core.types import Backend
+
+if TYPE_CHECKING:
+    from vibe.core.llm.backend.mistral import (
+        MistralBackend,
+        MistralMapper,
+        ParsedContent,
     )
 
-_mistralai_available = False
 try:
-    from mistralai.client.models import (  # pyright: ignore[reportMissingImports]
-        AssistantMessage,
-        ContentChunk,
-        TextChunk,
-        ThinkChunk,
+    from vibe.core.llm.backend.mistral import (
+        MistralBackend,
+        MistralMapper,
+        ParsedContent,
     )
-
-    _mistralai_available = True
 except ImportError:
-    pass
+    pass  # tests are skipped when mistralai is unavailable
 
 from tests.conftest import build_test_agent_loop, build_test_vibe_config
 from tests.mock.utils import mock_llm_chunk
 from tests.stubs.fake_backend import FakeBackend
 from vibe.core.config import ModelConfig, ProviderConfig, VibeConfig
 from vibe.core.llm.backend.generic import GenericBackend, OpenAIAdapter
-from vibe.core.llm.backend.mistral import MistralBackend, MistralMapper, ParsedContent
 from vibe.core.llm.format import APIToolFormatHandler
 from vibe.core.types import (
     AssistantEvent,
@@ -57,7 +60,9 @@ def make_config() -> VibeConfig:
     )
 
 
-@pytest.mark.skipif(not _mistralai_available, reason="mistralai not installed")
+@pytest.mark.skipif(
+    Backend.MISTRAL not in BACKEND_FACTORY, reason="mistralai not installed"
+)
 class TestMistralMapperParseContent:
     def test_parse_content_string_returns_content_only(self):
         mapper = MistralMapper()
@@ -135,7 +140,9 @@ class TestMistralMapperParseContent:
         assert result == ParsedContent(content="", reasoning_content=None)
 
 
-@pytest.mark.skipif(not _mistralai_available, reason="mistralai not installed")
+@pytest.mark.skipif(
+    Backend.MISTRAL not in BACKEND_FACTORY, reason="mistralai not installed"
+)
 class TestMistralMapperPrepareMessage:
     def test_prepare_assistant_message_without_reasoning(self):
         mapper = MistralMapper()
@@ -781,6 +788,9 @@ class TestReasoningFieldNameConversion:
 
 
 class TestMistralReasoningFieldNameValidation:
+    @pytest.mark.skipif(
+        Backend.MISTRAL not in BACKEND_FACTORY, reason="mistralai not installed"
+    )
     def test_mistral_backend_rejects_custom_reasoning_field_name(self):
         provider = ProviderConfig(
             name="mistral",
@@ -795,6 +805,9 @@ class TestMistralReasoningFieldNameValidation:
         assert "does not support custom reasoning_field_name" in str(exc_info.value)
         assert "reasoning" in str(exc_info.value)
 
+    @pytest.mark.skipif(
+        Backend.MISTRAL not in BACKEND_FACTORY, reason="mistralai not installed"
+    )
     def test_mistral_backend_accepts_default_reasoning_field_name(self):
         provider = ProviderConfig(
             name="mistral",

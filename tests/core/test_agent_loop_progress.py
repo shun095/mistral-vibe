@@ -8,6 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from tests.conftest import build_test_vibe_config
+from tests.stubs.fake_backend import FakeBackend
 from vibe.core.agent_loop import AgentLoop
 from vibe.core.types import (
     LLMChunk,
@@ -27,7 +28,7 @@ class TestAgentLoopPromptProgress:
     def agent_loop(self) -> AgentLoop:
         """Create AgentLoop with test config."""
         config = build_test_vibe_config(system_prompt_id="tests")
-        return AgentLoop(config=config)
+        return AgentLoop(config=config, backend=FakeBackend())
 
     async def test_stream_assistant_events_yields_prompt_progress(
         self, agent_loop: AgentLoop

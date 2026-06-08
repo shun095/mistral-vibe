@@ -19,6 +19,6 @@ __all__ = [
     "CONNECTORS_ENV_VAR",
     "ConnectorAuthAction",
     "ConnectorRegistry",
-    "connectors_enabled",
     "compute_connector_counts",
+    "connectors_enabled",
 ]

@@ -10,12 +10,12 @@ test.describe("Tool Error Persistence", () => {
     page,
     mockBackend,
   }) => {
-    // Register a mock tool call that will fail (read_file with non-existent file)
+    // Register a mock tool call that will fail (read with non-existent file)
     await mockBackend.registerToolCall(
-      "read_file",
+      "read",
       JSON.stringify({
-        path: "nonexistent_file_abc123_unique.txt",
-        offset: 0,
+        file_path: "nonexistent_file_abc123_unique.txt",
+        offset: 1,
         limit: 100,
       })
     );

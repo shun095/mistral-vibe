@@ -21,11 +21,6 @@ from vibe.core.tools.builtins.edit_file import EditFileArgs, EditFileResult
 from vibe.core.tools.builtins.grep import GrepArgs, GrepResult
 from vibe.core.tools.builtins.lsp import LSPToolResult
 from vibe.core.tools.builtins.read import ReadArgs, ReadResult
-from vibe.core.tools.builtins.search_replace import (
-    SEARCH_REPLACE_BLOCK_RE,
-    SearchReplaceArgs,
-    SearchReplaceResult,
-)
 from vibe.core.tools.builtins.todo import TodoArgs, TodoResult
 from vibe.core.tools.builtins.write_file import WriteFileArgs, WriteFileResult
 
@@ -46,10 +41,14 @@ def _truncate_lines(content: str, max_lines: int) -> tuple[str, str | None]:
     return "\n".join(lines[:max_lines]), f"… ({remaining} more lines)"
 
 
-def parse_search_replace_to_diff(content: str) -> list[str]:
+def _parse_edit_file_diff(content: str) -> list[str]:
     """Parse SEARCH/REPLACE blocks and generate unified diff lines."""
+    _block_re = re.compile(
+        r"<{5,} SEARCH\r?\n(.*?)\r?\n?={5,}\r?\n(.*?)\r?\n?>{5,} REPLACE",
+        flags=re.DOTALL,
+    )
     all_diff_lines: list[str] = []
-    matches = SEARCH_REPLACE_BLOCK_RE.findall(content)
+    matches = _block_re.findall(content)
     if not matches:
         # If no SEARCH/REPLACE blocks found, treat as unified diff
         # Check if content looks like a unified diff
@@ -267,7 +266,7 @@ class EditFileResultWidget(ToolResultWidget[EditFileResult]):
 
         if self.result.content:
             # Parse and render the unified diff
-            for line in parse_search_replace_to_diff(self.result.content):
+            for line in _parse_edit_file_diff(self.result.content):
                 yield render_diff_line(line)
         yield from self._footer()
 
@@ -303,10 +302,12 @@ class EditResultWidget(ToolResultWidget[EditResult]):
             )
             yield from self._lsp_diagnostics_widgets()
 
-        if self.result.content:
+        if self.result.old_string:
             old_lines = self.result.old_string.split("\n")
             new_lines = self.result.new_string.split("\n")
-            diff = list(difflib.unified_diff(old_lines, new_lines, lineterm="", n=2))[2:]
+            diff = list(difflib.unified_diff(old_lines, new_lines, lineterm="", n=2))[
+                2:
+            ]
             for line in diff:
                 yield render_diff_line(line)
         yield from self._footer()
@@ -384,7 +385,9 @@ class ReadResultWidget(ToolResultWidget[ReadResult]):
 
         if self.result and self.result.content:
             yield NoMarkupStatic("")
-            yield NoMarkupStatic(_strip_line_numbers(self.result.content), classes="tool-result-detail")
+            yield NoMarkupStatic(
+                _strip_line_numbers(self.result.content), classes="tool-result-detail"
+            )
         yield from self._footer()
 
 

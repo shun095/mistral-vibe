@@ -1664,11 +1664,11 @@ class VibeConfig(BaseSettings):
                 model["supports_images"] = True
                 changed = True
 
-        if data.get("active_model") == "devstral-2":
-            data["active_model"] = "mistral-medium-3.5"
+        if doc.get("active_model") == "devstral-2":
+            doc["active_model"] = "mistral-medium-3.5"
             changed = True
 
-        if cls._migrate_renamed_tools(data):
+        if cls._migrate_renamed_tools(doc):
             changed = True
 
         if changed:

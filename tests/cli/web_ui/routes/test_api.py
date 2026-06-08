@@ -161,7 +161,7 @@ def test_messages_to_events_parses_text_format_tool_results() -> None:
         LLMMessage(
             role=Role.tool,
             tool_call_id="call_789",
-            content="path: /test/file.py\nbytes_written: 24\nfile_existed: false\ncontent: test",
+            content="path: /test/file.py\nbytes_written: 24\ncontent: test",
         ),
     ]
     mock_tm = MockToolManager({
@@ -178,7 +178,6 @@ def test_messages_to_events_parses_text_format_tool_results() -> None:
     # Text format values are coerced to proper types via WriteFileResult.model_validate
     assert event.result.path == "/test/file.py"  # type: ignore
     assert event.result.bytes_written == 24  # type: ignore
-    assert event.result.file_existed is False  # type: ignore
 
 
 def test_messages_to_events_parses_json_format_tool_results() -> None:
@@ -200,7 +199,7 @@ def test_messages_to_events_parses_json_format_tool_results() -> None:
         LLMMessage(
             role=Role.tool,
             tool_call_id="call_json_123",
-            content='{"path": "/test/file.py", "bytes_written": 24, "file_existed": false, "content": "test"}',
+            content='{"path": "/test/file.py", "bytes_written": 24, "content": "test"}',
         ),
     ]
     mock_tm = MockToolManager({
@@ -217,7 +216,6 @@ def test_messages_to_events_parses_json_format_tool_results() -> None:
     # JSON format preserves proper types
     assert event.result.path == "/test/file.py"  # type: ignore
     assert event.result.bytes_written == 24  # type: ignore
-    assert event.result.file_existed is False  # type: ignore
 
 
 def test_messages_to_events_full_conversation() -> None:

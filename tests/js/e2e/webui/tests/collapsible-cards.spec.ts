@@ -18,10 +18,10 @@ test.describe("Collapsible Cards Toggle", () => {
   }) => {
     // Register a tool call that creates a collapsible card
     await mockBackend.registerToolCall(
-      "read_file",
+      "read",
       JSON.stringify({
-        path: "test.txt",
-        offset: 0,
+        file_file_path: "test.txt",
+        offset: 1,
         limit: 100,
       })
     );
@@ -48,10 +48,10 @@ test.describe("Collapsible Cards Toggle", () => {
   }) => {
     // Register a tool call
     await mockBackend.registerToolCall(
-      "read_file",
+      "read",
       JSON.stringify({
-        path: "test.txt",
-        offset: 0,
+        file_path: "test.txt",
+        offset: 1,
         limit: 100,
       })
     );
@@ -79,10 +79,10 @@ test.describe("Collapsible Cards Toggle", () => {
   }) => {
     // Register a tool call
     await mockBackend.registerToolCall(
-      "read_file",
+      "read",
       JSON.stringify({
-        path: "test.txt",
-        offset: 0,
+        file_path: "test.txt",
+        offset: 1,
         limit: 100,
       })
     );
@@ -117,10 +117,10 @@ test.describe("Collapsible Cards Toggle", () => {
   }) => {
     // Register a tool call for the first card
     await mockBackend.registerToolCall(
-      "read_file",
+      "read",
       JSON.stringify({
-        path: "test1.txt",
-        offset: 0,
+        file_path: "test1.txt",
+        offset: 1,
         limit: 100,
       })
     );
@@ -137,10 +137,10 @@ test.describe("Collapsible Cards Toggle", () => {
 
     // Register a second tool call
     await mockBackend.registerToolCall(
-      "read_file",
+      "read",
       JSON.stringify({
-        path: "test2.txt",
-        offset: 0,
+        file_path: "test2.txt",
+        offset: 1,
         limit: 100,
       })
     );
@@ -161,8 +161,8 @@ test.describe("Collapsible Cards Toggle", () => {
   }) => {
     // Register first tool call
     await mockBackend.registerToolCall(
-      "read_file",
-      JSON.stringify({ path: "test1.txt", offset: 0, limit: 100 })
+      "read",
+      JSON.stringify({ file_path: "test1.txt", offset: 1, limit: 100 })
     );
     await sendMessage(page, "Read first file");
     const firstCard = page.locator(".message.tool-call").last();
@@ -171,8 +171,8 @@ test.describe("Collapsible Cards Toggle", () => {
 
     // Register second tool call
     await mockBackend.registerToolCall(
-      "read_file",
-      JSON.stringify({ path: "test2.txt", offset: 0, limit: 100 })
+      "read",
+      JSON.stringify({ file_path: "test2.txt", offset: 1, limit: 100 })
     );
     await sendMessage(page, "Read second file");
     const secondCard = page.locator(".message.tool-call").last();
@@ -181,8 +181,8 @@ test.describe("Collapsible Cards Toggle", () => {
 
     // Wait for third tool call
     await mockBackend.registerToolCall(
-      "read_file",
-      JSON.stringify({ path: "test3.txt", offset: 0, limit: 100 })
+      "read",
+      JSON.stringify({ file_path: "test3.txt", offset: 1, limit: 100 })
     );
     await sendMessage(page, "Read third file");
     await expect(page.locator(".message.tool-call").last()).toBeVisible({ timeout: 15000 });

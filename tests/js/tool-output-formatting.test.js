@@ -75,14 +75,9 @@ describe('Tool Output Formatting', () => {
             formatWriteFileResult: function(card, result) {
                 const path = result.path || 'unknown';
                 const bytesWritten = result.bytes_written || 0;
-                const fileExisted = result.file_existed;
 
-                const status = fileExisted ? 'Overwritten' : 'Created';
-                const statusIcon = fileExisted ? 'edit_note' : 'note_add';
-                const statusColor = fileExisted ? 'var(--yellow)' : 'var(--green)';
-
-                this.createCardHeader(card, status,
-                    `<span class="material-symbols-rounded" style="color: ${statusColor}">${statusIcon}</span>`,
+                this.createCardHeader(card, 'Created',
+                    '<span class="material-symbols-rounded">note_add</span>',
                     `${bytesWritten} bytes written`);
 
                 const contentDiv = card.querySelector('.card-content');
@@ -186,7 +181,6 @@ describe('Tool Output Formatting', () => {
             const result = {
                 path: './tmp/test_write.txt',
                 bytes_written: 69,
-                file_existed: false,
                 content: 'Test content\nLine 2'
             };
 
@@ -200,20 +194,18 @@ describe('Tool Output Formatting', () => {
             expect(summary.textContent).toBe('69 bytes written');
         });
 
-        test('formats file overwrite correctly', () => {
+        test('formats file with content correctly', () => {
             const card = document.createElement('div');
             const result = {
                 path: './src/main.py',
                 bytes_written: 1234,
-                file_existed: true,
                 content: 'Updated content'
             };
 
             app.formatWriteFileResult(card, result);
 
             const header = card.querySelector('.card-header');
-            expect(header.textContent).toContain('Overwritten');
-            expect(header.textContent).toContain('edit_note');
+            expect(header.textContent).toContain('Created');
             const summary = card.querySelector('.card-content > pre');
             expect(summary.textContent).toBe('1234 bytes written');
         });
@@ -221,8 +213,7 @@ describe('Tool Output Formatting', () => {
         test('handles missing path gracefully', () => {
             const card = document.createElement('div');
             const result = {
-                bytes_written: 100,
-                file_existed: false
+                bytes_written: 100
             };
 
             app.formatWriteFileResult(card, result);
@@ -236,8 +227,7 @@ describe('Tool Output Formatting', () => {
         test('handles missing bytes_written gracefully', () => {
             const card = document.createElement('div');
             const result = {
-                path: './test.txt',
-                file_existed: false
+                path: './test.txt'
             };
 
             app.formatWriteFileResult(card, result);
@@ -252,8 +242,7 @@ describe('Tool Output Formatting', () => {
             const card = document.createElement('div');
             const result = {
                 path: './test.txt',
-                bytes_written: 50,
-                file_existed: false
+                bytes_written: 50
             };
 
             app.formatWriteFileResult(card, result);
@@ -267,7 +256,6 @@ describe('Tool Output Formatting', () => {
             const result = {
                 path: '/path/to/project/tmp/test.txt',
                 bytes_written: 69,
-                file_existed: false,
                 content: 'Test'
             };
 
@@ -282,7 +270,6 @@ describe('Tool Output Formatting', () => {
             const result = {
                 path: './test.py',
                 bytes_written: 100,
-                file_existed: false,
                 content: 'print("hello")'
             };
 

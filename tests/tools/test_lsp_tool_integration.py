@@ -9,11 +9,7 @@ import pytest
 
 from vibe.core.lsp import LSPClientManager, LSPDiagnosticFormatter
 from vibe.core.tools.base import BaseToolState
-from vibe.core.tools.builtins.search_replace import (
-    SearchReplace,
-    SearchReplaceArgs,
-    SearchReplaceConfig,
-)
+from vibe.core.tools.builtins.edit_file import EditFile, EditFileArgs, EditFileConfig
 from vibe.core.tools.builtins.write_file import (
     WriteFile,
     WriteFileArgs,
@@ -25,66 +21,47 @@ from vibe.core.tools.builtins.write_file import (
 @pytest.fixture(autouse=True)
 def clear_lsp_state():
     """Clear LSP client manager state before each test to avoid sharing servers."""
-    # Clear class-level state
-    LSPClientManager._clients.clear()
-    LSPClientManager._handles.clear()
-    LSPClientManager._config.clear()
+    LSPClientManager._clients.clear()  # pyright: ignore[reportPrivateUsage]
+    LSPClientManager._handles.clear()  # pyright: ignore[reportPrivateUsage]
+    LSPClientManager._config.clear()  # pyright: ignore[reportPrivateUsage]
     yield
 
 
 @pytest.mark.asyncio
-async def test_write_file_calls_lsp_diagnostics():
+async def test_write_file_calls_lsp_diagnostics(tmp_path: Path) -> None:
     """Test that WriteFile automatically calls LSP diagnostics after writing."""
-    from pathlib import Path
-    import tempfile
+    test_file = tmp_path / "test.py"
 
-    # Create test file in project directory
-    with tempfile.TemporaryDirectory(dir=str(Path.cwd())) as temp_dir:
-        test_file = Path(temp_dir) / "test.py"
-        test_file.write_text("def hello():\n    return 'world'\n")
+    config = WriteFileConfig()
+    state = BaseToolState()
+    tool = WriteFile(config_getter=lambda: config, state=state)
 
-        # Create WriteFile tool
-        config = WriteFileConfig()
-        state = BaseToolState()
-        tool = WriteFile(config_getter=lambda: config, state=state)
+    mock_get_diagnostics = AsyncMock(return_value=[])
 
-        # Mock get_diagnostics_from_all_servers to return empty list
-        mock_get_diagnostics = AsyncMock(return_value=[])
-
-        with patch.object(
-            LSPClientManager,
-            "get_diagnostics_from_all_servers",
-            new=mock_get_diagnostics,
+    with patch.object(
+        LSPClientManager, "get_diagnostics_from_all_servers", new=mock_get_diagnostics
+    ):
+        result = None
+        async for item in tool.run(
+            WriteFileArgs(
+                path=str(test_file), content="def hello():\n    return 'world'\n"
+            ),
+            None,  # InvokeContext
         ):
-            # Run WriteFile
-            result = None
-            async for item in tool.run(
-                WriteFileArgs(
-                    path=str(test_file),
-                    content="def hello():\n    return 'world'\n",
-                    overwrite=True,
-                )
-            ):
-                result = item
+            result = item
 
-            # Verify LSP was called
-            assert mock_get_diagnostics.called, (
-                "get_diagnostics_from_all_servers should have been called"
-            )
-            mock_get_diagnostics.assert_called_once_with(test_file)
-
-            # Verify result has lsp_diagnostics field
-            assert hasattr(result, "lsp_diagnostics")
+        assert mock_get_diagnostics.called
+        mock_get_diagnostics.assert_called_once_with(test_file)
+        assert hasattr(result, "lsp_diagnostics")
 
 
 @pytest.mark.asyncio
-async def test_write_file_formats_lsp_diagnostics():
+async def test_write_file_formats_lsp_diagnostics() -> None:
     """Test that WriteFile formats LSP diagnostics correctly."""
     config = WriteFileConfig()
     state = BaseToolState()
     WriteFile(config_getter=lambda: config, state=state)
 
-    # Test diagnostics
     diagnostics = [
         {
             "severity": 1,
@@ -106,13 +83,11 @@ async def test_write_file_formats_lsp_diagnostics():
 
     formatted = LSPDiagnosticFormatter.format_diagnostics_for_llm(diagnostics)
 
-    # Verify complete JSON structure for LLM backends (single-line)
     import json
 
     expected_json = '{"source":"LSP","max_displayed":10,"original_count":2,"diagnostics":[{"severity":"error","location":"line 3, columns 12-13","message":"Name \'x\' is not defined"},{"severity":"warning","location":"line 6, columns 8-9","message":"Unused variable \'y\'"}]}'
     assert formatted == expected_json
 
-    # Verify it's valid JSON
     data = json.loads(formatted)
     assert data["source"] == "LSP"
     assert data["max_displayed"] == 10
@@ -121,51 +96,42 @@ async def test_write_file_formats_lsp_diagnostics():
 
 
 @pytest.mark.asyncio
-async def test_search_replace_calls_lsp_diagnostics(tmp_path: Path):
-    """Test that SearchReplace automatically calls LSP diagnostics after modification."""
-    # Create test file
+async def test_edit_file_calls_lsp_diagnostics(tmp_path: Path) -> None:
+    """Test that EditFile automatically calls LSP diagnostics after modification."""
     test_file = tmp_path / "test.py"
-    test_file.write_text("def hello():\n    return 'world'\n")
+    original = "def hello():\n    return 'world'\n"
+    test_file.write_text(original)
 
-    # Create SearchReplace tool
-    config = SearchReplaceConfig()
+    config = EditFileConfig()
     state = BaseToolState()
-    tool = SearchReplace(config_getter=lambda: config, state=state)
+    tool = EditFile(config_getter=lambda: config, state=state)
 
-    # Mock get_diagnostics_from_all_servers to return empty list
     mock_get_diagnostics = AsyncMock(return_value=[])
 
     with patch.object(
         LSPClientManager, "get_diagnostics_from_all_servers", new=mock_get_diagnostics
     ):
-        # Run SearchReplace
         async for _item in tool.run(
-            SearchReplaceArgs(
+            EditFileArgs(
                 file_path=str(test_file),
-                content="""<<<<<<< SEARCH
-def hello():
-    return 'world'
-=======
-def hello():
-    return 'world!'
->>>>>>> REPLACE""",
-            )
+                old_string="return 'world'",
+                new_string="return 'world!'",
+            ),
+            None,  # InvokeContext
         ):
             pass
 
-        # Verify LSP was called
         assert mock_get_diagnostics.called
         mock_get_diagnostics.assert_called_once_with(test_file)
 
 
 @pytest.mark.asyncio
-async def test_search_replace_formats_lsp_diagnostics():
-    """Test that SearchReplace formats LSP diagnostics correctly."""
-    config = SearchReplaceConfig()
+async def test_edit_file_formats_lsp_diagnostics() -> None:
+    """Test that EditFile formats LSP diagnostics correctly."""
+    config = EditFileConfig()
     state = BaseToolState()
-    SearchReplace(config_getter=lambda: config, state=state)
+    EditFile(config_getter=lambda: config, state=state)
 
-    # Test diagnostics
     diagnostics = [
         {
             "severity": 1,
@@ -179,13 +145,11 @@ async def test_search_replace_formats_lsp_diagnostics():
 
     formatted = LSPDiagnosticFormatter.format_diagnostics_for_llm(diagnostics)
 
-    # Verify complete JSON structure for LLM backends (single-line)
     import json
 
     expected_json = '{"source":"LSP","max_displayed":10,"original_count":1,"diagnostics":[{"severity":"error","location":"line 1, columns 6-11","message":"Syntax error"}]}'
     assert formatted == expected_json
 
-    # Verify it's valid JSON
     data = json.loads(formatted)
     assert data["source"] == "LSP"
     assert data["max_displayed"] == 10
@@ -194,54 +158,40 @@ async def test_search_replace_formats_lsp_diagnostics():
 
 
 @pytest.mark.asyncio
-async def test_lsp_diagnostics_dont_break_file_operations():
+async def test_lsp_diagnostics_dont_break_file_operations(tmp_path: Path) -> None:
     """Test that LSP diagnostic failures don't break file operations."""
-    from pathlib import Path
-    import tempfile
-
-    # Create WriteFile tool
     config = WriteFileConfig()
     state = BaseToolState()
     tool = WriteFile(config_getter=lambda: config, state=state)
 
-    # Create test file in project directory
-    with tempfile.TemporaryDirectory(dir=str(Path.cwd())) as temp_dir:
-        test_file = Path(temp_dir) / "test.py"
-        test_file.write_text("def hello():\n    return 'world'\n")
+    test_file = tmp_path / "test.py"
 
-        # Mock get_diagnostics_from_all_servers to raise an exception
-        mock_get_diagnostics = AsyncMock(side_effect=Exception("LSP server error"))
+    mock_get_diagnostics = AsyncMock(side_effect=Exception("LSP server error"))
 
-        with patch.object(
-            LSPClientManager,
-            "get_diagnostics_from_all_servers",
-            new=mock_get_diagnostics,
+    with patch.object(
+        LSPClientManager, "get_diagnostics_from_all_servers", new=mock_get_diagnostics
+    ):
+        result = None
+        async for item in tool.run(
+            WriteFileArgs(
+                path=str(test_file), content="def hello():\n    return 'world'\n"
+            ),
+            None,  # InvokeContext
         ):
-            # Run WriteFile - should succeed even with LSP error
-            result = None
-            async for item in tool.run(
-                WriteFileArgs(
-                    path=str(test_file),
-                    content="def hello():\n    return 'world'\n",
-                    overwrite=True,
-                )
-            ):
-                result = item
+            result = item
 
-            # Verify the operation succeeded
-            assert result is not None
-            if isinstance(result, WriteFileResult):
-                assert result.path == str(test_file)
+        assert result is not None
+        if isinstance(result, WriteFileResult):
+            assert result.path == str(test_file)
 
 
 @pytest.mark.asyncio
-async def test_lsp_diagnostics_limited_to_20(tmp_path: Path):
-    """Test that LSP diagnostics are limited to 20 to avoid overwhelming the user."""
+async def test_lsp_diagnostics_limited_to_10() -> None:
+    """Test that LSP diagnostics are limited to 10 to avoid overwhelming the user."""
     config = WriteFileConfig()
     state = BaseToolState()
     WriteFile(config_getter=lambda: config, state=state)
 
-    # Create 30 diagnostics
     diagnostics = [
         {
             "severity": 1,
@@ -256,7 +206,6 @@ async def test_lsp_diagnostics_limited_to_20(tmp_path: Path):
 
     formatted = LSPDiagnosticFormatter.format_diagnostics_for_llm(diagnostics)
 
-    # Should only include first 10
     assert "Error 0" in formatted
     assert "Error 9" in formatted
-    assert "Error 10" not in formatted  # Should be cut off
+    assert "Error 10" not in formatted

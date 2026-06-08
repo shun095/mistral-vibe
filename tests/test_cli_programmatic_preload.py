@@ -8,7 +8,10 @@ from tests.mock.utils import mock_llm_chunk
 from tests.stubs.fake_backend import FakeBackend
 from vibe.core import run_programmatic
 from vibe.core.agents.models import BuiltinAgentName
+from vibe.core.llm.backend.factory import BACKEND_FACTORY
 from vibe.core.types import Backend, Content, LLMMessage, OutputFormat, Role
+
+_mistralai_available = Backend.MISTRAL in BACKEND_FACTORY
 
 
 class SpyStreamingFormatter:
@@ -25,6 +28,7 @@ class SpyStreamingFormatter:
         return None
 
 
+@pytest.mark.skipif(not _mistralai_available, reason="mistralai not installed")
 def test_run_programmatic_preload_streaming_is_batched(
     monkeypatch: pytest.MonkeyPatch, telemetry_events: list[dict]
 ) -> None:
@@ -103,6 +107,7 @@ def test_run_programmatic_preload_streaming_is_batched(
         )
 
 
+@pytest.mark.skipif(not _mistralai_available, reason="mistralai not installed")
 def test_run_programmatic_ignores_system_messages_in_previous(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -158,6 +163,7 @@ def test_run_programmatic_ignores_system_messages_in_previous(
         assert spy.emitted[4][1] == "Understood."
 
 
+@pytest.mark.skipif(not _mistralai_available, reason="mistralai not installed")
 def test_run_programmatic_teleport_ignored_when_nuage_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

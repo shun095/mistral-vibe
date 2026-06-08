@@ -11,6 +11,12 @@ from tests.stubs.fake_tts_client import FakeTTSClient
 from vibe.cli.narrator_manager import NarratorManager, NarratorState
 from vibe.cli.turn_summary import TurnSummaryResult
 from vibe.core.tts.tts_client_port import TTSResult
+from vibe.core.types import Backend
+
+try:
+    from vibe.core.llm.backend.factory import BACKEND_FACTORY
+except ImportError:
+    BACKEND_FACTORY = {}  # type: ignore[assignment]
 
 
 def _make_manager(
@@ -41,6 +47,9 @@ def _find_telemetry_calls(mock: MagicMock, event_name: str) -> list[dict[str, ob
 
 
 class TestTelemetryTracking:
+    @pytest.mark.skipif(
+        Backend.MISTRAL not in BACKEND_FACTORY, reason="mistralai not installed"
+    )
     @pytest.mark.asyncio
     async def test_requested_event_on_turn_end(self) -> None:
         mock_telemetry = MagicMock()
@@ -54,6 +63,9 @@ class TestTelemetryTracking:
         assert isinstance(calls[0]["read_aloud_session_id"], str)
         assert len(calls[0]["read_aloud_session_id"]) == 36
 
+    @pytest.mark.skipif(
+        Backend.MISTRAL not in BACKEND_FACTORY, reason="mistralai not installed"
+    )
     def test_no_requested_event_when_narrator_disabled(self) -> None:
         mock_telemetry = MagicMock()
         manager, _ = _make_manager(
@@ -64,6 +76,9 @@ class TestTelemetryTracking:
         calls = _find_telemetry_calls(mock_telemetry, "vibe.read_aloud.requested")
         assert len(calls) == 0
 
+    @pytest.mark.skipif(
+        Backend.MISTRAL not in BACKEND_FACTORY, reason="mistralai not installed"
+    )
     @pytest.mark.asyncio
     async def test_play_started_on_speak(self) -> None:
         mock_telemetry = MagicMock()
@@ -84,6 +99,9 @@ class TestTelemetryTracking:
         assert isinstance(calls[0]["time_to_first_read_s"], float)
         assert calls[0]["time_to_first_read_s"] >= 0.0
 
+    @pytest.mark.skipif(
+        Backend.MISTRAL not in BACKEND_FACTORY, reason="mistralai not installed"
+    )
     @pytest.mark.asyncio
     async def test_ended_completed_on_playback_finished(self) -> None:
         mock_telemetry = MagicMock()
@@ -109,6 +127,9 @@ class TestTelemetryTracking:
         assert isinstance(calls[0]["elapsed_seconds"], float)
         assert calls[0]["elapsed_seconds"] >= 0.0
 
+    @pytest.mark.skipif(
+        Backend.MISTRAL not in BACKEND_FACTORY, reason="mistralai not installed"
+    )
     @pytest.mark.asyncio
     async def test_ended_error_on_tts_failure(self) -> None:
         mock_telemetry = MagicMock()
@@ -140,6 +161,9 @@ class TestTelemetryTracking:
         assert calls[0]["status"] == "error"
         assert calls[0]["error_type"] == "RuntimeError"
 
+    @pytest.mark.skipif(
+        Backend.MISTRAL not in BACKEND_FACTORY, reason="mistralai not installed"
+    )
     @pytest.mark.asyncio
     async def test_ended_canceled_on_cancel(self) -> None:
         mock_telemetry = MagicMock()
@@ -155,6 +179,9 @@ class TestTelemetryTracking:
         assert len(calls) == 1
         assert calls[0]["status"] == "canceled"
 
+    @pytest.mark.skipif(
+        Backend.MISTRAL not in BACKEND_FACTORY, reason="mistralai not installed"
+    )
     @pytest.mark.asyncio
     async def test_cancel_during_speaking_fires_single_ended_event(self) -> None:
         mock_telemetry = MagicMock()
@@ -178,6 +205,9 @@ class TestTelemetryTracking:
         assert len(calls) == 1
         assert calls[0]["status"] == "canceled"
 
+    @pytest.mark.skipif(
+        Backend.MISTRAL not in BACKEND_FACTORY, reason="mistralai not installed"
+    )
     @pytest.mark.asyncio
     async def test_no_error_without_telemetry_client(self) -> None:
         manager, _ = _make_manager()

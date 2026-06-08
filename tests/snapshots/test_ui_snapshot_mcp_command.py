@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import cast
-
 from textual.pilot import Pilot
 
 from tests.snapshots.base_snapshot_test_app import BaseSnapshotTestApp, default_config

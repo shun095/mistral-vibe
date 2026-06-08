@@ -7,11 +7,14 @@ import types
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple, cast
 
 import httpx
+from mistralai.client.utils.retries import (  # pyright: ignore[reportMissingImports]
+    BackoffStrategy,
+    RetryConfig,
+)
 
 from vibe.core.llm._mistralai_stub import (
     AssistantMessage,
     AssistantMessageContent,
-    BackoffStrategy,
     ChatCompletionRequestMessage,
     ChatCompletionStreamRequestToolChoice,
     ContentChunk,
@@ -22,7 +25,6 @@ from vibe.core.llm._mistralai_stub import (
     ImageURL,
     ImageURLChunk,
     Mistral,
-    RetryConfig,
     SDKError,
     SystemMessage,
     TextChunk,
@@ -34,8 +36,6 @@ from vibe.core.llm._mistralai_stub import (
     ToolMessage,
     UserMessage,
 )
-from mistralai.client.utils.retries import BackoffStrategy, RetryConfig
-
 from vibe.core.llm.backend._image import to_data_uri as _to_data_uri
 from vibe.core.llm.exceptions import BackendErrorBuilder
 from vibe.core.logger import logger

@@ -43,7 +43,7 @@ class ToolCallStreamingUpdateTest(App):
             tool_call_index=0,
             tool_name="read",
             tool_class=Read,
-            args=ReadArgs(file_path="/test/example.py", offset=0),
+            args=ReadArgs(file_path="/test/example.py", offset=1),
         )
         self._widget.update_event(full_event)
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, cast
 
+import pytest
 from textual.pilot import Pilot
 
 from tests.conftest import build_test_vibe_config
@@ -20,8 +21,11 @@ from vibe.cli.turn_summary import TurnSummaryTracker
 narrator_status_mod.SHRINK_FRAMES = "█"
 narrator_status_mod.BAR_FRAMES = ["▂▅▇"]
 from vibe.core.config import ModelConfig
+from vibe.core.llm.backend.factory import BACKEND_FACTORY
 from vibe.core.tts.tts_client_port import TTSResult
-from vibe.core.types import LLMChunk
+from vibe.core.types import Backend, LLMChunk
+
+_mistralai_available = Backend.MISTRAL in BACKEND_FACTORY
 
 _TEST_MODEL = ModelConfig(name="test-model", provider="test", alias="test-model")
 
@@ -89,6 +93,7 @@ class NarratorFlowApp(BaseSnapshotTestApp):
         )
 
 
+@pytest.mark.skipif(not _mistralai_available, reason="mistralai not installed")
 def test_snapshot_narrator_summarizing(snap_compare: SnapCompare) -> None:
     async def run_before(pilot: Pilot) -> None:
         app = cast(NarratorFlowApp, pilot.app)
@@ -108,6 +113,7 @@ def test_snapshot_narrator_summarizing(snap_compare: SnapCompare) -> None:
     )
 
 
+@pytest.mark.skipif(not _mistralai_available, reason="mistralai not installed")
 def test_snapshot_narrator_speaking(snap_compare: SnapCompare) -> None:
     async def run_before(pilot: Pilot) -> None:
         app = cast(NarratorFlowApp, pilot.app)
@@ -130,6 +136,7 @@ def test_snapshot_narrator_speaking(snap_compare: SnapCompare) -> None:
     )
 
 
+@pytest.mark.skipif(not _mistralai_available, reason="mistralai not installed")
 def test_snapshot_narrator_idle_after_speaking(snap_compare: SnapCompare) -> None:
     async def run_before(pilot: Pilot) -> None:
         app = cast(NarratorFlowApp, pilot.app)

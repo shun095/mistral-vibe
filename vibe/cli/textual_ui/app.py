@@ -204,7 +204,7 @@ from vibe.core.autocompletion.path_prompt import (
 )
 from vibe.core.autocompletion.path_prompt_adapter import (
     extract_image_resources,
-    render_path_prompt_from_payload,
+    render_path_prompt,
 )
 from vibe.core.config import DEFAULT_THEME, VibeConfig
 from vibe.core.data_retention import DATA_RETENTION_MESSAGE

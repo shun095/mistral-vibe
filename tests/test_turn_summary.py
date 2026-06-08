@@ -3,11 +3,18 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 import logging
+from typing import TYPE_CHECKING
 
 import pytest
 
 from tests.mock.utils import mock_llm_chunk
 from tests.stubs.fake_backend import FakeBackend
+from vibe.core.llm.backend.factory import BACKEND_FACTORY
+from vibe.core.types import Backend
+
+if TYPE_CHECKING:
+    from vibe.core.llm.backend.mistral import MistralBackend
+
 from vibe.cli.turn_summary import (
     NARRATOR_MODEL,
     NoopTurnSummary,
@@ -16,8 +23,12 @@ from vibe.cli.turn_summary import (
     create_narrator_backend,
 )
 from vibe.core.config import ModelConfig, ProviderConfig, VibeConfig
-from vibe.core.llm.backend.mistral import MistralBackend
-from vibe.core.types import AssistantEvent, Backend, ToolStreamEvent, UserMessageEvent
+from vibe.core.types import AssistantEvent, ToolStreamEvent, UserMessageEvent
+
+try:
+    from vibe.core.llm.backend.mistral import MistralBackend
+except ImportError:
+    pass  # tests are skipped when mistralai is unavailable
 
 _TEST_MODEL = ModelConfig(name="test-model", provider="test", alias="test-model")
 
@@ -27,6 +38,9 @@ def _noop_callback(result: TurnSummaryResult) -> None:
 
 
 class TestCreateNarratorBackend:
+    @pytest.mark.skipif(
+        Backend.MISTRAL not in BACKEND_FACTORY, reason="mistralai not installed"
+    )
     def test_uses_mistral_provider(self, monkeypatch):
         monkeypatch.setenv("MISTRAL_API_KEY", "test-key")
         config = VibeConfig()
@@ -36,6 +50,9 @@ class TestCreateNarratorBackend:
         assert isinstance(backend, MistralBackend)
         assert model is NARRATOR_MODEL
 
+    @pytest.mark.skipif(
+        Backend.MISTRAL not in BACKEND_FACTORY, reason="mistralai not installed"
+    )
     def test_uses_custom_provider_base_url(self, monkeypatch):
         monkeypatch.setenv("MISTRAL_API_KEY", "test-key")
         custom_provider = ProviderConfig(

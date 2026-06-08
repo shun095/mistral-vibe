@@ -19,19 +19,15 @@ from vibe.core.session.reconstruction import (
 from vibe.core.types import Content, LLMMessage, Role
 
 
-def _content_to_str(content: Content | None) -> str | None:
-    """Convert Content (str | list) to string for display."""
+def _content_to_str(content: Content | None) -> str:
     if content is None:
-        return None
+        return ""
     if isinstance(content, str):
         return content
-    # Handle list content (e.g., multi-part messages with images)
-    # Content is str | list[str] but we may receive list[dict] for multi-part
     parts: list[str] = []
     for item in content:
         if isinstance(item, dict):
             if item.get("type") == "image_url":
-                # For image parts, show a simple placeholder (avoid large URLs)
                 parts.append("[image]")
             elif "text" in item:
                 text_val = item.get("text")
@@ -40,7 +36,7 @@ def _content_to_str(content: Content | None) -> str | None:
                 parts.append(str(item))
         else:
             parts.append(str(item))
-    return "\n".join(parts) if parts else None
+    return "\n".join(parts)
 
 
 def non_system_history_messages(messages: Sequence[LLMMessage]) -> list[LLMMessage]:

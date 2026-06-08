@@ -20,6 +20,8 @@ __all__ = [
     "Function",
     "FunctionCall",
     "FunctionName",
+    "ImageURL",
+    "ImageURLChunk",
     "MessageOutputEntry",
     "Mistral",
     "RealtimeTranscriptionError",
@@ -153,6 +155,12 @@ class ThinkChunk(ContentChunk): ...
 
 
 class FileChunk(ContentChunk): ...
+
+
+class ImageURL(_MockModel): ...
+
+
+class ImageURLChunk(ContentChunk): ...
 
 
 type AssistantMessageContent = str | list[ContentChunk]

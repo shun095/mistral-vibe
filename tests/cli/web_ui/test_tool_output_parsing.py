@@ -67,7 +67,6 @@ class TestParseToolOutput:
         content = (
             "path: /project/tests/cli/web_ui/test_popup_events.py\n"
             "bytes_written: 8462\n"
-            "file_existed: False\n"
             'content: """Tests for popup event serialization and handling in web UI."""\n'
             "\n"
             "from __future__ import annotations\n"
@@ -90,7 +89,6 @@ class TestParseToolOutput:
 
         assert result["path"] == "/project/tests/cli/web_ui/test_popup_events.py"
         assert result["bytes_written"] == "8462"
-        assert result["file_existed"] == "False"
         assert "content" in result
         assert '"""Tests for popup event serialization' in result["content"]
         assert "from __future__ import annotations" in result["content"]

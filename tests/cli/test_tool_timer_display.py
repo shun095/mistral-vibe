@@ -3,19 +3,19 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from vibe.cli.textual_ui.widgets.tools import ToolCallMessage, ToolResultMessage
-from vibe.core.tools.builtins.read_file import ReadFile, ReadFileArgs
+from vibe.core.tools.builtins.read import Read, ReadArgs
 from vibe.core.types import ToolCallEvent, ToolResultEvent
 
 
 class TestToolCallMessageElapsedTimer:
-    _args = ReadFileArgs(path="/test.txt", offset=0)
+    _args = ReadArgs(file_path="/test.txt", offset=1)
 
     def test_get_content_shows_elapsed_immediately(self) -> None:
         event = ToolCallEvent(
             tool_call_id="tc-1",
             tool_call_index=0,
             tool_name="read_file",
-            tool_class=ReadFile,
+            tool_class=Read,
             args=self._args,
         )
         widget = ToolCallMessage(event)
@@ -33,7 +33,7 @@ class TestToolCallMessageElapsedTimer:
             tool_call_id="tc-1",
             tool_call_index=0,
             tool_name="read_file",
-            tool_class=ReadFile,
+            tool_class=Read,
             args=self._args,
         )
         widget = ToolCallMessage(event)
@@ -51,7 +51,7 @@ class TestToolCallMessageElapsedTimer:
             tool_call_id="tc-1",
             tool_call_index=0,
             tool_name="read_file",
-            tool_class=ReadFile,
+            tool_class=Read,
             args=self._args,
         )
         widget = ToolCallMessage(event)
@@ -69,7 +69,7 @@ class TestToolCallMessageElapsedTimer:
             tool_call_id="tc-1",
             tool_call_index=0,
             tool_name="read_file",
-            tool_class=ReadFile,
+            tool_class=Read,
             args=self._args,
         )
         widget = ToolCallMessage(event)
@@ -89,7 +89,7 @@ class TestToolCallMessageElapsedTimer:
             tool_call_id="tc-1",
             tool_call_index=0,
             tool_name="read_file",
-            tool_class=ReadFile,
+            tool_class=Read,
             args=self._args,
             start_time=100.0,  # server start_time — should be ignored
         )
@@ -104,14 +104,14 @@ class TestToolCallMessageElapsedTimer:
 
 
 class TestToolResultMessageDuration:
-    _args = ReadFileArgs(path="/test.txt", offset=0)
+    _args = ReadArgs(file_path="/test.txt", offset=1)
 
     def test_get_result_text_uses_call_widget_elapsed_on_error(self) -> None:
         call_event = ToolCallEvent(
             tool_call_id="tc-1",
             tool_call_index=0,
             tool_name="read_file",
-            tool_class=ReadFile,
+            tool_class=Read,
             args=self._args,
         )
         call_widget = ToolCallMessage(call_event)
@@ -119,7 +119,7 @@ class TestToolResultMessageDuration:
         result_event = ToolResultEvent(
             tool_call_id="tc-1",
             tool_name="read_file",
-            tool_class=ReadFile,
+            tool_class=Read,
             error="File not found",
             duration=0.1,
         )
@@ -142,7 +142,7 @@ class TestToolResultMessageDuration:
             tool_call_id="tc-1",
             tool_call_index=0,
             tool_name="read_file",
-            tool_class=ReadFile,
+            tool_class=Read,
             args=self._args,
         )
         call_widget = ToolCallMessage(call_event)
@@ -150,7 +150,7 @@ class TestToolResultMessageDuration:
         result_event = ToolResultEvent(
             tool_call_id="tc-1",
             tool_name="read_file",
-            tool_class=ReadFile,
+            tool_class=Read,
             result=self._args,
             duration=0.5,  # server tool-only time — should NOT be used
         )
@@ -169,7 +169,7 @@ class TestToolResultMessageDuration:
         event = ToolResultEvent(
             tool_call_id="tc-1",
             tool_name="read_file",
-            tool_class=ReadFile,
+            tool_class=Read,
             result=self._args,
             duration=2.3,  # should NOT be shown
         )
@@ -182,7 +182,7 @@ class TestToolResultMessageDuration:
         event = ToolResultEvent(
             tool_call_id="tc-1",
             tool_name="read_file",
-            tool_class=ReadFile,
+            tool_class=Read,
             error="File not found",
             duration=0.1,
         )
@@ -196,7 +196,7 @@ class TestToolResultMessageDuration:
         event = ToolResultEvent(
             tool_call_id="tc-1",
             tool_name="read_file",
-            tool_class=ReadFile,
+            tool_class=Read,
             skipped=True,
             skip_reason="Permission denied",
             duration=0.0,
@@ -211,7 +211,7 @@ class TestToolResultMessageDuration:
         event = ToolResultEvent(
             tool_call_id="tc-1",
             tool_name="read_file",
-            tool_class=ReadFile,
+            tool_class=Read,
             result=None,
             duration=None,
         )
@@ -227,7 +227,7 @@ class TestToolResultMessageDuration:
             tool_call_id="tc-1",
             tool_call_index=0,
             tool_name="read_file",
-            tool_class=ReadFile,
+            tool_class=Read,
             args=self._args,
         )
         call_widget = ToolCallMessage(call_event)
@@ -235,7 +235,7 @@ class TestToolResultMessageDuration:
         result_event = ToolResultEvent(
             tool_call_id="tc-1",
             tool_name="read_file",
-            tool_class=ReadFile,
+            tool_class=Read,
             result=self._args,
             duration=0.5,  # not used
         )
@@ -255,7 +255,7 @@ class TestToolResultMessageDuration:
         result_event = ToolResultEvent(
             tool_call_id="tc-1",
             tool_name="read_file",
-            tool_class=ReadFile,
+            tool_class=Read,
             result=self._args,
             duration=1.7,  # should NOT be shown
         )

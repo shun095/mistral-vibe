@@ -152,7 +152,7 @@ def messages_to_events(  # noqa: PLR0912, PLR0915
                         except Exception:
                             try:
                                 first_tool = next(
-                                    iter(tool_manager._available.values())
+                                    iter(tool_manager._all_tools.values())
                                 )
                                 tool_class = first_tool
                             except StopIteration:

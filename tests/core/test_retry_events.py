@@ -258,10 +258,9 @@ class TestAsyncGeneratorRetryWithCallback:
 
     @pytest.mark.asyncio
     async def test_generator_retry_mid_stream(self) -> None:
-        """Test that retry works when error occurs mid-stream.
+        """Test that retry works when error occurs before first yield.
 
-        Note: On retry, the generator restarts from the beginning,
-        so "item1" is yielded multiple times before "item2".
+        Note: After first yield, generator continues without retry.
         """
         retry_events: list[LLMRetryEvent] = []
 
@@ -281,9 +280,9 @@ class TestAsyncGeneratorRetryWithCallback:
         async def flaky_generator() -> AsyncGenerator[str, None]:
             nonlocal call_count
             call_count += 1
-            yield "item1"
             if call_count < 3:
-                raise ConnectionError("Mid-stream error")
+                raise ConnectionError("Pre-yield error")
+            yield "item1"
             yield "item2"
 
         items = []
@@ -292,8 +291,7 @@ class TestAsyncGeneratorRetryWithCallback:
                 continue  # Skip retry events
             items.append(item)
 
-        # Generator restarts on each retry, yielding "item1" each time
-        assert items == ["item1", "item1", "item1", "item2"]
+        assert items == ["item1", "item2"]
         assert call_count == 3
         assert len(retry_events) == 2
 
@@ -327,9 +325,9 @@ class TestAsyncGeneratorRetryWithCallback:
 
     @pytest.mark.asyncio
     async def test_generator_retry_yields_events_to_consumer(self) -> None:
-        """Test that retry events are yielded to the generator consumer.
+        """Test that retry events are passed to callback, not yielded.
 
-        Note: Generator restarts on each retry, so "item1" is yielded multiple times.
+        Note: After first yield, errors propagate without retry.
         """
         received_events: list[LLMRetryEvent] = []
 
@@ -351,7 +349,6 @@ class TestAsyncGeneratorRetryWithCallback:
             async for item in flaky_generator():
                 items.append(item)
 
-        # Generator restarts on each retry, yielding "item1" each time
-        # Events are only passed to callback, not yielded from generator
-        assert items == ["item1", "item1", "item1"]
-        assert len(received_events) == 2
+        # After first yield, errors propagate without retry
+        assert items == ["item1"]
+        assert len(received_events) == 0
