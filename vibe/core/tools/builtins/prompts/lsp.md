@@ -3,6 +3,7 @@ Use `lsp` to interact with Language Server Protocol (LSP) servers to get diagnos
 ## Supported Servers
 
 - **pyright**: Python type checking (`.py` files)
+- **ruff**: Python linting and type checking (`.py` files)
 - **typescript**: TypeScript/JavaScript analysis (`.ts`, `.js`, `.tsx`, `.jsx` files)
 - **deno**: Deno LSP server for TypeScript/JavaScript
 

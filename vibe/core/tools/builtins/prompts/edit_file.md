@@ -12,7 +12,7 @@ Use `edit_file` to replace text within a file. By default, replaces a single occ
 - The `old_string` must match **exactly** what's in the file, including whitespace, indentation, and newlines
 - For single replacements, include at least 3 lines of context BEFORE and AFTER the target text
 - Do not escape `old_string` or `new_string` - they must be exact literal text
-- Always use `read_file` to examine the file content before attempting to edit
+- Always use `read` to examine the file content before attempting to edit
 
 ## Examples
 
@@ -37,7 +37,7 @@ edit_file(
 
 ## Best Practices
 
-1. Always use `read_file` to examine the file content before attempting to edit
+1. Always use `read` to examine the file content before attempting to edit
 2. Include sufficient context in `old_string` to uniquely identify the target location
 3. Match exact whitespace and indentation
 4. Use `replace_all=True` when you want to replace every occurrence, not just the first one
