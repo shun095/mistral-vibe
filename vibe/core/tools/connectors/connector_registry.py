@@ -487,6 +487,8 @@ class ConnectorRegistry:
         Returns None when the connector does not support OAuth or the
         alias is unknown.
         """
+        if _CONNECTOR_DISABLED:
+            return None
         connector_id = self._alias_to_id.get(alias)
         if connector_id is None:
             return None

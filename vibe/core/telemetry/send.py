@@ -107,6 +107,11 @@ class TelemetryClient:
 
     @property
     def client(self) -> httpx.AsyncClient:
+        if _TELEMETRY_DISABLED:
+            raise RuntimeError(
+                "Telemetry is disabled for security reasons. "
+                "External telemetry services have been hardcoded disabled."
+            )
         if self._client is None:
             self._client = httpx.AsyncClient(
                 timeout=httpx.Timeout(5.0),
