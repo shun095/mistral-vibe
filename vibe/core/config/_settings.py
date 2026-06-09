@@ -548,7 +548,6 @@ class VibeConfig(BaseSettings):
     include_project_context: bool = True
     include_prompt_detail: bool = True
     enable_update_checks: bool = True
-    enable_auto_update: bool = True
     enable_notifications: bool = True
     enable_web_notifications: bool = True
     enable_system_trust_store: bool = False

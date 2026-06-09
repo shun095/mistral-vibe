@@ -54,7 +54,7 @@ class WriteFile(
     ToolUIData[WriteFileArgs, WriteFileResult],
 ):
     description: ClassVar[str] = (
-        "Create a UTF-8 file. Fails if the file already exists; use edit to edit."
+        "Create a UTF-8 file. Fails if the file already exists; use edit to modify."
     )
 
     @classmethod
@@ -124,7 +124,9 @@ class WriteFile(
         file_path = file_path.resolve()
 
         if file_path.exists():
-            raise ToolError(f"File '{file_path}' already exists. Use edit to edit it.")
+            raise ToolError(
+                f"File '{file_path}' already exists. Use edit to modify it."
+            )
 
         if self.config.create_parent_dirs:
             file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -141,7 +143,7 @@ class WriteFile(
                 await f.write(args.content)
         except FileExistsError as e:
             raise ToolError(
-                f"File '{file_path}' already exists. Use edit to edit it."
+                f"File '{file_path}' already exists. Use edit to modify it."
             ) from e
         except Exception as e:
             raise ToolError(f"Error writing {file_path}: {e}") from e
