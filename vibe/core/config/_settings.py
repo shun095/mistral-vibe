@@ -190,6 +190,7 @@ class ProviderConfig(BaseModel):
     project_id: str = ""
     region: str = ""
     extra_headers: dict[str, str] = Field(default_factory=dict)
+    return_progress: bool = True
 
     def _is_legacy_mistral_provider_without_backend(self) -> bool:
         return (
@@ -443,6 +444,7 @@ DEFAULT_PROVIDERS = [
         browser_auth_base_url=DEFAULT_MISTRAL_BROWSER_AUTH_BASE_URL,
         browser_auth_api_base_url=DEFAULT_MISTRAL_BROWSER_AUTH_API_BASE_URL,
         backend=Backend.MISTRAL,
+        return_progress=False,
     ),
     ProviderConfig(
         name="llamacpp",

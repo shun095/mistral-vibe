@@ -2,8 +2,80 @@ from __future__ import annotations
 
 """Tests for OpenAIAdapter prompt_progress parsing."""
 
+import json
+
 from vibe.core.config import ProviderConfig
 from vibe.core.llm.backend.generic import OpenAIAdapter
+
+
+class TestOpenAIAdapterPrepareRequestReturnProgress:
+    """Test that prepare_request respects provider.return_progress config."""
+
+    def setup_method(self) -> None:
+        self.adapter = OpenAIAdapter()
+
+    def test_prepare_request_includes_return_progress_when_configured(self) -> None:
+        provider = ProviderConfig(
+            name="llamacpp",
+            api_base="http://127.0.0.1:8080/v1",
+            api_key_env_var="",
+            return_progress=True,
+        )
+        req = self.adapter.prepare_request(
+            model_name="test",
+            messages=[],
+            temperature=0.7,
+            tools=None,
+            max_tokens=100,
+            tool_choice=None,
+            enable_streaming=False,
+            provider=provider,
+            return_progress=True,
+        )
+        body = json.loads(req.body)
+        assert body.get("return_progress") is True
+
+    def test_prepare_request_skips_return_progress_when_config_disabled(self) -> None:
+        provider = ProviderConfig(
+            name="custom",
+            api_base="http://127.0.0.1:8080/v1",
+            api_key_env_var="",
+            return_progress=False,
+        )
+        req = self.adapter.prepare_request(
+            model_name="test",
+            messages=[],
+            temperature=0.7,
+            tools=None,
+            max_tokens=100,
+            tool_choice=None,
+            enable_streaming=False,
+            provider=provider,
+            return_progress=True,
+        )
+        body = json.loads(req.body)
+        assert "return_progress" not in body
+
+    def test_prepare_request_skips_return_progress_when_caller_disables(self) -> None:
+        provider = ProviderConfig(
+            name="llamacpp",
+            api_base="http://127.0.0.1:8080/v1",
+            api_key_env_var="",
+            return_progress=True,
+        )
+        req = self.adapter.prepare_request(
+            model_name="test",
+            messages=[],
+            temperature=0.7,
+            tools=None,
+            max_tokens=100,
+            tool_choice=None,
+            enable_streaming=False,
+            provider=provider,
+            return_progress=False,
+        )
+        body = json.loads(req.body)
+        assert "return_progress" not in body
 
 
 class TestOpenAIAdapterPromptProgress:

@@ -136,9 +136,8 @@ class OpenAIAdapter(APIAdapter):
             for msg in messages
         ]
 
-        # Enable return_progress for OpenAI-compatible providers (e.g., llama-server)
-        # but not for Mistral API which doesn't support this parameter
-        should_request_progress = return_progress and provider.name != "mistral"
+        # Honor caller's return_progress flag and per-provider config
+        should_request_progress = return_progress and provider.return_progress
 
         payload = self.build_payload(
             model_name,

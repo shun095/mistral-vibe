@@ -144,8 +144,8 @@ class ReasoningAdapter(APIAdapter):
             thinking=thinking,
         )
 
-        # Add return_progress for OpenAI-compatible providers (e.g., llama-server)
-        if return_progress and provider.name != "mistral":
+        # Add return_progress if provider supports it
+        if return_progress and provider.return_progress:
             payload["return_progress"] = True
 
         if enable_streaming:
