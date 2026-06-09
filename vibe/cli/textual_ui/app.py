@@ -63,6 +63,7 @@ NON_INTERRUPT_COMMANDS = (
     "/debug",
     "/status",
     "/mcp",
+    "/theme",
     "/translate",
 )
 

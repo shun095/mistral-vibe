@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import patch
 
 import pytest
@@ -7,6 +8,29 @@ import pytest
 from tests.conftest import build_test_vibe_app, build_test_vibe_config
 from vibe.cli.textual_ui.app import BottomApp
 from vibe.cli.textual_ui.widgets.theme_picker import ThemePickerApp
+
+
+@pytest.mark.asyncio
+async def test_theme_command_does_not_interrupt_running_agent() -> None:
+    app = build_test_vibe_app(config=build_test_vibe_config())
+    async with app.run_test() as pilot:
+        app._agent_running = True
+        app._agent_task = asyncio.create_task(asyncio.sleep(10))
+
+        await pilot.press(*"/theme")
+        await pilot.press("enter")
+        await pilot.pause(0.2)
+
+        assert app._agent_running is True
+        assert app._agent_task is not None
+        assert not app._agent_task.done()
+        assert app._current_bottom_app == BottomApp.ThemePicker
+
+        app._agent_task.cancel()
+        try:
+            await app._agent_task
+        except asyncio.CancelledError:
+            pass
 
 
 @pytest.mark.asyncio
