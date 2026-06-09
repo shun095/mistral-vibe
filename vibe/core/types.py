@@ -706,6 +706,15 @@ class TaskCompletedEvent(BaseEvent):
     elapsed_text: str
 
 
+class TranslationResultEvent(BaseEvent):
+    """Event fired when a /translate command completes, carrying the result."""
+
+    original_text: str
+    translated_text: str
+    success: bool
+    error: str | None = None
+
+
 # New model classes
 
 

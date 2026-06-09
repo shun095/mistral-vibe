@@ -49,6 +49,9 @@ class VibeClient {
         // Pending input — cleared only after server acknowledges via event
         this._pendingInputContent = null;
 
+        // Pending translation — resolved when TranslationResultEvent arrives
+        this._pendingTranslation = null;
+
         // Suppress FAB show during programmatic scrolls
         this._suppressFabShow = false;
 
@@ -444,6 +447,9 @@ class VibeClient {
                 break;
             case 'LLMRetryEvent':
                 this.handleLLMRetry(event);
+                break;
+            case 'TranslationResultEvent':
+                this._handleTranslationResult(event);
                 break;
         }
     }
@@ -2682,28 +2688,57 @@ class VibeClient {
             this.elements.sendBtn.textContent = '⏳';
             this.elements.processingIndicator.style.display = 'flex';
 
-            const response = await fetch(buildUrl('api/translate'), {
+            const response = await fetch(buildUrl('api/command/execute'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text: textToTranslate })
+                body: JSON.stringify({ command: 'translate', args: textToTranslate })
             });
 
             const result = await response.json();
-
-            if (result.success && result.translated) {
-                this.elements.input.value = result.translated;
-                this.autoResizeTextarea();
-                this.updateSendButtonState();
-                this.addMessage('system', 'Text translated to English.');
-            } else {
+            if (!result.success) {
                 this.addMessage('system', `Translation error: ${result.error || 'Unknown error'}`);
+                return;
             }
+
+            // Wait for TranslationResultEvent via WebSocket (30s timeout)
+            await new Promise((resolve, reject) => {
+                this._pendingTranslation = {
+                    originalText: textToTranslate,
+                    resolve,
+                    reject,
+                    timeout: setTimeout(() => {
+                        this._pendingTranslation = null;
+                        reject(new Error('Translation timed out'));
+                    }, 30000)
+                };
+            });
+
         } catch (error) {
             this.addMessage('system', `Translation failed: ${error.message}`);
         } finally {
             this.elements.sendBtn.disabled = false;
             this.elements.sendBtn.textContent = '➤';
             this.elements.processingIndicator.style.display = 'none';
+        }
+    }
+
+    _handleTranslationResult(event) {
+        const pending = this._pendingTranslation;
+        if (!pending) return;
+
+        // Verify the event matches the pending request
+        if (event.original_text !== pending.originalText) return;
+
+        this._pendingTranslation = null;
+        clearTimeout(pending.timeout);
+
+        if (event.success && event.translated_text) {
+            this.elements.input.value = event.translated_text;
+            this.autoResizeTextarea();
+            this.updateSendButtonState();
+            pending.resolve();
+        } else {
+            pending.reject(new Error(event.error || 'Translation failed'));
         }
     }
 

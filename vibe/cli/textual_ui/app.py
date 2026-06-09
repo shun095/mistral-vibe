@@ -260,6 +260,7 @@ from vibe.core.types import (
     RateLimitError,
     Role,
     TaskCompletedEvent,
+    TranslationResultEvent,
     UserMessageEvent,
     WaitingForInputEvent,
 )
@@ -2405,12 +2406,36 @@ class VibeApp(App):  # noqa: PLR0904
                 await self._mount_and_scroll(
                     UserCommandMessage("Text translated to English.")
                 )
+                self.agent_loop._notify_event_listeners(
+                    TranslationResultEvent(
+                        original_text=original_text,
+                        translated_text=translated_text,
+                        success=True,
+                    )
+                )
+            else:
+                self.agent_loop._notify_event_listeners(
+                    TranslationResultEvent(
+                        original_text=original_text,
+                        translated_text="",
+                        success=False,
+                        error="Translation returned empty result",
+                    )
+                )
 
         except asyncio.CancelledError:
             raise
         except Exception as e:
             await self._mount_and_scroll(
                 ErrorMessage(str(e), collapsed=self._tools_collapsed)
+            )
+            self.agent_loop._notify_event_listeners(
+                TranslationResultEvent(
+                    original_text=original_text,
+                    translated_text="",
+                    success=False,
+                    error=str(e),
+                )
             )
         finally:
             self._translation_running = False

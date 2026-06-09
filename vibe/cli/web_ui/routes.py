@@ -23,7 +23,6 @@ from fastapi import (
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from vibe.cli.history_manager import HistoryManager
 from vibe.cli.textual_ui.widgets.mcp_app import collect_mcp_tool_index
 from vibe.cli.web_ui.config import AUTH_COOKIE_NAME
 from vibe.cli.web_ui.serializers import (
@@ -204,32 +203,6 @@ def register_routes(  # noqa: PLR0915
             command_text = f"{command_text} {command_args}"
         tui_app.submit_message_from_web(command_text)
         return JSONResponse({"success": True})
-
-    @app.post(f"{prefix}/api/translate")
-    async def translate_text(
-        text_data: dict,
-        _request: Request = Depends(verify_request_auth),  # noqa: B008
-    ) -> JSONResponse:
-        tui_app = getattr(app.state, "tui_app", None)
-        if tui_app is None:
-            return JSONResponse({"success": False, "error": "No TUI app available"})
-        original_text = text_data.get("text", "").strip()
-        if not original_text:
-            return JSONResponse({"success": False, "error": "No text to translate"})
-        try:
-            translated_text = await tui_app.do_translation(original_text)
-            history = HistoryManager(HISTORY_FILE.path)
-            history.add(original_text)
-            if translated_text:
-                history.add(translated_text)
-            return JSONResponse({
-                "success": True,
-                "translated": translated_text or "",
-                "original_length": len(original_text),
-                "translated_length": len(translated_text or ""),
-            })
-        except Exception as e:
-            return JSONResponse({"success": False, "error": str(e)})
 
     # File download route
     @app.get(f"{prefix}/api/download")

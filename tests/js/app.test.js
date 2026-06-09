@@ -903,34 +903,51 @@ describe('VibeClient', () => {
         beforeEach(() => {
             originalFetch = global.fetch;
             global.fetch = jest.fn();
+            jest.useFakeTimers();
         });
 
         afterEach(() => {
             global.fetch = originalFetch;
+            jest.useRealTimers();
+            if (client._pendingTranslation) {
+                clearTimeout(client._pendingTranslation.timeout);
+                client._pendingTranslation = null;
+            }
         });
 
         test('replaces input with translated text on success', async () => {
-            global.fetch.mockResolvedValue({
-                json: async () => ({
-                    success: true,
-                    translated: 'Hello world',
-                    original_length: 18,
-                    translated_length: 11,
-                }),
-            });
+            let resolveFetch;
+            global.fetch.mockReturnValue(new Promise(resolve => {
+                resolveFetch = () => resolve({
+                    json: () => Promise.resolve({ success: true }),
+                });
+            }));
 
-            client.elements.input.value = 'Hola mundo';
-            await client.handleTranslate('Hola mundo');
+            const handlePromise = client.handleTranslate('Hola mundo');
+            resolveFetch();
+            // Yield to microtask queue so _pendingTranslation is set
+            await Promise.resolve();
+            await Promise.resolve();
 
-            expect(global.fetch).toHaveBeenCalledWith('/api/translate', {
+            expect(global.fetch).toHaveBeenCalledWith('/api/command/execute', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text: 'Hola mundo' }),
+                body: JSON.stringify({ command: 'translate', args: 'Hola mundo' }),
             });
+
+            // Simulate TranslationResultEvent arriving via WebSocket
+            client._handleTranslationResult({
+                __type: 'TranslationResultEvent',
+                original_text: 'Hola mundo',
+                translated_text: 'Hello world',
+                success: true,
+            });
+
+            await handlePromise;
             expect(client.elements.input.value).toBe('Hello world');
         });
 
-        test('shows error message on translation failure', async () => {
+        test('shows error message on HTTP failure', async () => {
             global.fetch.mockResolvedValue({
                 json: async () => ({
                     success: false,
@@ -957,23 +974,120 @@ describe('VibeClient', () => {
             expect(messages[0].querySelector('.content').textContent).toBe('Translation failed: Network error');
         });
 
+        test('shows error message on TranslationResultEvent failure', async () => {
+            let resolveFetch;
+            global.fetch.mockReturnValue(new Promise(resolve => {
+                resolveFetch = () => resolve({
+                    json: () => Promise.resolve({ success: true }),
+                });
+            }));
+
+            const handlePromise = client.handleTranslate('Hola mundo');
+            resolveFetch();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            client._handleTranslationResult({
+                __type: 'TranslationResultEvent',
+                original_text: 'Hola mundo',
+                translated_text: '',
+                success: false,
+                error: 'LLM returned empty',
+            });
+
+            await handlePromise;
+
+            const messages = client.elements.messages.children;
+            expect(messages).toHaveLength(1);
+            expect(messages[0].className).toBe('message system');
+            expect(messages[0].querySelector('.content').textContent).toBe('Translation failed: LLM returned empty');
+        });
+
+        test('times out when event does not arrive', async () => {
+            let resolveFetch;
+            global.fetch.mockReturnValue(new Promise(resolve => {
+                resolveFetch = () => resolve({
+                    json: () => Promise.resolve({ success: true }),
+                });
+            }));
+
+            const handlePromise = client.handleTranslate('Hola mundo');
+            resolveFetch();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            // Advance timers past the 30s timeout
+            jest.advanceTimersByTime(30001);
+
+            await handlePromise;
+
+            const messages = client.elements.messages.children;
+            expect(messages).toHaveLength(1);
+            expect(messages[0].className).toBe('message system');
+            expect(messages[0].querySelector('.content').textContent).toBe('Translation failed: Translation timed out');
+        });
+
         test('disables send button during translation', async () => {
             let resolveFetch;
             global.fetch.mockReturnValue(new Promise(resolve => {
                 resolveFetch = () => resolve({
-                    json: async () => ({ success: true, translated: 'OK', original_length: 4, translated_length: 2 }),
+                    json: () => Promise.resolve({ success: true }),
                 });
             }));
 
             client.elements.sendBtn.disabled = false;
             const promise = client.handleTranslate('test');
+            resolveFetch();
+            await Promise.resolve();
+            await Promise.resolve();
 
             expect(client.elements.sendBtn.disabled).toBe(true);
 
-            resolveFetch();
+            client._handleTranslationResult({
+                __type: 'TranslationResultEvent',
+                original_text: 'test',
+                translated_text: 'OK',
+                success: true,
+            });
             await promise;
 
             expect(client.elements.sendBtn.disabled).toBe(false);
+        });
+
+        test('ignores event for non-matching original text', async () => {
+            let resolveFetch;
+            global.fetch.mockReturnValue(new Promise(resolve => {
+                resolveFetch = () => resolve({
+                    json: () => Promise.resolve({ success: true }),
+                });
+            }));
+
+            const handlePromise = client.handleTranslate('Hola mundo');
+            resolveFetch();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            // Event for different text should be ignored
+            client._handleTranslationResult({
+                __type: 'TranslationResultEvent',
+                original_text: 'Different text',
+                translated_text: 'Different result',
+                success: true,
+            });
+
+            expect(client._pendingTranslation).not.toBeNull();
+            expect(client.elements.input.value).toBe('');
+
+            // Correct event resolves
+            client._handleTranslationResult({
+                __type: 'TranslationResultEvent',
+                original_text: 'Hola mundo',
+                translated_text: 'Hello world',
+                success: true,
+            });
+
+            await handlePromise;
+            expect(client.elements.input.value).toBe('Hello world');
         });
     });
 
