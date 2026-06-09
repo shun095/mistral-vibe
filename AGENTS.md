@@ -148,7 +148,7 @@ The table below determines which rule applies — project rules not listed remai
 - Investigation is read-only: no edits, commits, or config changes. Report findings and stop. User decides action.
 - Read log files with `tail -n 100` to see the full summary block before reporting results. Never grep a log file without first reading its tail — grep misses lines you didn't anticipate (flaky, warnings, partial failures).
 
-**Timeout Strategy:** For commands exceeding 30s, always set explicit `timeout`: Pre-commit 300s, full test suite 300s, individual tests 120s. Never bypass safety checks due to timeouts. Retry with higher timeout first.
+**Timeout Strategy:** For commands exceeding 30s, always set explicit `timeout`: Pre-commit 300s, full test suite 300s, individual tests 120s, git commit 300s (triggers pre-commit — same budget). Never bypass safety checks due to timeouts. Retry with higher timeout first.
 
 ## Pre-Change Gates
 
