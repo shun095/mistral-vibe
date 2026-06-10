@@ -7,10 +7,30 @@ import types
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple, cast
 
 import httpx
-from mistralai.client.utils.retries import (  # pyright: ignore[reportMissingImports]
-    BackoffStrategy,
-    RetryConfig,
-)
+
+if TYPE_CHECKING:
+    from mistralai.client.utils.retries import (  # pyright: ignore[reportMissingImports]
+        BackoffStrategy,
+        RetryConfig,
+    )
+
+# Runtime import with fallback to stub when mistralai is quarantined.
+try:
+    from mistralai.client.utils.retries import (  # pyright: ignore[reportMissingImports]
+        BackoffStrategy as _BS_runtime,
+        RetryConfig as _RC_runtime,
+    )
+except ImportError:
+    from vibe.core.llm._mistralai_stub import (  # pyright: ignore[reportMissingImports]
+        BackoffStrategy as _BS_runtime,
+        RetryConfig as _RC_runtime,
+    )
+
+# Expose runtime names for cast() calls — pyright sees TYPE_CHECKING imports
+# at analysis time; these assignments satisfy runtime name resolution.
+RetryConfig = _RC_runtime  # pyright: ignore[reportUndefinedVariable]
+BackoffStrategy = _BS_runtime  # pyright: ignore[reportUndefinedVariable]
+
 
 from vibe.core.llm._mistralai_stub import (
     AssistantMessage,
@@ -258,10 +278,10 @@ class MistralBackend:
             self, "complete_streaming", retry_config, is_streaming=True
         )
 
-    def _build_retry_config(self) -> RetryConfig:
-        return RetryConfig(
+    def _build_retry_config(self) -> RetryConfig:  # pyright: ignore[reportInvalidTypeForm]
+        return RetryConfig(  # pyright: ignore[reportInvalidTypeForm]
             strategy="backoff",
-            backoff=BackoffStrategy(
+            backoff=BackoffStrategy(  # pyright: ignore[reportInvalidTypeForm,reportArgumentType]
                 initial_interval=500,
                 max_interval=30000,
                 exponent=1.5,

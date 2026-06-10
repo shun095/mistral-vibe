@@ -74,6 +74,22 @@ class _MockModel:
     def __getattr__(self, name: str) -> Any:
         return _MockModel()
 
+    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for k, v in self.__dict__.items():
+            if k.startswith("_"):
+                continue
+            if isinstance(v, _MockModel):
+                result[k] = v.model_dump(**kwargs)
+            elif isinstance(v, list):
+                result[k] = [
+                    item.model_dump(**kwargs) if isinstance(item, _MockModel) else item
+                    for item in v
+                ]
+            else:
+                result[k] = v
+        return result
+
 
 class Mistral(_MockModel):
     audio: Any
@@ -214,6 +230,8 @@ try:
         Function as _RealFunction,
         FunctionCall as _RealFunctionCall,
         FunctionName as _RealFunctionName,
+        ImageURL as _RealImageURL,
+        ImageURLChunk as _RealImageURLChunk,
         MessageOutputEntry as _RealMessageOutputEntry,
         RealtimeTranscriptionError as _RealRealtimeTranscriptionError,
         RealtimeTranscriptionSession as _RealRealtimeTranscriptionSession,
@@ -256,6 +274,8 @@ try:
             "Function": _RealFunction,
             "FunctionCall": _RealFunctionCall,
             "FunctionName": _RealFunctionName,
+            "ImageURL": _RealImageURL,
+            "ImageURLChunk": _RealImageURLChunk,
             "MessageOutputEntry": _RealMessageOutputEntry,
             "RealtimeTranscriptionError": _RealRealtimeTranscriptionError,
             "RealtimeTranscriptionSession": _RealRealtimeTranscriptionSession,

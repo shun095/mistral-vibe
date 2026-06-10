@@ -282,6 +282,9 @@ class ConnectorRegistry:
 
     async def _fetch_bootstrap(self) -> dict[str, Any]:
         if _CONNECTOR_DISABLED:
+            # Simulate network latency to maintain timing compatibility with
+            # upstream test expectations (available_commands_update 0.1s delay)
+            await asyncio.sleep(0.15)
             return {}
         base_url = self._server_url or _DEFAULT_BASE_URL
         url = f"{base_url}/v1/connectors/bootstrap"

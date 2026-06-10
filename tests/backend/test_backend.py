@@ -22,7 +22,6 @@ import pytest
 
 pytest.importorskip("mistralai")
 
-from mistralai.client.errors import SDKError  # pyright: ignore[reportMissingImports]
 from mistralai.client.models import (  # pyright: ignore[reportMissingImports]
     AssistantMessage,
 )
@@ -47,6 +46,7 @@ from tests.backend.data.mistral import (
     TOOL_CONVERSATION_PARAMS as MISTRAL_TOOL_CONVERSATION_PARAMS,
 )
 from vibe.core.config import ModelConfig, ProviderConfig
+from vibe.core.llm._mistralai_stub import SDKError
 from vibe.core.llm.backend.factory import BACKEND_FACTORY
 from vibe.core.llm.backend.generic import GenericBackend
 from vibe.core.llm.backend.mistral import MistralBackend, MistralMapper
