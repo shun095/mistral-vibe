@@ -1973,7 +1973,10 @@ class VibeClient {
         const content = card.querySelector('.card-content');
 
         if (result.content) {
-            this.createCodeBlock(path, result.content, content, result.offset || 0);
+            const codeBlock = this.createCodeBlock(path, result.content, content, result.offset || 0);
+            if (window.hljs) {
+                window.hljs.highlightElement(codeBlock.querySelector('code'));
+            }
         }
 
         if (result.lsp_diagnostics) {
@@ -2011,17 +2014,11 @@ class VibeClient {
         }
 
         if (result.content) {
-            // Use createCodeBlock with "diff" as pseudo-path, then override language
             const codeBlock = this.createCodeBlock('diff', result.content, content);
 
-            // Override language class to diff (detectLanguageFromPath returns plaintext for "diff")
-            const codeElement = codeBlock.querySelector('code');
-            if (codeElement) {
-                codeElement.className = 'language-diff';
-                // Re-apply syntax highlighting with correct language
-                if (window.hljs) {
-                    window.hljs.highlightElement(codeBlock);
-                }
+            // Apply syntax highlighting (language-diff is set by createCodeBlock)
+            if (window.hljs) {
+                window.hljs.highlightElement(codeBlock.querySelector('code'));
             }
 
             // Add diff-block CSS class for styling
@@ -2197,11 +2194,6 @@ class VibeClient {
         codeBlock.appendChild(code);
         container.appendChild(codeBlock);
 
-        // Apply syntax highlighting
-        if (window.hljs) {
-            window.hljs.highlightElement(codeBlock);
-        }
-
         // Add double-click handler for fullscreen
         codeBlock.addEventListener('dblclick', () => {
             this.showCodeFullscreen(path, content, language, offset);
@@ -2226,7 +2218,10 @@ class VibeClient {
         contentDiv.appendChild(pathDiv);
 
         if (result.content) {
-            this.createCodeBlock(path, result.content, contentDiv);
+            const codeBlock = this.createCodeBlock(path, result.content, contentDiv);
+            if (window.hljs) {
+                window.hljs.highlightElement(codeBlock.querySelector('code'));
+            }
         }
 
         return card;
@@ -2273,13 +2268,64 @@ class VibeClient {
 
         // Initialize Monaco Editor with proper timing
         require(['vs/editor/editor.main'], (monaco) => {
+            // Register diff language (not included in CDN build)
+            if (!monaco.languages.getLanguages().some(l => l.id === 'diff')) {
+                monaco.languages.register({ id: 'diff' });
+                monaco.languages.setMonarchTokensProvider('diff', {
+                    tokenizer: {
+                        root: [
+                            [/^diff --git.*/, 'keyword'],
+                            [/^index .*/, 'keyword'],
+                            [/^--- a\//, 'comment'],
+                            [/^--- /, 'comment'],
+                            [/^\+\+\+ b\//, 'keyword'],
+                            [/^\+\+\+ /, 'keyword'],
+                            [/^@@.*/, 'meta'],
+                            [/^\+.*/, 'inserted'],
+                            [/^\-.*/, 'deleted'],
+                            [/^ .*/, 'default'],
+                        ]
+                    }
+                });
+            }
+
+            // Define custom themes for diff highlighting (custom tokens need theme rules)
+            const docTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+            const isDiff = language === 'diff';
+
+            monaco.editor.defineTheme('vs-dark-diff', {
+                base: 'vs-dark',
+                inherit: true,
+                rules: [
+                    { token: 'inserted', foreground: '7ee787', background: '1a3a1a' },
+                    { token: 'deleted', foreground: 'f85149', background: '3a1a1a' },
+                    { token: 'meta', foreground: '8b949e' },
+                ],
+                colors: { 'editor.background': '#1e1e1e' }
+            });
+
+            monaco.editor.defineTheme('vs-light-diff', {
+                base: 'vs',
+                inherit: true,
+                rules: [
+                    { token: 'inserted', foreground: '1a7f37', background: 'daffe6' },
+                    { token: 'deleted', foreground: 'cf222e', background: 'ffebe9' },
+                    { token: 'meta', foreground: '6e7781' },
+                ],
+                colors: { 'editor.background': '#ffffff' }
+            });
+
+            const editorTheme = isDiff
+                ? (docTheme === 'light' ? 'vs-light-diff' : 'vs-dark-diff')
+                : (docTheme === 'light' ? 'vs' : 'vs-dark');
+
             // Wait for DOM to be fully rendered
             setTimeout(() => {
                 try {
                     const editor = monaco.editor.create(monacoContainer, {
                         value: content,
                         language: this.mapLanguageToMonaco(language),
-                        theme: 'vs-dark',
+                        theme: editorTheme,
                         readOnly: true,
                         domReadOnly: true,
                         scrollBeyondLastLine: false,
@@ -2440,6 +2486,7 @@ class VibeClient {
             'yaml': 'yaml',
             'yml': 'yaml',
             'markdown': 'markdown',
+            'diff': 'diff',
             'plaintext': 'plaintext',
             'text': 'plaintext'
         };
@@ -2630,6 +2677,8 @@ class VibeClient {
             'sublime-syntax': 'yaml',
             'sublime-theme': 'json',
             'sublime-completion': 'json',
+            // Special pseudo-paths
+            'diff': 'diff',
         };
 
         const ext = path.split('.').pop().toLowerCase();
@@ -2650,6 +2699,7 @@ class VibeClient {
         document.documentElement.setAttribute('data-theme', newTheme);
         localStorage.setItem('theme', newTheme);
         icon.textContent = newTheme === 'dark' ? 'light_mode' : 'dark_mode';
+        this.applyHljsTheme(newTheme);
     }
 
     loadTheme() {
@@ -2658,6 +2708,16 @@ class VibeClient {
 
         document.documentElement.setAttribute('data-theme', savedTheme);
         icon.textContent = savedTheme === 'dark' ? 'light_mode' : 'dark_mode';
+        this.applyHljsTheme(savedTheme);
+    }
+
+    applyHljsTheme(theme) {
+        const darkLink = document.getElementById('hljs-dark-theme');
+        const lightLink = document.getElementById('hljs-light-theme');
+        if (darkLink && lightLink) {
+            darkLink.disabled = theme !== 'dark';
+            lightLink.disabled = theme !== 'light';
+        }
     }
 
     _getCollapsibleCards() {
@@ -3146,7 +3206,7 @@ class VibeClient {
             outputDiv.appendChild(codeBlock);
 
             if (window.hljs) {
-                window.hljs.highlightElement(codeBlock);
+                window.hljs.highlightElement(code);
             }
         } else {
             const pre = document.createElement('pre');

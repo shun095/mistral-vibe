@@ -103,10 +103,6 @@ export function createCodeBlock(path, content, container, language, offset = 0) 
     codeBlock.appendChild(code);
     container.appendChild(codeBlock);
 
-    if (window.hljs) {
-        window.hljs.highlightElement(codeBlock);
-    }
-
     return codeBlock;
 }
 
@@ -170,6 +166,8 @@ export function detectLanguageFromPath(path) {
         'sublime-completions': 'json', 'sublime-menu': 'json',
         'sublime-macro': 'json', 'sublime-syntax': 'yaml',
         'sublime-theme': 'json', 'sublime-completion': 'json',
+        // Special pseudo-paths
+        'diff': 'diff',
     };
 
     const ext = path.split('.').pop().toLowerCase();
@@ -317,7 +315,10 @@ function formatReadFileResult(card, result, helpers = {}) {
     const content = card.querySelector('.card-content');
 
     if (result.content) {
-        ccb(path, result.content, content, detectLanguageFromPath(path), result.offset || 0);
+        const codeBlock = ccb(path, result.content, content, detectLanguageFromPath(path), result.offset || 0);
+        if (window.hljs) {
+            window.hljs.highlightElement(codeBlock.querySelector('code'));
+        }
     }
 
     if (result.lsp_diagnostics) {
@@ -352,7 +353,7 @@ function formatEditResult(card, result, helpers = {}) {
         diffPre.appendChild(codeEl);
         content.appendChild(diffPre);
         if (window.hljs) {
-            window.hljs.highlightElement(diffPre);
+            window.hljs.highlightElement(codeEl);
         }
     }
 
@@ -405,13 +406,9 @@ function formatEditFileResult(card, result, helpers = {}) {
     }
 
     if (result.content) {
-        const codeBlock = ccb('diff', result.content, content);
-        const codeElement = codeBlock.querySelector('code');
-        if (codeElement) {
-            codeElement.className = 'language-diff';
-            if (window.hljs) {
-                window.hljs.highlightElement(codeBlock);
-            }
+        const codeBlock = ccb('diff', result.content, content, 'diff');
+        if (window.hljs) {
+            window.hljs.highlightElement(codeBlock.querySelector('code'));
         }
         codeBlock.classList.add('diff-block');
     }
@@ -598,7 +595,10 @@ function formatWriteFileResult(card, result, helpers = {}) {
     contentDiv.appendChild(pathDiv);
 
     if (result.content) {
-        ccb(path, result.content, contentDiv, detectLanguageFromPath(path));
+        const codeBlock = ccb(path, result.content, contentDiv, detectLanguageFromPath(path));
+        if (window.hljs) {
+            window.hljs.highlightElement(codeBlock.querySelector('code'));
+        }
     }
 
     return card;

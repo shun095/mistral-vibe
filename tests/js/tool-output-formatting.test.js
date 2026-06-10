@@ -107,7 +107,10 @@ describe('Tool Output Formatting', () => {
 
                 if (result.content) {
                     const language = this.detectLanguageFromPath(path);
-                    this.createCodeBlock(path, result.content, content, language, result.offset || 0);
+                    const codeBlock = this.createCodeBlock(path, result.content, content, language, result.offset || 0);
+                    if (window.hljs) {
+                        window.hljs.highlightElement(codeBlock.querySelector('code'));
+                    }
                 }
 
                 if (result.lsp_diagnostics) {
@@ -405,12 +408,21 @@ describe('Tool Output Formatting', () => {
             expect(showCodeFullscreenSpy).not.toHaveBeenCalled();
         });
 
-        test('applies syntax highlighting when hljs is available', () => {
-            const container = document.createElement('div');
+        test('formatReadFileResult applies syntax highlighting when hljs is available', () => {
             const hljsMock = { highlightElement: jest.fn() };
             global.window.hljs = hljsMock;
 
-            app.createCodeBlock('./test.py', 'code', container, 'python');
+            const card = document.createElement('div');
+            card.className = 'tool-result-card';
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'card-content';
+            card.appendChild(contentDiv);
+
+            app.formatReadFileResult(card, {
+                file_path: './test.py',
+                lines_read: 10,
+                content: 'print("hello")',
+            });
 
             expect(hljsMock.highlightElement).toHaveBeenCalled();
 
