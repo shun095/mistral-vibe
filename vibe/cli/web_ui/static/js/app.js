@@ -1118,6 +1118,7 @@ class VibeClient {
         this.currentAssistantText += content;
         const contentDiv = this.currentAssistantMessage?.querySelector('.content');
         if (contentDiv) {
+            contentDiv.dataset.markdown = this.currentAssistantText;
             this.renderMarkdownFromText(contentDiv, this.currentAssistantText);
         }
     }
@@ -1493,7 +1494,32 @@ class VibeClient {
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message assistant';
         messageDiv.innerHTML = `<div class="content"></div>`;
+        this._addCopyButton(messageDiv, true);
         return messageDiv;
+    }
+
+    _addCopyButton(messageDiv, isAssistant) {
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'message-copy-btn';
+        copyBtn.innerHTML = '<span class="material-symbols-rounded">content_copy</span>';
+        copyBtn.title = 'Copy';
+        copyBtn.addEventListener('click', () => {
+            const contentDiv = messageDiv.querySelector('.content');
+            let text;
+            if (isAssistant && contentDiv) {
+                text = contentDiv.dataset.markdown || contentDiv.textContent;
+            } else if (contentDiv) {
+                text = contentDiv.textContent;
+            } else {
+                text = messageDiv.textContent;
+            }
+            navigator.clipboard.writeText(text.trim());
+            copyBtn.innerHTML = '<span class="material-symbols-rounded">check</span>';
+            setTimeout(() => {
+                copyBtn.innerHTML = '<span class="material-symbols-rounded">content_copy</span>';
+            }, 1500);
+        });
+        messageDiv.appendChild(copyBtn);
     }
 
     finalizeReasoningMessage() {
@@ -1520,6 +1546,7 @@ class VibeClient {
 
         if (type === 'assistant') {
             contentDiv.textContent = content;
+            contentDiv.dataset.markdown = content;
             this.renderMarkdown(contentDiv);
         } else {
             contentDiv.innerHTML = this.escapeHtml(content);
@@ -1529,6 +1556,7 @@ class VibeClient {
         const previousScrollHeight = this.elements.messages.scrollHeight;
 
         messageDiv.appendChild(contentDiv);
+        this._addCopyButton(messageDiv, type === 'assistant');
         this.elements.messages.appendChild(messageDiv);
         this.scrollToBottomIfWasAtBottom(previousScrollHeight);
     }

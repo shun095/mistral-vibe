@@ -391,6 +391,90 @@ describe('VibeClient', () => {
         });
     });
 
+    describe('message copy button', () => {
+        beforeEach(() => {
+            jest.useFakeTimers();
+            global.navigator.clipboard = {
+                writeText: jest.fn().mockResolvedValue(undefined),
+            };
+            global.marked = { parse: jest.fn((t) => `<p>${t}</p>`) };
+        });
+
+        afterEach(() => {
+            jest.useRealTimers();
+            delete global.navigator.clipboard;
+            delete global.marked;
+        });
+
+        test('adds copy button to user message', () => {
+            client.addMessage('user', 'Hello world');
+
+            const message = client.elements.messages.children[0];
+            const copyBtn = message.querySelector('.message-copy-btn');
+            expect(copyBtn).toBeDefined();
+            expect(copyBtn.querySelector('.material-symbols-rounded').textContent).toBe('content_copy');
+        });
+
+        test('adds copy button to assistant message', () => {
+            client.addMessage('assistant', '# Heading\n\nBody text');
+
+            const message = client.elements.messages.children[0];
+            const copyBtn = message.querySelector('.message-copy-btn');
+            expect(copyBtn).toBeDefined();
+        });
+
+        test('stores markdown source in data-markdown for assistant messages', () => {
+            const markdown = '# Title\n\n- item1\n- item2';
+            client.addMessage('assistant', markdown);
+
+            const contentDiv = client.elements.messages.children[0].querySelector('.content');
+            expect(contentDiv.dataset.markdown).toBe(markdown);
+        });
+
+        test('copying user message copies text content', async () => {
+            client.addMessage('user', 'Hello world');
+
+            const copyBtn = client.elements.messages.children[0].querySelector('.message-copy-btn');
+            copyBtn.click();
+
+            // Flush microtasks so the promise resolves
+            await Promise.resolve();
+            expect(navigator.clipboard.writeText).toHaveBeenCalledWith('Hello world');
+        });
+
+        test('copying assistant message copies markdown source not rendered text', async () => {
+            const markdown = '# Title\n\nBody with **bold**';
+            client.addMessage('assistant', markdown);
+
+            const copyBtn = client.elements.messages.children[0].querySelector('.message-copy-btn');
+            copyBtn.click();
+
+            await Promise.resolve();
+            expect(navigator.clipboard.writeText).toHaveBeenCalledWith(markdown);
+        });
+
+        test('copy button shows check icon temporarily after click', () => {
+            client.addMessage('user', 'test');
+
+            const copyBtn = client.elements.messages.children[0].querySelector('.message-copy-btn');
+            copyBtn.click();
+
+            const iconAfter = copyBtn.querySelector('.material-symbols-rounded');
+            expect(iconAfter.textContent).toBe('check');
+
+            jest.advanceTimersByTime(1500);
+
+            const iconReset = copyBtn.querySelector('.material-symbols-rounded');
+            expect(iconReset.textContent).toBe('content_copy');
+        });
+
+        test('createAssistantMessage adds copy button', () => {
+            const message = client.createAssistantMessage();
+            const copyBtn = message.querySelector('.message-copy-btn');
+            expect(copyBtn).toBeDefined();
+        });
+    });
+
     describe('updateStatus', () => {
         test('sets connected class and title', () => {
             client.updateStatus('Connected', true);
