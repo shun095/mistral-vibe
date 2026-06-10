@@ -6,14 +6,15 @@ from vibe.core.utils.tokens import approx_token_count, truncate_middle_to_tokens
 COMPACT_USER_MESSAGE_MAX_TOKENS = 50_000
 
 
-def _find_preceding_assistant(
-    messages: list[LLMMessage], user_index: int
-) -> LLMMessage | None:
-    """Find the nearest non-injected assistant message before the user message at `user_index`.
+def _find_preceding_assistants(
+    messages: list[LLMMessage], user_index: int, summary_prefix: str
+) -> list[LLMMessage]:
+    """Find all consecutive non-injected assistant messages before the user message at `user_index`.
 
-    Skips tool messages. Returns None if no such message exists (e.g., first
-    message in the conversation).
+    Skips tool messages and injected user messages. Returns messages in
+    reverse chronological order (nearest first).
     """
+    assistants: list[LLMMessage] = []
     for i in range(user_index - 1, -1, -1):
         msg = messages[i]
         if (
@@ -22,10 +23,24 @@ def _find_preceding_assistant(
             and isinstance(msg.content, str)
             and msg.content
         ):
-            return msg
-        if msg.role == Role.user:
+            assistants.append(msg)
+            continue
+        if msg.role == Role.user and not _would_be_filtered(msg, summary_prefix):
             break
-    return None
+    return assistants
+
+
+def _would_be_filtered(msg: LLMMessage, summary_prefix: str) -> bool:
+    """Return True if a user message would be excluded from prior context."""
+    if msg.injected:
+        return True
+    if (
+        msg.content
+        and isinstance(msg.content, str)
+        and msg.content.startswith(summary_prefix)
+    ):
+        return True
+    return False
 
 
 def collect_prior_context(
@@ -60,46 +75,42 @@ def collect_prior_context(
         if remaining <= 0:
             break
         user_index = messages.index(m)
-        assistant = _find_preceding_assistant(messages, user_index)
+        assistants = _find_preceding_assistants(messages, user_index, summary_prefix)
 
         content = m.content
         assert isinstance(content, str)
         user_cost = approx_token_count(content)
-        assistant_cost = (
-            approx_token_count(assistant.content)
-            if assistant and isinstance(assistant.content, str)
-            else 0
+        assistant_cost = sum(
+            approx_token_count(a.content)
+            for a in assistants
+            if isinstance(a.content, str)
         )
 
         if user_cost + assistant_cost <= remaining:
-            pair = (
-                [
-                    LLMMessage(
-                        role=Role.assistant, content=assistant.content, injected=True
-                    )
-                ]
-                if assistant is not None
-                else []
-            ) + [_injected_user(content)]
+            pair = [
+                LLMMessage(role=Role.assistant, content=a.content, injected=True)
+                for a in reversed(assistants)
+            ] + [_injected_user(content)]
             selected = pair + selected
             remaining -= user_cost + assistant_cost
         elif user_cost <= remaining:
             assistant_space = remaining - user_cost
-            if assistant_space > 0:
-                assistant_content = (
-                    truncate_middle_to_tokens(assistant.content, assistant_space)
-                    if assistant and isinstance(assistant.content, str)
-                    else ""
-                )
-                if assistant_content:
-                    selected = [
-                        LLMMessage(
-                            role=Role.assistant,
-                            content=assistant_content,
-                            injected=True,
-                        ),
-                        _injected_user(content),
-                    ] + selected
+            if assistant_space > 0 and assistants:
+                assistant_contents = []
+                for a in reversed(assistants):
+                    if isinstance(a.content, str) and assistant_space > 0:
+                        assistant_contents.append(
+                            LLMMessage(
+                                role=Role.assistant,
+                                content=truncate_middle_to_tokens(
+                                    a.content, assistant_space
+                                ),
+                                injected=True,
+                            )
+                        )
+                        assistant_space -= approx_token_count(a.content)
+                if assistant_contents:
+                    selected = assistant_contents + [_injected_user(content)] + selected
                 else:
                     selected = [_injected_user(content)] + selected
                 remaining = 0

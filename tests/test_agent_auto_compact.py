@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from typing import cast
 from unittest.mock import patch
@@ -478,16 +479,23 @@ async def test_compact_message_shape_preserves_prior_user_messages() -> None:
         pass
 
     final = list(agent.messages)
-    assert len(final) == 4  # [system, prior_user_1, prior_user_2, wrapped_summary]
+    assert len(final) == 2  # [system, combined_history_and_summary]
     assert final[0].role == Role.system  # system prompt regenerated on compact
-    assert [m.role for m in final[1:]] == [Role.user, Role.user, Role.user]
-    assert final[1].content == "first real ask"
-    assert final[2].content == "follow-up ask"
-    # Injected and prior-summary user messages must be filtered out.
-    assert all("middleware ping" not in (m.content or "") for m in final)
-    assert sum("prior summary blob" in (m.content or "") for m in final) == 0
-    # Final message is the wrapped summary the next agent will read first.
-    assert final[-1].content == f"{summary_prefix}\nfresh summary body"
+    assert final[1].role == Role.user
+    combined = final[1].content
+    assert isinstance(combined, str)
+    expected = (
+        f"{summary_prefix}\n\n"
+        "---\n\n"
+        "# Conversation History\n\n"
+        "User: first real ask\n\n"
+        "Assistant: ack\n\n"
+        "User: follow-up ask\n\n"
+        "---\n\n"
+        "# Summary\n\n"
+        "fresh summary body"
+    )
+    assert combined == expected
 
 
 @pytest.mark.asyncio
@@ -529,3 +537,111 @@ async def test_compact_retries_on_empty_content() -> None:
     assert compact_requests[0][-1].role == Role.user
     assert compact_requests[1][-1].role == Role.user
     assert compact_requests[2][-1].role == Role.user
+
+
+@pytest.mark.asyncio
+async def test_double_compaction_skips_injected_summary() -> None:
+    """After two compactions, the injected prior-summary is skipped.
+
+    The second compaction should not re-inject the prior summary.
+    Instead, only the new conversation between the two compactions
+    is preserved in the combined message.
+    """
+    from vibe.core.prompts import UtilityPrompt
+
+    summary_prefix = UtilityPrompt.COMPACT_SUMMARY_PREFIX.read()
+    backend = FakeBackend([
+        [mock_llm_chunk(content="first summary")],
+        [mock_llm_chunk(content="second summary")],
+    ])
+    cfg = build_test_vibe_config(models=make_test_models(auto_compact_threshold=999))
+    agent = build_test_agent_loop(config=cfg, backend=backend)
+
+    # First compaction: user message triggers it
+    agent.messages.append(LLMMessage(role=Role.user, content="first user"))
+    agent.stats.context_tokens = 100
+    async for _ in agent.compact():
+        pass
+
+    # Second compaction: add new conversation, then compact again
+    agent.messages.append(LLMMessage(role=Role.user, content="second user"))
+    agent.stats.context_tokens = 100
+    async for _ in agent.compact():
+        pass
+
+    final = list(agent.messages)
+    assert len(final) == 2  # [system, combined]
+    assert final[0].role == Role.system
+    assert final[1].role == Role.user
+
+    combined = final[1].content
+    assert isinstance(combined, str)
+    expected = (
+        f"{summary_prefix}\n\n"
+        "---\n\n"
+        "# Conversation History\n\n"
+        "User: second user\n\n"
+        "---\n\n"
+        "# Summary\n\n"
+        "second summary"
+    )
+    assert combined == expected
+
+
+@pytest.mark.asyncio
+async def test_compact_injected_flag_survives_session_roundtrip() -> None:
+    """Verify that the injected=True flag on compacted messages survives
+    JSON serialization (session save) and deserialization (session load).
+    """
+    from vibe.core.prompts import UtilityPrompt
+
+    summary_prefix = UtilityPrompt.COMPACT_SUMMARY_PREFIX.read()
+    backend = FakeBackend([[mock_llm_chunk(content="summary")]])
+    cfg = build_test_vibe_config(models=make_test_models(auto_compact_threshold=999))
+    agent = build_test_agent_loop(config=cfg, backend=backend)
+
+    # Simulate: user message, assistant response, prior compaction summary,
+    # then a new user message that triggers the second compaction.
+    agent.messages.append(LLMMessage(role=Role.user, content="first user"))
+    agent.messages.append(LLMMessage(role=Role.assistant, content="first reply"))
+    agent.messages.append(
+        LLMMessage(role=Role.user, content=f"{summary_prefix}\nprior summary blob")
+    )
+    agent.messages.append(LLMMessage(role=Role.user, content="second user"))
+    agent.stats.context_tokens = 100
+    async for _ in agent.compact():
+        pass
+
+    # The combined message should be injected=True
+    combined_msg = agent.messages[1]
+    assert combined_msg.role == Role.user
+    assert combined_msg.injected is True
+
+    # Serialize to JSON (simulating save_interaction)
+    json_lines = [
+        json.dumps(m.model_dump(exclude_none=True, mode="json"))
+        for m in agent.messages
+        if m.role != Role.system
+    ]
+
+    # Deserialize (simulating load_session)
+    loaded_messages = [
+        LLMMessage.model_validate(json.loads(line)) for line in json_lines
+    ]
+
+    # Verify injected flag survived
+    assert len(loaded_messages) == 1
+    assert loaded_messages[0].injected is True
+    assert loaded_messages[0].role == Role.user
+    expected = (
+        f"{summary_prefix}\n\n"
+        "---\n\n"
+        "# Conversation History\n\n"
+        "User: first user\n\n"
+        "Assistant: first reply\n\n"
+        "User: second user\n\n"
+        "---\n\n"
+        "# Summary\n\n"
+        "summary"
+    )
+    assert loaded_messages[0].content == expected

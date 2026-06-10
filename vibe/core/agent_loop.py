@@ -2193,14 +2193,23 @@ class AgentLoop:
                 headless=self._headless,
             )
             new_system_message = LLMMessage(role=Role.system, content=new_system_prompt)
-            wrapped_summary = f"{summary_prefix}\n{summary_content}"
-            summary_message = LLMMessage(
-                role=Role.user, content=wrapped_summary, injected=True
+
+            history_lines = [
+                f"{'User' if m.role == Role.user else 'Assistant'}: {m.content if isinstance(m.content, str) else ''}"
+                for m in prior_context_messages
+            ]
+            combined_content = "\n\n".join(
+                [summary_prefix]
+                + (
+                    ["---", "# Conversation History"] + history_lines
+                    if history_lines
+                    else []
+                )
+                + ["---", "# Summary", summary_content]
             )
             self.messages.reset([
                 new_system_message,
-                *prior_context_messages,
-                summary_message,
+                LLMMessage(role=Role.user, content=combined_content, injected=True),
             ])
             self._notify_event_listeners(SystemPromptRegeneratedEvent())
 

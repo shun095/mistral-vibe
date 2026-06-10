@@ -161,8 +161,8 @@ def test_pair_fits_in_budget() -> None:
 
 
 def test_tool_messages_skipped_for_assistant() -> None:
-    # _find_preceding_assistant skips the tool-calling assistant (no content)
-    # and tool messages, landing on the text assistant response.
+    # _find_preceding_assistants collects ALL consecutive assistant messages,
+    # skipping tool messages and the tool-calling assistant (no text content).
     messages = [
         _user("u1"),
         _assistant("a1"),
@@ -180,8 +180,13 @@ def test_tool_messages_skipped_for_assistant() -> None:
         _user("u2"),
     ]
     out = collect_prior_context(messages, _PREFIX)
-    assert [m.content for m in out] == ["u1", "tool results processed", "u2"]
-    assert [m.role for m in out] == [Role.user, Role.assistant, Role.user]
+    assert [m.content for m in out] == ["u1", "a1", "tool results processed", "u2"]
+    assert [m.role for m in out] == [
+        Role.user,
+        Role.assistant,
+        Role.assistant,
+        Role.user,
+    ]
 
 
 def test_double_compaction_no_stacking() -> None:
