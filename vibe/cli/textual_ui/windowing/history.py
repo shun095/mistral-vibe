@@ -69,8 +69,6 @@ def build_history_widgets(
     for history_index, msg in zip(
         range(start_index, start_index + len(batch)), batch, strict=True
     ):
-        if msg.injected:
-            continue
         match msg.role:
             case Role.user:
                 if msg.content or msg.images:

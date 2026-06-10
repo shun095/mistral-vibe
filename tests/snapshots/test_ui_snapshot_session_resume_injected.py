@@ -10,8 +10,8 @@ from vibe.core.types import LLMMessage, Role
 class SnapshotTestAppWithInjectedMessages(BaseSnapshotTestApp):
     """Simulates resuming a session that contains injected middleware messages.
 
-    The injected plan-mode reminder between the two user turns must not
-    appear in the rendered history.
+    The injected plan-mode reminder between the two user turns must appear
+    in the rendered history.
     """
 
     def __init__(self) -> None:
@@ -19,7 +19,7 @@ class SnapshotTestAppWithInjectedMessages(BaseSnapshotTestApp):
         self.agent_loop.messages.extend([
             LLMMessage(role=Role.user, content="Hello, can you help me?"),
             LLMMessage(role=Role.assistant, content="Sure! What do you need?"),
-            # Middleware-injected plan mode reminder — should be hidden
+            # Middleware-injected plan mode reminder — should be visible
             LLMMessage(
                 role=Role.user,
                 content="<vibe_warning>Plan mode is active. You MUST NOT make any edits.</vibe_warning>",
@@ -32,10 +32,10 @@ class SnapshotTestAppWithInjectedMessages(BaseSnapshotTestApp):
         ])
 
 
-def test_snapshot_session_resume_hides_injected_messages(
+def test_snapshot_session_resume_shows_injected_messages(
     snap_compare: SnapCompare,
 ) -> None:
-    """Injected middleware messages must not be rendered when resuming a session."""
+    """Injected middleware messages must be rendered when resuming a session."""
 
     async def run_before(pilot: Pilot) -> None:
         await pilot.pause(0.5)
