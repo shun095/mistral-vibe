@@ -1525,9 +1525,12 @@ class VibeClient {
             contentDiv.innerHTML = this.escapeHtml(content);
         }
 
+        // Capture scroll height BEFORE appending to match assistant message pattern
+        const previousScrollHeight = this.elements.messages.scrollHeight;
+
         messageDiv.appendChild(contentDiv);
         this.elements.messages.appendChild(messageDiv);
-        this.scrollToBottom();
+        this.scrollToBottomIfWasAtBottom(previousScrollHeight);
     }
 
     addImageMessage(imageData, messageIndex) {
@@ -1541,9 +1544,12 @@ class VibeClient {
             imageUrl = `data:image/jpeg;base64,${imageData}`;
         }
 
+        // Capture scroll height BEFORE appending to match assistant message pattern
+        const previousScrollHeight = this.elements.messages.scrollHeight;
+
         messageDiv.innerHTML = `<div class="content"><img src="${imageUrl}" style="max-width: 100%; border-radius: 8px;"></div>`;
         this.elements.messages.appendChild(messageDiv);
-        this.scrollToBottom();
+        this.scrollToBottomIfWasAtBottom(previousScrollHeight);
     }
 
     updateSendButtonState() {
