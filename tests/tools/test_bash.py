@@ -384,3 +384,48 @@ class TestDenylistWordBoundary:
         bash_tool = self._make_bash(allowlist=["cat"])
         result = bash_tool.resolve_permission(BashArgs(command="catalog", timeout=10))
         assert result is not None and result.permission is not ToolPermission.ALWAYS
+
+
+class TestBashNeverPermission:
+    """Test that bash with NEVER permission blocks non-allowlisted commands."""
+
+    @staticmethod
+    def _make_bash(**kwargs):
+        config = BashToolConfig(**kwargs)
+        return Bash(config_getter=lambda: config, state=BaseToolState())
+
+    def test_never_permission_blocks_non_allowlisted(self):
+        bash_tool = self._make_bash(
+            permission=ToolPermission.NEVER, allowlist=["ls", "cat"]
+        )
+        result = bash_tool.resolve_permission(BashArgs(command="rm -rf /", timeout=10))
+        assert isinstance(result, PermissionContext)
+        assert result.permission == ToolPermission.NEVER
+        assert result.reason is not None
+        assert "not allowlisted" in result.reason
+
+    def test_never_permission_allows_allowlisted(self):
+        bash_tool = self._make_bash(
+            permission=ToolPermission.NEVER, allowlist=["ls", "cat"]
+        )
+        result = bash_tool.resolve_permission(BashArgs(command="ls -la", timeout=10))
+        assert isinstance(result, PermissionContext)
+        assert result.permission == ToolPermission.ALWAYS
+
+    def test_never_permission_still_blocks_denylist(self):
+        bash_tool = self._make_bash(
+            permission=ToolPermission.NEVER, allowlist=["ls"], denylist=["vim"]
+        )
+        result = bash_tool.resolve_permission(BashArgs(command="vim file", timeout=10))
+        assert isinstance(result, PermissionContext)
+        assert result.permission == ToolPermission.NEVER
+
+    def test_ask_permission_still_prompts_for_non_allowlisted(self):
+        bash_tool = self._make_bash(
+            permission=ToolPermission.ASK, allowlist=["ls", "cat"]
+        )
+        result = bash_tool.resolve_permission(
+            BashArgs(command="pip install x", timeout=10)
+        )
+        assert isinstance(result, PermissionContext)
+        assert result.permission == ToolPermission.ASK

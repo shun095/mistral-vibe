@@ -584,6 +584,32 @@ class TestPlanAgentToolRestriction:
         assert edit_config.permission == ToolPermission.NEVER
         assert len(edit_config.allowlist) > 0
 
+    @pytest.mark.asyncio
+    async def test_plan_mode_restricts_edit_file_bash_and_allows_lsp(self) -> None:
+        backend = FakeBackend([
+            LLMChunk(
+                message=LLMMessage(role=Role.assistant, content="ok"),
+                usage=LLMUsage(prompt_tokens=10, completion_tokens=5),
+            )
+        ])
+        config = build_test_vibe_config()
+        agent = build_test_agent_loop(
+            config=config, agent_name=BuiltinAgentName.PLAN, backend=backend
+        )
+
+        # edit_file should be NEVER with plans dir allowlist
+        edit_file_config = agent.tool_manager.get_tool_config("edit_file")
+        assert edit_file_config.permission == ToolPermission.NEVER
+        assert len(edit_file_config.allowlist) > 0
+
+        # bash should be NEVER (only allowlisted safe cmds auto-run)
+        bash_config = agent.tool_manager.get_tool_config("bash")
+        assert bash_config.permission == ToolPermission.NEVER
+
+        # lsp should be ALWAYS
+        lsp_config = agent.tool_manager.get_tool_config("lsp")
+        assert lsp_config.permission == ToolPermission.ALWAYS
+
 
 class TestAgentManagerFiltering:
     def test_enabled_agents_filters_to_only_enabled(self) -> None:

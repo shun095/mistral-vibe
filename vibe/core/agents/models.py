@@ -103,6 +103,9 @@ def _plan_overrides() -> dict[str, Any]:
         "tools": {
             "write_file": {"permission": "never", "allowlist": [plans_pattern]},
             "edit": {"permission": "never", "allowlist": [plans_pattern]},
+            "edit_file": {"permission": "never", "allowlist": [plans_pattern]},
+            "bash": {"permission": "never"},
+            "lsp": {"permission": "always"},
         }
     }
 

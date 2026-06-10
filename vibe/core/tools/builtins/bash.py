@@ -463,8 +463,16 @@ class Bash(
         if not required:
             return None
 
+        if self.config.permission == ToolPermission.NEVER:
+            perm = ToolPermission.NEVER
+            reason = (
+                f"Command not allowlisted: {'; '.join(rp.label for rp in required)}"
+            )
+        else:
+            perm = ToolPermission.ASK
+            reason = None
         return PermissionContext(
-            permission=ToolPermission.ASK, required_permissions=required
+            permission=perm, required_permissions=required, reason=reason
         )
 
     @final
