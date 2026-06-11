@@ -67,6 +67,39 @@ def _extract_commands(command: str) -> list[str]:
 _OUTPUT_REDIRECT_OPS = {">", ">>", ">&", ">>&", "&>"}
 
 
+def _extract_redirect_targets(command: str) -> list[str]:
+    """Extract file paths that are targets of output redirection.
+
+    Returns list of target paths from file_redirect nodes with output operators.
+    Skips process substitution (> (...)) and input redirection (<, <<).
+    """
+    parser = _get_parser()
+    tree = parser.parse(command.encode("utf-8"))
+    targets: list[str] = []
+
+    def find_target_word(children: list[Node]) -> None:
+        for i, child in enumerate(children):
+            if child.text is None:
+                continue
+            token = child.text.decode("utf-8")
+            if token not in _OUTPUT_REDIRECT_OPS:
+                continue
+            for j in range(i + 1, len(children)):
+                target = children[j]
+                if target.type == "word" and target.text:
+                    targets.append(target.text.decode("utf-8"))
+                    break
+
+    def walk(node: Node) -> None:
+        if node.type == "file_redirect":
+            find_target_word(list(node.children))
+        for child in node.children:
+            walk(child)
+
+    walk(tree.root_node)
+    return targets
+
+
 def _has_output_redirection(command: str) -> bool:
     """Check if the command has output redirection that writes to a file.
 
@@ -490,10 +523,18 @@ class Bash(
             return guardrail_permission
         outside_dirs = _collect_outside_dirs(command_parts)
         has_redirect = _has_output_redirection(args.command)
+        # Redirects to scratchpad are always allowed (matches write_file/edit behavior)
+        redirect_to_scratchpad = (
+            has_redirect
+            and _extract_redirect_targets(args.command)
+            and all(
+                is_scratchpad_path(t) for t in _extract_redirect_targets(args.command)
+            )
+        )
         if (
             self._is_unconditionally_allowed(command_parts, outside_dirs)
             and not guardrail_permission
-            and not has_redirect
+            and (not has_redirect or redirect_to_scratchpad)
         ):
             return PermissionContext(permission=ToolPermission.ALWAYS)
 
@@ -502,12 +543,12 @@ class Bash(
             required.extend(guardrail_permission.required_permissions)
 
         if not required:
-            if has_redirect:
+            if has_redirect and not redirect_to_scratchpad:
                 required = []
             else:
                 return None
 
-        if has_redirect and not guardrail_permission:
+        if has_redirect and not guardrail_permission and not redirect_to_scratchpad:
             if self.config.permission == ToolPermission.NEVER:
                 perm = ToolPermission.NEVER
                 reason = (

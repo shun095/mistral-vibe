@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from tests.mock.utils import collect_result
+from vibe.core.scratchpad import init_scratchpad
 from vibe.core.tools.base import BaseToolState, ToolError, ToolPermission
 from vibe.core.tools.builtins.bash import Bash, BashArgs, BashToolConfig
 from vibe.core.tools.permissions import PermissionContext
@@ -574,5 +575,85 @@ class TestOutputRedirectionBlocking:
         """Pipe (|) without output redirect is read-only when both sides are allowlisted."""
         bash_tool = self._make_bash()
         result = bash_tool.resolve_permission(BashArgs(command="ls | head", timeout=10))
+        assert isinstance(result, PermissionContext)
+        assert result.permission is ToolPermission.ALWAYS
+
+
+class TestScratchpadRedirect:
+    """Test that redirects to scratchpad are always allowed, even in Plan mode."""
+
+    @staticmethod
+    def _make_bash(**kwargs):
+        config = BashToolConfig(**kwargs)
+        return Bash(config_getter=lambda: config, state=BaseToolState())
+
+    @pytest.fixture(autouse=True)
+    def _init_scratchpad(self):
+        self.scratchpad = init_scratchpad("test-scratchpad-redirect")
+
+    def test_redirect_to_scratchpad_always_allowed(self):
+        """Allowlisted command redirecting to scratchpad should be ALWAYS."""
+        bash_tool = self._make_bash()
+        result = bash_tool.resolve_permission(
+            BashArgs(command=f'echo "data" > {self.scratchpad}/test.txt', timeout=10)
+        )
+        assert isinstance(result, PermissionContext)
+        assert result.permission is ToolPermission.ALWAYS
+
+    def test_redirect_to_scratchpad_in_plan_mode(self):
+        """Scratchpad redirect should be ALWAYS even with NEVER config (Plan mode)."""
+        bash_tool = self._make_bash(
+            permission=ToolPermission.NEVER, allowlist=["ls", "cat", "echo"]
+        )
+        result = bash_tool.resolve_permission(
+            BashArgs(command=f'echo "data" > {self.scratchpad}/test.txt', timeout=10)
+        )
+        assert isinstance(result, PermissionContext)
+        assert result.permission is ToolPermission.ALWAYS
+
+    def test_heredoc_redirect_to_scratchpad_in_plan_mode(self):
+        """Heredoc redirect to scratchpad should be ALWAYS in Plan mode."""
+        bash_tool = self._make_bash(
+            permission=ToolPermission.NEVER, allowlist=["ls", "cat", "echo"]
+        )
+        result = bash_tool.resolve_permission(
+            BashArgs(
+                command=f"cat > {self.scratchpad}/file.txt <<'EOF'\nhello\nEOF",
+                timeout=10,
+            )
+        )
+        assert isinstance(result, PermissionContext)
+        assert result.permission is ToolPermission.ALWAYS
+
+    def test_redirect_to_repo_still_blocked_in_plan_mode(self):
+        """Redirect to repo (not scratchpad) should still be blocked in Plan mode."""
+        bash_tool = self._make_bash(
+            permission=ToolPermission.NEVER, allowlist=["ls", "cat", "echo"]
+        )
+        result = bash_tool.resolve_permission(
+            BashArgs(command='echo "data" > src/test.txt', timeout=10)
+        )
+        assert isinstance(result, PermissionContext)
+        assert result.permission is ToolPermission.NEVER
+
+    def test_mixed_redirect_scratchpad_and_repo_asked(self):
+        """Redirect to both scratchpad and repo should ASK (not all scratchpad)."""
+        bash_tool = self._make_bash()
+        result = bash_tool.resolve_permission(
+            BashArgs(
+                command=f'echo "x" > {self.scratchpad}/a.txt 2> src/b.txt', timeout=10
+            )
+        )
+        assert isinstance(result, PermissionContext)
+        assert result.permission is ToolPermission.ASK
+
+    def test_append_redirect_to_scratchpad_allowed(self):
+        """Append redirect (>>) to scratchpad should be ALWAYS."""
+        bash_tool = self._make_bash(
+            permission=ToolPermission.NEVER, allowlist=["ls", "cat", "echo"]
+        )
+        result = bash_tool.resolve_permission(
+            BashArgs(command=f'echo "more" >> {self.scratchpad}/test.txt', timeout=10)
+        )
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.ALWAYS
