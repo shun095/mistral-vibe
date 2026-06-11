@@ -27,7 +27,7 @@ from vibe.core.utils.platform import (
     get_platform_id,
     is_windows,
 )
-from vibe.core.utils.retry import async_generator_retry, async_retry
+from vibe.core.utils.retry import async_generator_retry, async_retry, wrap_with_retry
 from vibe.core.utils.tags import (
     CANCELLATION_TAG,
     KNOWN_TAGS,
@@ -70,4 +70,5 @@ __all__ = [
     "name_matches",
     "run_sync",
     "utc_now",
+    "wrap_with_retry",
 ]

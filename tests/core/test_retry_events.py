@@ -61,14 +61,9 @@ class TestAsyncRetryWithCallback:
 
         call_count = 0
 
-        retry_config = {
-            "tries": 3,
-            "delay_seconds": 0.01,
-            "on_retry": on_retry,
-            "is_retryable": lambda e: True,  # Retry on any error for testing
-        }
-
-        @async_retry(retry_config)
+        @async_retry(
+            tries=3, delay_seconds=0.01, on_retry=on_retry, is_retryable=lambda e: True
+        )
         async def flaky_function() -> str:
             nonlocal call_count
             call_count += 1
@@ -80,7 +75,7 @@ class TestAsyncRetryWithCallback:
 
         assert result == "success"
         assert call_count == 3
-        assert len(retry_events) == 2  # 2 retries before success
+        assert len(retry_events) == 2
 
     @pytest.mark.asyncio
     async def test_retry_callback_with_provider_and_model(self) -> None:
@@ -92,16 +87,14 @@ class TestAsyncRetryWithCallback:
 
         call_count = 0
 
-        retry_config = {
-            "tries": 2,
-            "delay_seconds": 0.01,
-            "on_retry": on_retry,
-            "provider": "test-provider",
-            "model": "test-model",
-            "is_retryable": lambda e: True,
-        }
-
-        @async_retry(retry_config)
+        @async_retry(
+            tries=2,
+            delay_seconds=0.01,
+            on_retry=on_retry,
+            provider="test-provider",
+            model="test-model",
+            is_retryable=lambda e: True,
+        )
         async def flaky_function() -> str:
             nonlocal call_count
             call_count += 1
@@ -125,9 +118,7 @@ class TestAsyncRetryWithCallback:
         def on_retry(event: LLMRetryEvent) -> None:
             retry_events.append(event)
 
-        retry_config = {"tries": 3, "delay_seconds": 0.01, "on_retry": on_retry}
-
-        @async_retry(retry_config)
+        @async_retry(tries=3, delay_seconds=0.01, on_retry=on_retry)
         async def successful_function() -> str:
             return "success"
 
@@ -144,21 +135,16 @@ class TestAsyncRetryWithCallback:
         def on_retry(event: LLMRetryEvent) -> None:
             retry_events.append(event)
 
-        retry_config = {
-            "tries": 3,
-            "delay_seconds": 0.01,
-            "on_retry": on_retry,
-            "is_retryable": lambda e: True,
-        }
-
-        @async_retry(retry_config)
+        @async_retry(
+            tries=3, delay_seconds=0.01, on_retry=on_retry, is_retryable=lambda e: True
+        )
         async def always_fails() -> str:
             raise ConnectionError("Always fails")
 
         with pytest.raises(ConnectionError, match="Always fails"):
             await always_fails()
 
-        assert len(retry_events) == 2  # 2 retries before giving up
+        assert len(retry_events) == 2
 
     @pytest.mark.asyncio
     async def test_retry_event_contains_correct_attempt_numbers(self) -> None:
@@ -170,14 +156,9 @@ class TestAsyncRetryWithCallback:
 
         call_count = 0
 
-        retry_config = {
-            "tries": 4,
-            "delay_seconds": 0.01,
-            "on_retry": on_retry,
-            "is_retryable": lambda e: True,
-        }
-
-        @async_retry(retry_config)
+        @async_retry(
+            tries=4, delay_seconds=0.01, on_retry=on_retry, is_retryable=lambda e: True
+        )
         async def flaky_function() -> str:
             nonlocal call_count
             call_count += 1
@@ -208,14 +189,9 @@ class TestAsyncGeneratorRetryWithCallback:
 
         call_count = 0
 
-        retry_config = {
-            "tries": 3,
-            "delay_seconds": 0.01,
-            "on_retry": on_retry,
-            "is_retryable": lambda e: True,
-        }
-
-        @async_generator_retry(retry_config)
+        @async_generator_retry(
+            tries=3, delay_seconds=0.01, on_retry=on_retry, is_retryable=lambda e: True
+        )
         async def flaky_generator() -> AsyncGenerator[str, None]:
             nonlocal call_count
             call_count += 1
@@ -227,7 +203,7 @@ class TestAsyncGeneratorRetryWithCallback:
         items = []
         async for item in flaky_generator():
             if isinstance(item, LLMRetryEvent):
-                continue  # Skip retry events
+                continue
             items.append(item)
 
         assert items == ["item1", "item2"]
@@ -242,9 +218,7 @@ class TestAsyncGeneratorRetryWithCallback:
         def on_retry(event: LLMRetryEvent) -> None:
             retry_events.append(event)
 
-        retry_config = {"tries": 3, "delay_seconds": 0.01, "on_retry": on_retry}
-
-        @async_generator_retry(retry_config)
+        @async_generator_retry(tries=3, delay_seconds=0.01, on_retry=on_retry)
         async def successful_generator() -> AsyncGenerator[str, None]:
             yield "item1"
             yield "item2"
@@ -258,10 +232,7 @@ class TestAsyncGeneratorRetryWithCallback:
 
     @pytest.mark.asyncio
     async def test_generator_retry_mid_stream(self) -> None:
-        """Test that retry works when error occurs before first yield.
-
-        Note: After first yield, generator continues without retry.
-        """
+        """Test that retry works when error occurs before first yield."""
         retry_events: list[LLMRetryEvent] = []
 
         def on_retry(event: LLMRetryEvent) -> None:
@@ -269,14 +240,9 @@ class TestAsyncGeneratorRetryWithCallback:
 
         call_count = 0
 
-        retry_config = {
-            "tries": 3,
-            "delay_seconds": 0.01,
-            "on_retry": on_retry,
-            "is_retryable": lambda e: True,
-        }
-
-        @async_generator_retry(retry_config)
+        @async_generator_retry(
+            tries=3, delay_seconds=0.01, on_retry=on_retry, is_retryable=lambda e: True
+        )
         async def flaky_generator() -> AsyncGenerator[str, None]:
             nonlocal call_count
             call_count += 1
@@ -288,7 +254,7 @@ class TestAsyncGeneratorRetryWithCallback:
         items = []
         async for item in flaky_generator():
             if isinstance(item, LLMRetryEvent):
-                continue  # Skip retry events
+                continue
             items.append(item)
 
         assert items == ["item1", "item2"]
@@ -306,14 +272,9 @@ class TestAsyncGeneratorRetryWithCallback:
         def on_retry(event: LLMRetryEvent) -> None:
             retry_events.append(event)
 
-        retry_config = {
-            "tries": 3,
-            "delay_seconds": 0.01,
-            "on_retry": on_retry,
-            "is_retryable": lambda e: True,
-        }
-
-        @async_generator_retry(retry_config)  # type: ignore[misc]
+        @async_generator_retry(  # type: ignore[misc]
+            tries=3, delay_seconds=0.01, on_retry=on_retry, is_retryable=lambda e: True
+        )
         async def always_fails() -> AsyncGenerator[str | LLMRetryEvent, None]:
             raise ConnectionError("Always fails")
 
@@ -325,30 +286,24 @@ class TestAsyncGeneratorRetryWithCallback:
 
     @pytest.mark.asyncio
     async def test_generator_retry_yields_events_to_consumer(self) -> None:
-        """Test that retry events are passed to callback, not yielded.
-
-        Note: After first yield, errors propagate without retry.
-        """
+        """Test that retry events are passed to callback, not yielded."""
         received_events: list[LLMRetryEvent] = []
 
-        retry_config = {
-            "tries": 3,
-            "delay_seconds": 0.01,
-            "on_retry": lambda event: received_events.append(event),
-            "is_retryable": lambda e: True,
-        }
-
-        @async_generator_retry(retry_config)  # type: ignore[misc]
+        @async_generator_retry(  # type: ignore[misc]
+            tries=3,
+            delay_seconds=0.01,
+            on_retry=lambda event: received_events.append(event),
+            is_retryable=lambda e: True,
+        )
         async def flaky_generator() -> AsyncGenerator[str | LLMRetryEvent, None]:
             yield "item1"
             raise ConnectionError("Error after first item")
-            yield "item2"  # Never reached
+            yield "item2"
 
         items = []
         with pytest.raises(ConnectionError, match="Error after first item"):
             async for item in flaky_generator():
                 items.append(item)
 
-        # After first yield, errors propagate without retry
         assert items == ["item1"]
         assert len(received_events) == 0

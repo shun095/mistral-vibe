@@ -21,43 +21,6 @@ _RETRYABLE_REQUEST_ERRORS: tuple[type[httpx.RequestError], ...] = (
 from vibe.core.types import LLMRetryEvent
 
 
-def _extract_retry_config(
-    config: dict[str, Any],
-) -> tuple[int, float, float, Callable[[Exception], bool], Any, Any, Any]:
-    """Extract and return retry configuration values from config dict."""
-    return (
-        config.get("tries", 3),
-        config.get("delay_seconds", 0.5),
-        config.get("backoff_factor", 2.0),
-        config.get("is_retryable", _is_retryable_http_error),
-        config.get("on_retry"),
-        config.get("provider"),
-        config.get("model"),
-    )
-
-
-def _emit_retry_event(
-    on_retry: Any,
-    attempt: int,
-    tries: int,
-    last_exc: Exception,
-    current_delay: float,
-    provider: Any,
-    model: Any,
-) -> None:
-    """Create and invoke an LLMRetryEvent via the on_retry callback."""
-    if on_retry is not None:
-        retry_event = LLMRetryEvent(
-            attempt=attempt + 1,
-            max_attempts=tries,
-            error_message=str(last_exc),
-            delay_seconds=current_delay,
-            provider=provider,
-            model=model,
-        )
-        on_retry(retry_event)
-
-
 def _is_retryable_http_error(e: Exception) -> bool:  # noqa: PLR0911
     """Check if an exception is retryable for LLM backend operations.
 
@@ -71,10 +34,6 @@ def _is_retryable_http_error(e: Exception) -> bool:  # noqa: PLR0911
     if isinstance(e, httpx.RequestError):
         # Fast path: known retryable error types
         if isinstance(e, _RETRYABLE_REQUEST_ERRORS):
-            return True
-        # ReadError (e.g., connection dropped mid-read) is always retryable
-        # even when the message is empty — string matching alone won't catch it.
-        if isinstance(e, httpx.ReadError):
             return True
         error_str = str(e).lower()
         if "readtimeout" in error_str:
@@ -97,21 +56,22 @@ def _is_retryable_http_error(e: Exception) -> bool:  # noqa: PLR0911
 
 
 def async_retry[T, **P](
-    config: dict[str, Any],
+    tries: int = 3,
+    delay_seconds: float = 0.5,
+    backoff_factor: float = 2.0,
+    is_retryable: Callable[[Exception], bool] = _is_retryable_http_error,
+    on_retry: Callable[[LLMRetryEvent], None] | None = None,
+    provider: str | None = None,
+    model: str | None = None,
 ) -> Callable[[Callable[P, Awaitable[T]]], Callable[P, Awaitable[T]]]:
-    """Retry decorator for async functions using mutable config.
-
-    Uses a mutable config dict to allow dynamic injection of on_retry callback.
-
-    Args:
-        config: Configuration dict with keys:
-            - tries: Number of retry attempts (default: 3)
-            - delay_seconds: Initial delay between retries in seconds (default: 0.5)
-            - backoff_factor: Multiplier for delay on each retry (default: 2.0)
-            - is_retryable: Function to determine if an exception should trigger a retry
-            - on_retry: Optional callback invoked before each retry with LLMRetryEvent
-            - provider: Optional provider name for the retry event
-            - model: Optional model name for the retry event
+    """Args:
+        tries: Number of retry attempts
+        delay_seconds: Initial delay between retries in seconds
+        backoff_factor: Multiplier for delay on each retry
+        is_retryable: Function to determine if an exception should trigger a retry
+        on_retry: Optional callback invoked before each retry with LLMRetryEvent
+        provider: Optional provider name for the retry event
+        model: Optional model name for the retry event
 
     Returns:
         Decorated function with retry logic
@@ -121,16 +81,6 @@ def async_retry[T, **P](
         @functools.wraps(func)
         async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             last_exc = None
-            (
-                tries,
-                delay_seconds,
-                backoff_factor,
-                is_retryable,
-                on_retry,
-                provider,
-                model,
-            ) = _extract_retry_config(config)
-
             for attempt in range(tries):
                 try:
                     return await func(*args, **kwargs)
@@ -140,15 +90,17 @@ def async_retry[T, **P](
                         current_delay = (delay_seconds * (backoff_factor**attempt)) + (
                             0.05 * attempt
                         )
-                        _emit_retry_event(
-                            on_retry,
-                            attempt,
-                            tries,
-                            last_exc,
-                            current_delay,
-                            provider,
-                            model,
-                        )
+                        if on_retry is not None:
+                            on_retry(
+                                LLMRetryEvent(
+                                    attempt=attempt + 1,
+                                    max_attempts=tries,
+                                    error_message=str(last_exc),
+                                    delay_seconds=current_delay,
+                                    provider=provider,
+                                    model=model,
+                                )
+                            )
                         logger.warning(
                             "Retrying %s after error attempt=%d/%d delay=%.2fs error=%r",
                             func.__qualname__,
@@ -169,49 +121,60 @@ def async_retry[T, **P](
     return decorator
 
 
-def apply_retry_decorator(
-    obj: Any, method_name: str, config: dict[str, Any], is_streaming: bool = False
+def wrap_with_retry(
+    obj: Any,
+    method_name: str,
+    *,
+    is_streaming: bool = False,
+    tries: int = 3,
+    delay_seconds: float = 0.5,
+    backoff_factor: float = 2.0,
+    on_retry: Callable[[LLMRetryEvent], None] | None = None,
+    provider: str | None = None,
+    model: str | None = None,
 ) -> None:
-    """Apply retry decorator to a method dynamically.
-
-    Args:
-        obj: Object instance containing the method to decorate.
-        method_name: Name of the method to apply retry logic to.
-        config: Retry configuration dict with keys:
-            - tries: Number of retry attempts
-            - delay_seconds: Initial delay between retries
-            - backoff_factor: Multiplier for delay on each retry
-            - is_retryable: Function to determine if exception should trigger retry
-            - on_retry: Optional callback invoked before each retry
-            - provider: Optional provider name for retry event
-            - model: Optional model name for retry event
-        is_streaming: Whether the method is an async generator.
-
-    """
+    """Apply retry decorator to a method dynamically."""
     original = getattr(obj, method_name)
     if is_streaming:
-        decorated = async_generator_retry(config)(original)
+        decorated = async_generator_retry(
+            tries=tries,
+            delay_seconds=delay_seconds,
+            backoff_factor=backoff_factor,
+            on_retry=on_retry,
+            provider=provider,
+            model=model,
+        )(original)
     else:
-        decorated = async_retry(config)(original)
+        decorated = async_retry(
+            tries=tries,
+            delay_seconds=delay_seconds,
+            backoff_factor=backoff_factor,
+            on_retry=on_retry,
+            provider=provider,
+            model=model,
+        )(original)
     setattr(obj, method_name, decorated)  # type: ignore[misc]
 
 
 def async_generator_retry[T, **P](
-    config: dict[str, Any],
+    tries: int = 3,
+    delay_seconds: float = 0.5,
+    backoff_factor: float = 2.0,
+    is_retryable: Callable[[Exception], bool] = _is_retryable_http_error,
+    on_retry: Callable[[LLMRetryEvent], None] | None = None,
+    provider: str | None = None,
+    model: str | None = None,
 ) -> Callable[[Callable[P, AsyncGenerator[T]]], Callable[P, AsyncGenerator[T]]]:
-    """Retry decorator for async generators using mutable config.
-
-    Uses a mutable config dict to allow dynamic injection of on_retry callback.
+    """Retry decorator for async generators.
 
     Args:
-        config: Configuration dict with keys:
-            - tries: Number of retry attempts (default: 3)
-            - delay_seconds: Initial delay between retries in seconds (default: 0.5)
-            - backoff_factor: Multiplier for delay on each retry (default: 2.0)
-            - is_retryable: Function to determine if an exception should trigger a retry
-            - on_retry: Optional callback invoked before each retry with LLMRetryEvent
-            - provider: Optional provider name for the retry event
-            - model: Optional model name for the retry event
+        tries: Number of retry attempts
+        delay_seconds: Initial delay between retries in seconds
+        backoff_factor: Multiplier for delay on each retry
+        is_retryable: Function to determine if an exception should trigger a retry
+        on_retry: Optional callback invoked before each retry with LLMRetryEvent
+        provider: Optional provider name for the retry event
+        model: Optional model name for the retry event
 
     Returns:
         Decorated async generator function with retry logic
@@ -223,16 +186,6 @@ def async_generator_retry[T, **P](
         @functools.wraps(func)
         async def wrapper(*args: P.args, **kwargs: P.kwargs) -> AsyncGenerator[T]:
             last_exc = None
-            (
-                tries,
-                delay_seconds,
-                backoff_factor,
-                is_retryable,
-                on_retry,
-                provider,
-                model,
-            ) = _extract_retry_config(config)
-
             for attempt in range(tries):
                 generator = func(*args, **kwargs)
                 try:
@@ -246,15 +199,17 @@ def async_generator_retry[T, **P](
                         current_delay = (delay_seconds * (backoff_factor**attempt)) + (
                             0.05 * attempt
                         )
-                        _emit_retry_event(
-                            on_retry,
-                            attempt,
-                            tries,
-                            last_exc,
-                            current_delay,
-                            provider,
-                            model,
-                        )
+                        if on_retry is not None:
+                            on_retry(
+                                LLMRetryEvent(
+                                    attempt=attempt + 1,
+                                    max_attempts=tries,
+                                    error_message=str(last_exc),
+                                    delay_seconds=current_delay,
+                                    provider=provider,
+                                    model=model,
+                                )
+                            )
                         logger.warning(
                             "Retrying %s after error attempt=%d/%d delay=%.2fs error=%r",
                             func.__qualname__,

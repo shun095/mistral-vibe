@@ -26,7 +26,7 @@ from vibe.core.types import (
     StrToolChoice,
 )
 from vibe.core.utils.http import build_ssl_context
-from vibe.core.utils.retry import apply_retry_decorator
+from vibe.core.utils.retry import wrap_with_retry
 
 if TYPE_CHECKING:
     from vibe.core.config import ModelConfig, ProviderConfig
@@ -258,23 +258,22 @@ class GenericBackend:
         self._timeout = timeout
         self._on_retry = on_retry
 
-        # Apply retry decorators dynamically with callback if provided
         if on_retry is not None:
-            self._apply_retry_decorators()
-
-    def _apply_retry_decorators(self) -> None:
-        """Apply retry decorators with the on_retry callback to request methods."""
-        retry_config: dict[str, Any] = {
-            "tries": 10,
-            "on_retry": self._on_retry,
-            "provider": self._provider.name,
-            "model": None,
-        }
-
-        apply_retry_decorator(self, "_make_request", retry_config, is_streaming=False)
-        apply_retry_decorator(
-            self, "_make_streaming_request", retry_config, is_streaming=True
-        )
+            wrap_with_retry(
+                self,
+                "_make_request",
+                tries=10,
+                on_retry=on_retry,
+                provider=self._provider.name,
+            )
+            wrap_with_retry(
+                self,
+                "_make_streaming_request",
+                is_streaming=True,
+                tries=10,
+                on_retry=on_retry,
+                provider=self._provider.name,
+            )
 
     async def __aenter__(self) -> GenericBackend:
         if self._client is None:

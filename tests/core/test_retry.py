@@ -71,7 +71,7 @@ class TestAsyncRetry:
     async def test_retries_network_error_then_succeeds(self) -> None:
         attempts = 0
 
-        @async_retry({"tries": 3, "delay_seconds": 0.0, "backoff_factor": 1.0})
+        @async_retry(tries=3, delay_seconds=0.0, backoff_factor=1.0)
         async def call() -> str:
             nonlocal attempts
             attempts += 1
@@ -87,7 +87,7 @@ class TestAsyncRetry:
     async def test_does_not_retry_non_retryable(self) -> None:
         attempts = 0
 
-        @async_retry({"tries": 3, "delay_seconds": 0.0, "backoff_factor": 1.0})
+        @async_retry(tries=3, delay_seconds=0.0, backoff_factor=1.0)
         async def call() -> str:
             nonlocal attempts
             attempts += 1
@@ -101,7 +101,7 @@ class TestAsyncRetry:
     async def test_exhausts_retries(self) -> None:
         attempts = 0
 
-        @async_retry({"tries": 3, "delay_seconds": 0.0, "backoff_factor": 1.0})
+        @async_retry(tries=3, delay_seconds=0.0, backoff_factor=1.0)
         async def call() -> str:
             nonlocal attempts
             attempts += 1
@@ -117,11 +117,7 @@ class TestAsyncGeneratorRetry:
     async def test_retries_before_first_yield(self) -> None:
         attempts = 0
 
-        @async_generator_retry({
-            "tries": 3,
-            "delay_seconds": 0.0,
-            "backoff_factor": 1.0,
-        })
+        @async_generator_retry(tries=3, delay_seconds=0.0, backoff_factor=1.0)
         async def gen() -> AsyncGenerator[int]:
             nonlocal attempts
             attempts += 1
@@ -138,11 +134,7 @@ class TestAsyncGeneratorRetry:
     async def test_does_not_retry_after_first_yield(self) -> None:
         attempts = 0
 
-        @async_generator_retry({
-            "tries": 3,
-            "delay_seconds": 0.0,
-            "backoff_factor": 1.0,
-        })
+        @async_generator_retry(tries=3, delay_seconds=0.0, backoff_factor=1.0)
         async def gen() -> AsyncGenerator[int]:
             nonlocal attempts
             attempts += 1
@@ -161,11 +153,7 @@ class TestAsyncGeneratorRetry:
     async def test_does_not_retry_non_retryable_before_yield(self) -> None:
         attempts = 0
 
-        @async_generator_retry({
-            "tries": 3,
-            "delay_seconds": 0.0,
-            "backoff_factor": 1.0,
-        })
+        @async_generator_retry(tries=3, delay_seconds=0.0, backoff_factor=1.0)
         async def gen() -> AsyncGenerator[int]:
             nonlocal attempts
             attempts += 1

@@ -74,7 +74,7 @@ class TestGenericBackend(GenericBackend):
         # Override retry count for both regular and streaming requests
         self._retry_count = 1
 
-    @async_retry({"tries": 1})
+    @async_retry(tries=1)
     async def _make_request(  # type: ignore[override]
         self, url: str, data: bytes, headers: dict[str, str]
     ) -> GenericBackend.HTTPResponse:
@@ -132,7 +132,7 @@ class TestGenericBackend(GenericBackend):
 class TestMistralBackend(MistralBackend):
     """MistralBackend with 1 retry attempt for faster test execution."""
 
-    @async_retry({"tries": 1})
+    @async_retry(tries=1)
     async def complete(  # type: ignore[override]
         self,
         *,
@@ -154,7 +154,7 @@ class TestMistralBackend(MistralBackend):
             extra_headers=extra_headers,
         )
 
-    @async_generator_retry({"tries": 1})
+    @async_generator_retry(tries=1)
     async def complete_streaming(  # type: ignore[override]
         self,
         *,

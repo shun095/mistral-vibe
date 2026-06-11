@@ -4,7 +4,7 @@ from collections.abc import AsyncGenerator, Callable, Sequence
 import json
 import os
 import types
-from typing import TYPE_CHECKING, Any, Literal, NamedTuple, cast
+from typing import TYPE_CHECKING, Literal, NamedTuple, cast
 
 import httpx
 
@@ -72,7 +72,7 @@ from vibe.core.types import (
     ToolCall,
 )
 from vibe.core.utils.http import build_ssl_context, get_server_url_from_api_base
-from vibe.core.utils.retry import apply_retry_decorator
+from vibe.core.utils.retry import wrap_with_retry
 
 if TYPE_CHECKING:
     from vibe.core.config import ModelConfig, ProviderConfig
@@ -262,21 +262,21 @@ class MistralBackend:
         self._retry_config = self._build_retry_config()
 
         if on_retry is not None:
-            self._apply_retry_decorators()
-
-    def _apply_retry_decorators(self) -> None:
-        """Apply retry decorators with the on_retry callback to request methods."""
-        retry_config: dict[str, Any] = {
-            "tries": 10,
-            "on_retry": self._on_retry,
-            "provider": self._provider.name,
-            "model": None,
-        }
-
-        apply_retry_decorator(self, "complete", retry_config, is_streaming=False)
-        apply_retry_decorator(
-            self, "complete_streaming", retry_config, is_streaming=True
-        )
+            wrap_with_retry(
+                self,
+                "complete",
+                tries=10,
+                on_retry=on_retry,
+                provider=self._provider.name,
+            )
+            wrap_with_retry(
+                self,
+                "complete_streaming",
+                is_streaming=True,
+                tries=10,
+                on_retry=on_retry,
+                provider=self._provider.name,
+            )
 
     def _build_retry_config(self) -> RetryConfig:  # pyright: ignore[reportInvalidTypeForm]
         return RetryConfig(  # pyright: ignore[reportInvalidTypeForm]
