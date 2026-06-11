@@ -429,3 +429,150 @@ class TestBashNeverPermission:
         )
         assert isinstance(result, PermissionContext)
         assert result.permission == ToolPermission.ASK
+
+
+class TestOutputRedirectionBlocking:
+    """Test that allowlisted commands with output redirection are not auto-allowed."""
+
+    @staticmethod
+    def _make_bash(**kwargs):
+        config = BashToolConfig(**kwargs)
+        return Bash(config_getter=lambda: config, state=BaseToolState())
+
+    def test_allowlisted_with_output_redirect_not_always(self):
+        bash_tool = self._make_bash()
+        result = bash_tool.resolve_permission(
+            BashArgs(command="cat > file.txt <<'EOF'\nhello\nEOF", timeout=10)
+        )
+        assert isinstance(result, PermissionContext)
+        assert result.permission is ToolPermission.ASK
+
+    def test_allowlisted_with_append_redirect_not_always(self):
+        bash_tool = self._make_bash()
+        result = bash_tool.resolve_permission(
+            BashArgs(command='echo "data" >> file.txt', timeout=10)
+        )
+        assert isinstance(result, PermissionContext)
+        assert result.permission is ToolPermission.ASK
+
+    def test_allowlisted_with_simple_redirect_not_always(self):
+        bash_tool = self._make_bash()
+        result = bash_tool.resolve_permission(
+            BashArgs(command="ls > listing.txt", timeout=10)
+        )
+        assert isinstance(result, PermissionContext)
+        assert result.permission is ToolPermission.ASK
+
+    def test_allowlisted_without_redirect_still_always(self):
+        bash_tool = self._make_bash()
+        result = bash_tool.resolve_permission(BashArgs(command="ls -la", timeout=10))
+        assert isinstance(result, PermissionContext)
+        assert result.permission is ToolPermission.ALWAYS
+
+    def test_never_permission_blocks_redirect_even_allowlisted(self):
+        bash_tool = self._make_bash(
+            permission=ToolPermission.NEVER, allowlist=["ls", "cat", "echo"]
+        )
+        result = bash_tool.resolve_permission(
+            BashArgs(command='echo "data" > file.txt', timeout=10)
+        )
+        assert isinstance(result, PermissionContext)
+        assert result.permission is ToolPermission.NEVER
+
+    def test_never_permission_blocks_heredoc_redirect(self):
+        bash_tool = self._make_bash(
+            permission=ToolPermission.NEVER, allowlist=["ls", "cat", "echo"]
+        )
+        result = bash_tool.resolve_permission(
+            BashArgs(command="cat > file.txt <<'EOF'\nhello\nEOF", timeout=10)
+        )
+        assert isinstance(result, PermissionContext)
+        assert result.permission is ToolPermission.NEVER
+
+    def test_error_redirect_also_blocked(self):
+        bash_tool = self._make_bash()
+        result = bash_tool.resolve_permission(
+            BashArgs(command="ls 2> errors.txt", timeout=10)
+        )
+        assert isinstance(result, PermissionContext)
+        assert result.permission is ToolPermission.ASK
+
+    def test_tee_sensitive_in_default(self):
+        bash_tool = self._make_bash()
+        assert "tee" in bash_tool.config.sensitive_patterns
+        result = bash_tool.resolve_permission(
+            BashArgs(command='echo "data" | tee file.txt', timeout=10)
+        )
+        assert isinstance(result, PermissionContext)
+        assert result.permission is ToolPermission.ASK
+
+    def test_ampersand_gt_redirect_blocked(self):
+        """&> redirects both stdout+stderr — should be blocked."""
+        bash_tool = self._make_bash()
+        result = bash_tool.resolve_permission(
+            BashArgs(command='echo "data" &> file.txt', timeout=10)
+        )
+        assert isinstance(result, PermissionContext)
+        assert result.permission is ToolPermission.ASK
+
+    def test_append_both_redirect_blocked(self):
+        """>>& appends both stdout+stderr — should be blocked."""
+        bash_tool = self._make_bash()
+        result = bash_tool.resolve_permission(
+            BashArgs(command='echo "data" >>& file.txt', timeout=10)
+        )
+        assert isinstance(result, PermissionContext)
+        assert result.permission is ToolPermission.ASK
+
+    def test_process_substitution_output_blocked(self):
+        """Process substitution >(cmd) with output redirect — should be blocked."""
+        bash_tool = self._make_bash()
+        result = bash_tool.resolve_permission(
+            BashArgs(command="cat > >(grep foo)", timeout=10)
+        )
+        assert isinstance(result, PermissionContext)
+        assert result.permission is ToolPermission.ASK
+
+    def test_gt_in_string_not_redirect(self):
+        """> inside a quoted string is data, not a redirect operator."""
+        bash_tool = self._make_bash()
+        result = bash_tool.resolve_permission(
+            BashArgs(command='echo "a > b"', timeout=10)
+        )
+        assert isinstance(result, PermissionContext)
+        assert result.permission is ToolPermission.ALWAYS
+
+    def test_gt_in_grep_pattern_not_redirect(self):
+        """> as a grep search pattern is data, not a redirect."""
+        bash_tool = self._make_bash()
+        result = bash_tool.resolve_permission(
+            BashArgs(command='grep ">" file.txt', timeout=10)
+        )
+        # grep is not in default allowlist, so it returns ASK — not ALWAYS
+        assert isinstance(result, PermissionContext)
+        assert result.permission is ToolPermission.ASK
+
+    def test_heredoc_input_only_not_redirect(self):
+        """Heredoc input (<<) without output redirect is read-only."""
+        bash_tool = self._make_bash()
+        result = bash_tool.resolve_permission(
+            BashArgs(command="cat << 'EOF'\nhello\nEOF", timeout=10)
+        )
+        assert isinstance(result, PermissionContext)
+        assert result.permission is ToolPermission.ALWAYS
+
+    def test_input_redirect_not_output(self):
+        """< is input redirection, not output — should be allowed."""
+        bash_tool = self._make_bash()
+        result = bash_tool.resolve_permission(
+            BashArgs(command="cat < input.txt", timeout=10)
+        )
+        assert isinstance(result, PermissionContext)
+        assert result.permission is ToolPermission.ALWAYS
+
+    def test_pipe_without_redirect_allowed(self):
+        """Pipe (|) without output redirect is read-only when both sides are allowlisted."""
+        bash_tool = self._make_bash()
+        result = bash_tool.resolve_permission(BashArgs(command="ls | head", timeout=10))
+        assert isinstance(result, PermissionContext)
+        assert result.permission is ToolPermission.ALWAYS

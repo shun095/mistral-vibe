@@ -64,6 +64,33 @@ def _extract_commands(command: str) -> list[str]:
     return commands
 
 
+_OUTPUT_REDIRECT_OPS = {">", ">>", ">&", ">>&", "&>"}
+
+
+def _has_output_redirection(command: str) -> bool:
+    """Check if the command has output redirection that writes to a file.
+
+    Detects: >, >>, >&, >>&, 2>, 2>>, &>, etc.
+    Does NOT flag: <, << (input redirection / heredoc).
+    """
+    parser = _get_parser()
+    tree = parser.parse(command.encode("utf-8"))
+
+    def find_output_redirect(node: Node) -> bool:
+        if node.type == "file_redirect":
+            for child in node.children:
+                if child.text is not None:
+                    token = child.text.decode("utf-8")
+                    if token in _OUTPUT_REDIRECT_OPS:
+                        return True
+        for child in node.children:
+            if find_output_redirect(child):
+                return True
+        return False
+
+    return find_output_redirect(tree.root_node)
+
+
 def _get_subprocess_encoding() -> str:
     if sys.platform == "win32":
         # Windows console uses OEM code page (e.g., cp850, cp1252)
@@ -241,7 +268,7 @@ class BashToolConfig(BaseToolConfig):
         description="Commands that are denied only when run without arguments",
     )
     sensitive_patterns: list[str] = Field(
-        default=["sudo"],
+        default=["sudo", "tee"],
         description="Command prefixes that always ASK regardless of arity approval.",
     )
 
@@ -451,19 +478,32 @@ class Bash(
         ):
             return guardrail_permission
         outside_dirs = _collect_outside_dirs(command_parts)
+        has_redirect = _has_output_redirection(args.command)
         if (
             self._is_unconditionally_allowed(command_parts, outside_dirs)
             and not guardrail_permission
+            and not has_redirect
         ):
             return PermissionContext(permission=ToolPermission.ALWAYS)
 
         required = self._build_required_permissions(command_parts, outside_dirs)
         if guardrail_permission:
             required.extend(guardrail_permission.required_permissions)
-        if not required:
-            return None
 
-        if self.config.permission == ToolPermission.NEVER:
+        if not required:
+            if has_redirect:
+                required = []
+            else:
+                return None
+
+        if has_redirect and not guardrail_permission:
+            if self.config.permission == ToolPermission.NEVER:
+                perm = ToolPermission.NEVER
+                reason = "Output redirection requires approval"
+            else:
+                perm = ToolPermission.ASK
+                reason = None
+        elif self.config.permission == ToolPermission.NEVER:
             perm = ToolPermission.NEVER
             reason = (
                 f"Command not allowlisted: {'; '.join(rp.label for rp in required)}"
