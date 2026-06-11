@@ -1850,12 +1850,18 @@ class AgentLoop:
             cmds = ", ".join(allowlist)
             feedback = (
                 f"Subagent does not have permission to execute this tool. "
-                f"Only allowlisted commands are permitted: {cmds}."
+                f"Writing to files is not allowed for safety. "
+                f"Only allowlisted commands are permitted: {cmds}. "
+                f"Complete all read-only work you can. Report what requires write access "
+                f"and stop — do not attempt workarounds."
             )
         else:
             feedback = (
                 "Subagent does not have permission to execute this tool. "
-                "Only allowlisted commands are permitted."
+                "Writing to files is not allowed for safety. "
+                "Only allowlisted commands are permitted. "
+                "Complete all read-only work you can. Report what requires write access "
+                "and stop — do not attempt workarounds."
             )
         return ToolDecision(
             verdict=ToolExecutionResponse.SKIP,

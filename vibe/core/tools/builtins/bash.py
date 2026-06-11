@@ -384,12 +384,23 @@ class Bash(
             if matched := self._find_denylist_match(part):
                 return PermissionContext(
                     permission=ToolPermission.NEVER,
-                    reason=f"Command denied: '{part}' matches denylist pattern '{matched}'. Do not attempt to run this command.",
+                    reason=(
+                        f"Command denied: '{part}' matches denylist pattern '{matched}'. "
+                        f"Blocked for safety and efficiency: this command is an interactive tool "
+                        f"that cannot be used through the bash tool, or is dangerously destructive. "
+                        f"Reconsider your approach if you are not attempting something hazardous."
+                    ),
                 )
             if self._is_standalone_denylisted(part):
                 return PermissionContext(
                     permission=ToolPermission.NEVER,
-                    reason=f"Command denied: '{part}' is not allowed as a standalone command. Do not attempt to run this command.",
+                    reason=(
+                        f"Command denied: '{part}' is not allowed as a standalone command. "
+                        f"Interactive interpreters, shells, and editors cannot be used through "
+                        f"the bash tool — they require a TTY and will hang. "
+                        f"Use the appropriate tool instead (e.g., write_file for editing, "
+                        f"or pass arguments to run a script)."
+                    ),
                 )
             if not self._has_find_execution_predicate(part):
                 continue
@@ -499,14 +510,21 @@ class Bash(
         if has_redirect and not guardrail_permission:
             if self.config.permission == ToolPermission.NEVER:
                 perm = ToolPermission.NEVER
-                reason = "Output redirection requires approval"
+                reason = (
+                    "Output redirection blocked: writing to files is not allowed for safety. "
+                    "Complete all read-only work first. If you genuinely need to write files, "
+                    "ask the user for write permissions instead of attempting workarounds."
+                )
             else:
                 perm = ToolPermission.ASK
                 reason = None
         elif self.config.permission == ToolPermission.NEVER:
             perm = ToolPermission.NEVER
             reason = (
-                f"Command not allowlisted: {'; '.join(rp.label for rp in required)}"
+                f"Command not allowlisted: {'; '.join(rp.label for rp in required)}. "
+                f"Writing to files is not allowed for safety. "
+                f"Complete all read-only work first. If you genuinely need to write files, "
+                f"ask the user for write permissions instead of attempting workarounds."
             )
         else:
             perm = ToolPermission.ASK
