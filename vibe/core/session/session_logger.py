@@ -239,26 +239,13 @@ class SessionLogger:
 
     @staticmethod
     async def persist_messages(messages: list[dict], session_dir: Path) -> None:
-        """Append messages to the messages file."""
-        await SessionLogger._persist_messages_impl(messages, session_dir, append=True)
-
-    @staticmethod
-    async def rewrite_messages(messages: list[dict], session_dir: Path) -> None:
-        """Rewrite the entire messages file (for edits/deletions)."""
-        await SessionLogger._persist_messages_impl(messages, session_dir, append=False)
-
-    @staticmethod
-    async def _persist_messages_impl(
-        messages: list[dict], session_dir: Path, append: bool = True
-    ) -> None:
         messages_filepath = session_dir / "messages.jsonl"
         try:
-            if not messages_filepath.exists() and not append:
+            if not messages_filepath.exists():
                 messages_filepath.touch()
 
-            mode = "a" if append else "w"
             async with await AsyncPath(messages_filepath).open(
-                mode, encoding="utf-8"
+                "a", encoding="utf-8"
             ) as f:
                 for message in messages:
                     await f.write(json.dumps(message, ensure_ascii=False) + "\n")
@@ -267,6 +254,26 @@ class SessionLogger:
         except Exception as e:
             raise RuntimeError(
                 f"Failed to persist session messages to {messages_filepath}: {e}"
+            ) from e
+
+    @staticmethod
+    async def rewrite_messages(messages: list[dict], session_dir: Path) -> None:
+        """Rewrite the entire messages file (for edits/deletions)."""
+        messages_filepath = session_dir / "messages.jsonl"
+        try:
+            if not messages_filepath.exists():
+                messages_filepath.touch()
+
+            async with await AsyncPath(messages_filepath).open(
+                "w", encoding="utf-8"
+            ) as f:
+                for message in messages:
+                    await f.write(json.dumps(message, ensure_ascii=False) + "\n")
+                    await f.flush()
+                    os.fsync(f.wrapped.fileno())
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to rewrite session messages to {messages_filepath}: {e}"
             ) from e
 
     async def save_interaction(
