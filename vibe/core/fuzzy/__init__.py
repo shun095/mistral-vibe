@@ -3,8 +3,8 @@
 Cython-accelerated subsequence matching with gap penalty.
 Case-insensitive. Supports multi-byte characters (Japanese, emoji, etc.).
 
-Score formula: max(0, 100 - penalty * 100 / candidate_length)
-where penalty is the number of non-matching characters between matched query chars.
+Returns penalty (int): count of non-matching characters between matched query chars.
+-1 = no match, 0 = empty query or perfect contiguous match.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ except ImportError:
     using_cython = False
 
     # Fallback to pure Python if Cython extension not available
-    def fuzzy_match(query: str, candidate: str) -> tuple[float, list[int] | None]:
+    def fuzzy_match(query: str, candidate: str) -> tuple[int, list[int] | None]:
         """Pure Python fallback for fuzzy matching."""
         q_lower = query.lower()
         c_lower = candidate.lower()
@@ -24,9 +24,9 @@ except ImportError:
         c_len = len(c_lower)
 
         if q_len == 0:
-            return (100.0, None)
+            return (0, None)
         if q_len > c_len:
-            return (0.0, None)
+            return (-1, None)
 
         q_chars = [ord(c) for c in q_lower]
         c_chars = [ord(c) for c in c_lower]
@@ -51,7 +51,7 @@ except ImportError:
                 best_start = start
 
         if best_start < 0:
-            return (0.0, None)
+            return (-1, None)
 
         q_idx = 0
         c_idx = best_start
@@ -63,14 +63,11 @@ except ImportError:
                 q_idx += 1
             c_idx += 1
 
-        score = 100.0 - best_penalty * 100.0 / c_len
-        score = max(score, 0.0)
-
-        return (score, indices)
+        return (best_penalty, indices)
 
     def fuzzy_match_batch(
         query: str, candidates: list[str]
-    ) -> list[tuple[float, list[int] | None]]:
+    ) -> list[tuple[int, list[int] | None]]:
         """Batch version of fuzzy_match."""
         return [fuzzy_match(query, c) for c in candidates]
 

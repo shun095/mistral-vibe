@@ -96,14 +96,14 @@ class HistoryPickerApp(Container):
         if query:
             previews = [e.replace("\n", " ") for e in self._entries]
             results = fuzzy_match_batch(query, previews)
-            scored: list[tuple[float, int, str, list[int]]] = []
-            for idx, (score, matches) in enumerate(results):
-                if matches is not None and score > 0:
-                    scored.append((score, idx, previews[idx], matches))
-            scored.sort(key=lambda x: x[0], reverse=True)
+            scored: list[tuple[int, int, str, list[int]]] = []
+            for idx, (penalty, matches) in enumerate(results):
+                if matches is not None and penalty >= 0:
+                    scored.append((penalty, idx, previews[idx], matches))
+            scored.sort(key=lambda x: x[0])
 
             if scored:
-                for _score, idx, preview, matches in scored[:50]:
+                for _penalty, idx, preview, matches in scored[:50]:
                     display = Text(preview, no_wrap=True)
                     for pos in matches:
                         display.stylize("bold yellow", pos, pos + 1)

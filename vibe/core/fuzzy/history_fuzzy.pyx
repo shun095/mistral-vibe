@@ -8,8 +8,8 @@ Greedy subsequence matching with kind-hoisted dispatch for direct
 PyUnicode_DATA access (zero-copy, no encoding dispatch).
 Single-pass O(n) per candidate.
 
-Score formula: max(0, 100 - penalty * 100 / candidate_length)
-where penalty is the number of non-matching characters between matched query chars.
+Returns penalty (int): count of non-matching characters between matched query chars.
+-1 = no match, 0 = empty query or perfect contiguous match.
 """
 
 from cpython.mem cimport PyMem_Malloc, PyMem_Free
@@ -118,7 +118,7 @@ cdef inline int greedy_42(const uint32_t *q, int q_len,
     return penalty
 
 
-def fuzzy_match(str query, str candidate) -> tuple[float, list[int] | None]:
+def fuzzy_match(str query, str candidate) -> tuple[int, list[int] | None]:
     """Fuzzy match query against candidate.
 
     Args:
@@ -126,7 +126,8 @@ def fuzzy_match(str query, str candidate) -> tuple[float, list[int] | None]:
         candidate: Text to search in.
 
     Returns:
-        tuple: (score: float, indices: list[int] or None)
+        tuple: (penalty: int, indices: list[int] or None).
+        -1 = no match, 0 = empty query or perfect match.
     """
     cdef:
         int q_kind
@@ -137,35 +138,34 @@ def fuzzy_match(str query, str candidate) -> tuple[float, list[int] | None]:
         Py_ssize_t c_len
         int penalty
         int pos_count
-        float score
         int *positions = NULL
         uint32_t *q_promoted = NULL
         int j
 
     if PyUnicode_READY(query) < 0:
-        return (0.0, None)
+        return (-1, None)
 
     q_kind = PyUnicode_KIND(query)
     q_raw = PyUnicode_DATA(query)
     q_len = PyUnicode_GET_LENGTH(query)
 
     if q_len == 0:
-        return (100.0, None)
+        return (0, None)
 
     if PyUnicode_READY(candidate) < 0:
-        return (0.0, None)
+        return (-1, None)
 
     c_kind = PyUnicode_KIND(candidate)
     c_raw = PyUnicode_DATA(candidate)
     c_len = PyUnicode_GET_LENGTH(candidate)
 
     if q_len > c_len:
-        return (0.0, None)
+        return (-1, None)
 
     # Allocate positions buffer (q_len positions needed for matched indices)
     positions = <int*>PyMem_Malloc(sizeof(int) * q_len)
     if positions is NULL:
-        return (0.0, None)
+        return (-1, None)
 
     # Initialize positions to -1 to avoid reading uninitialized memory
     for j in range(<int>q_len):
@@ -186,7 +186,7 @@ def fuzzy_match(str query, str candidate) -> tuple[float, list[int] | None]:
         q_promoted = <uint32_t*>PyMem_Malloc(sizeof(uint32_t) * q_len)
         if q_promoted is NULL:
             PyMem_Free(positions)
-            return (0.0, None)
+            return (-1, None)
         if q_kind == 1:
             for j in range(q_len):
                 q_promoted[j] = (<const uint8_t*>q_raw)[j]
@@ -210,7 +210,7 @@ def fuzzy_match(str query, str candidate) -> tuple[float, list[int] | None]:
 
     if penalty < 0:
         PyMem_Free(positions)
-        return (0.0, None)
+        return (-1, None)
 
     # positions[] already filled by greedy(); count matched
     pos_count = 0
@@ -223,12 +223,7 @@ def fuzzy_match(str query, str candidate) -> tuple[float, list[int] | None]:
         idx_list.append(positions[j])
     PyMem_Free(positions)
 
-    # Calculate score
-    score = 100.0 - <float>penalty * 100.0 / <float>c_len
-    if score < 0.0:
-        score = 0.0
-
-    return (score, idx_list)
+    return (penalty, idx_list)
 
 
 def fuzzy_match_batch(str query, list candidates) -> list:
@@ -239,7 +234,7 @@ def fuzzy_match_batch(str query, list candidates) -> list:
         candidates: List of text strings to search in.
 
     Returns:
-        list: List of (score: float, indices: list[int] or None) tuples.
+        list: List of (penalty: int, indices: list[int] or None) tuples.
     """
     cdef:
         int q_kind
@@ -250,7 +245,6 @@ def fuzzy_match_batch(str query, list candidates) -> list:
         Py_ssize_t c_len
         int penalty
         int pos_count
-        float score
         list result = []
         str c_str
         int *c_positions = NULL
@@ -267,7 +261,7 @@ def fuzzy_match_batch(str query, list candidates) -> list:
 
     if q_len == 0:
         for _ in candidates:
-            result.append((100.0, None))
+            result.append((0, None))
         return result
 
     # Promote query to 4-byte once if needed (handles mixed kinds correctly)
@@ -286,7 +280,7 @@ def fuzzy_match_batch(str query, list candidates) -> list:
 
     for c_str in candidates:
         if PyUnicode_READY(c_str) < 0:
-            result.append((0.0, None))
+            result.append((-1, None))
             continue
 
         c_kind = PyUnicode_KIND(c_str)
@@ -294,13 +288,13 @@ def fuzzy_match_batch(str query, list candidates) -> list:
         c_len = PyUnicode_GET_LENGTH(c_str)
 
         if q_len > c_len:
-            result.append((0.0, None))
+            result.append((-1, None))
             continue
 
         # Allocate positions buffer for this candidate
         c_positions = <int*>PyMem_Malloc(sizeof(int) * q_len)
         if c_positions is NULL:
-            result.append((0.0, None))
+            result.append((-1, None))
             continue
 
         # Initialize positions to -1
@@ -320,7 +314,7 @@ def fuzzy_match_batch(str query, list candidates) -> list:
 
         if penalty < 0:
             PyMem_Free(c_positions)
-            result.append((0.0, None))
+            result.append((-1, None))
             continue
 
         # positions[] already filled by greedy(); count matched
@@ -334,12 +328,7 @@ def fuzzy_match_batch(str query, list candidates) -> list:
             idx_list.append(c_positions[j])
         PyMem_Free(c_positions)
 
-        # Calculate score
-        score = 100.0 - <float>penalty * 100.0 / <float>c_len
-        if score < 0.0:
-            score = 0.0
-
-        result.append((score, idx_list))
+        result.append((penalty, idx_list))
 
     if q_promoted:
         PyMem_Free(q_promoted)
