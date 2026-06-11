@@ -92,41 +92,6 @@ class Task(
     def get_status_text(cls) -> str:
         return "Running subagent"
 
-    def _is_response_complete(self, response: str) -> tuple[bool, str]:
-        """Check if response is complete (not a single line)."""
-        if not response or not response.strip():
-            return False, "Response is empty. Please provide a comprehensive summary."
-
-        lines = response.strip().split("\n")
-        if len(lines) == 1:
-            return (
-                False,
-                "Response is too brief. Please provide a comprehensive summary "
-                "with multiple paragraphs or bullet points.",
-            )
-
-        return True, ""
-
-    def _get_task_instruction(
-        self, original_task: str, attempt: int, max_attempts: int
-    ) -> str:
-        """Get the task instruction for the subagent, with enhanced instructions for retries."""
-        if attempt == 0:
-            return original_task
-
-        return f"""
-{original_task}
-
-IMPORTANT: Your previous response was insufficient. Please provide a comprehensive summary with multiple paragraphs or bullet points. Include:
-- What you accomplished
-- Key findings or information discovered
-- Any relevant code snippets, file contents, or details
-- Recommendations or next steps if applicable
-- Clear, actionable information for the main agent
-
-This is attempt {attempt + 1} of {max_attempts}. Provide a complete multi-paragraph response.
-"""
-
     def resolve_permission(self, args: TaskArgs) -> PermissionContext | None:
         agent_name = args.agent
 
@@ -140,7 +105,7 @@ This is attempt {attempt + 1} of {max_attempts}. Provide a complete multi-paragr
 
         return None
 
-    async def run(  # noqa: PLR0914
+    async def run(  # noqa: PLR0912,PLR0915
         self, args: TaskArgs, ctx: InvokeContext | None = None
     ) -> AsyncGenerator[ToolStreamEvent | TaskResult, None]:
         if not ctx or not ctx.agent_manager:
@@ -180,9 +145,21 @@ This is attempt {attempt + 1} of {max_attempts}. Provide a complete multi-paragr
 
         attempt = 0
         while attempt < self.config.max_retries:  # noqa: PLR1702
-            task_text = self._get_task_instruction(
-                args.task, attempt, self.config.max_retries
-            )
+            if attempt == 0:
+                task_text = args.task
+            else:
+                task_text = f"""
+{args.task}
+
+IMPORTANT: Your previous response was insufficient. Please provide a comprehensive summary with multiple paragraphs or bullet points. Include:
+- What you accomplished
+- Key findings or information discovered
+- Any relevant code snippets, file contents, or details
+- Recommendations or next steps if applicable
+- Clear, actionable information for the main agent
+
+This is attempt {attempt + 1} of {self.config.max_retries}. Provide a complete multi-paragraph response.
+"""
             if ctx.scratchpad_dir:
                 task_text = (
                     f"Scratchpad directory: {ctx.scratchpad_dir}\n"
@@ -227,9 +204,17 @@ This is attempt {attempt + 1} of {max_attempts}. Provide a complete multi-paragr
             concatenated_response = (
                 "".join(accumulated_response) if accumulated_response else ""
             )
-            is_complete, feedback = self._is_response_complete(concatenated_response)
+            if not concatenated_response or not concatenated_response.strip():
+                feedback = "Response is empty. Please provide a comprehensive summary."
+            elif len(concatenated_response.strip().split("\n")) == 1:
+                feedback = (
+                    "Response is too brief. Please provide a comprehensive summary "
+                    "with multiple paragraphs or bullet points."
+                )
+            else:
+                feedback = None
 
-            if is_complete:
+            if not feedback:
                 yield TaskResult(
                     response="".join(accumulated_response),
                     turns_used=turns_used,

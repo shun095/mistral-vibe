@@ -291,9 +291,8 @@ class MistralBackend:
         )
 
     async def __aenter__(self) -> MistralBackend:
-        client = self._create_mistral_client()
-        self._client = client
-        await client.__aenter__()
+        self._client = self._create_mistral_client()
+        await self._client.__aenter__()
         return self
 
     async def __aexit__(

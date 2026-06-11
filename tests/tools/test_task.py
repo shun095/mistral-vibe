@@ -233,9 +233,12 @@ class TestTaskToolExecution:
 
         attempt_count = 0
 
+        tasks_received: list[str] = []
+
         async def mock_act(task: str):
             nonlocal attempt_count
             attempt_count += 1
+            tasks_received.append(task)
 
             # First attempt: single line (insufficient)
             if attempt_count == 1:
@@ -262,12 +265,33 @@ class TestTaskToolExecution:
             events = []
             async for event in task_tool.run(args, ctx):
                 events.append(event)
-                # Stop after getting ToolStreamEvent feedback
-                if len(events) == 1 and isinstance(event, ToolStreamEvent):
-                    break
 
-            # Should have received feedback about insufficient response
-            assert len(events) == 1
-            assert isinstance(events[0], ToolStreamEvent)
-            assert "insufficient" in events[0].message.lower()
-            assert "brief" in events[0].message.lower()
+            # Should have received feedback about insufficient response, then the result
+            stream_events = [e for e in events if isinstance(e, ToolStreamEvent)]
+            result_events = [e for e in events if isinstance(e, TaskResult)]
+            assert len(stream_events) == 1
+            assert "insufficient" in stream_events[0].message.lower()
+            assert "brief" in stream_events[0].message.lower()
+            assert len(result_events) == 1
+            assert result_events[0].completed is True
+
+            # Assert first attempt received the original task text
+            assert len(tasks_received) == 2
+            assert tasks_received[0] == "analyze code"
+
+            # Assert retry received the exact enhanced prompt
+            assert (
+                tasks_received[1]
+                == """
+analyze code
+
+IMPORTANT: Your previous response was insufficient. Please provide a comprehensive summary with multiple paragraphs or bullet points. Include:
+- What you accomplished
+- Key findings or information discovered
+- Any relevant code snippets, file contents, or details
+- Recommendations or next steps if applicable
+- Clear, actionable information for the main agent
+
+This is attempt 2 of 3. Provide a complete multi-paragraph response.
+"""
+            )
