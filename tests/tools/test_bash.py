@@ -578,6 +578,62 @@ class TestOutputRedirectionBlocking:
         assert isinstance(result, PermissionContext)
         assert result.permission is ToolPermission.ALWAYS
 
+    def test_heredoc_to_denylisted_interpreter_blocked(self):
+        """python heredoc is blocked by standalone denylist, not output redirect check.
+
+        tree-sitter parses `python << 'EOF'` as a `command` node (python) plus a
+        separate `heredoc_redirect` node — _has_output_redirection returns False
+        because it only inspects `file_redirect` nodes. The block comes from the
+        standalone denylist catching bare `python`.
+        """
+        bash_tool = self._make_bash()
+        result = bash_tool.resolve_permission(
+            BashArgs(command='python << "EOF"\nopen("x","w")\nEOF', timeout=10)
+        )
+        assert isinstance(result, PermissionContext)
+        assert result.permission is ToolPermission.NEVER
+        assert "standalone" in (result.reason or "").lower()
+
+    def test_heredoc_to_interpreter_no_output_redirect_flagged(self):
+        """Heredoc feeding code to an interpreter is NOT flagged as output redirection.
+
+        The file write happens inside the interpreter, invisible to the shell-level
+        _has_output_redirection check. Only the standalone denylist or NEVER permission
+        catches it.
+        """
+        from vibe.core.tools.builtins.bash import _has_output_redirection
+
+        assert not _has_output_redirection('python << "EOF"\nopen("x","w")\nEOF')
+
+    def test_heredoc_to_non_denylisted_interpreter_asks(self):
+        """Non-denylisted interpreter via heredoc returns ASK, not NEVER.
+
+        ruby is not on the standalone denylist. The heredoc file-write bypasses the
+        output redirection check (heredoc_redirect != file_redirect). In ASK mode
+        the command is permitted pending approval — the redirect check never fires.
+        """
+        bash_tool = self._make_bash()
+        result = bash_tool.resolve_permission(
+            BashArgs(command='ruby << "EOF"\nFile.open("x","w")\nEOF', timeout=10)
+        )
+        assert isinstance(result, PermissionContext)
+        assert result.permission is ToolPermission.ASK
+
+    def test_heredoc_to_non_denylisted_interpreter_blocked_in_plan_mode(self):
+        """Non-denylisted interpreter via heredoc is blocked in plan mode (NEVER).
+
+        Plan mode sets bash permission to NEVER, catching any non-allowlisted command
+        regardless of whether it uses heredoc file writes.
+        """
+        bash_tool = self._make_bash(
+            permission=ToolPermission.NEVER, allowlist=["ls", "cat"]
+        )
+        result = bash_tool.resolve_permission(
+            BashArgs(command='ruby << "EOF"\nFile.open("x","w")\nEOF', timeout=10)
+        )
+        assert isinstance(result, PermissionContext)
+        assert result.permission is ToolPermission.NEVER
+
 
 class TestScratchpadRedirect:
     """Test that redirects to scratchpad are always allowed, even in Plan mode."""
