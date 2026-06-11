@@ -43,12 +43,15 @@ class OpenAIAdapter(APIAdapter):
         tools: list[AvailableTool] | None,
         max_tokens: int | None,
         tool_choice: StrToolChoice | AvailableTool | None,
+        thinking: str = "off",
         return_progress: bool = False,
     ) -> dict[str, Any]:
         payload = {"model": model_name, "messages": converted_messages}
 
         if temperature is not None:
             payload["temperature"] = temperature
+        if thinking != "off":
+            payload["reasoning_effort"] = thinking
         if tools:
             payload["tools"] = [tool.model_dump(exclude_none=True) for tool in tools]
         if tool_choice:
@@ -146,6 +149,7 @@ class OpenAIAdapter(APIAdapter):
             tools,
             max_tokens,
             tool_choice,
+            thinking=thinking,
             return_progress=should_request_progress,
         )
 
